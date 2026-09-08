@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Project, UiState } from '@ide-n-dream/shared'
 import { defaultUiState } from '@ide-n-dream/shared'
+import { defaultWorktreeRoot } from './git/worktree.js'
 import { stateFile } from './config.js'
 
 /**
@@ -33,7 +34,12 @@ export class StateStore {
         const candidate = parsed as Partial<PersistedState>
         this.state = {
           version: 1,
-          projects: Array.isArray(candidate.projects) ? candidate.projects : [],
+          // The worktree location is derived, not remembered: recomputing it
+          // migrates projects registered under an older convention instead of
+          // leaving them pointed at a directory nothing else uses.
+          projects: (Array.isArray(candidate.projects) ? candidate.projects : []).map(
+            (project) => ({ ...project, worktreeRoot: defaultWorktreeRoot(project.root) }),
+          ),
           ui: { ...defaultUiState(), ...(candidate.ui ?? {}) },
         }
       }

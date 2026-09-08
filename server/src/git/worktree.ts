@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
-import { basename, join, resolve } from 'node:path'
+import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { Worktree } from '@ide-n-dream/shared'
 
 const exec = promisify(execFile)
@@ -108,9 +109,46 @@ export const listWorktrees = async (projectId: string, root: string): Promise<Wo
   })
 }
 
-/** Default location for new worktrees: `<parent>/<repo>-branches/`. */
+/**
+ * Where new worktrees go: `<repo>/.claude/worktrees/`.
+ *
+ * This is Claude Code's own convention -- `claude --worktree` and its
+ * EnterWorktree tool both create worktrees inside `.claude/worktrees/` -- so a
+ * worktree made here and one made by Claude itself land in the same place, and
+ * neither litters the directory above the repository.
+ */
 export const defaultWorktreeRoot = (root: string): string =>
-  resolve(root, '..', `${basename(resolve(root))}-branches`)
+  join(resolve(root), '.claude', 'worktrees')
+
+const WORKTREE_IGNORE_PATTERN = '**/.claude/worktrees/'
+
+/**
+ * Make sure git ignores the worktrees directory.
+ *
+ * Worktrees now live inside the repository, so without this the main worktree
+ * reports `.claude/` as untracked: it would inflate the dirty count on every
+ * tab, block removal behind the "uncommitted changes" guard, and risk being
+ * committed by a careless `git add -A`.
+ *
+ * The pattern goes in `.git/info/exclude` rather than `.gitignore` because that
+ * file is repo-local and untracked, so nothing appears in a file the team
+ * shares. Claude Code writes the identical pattern to the identical place.
+ */
+export const ensureWorktreesIgnored = async (root: string): Promise<void> => {
+  try {
+    const gitDir = (
+      await git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    ).trim()
+    const excludeFile = join(gitDir, 'info', 'exclude')
+    const current = await readFile(excludeFile, 'utf8').catch(() => '')
+    if (current.split('\n').some((line) => line.trim() === WORKTREE_IGNORE_PATTERN)) return
+    await mkdir(dirname(excludeFile), { recursive: true })
+    const separator = current === '' || current.endsWith('\n') ? '' : '\n'
+    await appendFile(excludeFile, `${separator}${WORKTREE_IGNORE_PATTERN}\n`)
+  } catch {
+    // Not fatal: the worktree still works, the main repo just looks dirty.
+  }
+}
 
 export const currentBranch = async (path: string): Promise<string | null> => {
   try {

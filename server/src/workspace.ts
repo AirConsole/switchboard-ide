@@ -10,6 +10,7 @@ import {
   deleteBranch,
   dirtyCount,
   enclosingRepoRoot,
+  ensureWorktreesIgnored,
   initRepository,
   isGitRepo,
   isValidBranchName,
@@ -164,6 +165,10 @@ export class Workspace {
     }
     const path = worktreePathFor(project.worktreeRoot, branch)
     if (await exists(path)) throw new HttpError(409, `path already exists: ${path}`)
+
+    // Before creating anything inside the repository, make sure git will not
+    // report it as untracked.
+    await ensureWorktreesIgnored(project.root)
 
     try {
       await addWorktree({ root: project.root, path, branch, base: opts.base })

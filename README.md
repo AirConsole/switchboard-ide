@@ -6,16 +6,20 @@ worktree fast.
 
 ## What it does
 
-- **Overview** — every worktree's agent as a live, interactive terminal tile. An
-  agent blocked on a prompt is marked amber, and the top bar shows how many are
-  waiting. You can answer a prompt straight from a tile.
-- **Worktree view** — the agent full size, plus extra shells in the same working
-  directory, with a top bar of worktree tabs.
-- **Worktrees** — create a branch + worktree and start an agent in it in one step;
-  remove it (and optionally its branch) when done.
+- **Overview** — every worktree as a live, interactive terminal tile, sized so
+  each gets at least 80 columns. A worktree where Claude is blocked on a prompt
+  is marked amber; you can answer it straight from the tile.
+- **Worktree view** — Claude full size, plus extra shells in the same working
+  directory, with a top bar of worktree tabs and a count of what is waiting.
+- **Worktrees** — create a branch + worktree and start Claude in it in one step;
+  remove it (and optionally its branch) when done. Worktrees go in
+  `<repo>/.claude/worktrees/<branch>`, which is where `claude --worktree` puts
+  them too, so one made here and one made by Claude itself land together. The
+  pattern `**/.claude/worktrees/` is added to `.git/info/exclude` (repo-local and
+  untracked, never a shared `.gitignore`) so the checkout does not read as dirty.
 - **Nothing is lost** — every terminal is a real tmux session on a private socket,
-  so agents keep working when you close the tab, and survive a server restart or
-  crash. You can always take one over from a real terminal.
+  so sessions keep working when you close the tab, and survive a server restart
+  or crash. You can always take one over from a real terminal.
 
 ## Running it
 
