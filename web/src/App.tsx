@@ -5,8 +5,9 @@ import { TopBar } from './components/TopBar.js'
 import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview, terminalsTileKey } from './views/Overview.js'
+import { Overview, paneKey } from './views/Overview.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
+import type { PanelName } from '@ide-n-dream/shared'
 
 export const App = (): React.ReactElement => {
   const { projects, worktrees, sessions, ui, loaded, error, refresh, setUi, setError } = useStore()
@@ -68,54 +69,48 @@ export const App = (): React.ReactElement => {
    * A chip toggles whether its worktree is on screen.
    *
    * Keyed on what is actually visible, not on `minimized`, because a tile can
-   * be absent for either reason. Bringing one back also marks it newest, so on
-   * a window too narrow for two it wins its place instead of being pushed
-   * straight out again.
+   * be absent for either reason. Bringing one back also marks it newest, which
+   * brings back the panels it had open too: the layout protects the newest pane
+   * and the rest of its tile, so a two-column worktree returns as two columns.
    */
   const toggleMinimized = (worktreeId: string): void => {
     if (shown.includes(worktreeId)) {
-      const closesTerminals = ui.terminalsFor === worktreeId
-      setUi({
-        minimized: [...ui.minimized.filter((id) => id !== worktreeId), worktreeId],
-        ...(closesTerminals ? { terminalsFor: null, minimizedBeforeTerminals: null } : {}),
-      })
+      setUi({ minimized: [...ui.minimized.filter((id) => id !== worktreeId), worktreeId] })
       return
     }
     setUi({
       minimized: ui.minimized.filter((id) => id !== worktreeId),
-      newestTile: worktreeId,
+      newestPane: paneKey(worktreeId, 'claude'),
     })
   }
 
   /**
-   * Terminals is a focus mode: it shows one worktree's Claude and its
-   * terminals, and minimizes everything else. Switching it off restores exactly
-   * what was expanded before, so focusing is a reversible detour rather than
-   * something you have to rebuild afterwards.
+   * A panel is another column of its worktree's tile, opened and closed per
+   * worktree and remembered there.
+   *
+   * Nothing else is minimized to make room, and nothing is restored on the way
+   * out: the layout already pushes panes out from the right and brings them
+   * straight back, so opening a panel on a normal window displaces the
+   * worktrees to the right of it and closing it returns them. That makes this a
+   * reversible detour without a scrap of saved layout to get out of step.
    */
-  const toggleTerminals = (worktreeId: string): void => {
-    if (ui.terminalsFor === worktreeId) {
-      setUi({
-        terminalsFor: null,
-        newestTile: worktreeId,
-        minimized: ui.minimizedBeforeTerminals ?? ui.minimized,
-        minimizedBeforeTerminals: null,
-      })
-      return
-    }
+  const togglePanel = (worktreeId: string, panel: PanelName): void => {
+    const open = ui.panels[worktreeId] ?? []
+    const wasOpen = open.includes(panel)
     setUi({
-      terminalsFor: worktreeId,
-      // The terminals tile is what you just asked for, so it is the one that
-      // survives a window too narrow for both -- displacing the Claude tile
-      // rather than never appearing.
-      newestTile: terminalsTileKey(worktreeId),
-      // Only remember the pre-focus layout once, so focusing straight from one
-      // worktree to another still restores what was there before the first.
-      minimizedBeforeTerminals: ui.minimizedBeforeTerminals ?? ui.minimized,
-      minimized: projectWorktrees.filter((w) => w.id !== worktreeId).map((w) => w.id),
+      panels: {
+        ...ui.panels,
+        [worktreeId]: wasOpen ? open.filter((name) => name !== panel) : [...open, panel],
+      },
+      // What you just asked for is what survives a window too narrow for both:
+      // opening a panel displaces the Claude pane rather than never appearing,
+      // and closing it hands the protection back to Claude.
+      newestPane: paneKey(worktreeId, wasOpen ? 'claude' : panel),
     })
-    // The tile is only useful with something in it.
-    if (terminalSessions(sessions, worktreeId).length === 0) newTerminal(worktreeId)
+    // The panel is only useful with something in it.
+    if (panel === 'terminals' && !wasOpen && terminalSessions(sessions, worktreeId).length === 0) {
+      newTerminal(worktreeId)
+    }
   }
 
   if (!loaded) {
@@ -156,7 +151,7 @@ export const App = (): React.ReactElement => {
           onCreated={(worktreeId) => {
             setShowNewWorktree(false)
             // A worktree you just created is the one you want to see.
-            setUi({ newestTile: worktreeId })
+            setUi({ newestPane: paneKey(worktreeId, 'claude') })
             void refresh()
           }}
         />
@@ -166,17 +161,10 @@ export const App = (): React.ReactElement => {
           worktree={worktrees.find((w) => w.id === removing)!}
           onClose={() => setRemoving(null)}
           onRemoved={() => {
-            // A removed worktree cannot stay minimized or focused.
-            setUi({
-              minimized: ui.minimized.filter((id) => id !== removing),
-              ...(ui.terminalsFor === removing
-                ? {
-                    terminalsFor: null,
-                    minimized: ui.minimizedBeforeTerminals ?? ui.minimized,
-                    minimizedBeforeTerminals: null,
-                  }
-                : {}),
-            })
+            // A removed worktree leaves nothing of itself behind in the layout.
+            const panels = { ...ui.panels }
+            delete panels[removing]
+            setUi({ minimized: ui.minimized.filter((id) => id !== removing), panels })
             setRemoving(null)
             void refresh()
           }}
@@ -221,13 +209,13 @@ export const App = (): React.ReactElement => {
         worktrees={projectWorktrees}
         sessions={sessions}
         minimized={ui.minimized}
-        terminalsFor={ui.terminalsFor}
-        newestTile={ui.newestTile}
+        panels={ui.panels}
+        newestPane={ui.newestPane}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
         onStart={startClaude}
         onMinimize={toggleMinimized}
         onRemoveWorktree={setRemoving}
-        onToggleTerminals={toggleTerminals}
+        onTogglePanel={togglePanel}
         onNewWorktree={() => setShowNewWorktree(true)}
         onSelectTerminal={(worktreeId, sessionId) =>
           setUi({

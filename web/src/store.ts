@@ -79,13 +79,20 @@ export const useStore = create<AppState>((set, get) => ({
        * old view -- put you back in the detail view of a different worktree.
        */
       const firstLoad = !get().loaded
+      /*
+       * Over the defaults, not instead of them: the stored copy can predate a
+       * field this build reads (an older server, or a hand-edited state file),
+       * and a missing one would arrive as undefined where the code expects a
+       * record it can index.
+       */
+      const adopted = { ...defaultUiState(), ...storedUi }
       set({
         ...rest,
-        ui: firstLoad ? storedUi : get().ui,
+        ui: firstLoad ? adopted : get().ui,
         loaded: true,
         error: null,
       })
-      if (firstLoad) localStorage.setItem(UI_CACHE_KEY, JSON.stringify(storedUi))
+      if (firstLoad) localStorage.setItem(UI_CACHE_KEY, JSON.stringify(adopted))
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err), loaded: true })
     }

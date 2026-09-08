@@ -80,6 +80,16 @@ export interface Session {
   attachCommand: string
 }
 
+/**
+ * A panel a worktree can open beside its Claude session.
+ *
+ * Each open panel takes another column of the worktree's tile, so a worktree is
+ * one column wide, or two, or -- once files and git join this union -- three or
+ * four. Panels are per-worktree and persistent: minimizing a worktree to the
+ * top bar and bringing it back restores the width it had.
+ */
+export type PanelName = 'terminals'
+
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
   activeProjectId: string | null
@@ -90,22 +100,18 @@ export interface UiState {
    * chip still carries state, so a minimized worktree can still call for you.
    */
   minimized: string[]
-  /** The worktree whose terminals tile is open, if any. */
-  terminalsFor: string | null
+  /** Panels open per worktree, in the order they sit beside Claude. */
+  panels: Record<string, PanelName[]>
   /**
-   * The tile that most recently appeared because the user asked for it.
+   * The pane that most recently appeared because the user asked for it, keyed
+   * `<worktreeId>:claude` or `<worktreeId>:<panel>`.
    *
-   * There are no rows, so a narrow window pushes tiles out from the right --
-   * and this one is exempt. Without it, opening something on a phone would push
-   * out the very tile you just opened.
+   * There are no rows, so a narrow window pushes panes out from the right --
+   * and this one, plus the rest of its worktree, is exempt. Without it, opening
+   * a panel on a phone would push out the very pane you just opened.
    */
-  newestTile: string | null
-  /**
-   * What was minimized before Terminals was switched on, so switching it off
-   * restores the layout instead of leaving everything collapsed.
-   */
-  minimizedBeforeTerminals: string[] | null
-  /** Selected terminal per worktree, so its tile reopens where you left it. */
+  newestPane: string | null
+  /** Selected terminal per worktree, so its panel reopens where you left it. */
   activeTerminalByWorktree: Record<string, string>
 }
 
@@ -113,9 +119,8 @@ export const defaultUiState = (): UiState => ({
   activeProjectId: null,
   tabOrder: [],
   minimized: [],
-  terminalsFor: null,
-  newestTile: null,
-  minimizedBeforeTerminals: null,
+  panels: {},
+  newestPane: null,
   activeTerminalByWorktree: {},
 })
 

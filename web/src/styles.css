@@ -235,11 +235,11 @@ button {
 /*
  * The overview fills the viewport exactly and never scrolls.
  *
- * There are no rows: every tile is one full-height column of equal width. Which
- * tiles are on screen at all is decided in overviewLayout.ts, since CSS cannot
- * express "drop tiles from the right until the rest are 80 characters wide,
- * except the one just opened". The gap is applied inline from the same constant
- * that arithmetic uses.
+ * There are no rows: every pane is one full-height column of equal width, and a
+ * tile is as many of those as it has panes open. Which panes are on screen at
+ * all is decided in overviewLayout.ts, since CSS cannot express "drop panes from
+ * the right until the rest are 80 characters wide, except the one just opened".
+ * The gap is applied inline from the same constant that the arithmetic uses.
  */
 .grid {
   display: flex;
@@ -255,7 +255,8 @@ button {
 .tile {
   display: flex;
   flex-direction: column;
-  /* Fills whatever share of the column the layout gave it. */
+  /* Grows in proportion to the panes it holds -- flex-grow is set inline to
+     that count -- so every pane in the grid comes out the same width. */
   flex: 1 1 0;
   min-height: 0;
   background: var(--slab);
@@ -286,15 +287,58 @@ button {
   border-left-color: var(--danger);
 }
 
-.tile__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 10px;
+/*
+ * One bar across the whole tile, however many panes it holds.
+ *
+ * The bar and the body are grids over the same columns, so a panel's controls
+ * land exactly above the pane they drive. The dividers between panes are drawn
+ * in the body only: a line continuing up through the bar would split the tile
+ * into two tiles pushed together, which is the opposite of what the bar is for.
+ */
+.tile__bar {
+  display: grid;
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.tile__seg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
   min-width: 0;
+}
+
+.tile__seg:first-child {
+  padding-left: 10px;
+}
+
+/* Acts on the tile as a whole, so it sits at the tile's right edge. */
+.tile__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.tile__body {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+}
+
+.tile__pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tile__pane + .tile__pane {
+  border-left: 1px solid var(--rule);
 }
 
 .tile__minimize {
@@ -340,7 +384,6 @@ button {
 }
 
 .tile__state {
-  margin-left: auto;
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -423,12 +466,12 @@ button {
 }
 
 /*
- * Terminals is a mode, not a jump, so it reads as a toggle that stays lit while
- * it is on rather than a button you press and forget.
+ * A panel is a state of the worktree, not a place to go, so its control reads
+ * as a toggle that stays lit while the panel is open rather than a button you
+ * press and forget.
  */
 .tile__toggle {
   flex: none;
-  margin-left: 4px;
   padding: 2px 7px;
   border: 1px solid var(--rule-bright);
   border-radius: 2px;
@@ -450,12 +493,19 @@ button {
   border-color: var(--graphite);
 }
 
-/* The terminals tile is a tile like any other; only its header differs. */
+/* Open, but with no room for its pane -- the same "it exists, it is not on
+   screen" distinction the top bar's chips make. */
+.tile__toggle--pushed {
+  opacity: 0.5;
+}
+
+/* The tab strip sits in the bar segment above the pane it drives. It is the
+   part that gives way when a narrow tile has to fit identity and tabs in one
+   segment, so it scrolls rather than pushing the controls off the end. */
 .termtabs {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
   overflow-x: auto;
   scrollbar-width: none;
   min-width: 0;
