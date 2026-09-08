@@ -1,0 +1,20 @@
+{
+  "name": "ide-n-dream",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Claude-native web IDE: many worktrees, many Claude sessions, one screen.",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @ide-n-dream/shared build && pnpm --parallel --filter \"./{shared,server,web}\" dev",
+    "dev:server": "pnpm --filter @ide-n-dream/server dev",
+    "dev:web": "pnpm --filter @ide-n-dream/web dev",
+    "build": "pnpm --filter @ide-n-dream/shared build && pnpm --filter @ide-n-dream/web build && pnpm --filter @ide-n-dream/server build",
+    "start": "pnpm --filter @ide-n-dream/server start",
+    "typecheck": "pnpm --filter @ide-n-dream/shared build && pnpm -r typecheck",
+    "postinstall": "node scripts/ensure-node-pty.mjs",
+    "ensure-native": "node scripts/ensure-node-pty.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,756 @@
+/*
+ * ide-n-dream
+ *
+ * Design thesis: this is a dispatcher, not a dashboard. Its one job is to tell
+ * you which agent is blocked and get you into that worktree fast.
+ *
+ * The rule that follows from that: colour is a scarce resource, spent only on
+ * attention. The entire interface is greyscale except an agent that needs you,
+ * which is amber. Nothing else in the chrome is ever allowed to be saturated,
+ * so a single blocked agent pulls your eye across the room.
+ *
+ * The only motion is the terminal text itself. No spinners, no pulsing borders:
+ * in an app where every tile is genuinely live, added animation is noise.
+ */
+
+:root {
+  /* Ground: cool slate-ink rather than pure black, so terminal blacks read as
+     content and the chrome recedes behind them. */
+  --ink: #10141a;
+  --slab: #171c24;
+  --slab-raised: #1d232d;
+  --rule: #232a35;
+  --rule-bright: #2f3846;
+
+  --bone: #dfe4ec;
+  --graphite: #7d8797;
+  --graphite-dim: #59616e;
+
+  /* The only saturated colour in the interface. Reserved for "needs you". */
+  --signal: #ffb454;
+  --signal-dim: #6b4d21;
+  /* Used at low opacity for selection and focus only, never as decoration. */
+  --pulse: #4b9fd6;
+  --danger: #e5707a;
+
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+  --font-ui: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --rail: 2px;
+  --bar-h: 44px;
+  --radius: 4px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ink);
+  color: var(--bone);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 1px solid var(--pulse);
+  outline-offset: 1px;
+}
+
+/* Micro-labels are the instrument voice: mono, uppercase, tracked out. */
+.micro {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.app {
+  display: grid;
+  grid-template-rows: var(--bar-h) 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- top bar -- */
+
+.topbar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--rule);
+  background: var(--slab);
+  min-width: 0;
+}
+
+.topbar__project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-right: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--bone);
+  white-space: nowrap;
+}
+
+.topbar__project:hover {
+  background: var(--slab-raised);
+}
+
+.topbar__mark {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--graphite);
+  border-left-width: 4px;
+  border-radius: 1px;
+}
+
+/* Worktree tabs are strips, not pills: square, hairline-separated, dense.
+   Position and marking carry the state, the way a flight strip does. */
+.tabs {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  min-width: 0;
+  flex: 1;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-right: 1px solid var(--rule);
+  border-left: var(--rail) solid transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--graphite);
+  white-space: nowrap;
+  position: relative;
+}
+
+.tab:hover {
+  background: var(--slab-raised);
+  color: var(--bone);
+}
+
+.tab--active {
+  background: var(--ink);
+  color: var(--bone);
+  border-left-color: var(--rule-bright);
+}
+
+/* A tab whose agent is waiting gets the signal rail. This is the same language
+   as the overview tiles, so the meaning transfers between views. */
+.tab--waiting {
+  border-left-color: var(--signal);
+  color: var(--signal);
+}
+
+.tab__dirty {
+  font-size: 10px;
+  color: var(--graphite-dim);
+}
+
+.tab__branch {
+  color: var(--graphite-dim);
+}
+
+.topbar__actions {
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+  border-left: 1px solid var(--rule);
+}
+
+.topbar__button {
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  border-right: 1px solid var(--rule);
+}
+
+.topbar__button:last-child {
+  border-right: none;
+}
+
+.topbar__button:hover {
+  background: var(--slab-raised);
+  color: var(--bone);
+}
+
+.topbar__button--active {
+  color: var(--bone);
+  background: var(--slab-raised);
+}
+
+/*
+ * The signature element: a single live readout of how many agents are blocked.
+ * It is the only amber thing in the chrome, and when nothing is waiting it goes
+ * quiet rather than green -- absence of signal, not a second signal.
+ */
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border-right: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
+.waiting--active {
+  color: var(--signal);
+}
+
+.waiting__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+/* ------------------------------------------------------------------ views -- */
+
+.view {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.overview__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 18px 10px;
+}
+
+.overview__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--bone);
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+  padding: 0 18px 18px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  align-content: start;
+}
+
+/* --------------------------------------------------------------- the tile -- */
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+  background: var(--slab);
+  border: 1px solid var(--rule);
+  border-left: var(--rail) solid var(--rule-bright);
+  border-radius: var(--radius);
+  overflow: hidden;
+  text-align: left;
+  min-width: 0;
+}
+
+.tile:hover {
+  border-color: var(--rule-bright);
+}
+
+/* State is carried by the left rail, matching the tabs. Only "waiting" is
+   allowed colour; "working" and "idle" differ only in weight. */
+.tile--waiting {
+  border-left-color: var(--signal);
+  box-shadow: 0 0 0 1px var(--signal-dim);
+}
+
+.tile--working {
+  border-left-color: var(--graphite);
+}
+
+.tile--dead {
+  border-left-color: var(--danger);
+}
+
+.tile__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 0;
+}
+
+.tile__name {
+  color: var(--bone);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile__branch {
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile__state {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
+.tile--waiting .tile__state {
+  color: var(--signal);
+}
+
+.tile__idle {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 16px;
+}
+
+.tile__idle-text {
+  margin: 0;
+  color: var(--graphite);
+  font-size: 12px;
+}
+
+.tile__screen {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #0e1116;
+  padding: 6px 8px;
+}
+
+/* ------------------------------------------------------------ detail view -- */
+
+.detail {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pane__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--slab);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 0;
+}
+
+.pane__title {
+  color: var(--bone);
+}
+
+.pane__hint {
+  margin-left: auto;
+  color: var(--graphite-dim);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 4px 6px 8px;
+  background: #0e1116;
+}
+
+/* The secondary terminal strip: extra shells in the same working directory. */
+.strip {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule);
+  min-height: 0;
+}
+
+.strip__handle {
+  height: 5px;
+  cursor: row-resize;
+  background: var(--slab);
+  border-bottom: 1px solid var(--rule);
+}
+
+.strip__handle:hover {
+  background: var(--rule-bright);
+}
+
+.strip__tabs {
+  display: flex;
+  align-items: stretch;
+  background: var(--slab);
+  border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.strip__tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-right: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.strip__tab:hover {
+  color: var(--bone);
+  background: var(--slab-raised);
+}
+
+.strip__tab--active {
+  color: var(--bone);
+  background: var(--ink);
+}
+
+.strip__close {
+  color: var(--graphite-dim);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.strip__close:hover {
+  color: var(--danger);
+}
+
+.strip__body {
+  flex: 1;
+  min-height: 0;
+  background: #0e1116;
+  padding: 6px 4px 6px 8px;
+}
+
+/* ------------------------------------------------------- empty and errors -- */
+
+.empty {
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 14px;
+  height: 100%;
+  padding: 48px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.empty__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--bone);
+}
+
+.empty__body {
+  margin: 0;
+  color: var(--graphite);
+  line-height: 1.6;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  background: #2a1d1f;
+  border-bottom: 1px solid #4a2c30;
+  color: #f0c7cb;
+  font-size: 12px;
+}
+
+.banner__dismiss {
+  margin-left: auto;
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* ---------------------------------------------------------------- buttons -- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--rule-bright);
+  border-radius: var(--radius);
+  background: var(--slab-raised);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--graphite);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--quiet {
+  background: none;
+  border-color: var(--rule);
+  color: var(--graphite);
+}
+
+.btn--danger {
+  border-color: #5c3036;
+  color: var(--danger);
+}
+
+.btn--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* ----------------------------------------------------------------- dialog -- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(6 8 11 / 72%);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 10;
+}
+
+.dialog {
+  width: min(560px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--slab);
+  border: 1px solid var(--rule-bright);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.dialog__head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.dialog__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone);
+}
+
+.dialog__body {
+  padding: 16px;
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+}
+
+.dialog__foot {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.field__input {
+  padding: 8px 10px;
+  background: var(--ink);
+  border: 1px solid var(--rule-bright);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--bone);
+}
+
+.field__input:focus {
+  outline: none;
+  border-color: var(--pulse);
+}
+
+.field__hint {
+  font-size: 11px;
+  color: var(--graphite-dim);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--graphite);
+  font-size: 12px;
+}
+
+/* The folder picker reads as a path list, in the vernacular of the thing it
+   browses -- monospace rows, repository status called out on the right. */
+.picker {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--ink);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--bone);
+  text-align: left;
+}
+
+.picker__row:last-child {
+  border-bottom: none;
+}
+
+.picker__row:hover {
+  background: var(--slab-raised);
+}
+
+.picker__tag {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
+}
+
+.picker__row--repo .picker__tag {
+  color: var(--bone);
+}
+
+/* The element we hand to xterm.open() must fill its parent, or the fit addon
+   measures a content-sized box and the terminal never grows into the pane. */
+.term-host {
+  width: 100%;
+  height: 100%;
+}
+
+/* xterm needs an explicit size from its container, and its own focus ring
+   duplicates ours. */
+.xterm {
+  height: 100%;
+}
+
+.xterm .xterm-screen {
+  outline: none !important;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ink);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--rule-bright);
+  border-radius: 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

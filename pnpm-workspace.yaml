@@ -1,0 +1,14 @@
+packages:
+  - shared
+  - server
+  - web
+
+# pnpm 11 blocks dependency build scripts until each is decided explicitly.
+allowBuilds:
+  # node-pty has no linux-x64 prebuilt binary, so it must compile from source.
+  # scripts/ensure-node-pty.mjs also does this idempotently, as a safety net for
+  # package managers or versions that skip the script.
+  node-pty: true
+  # esbuild's install script only fetches a binary that its platform-specific
+  # optional dependency already provides, so it is not needed here.
+  esbuild: false
