@@ -197,15 +197,28 @@ export const pruneWorktrees = async (root: string): Promise<void> => {
 }
 
 /**
- * Turn a directory into a usable project: `git init` plus an empty first commit.
+ * Turn a directory into a usable project: `git init` plus a first commit.
  *
  * The commit is not optional. A repository with no commits has no HEAD, and
  * `git worktree add` refuses to run against it ("fatal: not a valid object
  * name: 'HEAD'"), so a freshly created project could not do the one thing this
- * IDE exists for. An empty commit costs nothing and is trivial to amend.
+ * IDE exists for.
+ *
+ * `commitExisting` decides whether files already in the directory go into that
+ * commit. Including them matters more than it looks: a first commit with no
+ * files means every new worktree checks out an empty tree, so the branch you
+ * hand an agent would not contain the project. `git add -A` honours a
+ * .gitignore if one is there.
+ *
+ * `--allow-empty` covers both an empty directory and an opt-out, so there is
+ * one code path either way.
  */
-export const initRepository = async (path: string): Promise<void> => {
+export const initRepository = async (
+  path: string,
+  opts: { commitExisting?: boolean } = {},
+): Promise<void> => {
   await git(path, 'init')
+  if (opts.commitExisting ?? true) await git(path, 'add', '-A')
   await git(path, 'commit', '--allow-empty', '-m', 'Initial commit')
 }
 

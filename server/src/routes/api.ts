@@ -8,6 +8,8 @@ const openProjectBody = z.object({
   path: z.string().min(1),
   /** Create the directory and initialise a repository if it is not there yet. */
   create: z.boolean().default(false),
+  /** With `create`, put files already in the directory into the first commit. */
+  commitExisting: z.boolean().default(true),
 })
 const createWorktreeBody = z.object({
   projectId: z.string().min(1),
@@ -70,8 +72,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   })
 
   app.post('/api/projects', async (request) => {
-    const { path, create } = openProjectBody.parse(request.body)
-    const project = await workspace.openProject(path, { create })
+    const { path, create, commitExisting } = openProjectBody.parse(request.body)
+    const project = await workspace.openProject(path, { create, commitExisting })
     broadcastInvalidate()
     return project
   })

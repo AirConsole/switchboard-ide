@@ -101,7 +101,10 @@ export class Workspace {
    * repository. Without it, a missing path is reported as `path-missing` so the
    * client can offer to create it rather than dead-ending on an error.
    */
-  async openProject(path: string, opts: { create?: boolean } = {}): Promise<Project> {
+  async openProject(
+    path: string,
+    opts: { create?: boolean; commitExisting?: boolean } = {},
+  ): Promise<Project> {
     const target = resolve(expandHome(path))
 
     if (!(await exists(target))) {
@@ -120,9 +123,12 @@ export class Workspace {
 
     if (!(await isGitRepo(target))) {
       if (!opts.create) {
-        throw new HttpError(400, `Not a git repository: ${target}`, 'not-a-repo', { path: target })
+        throw new HttpError(400, `Not a git repository: ${target}`, 'not-a-repo', {
+          path: target,
+          ...(await inspectForInit(target)),
+        })
       }
-      await initRepository(target)
+      await initRepository(target, { commitExisting: opts.commitExisting })
     }
 
     // Normalise to the repo root so opening a subdirectory (or a worktree of the
@@ -224,6 +230,40 @@ export class Workspace {
     )
     const parent = resolve(dir, '..')
     return { path: dir, parent: parent === dir ? null : parent, entries }
+  }
+}
+
+/**
+ * Directories that are heavy, machine-generated and nearly always unwanted in a
+ * first commit. Reported so the client can warn before `git add -A` sweeps one
+ * in, which is tedious to undo once committed.
+ */
+const JUNK_DIRECTORIES = [
+  'node_modules',
+  '.venv',
+  'venv',
+  'dist',
+  'build',
+  'target',
+  '.next',
+  'vendor',
+  '__pycache__',
+]
+
+/** What the client needs to describe initialising an existing directory. */
+const inspectForInit = async (
+  target: string,
+): Promise<{ entries: number; hasGitignore: boolean; junk: string[] }> => {
+  try {
+    const names = await readdir(target)
+    return {
+      entries: names.length,
+      hasGitignore: names.includes('.gitignore'),
+      // Only relevant without a .gitignore; with one, `git add -A` honours it.
+      junk: names.includes('.gitignore') ? [] : names.filter((n) => JUNK_DIRECTORIES.includes(n)),
+    }
+  } catch {
+    return { entries: 0, hasGitignore: false, junk: [] }
   }
 }
 

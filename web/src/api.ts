@@ -50,10 +50,14 @@ export interface BrowseResult {
 export const api = {
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
   browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
-  openProject: (path: string, opts: { create?: boolean } = {}) =>
+  openProject: (path: string, opts: { create?: boolean; commitExisting?: boolean } = {}) =>
     request<Project>('/api/projects', {
       method: 'POST',
-      body: JSON.stringify({ path, create: opts.create ?? false }),
+      body: JSON.stringify({
+        path,
+        create: opts.create ?? false,
+        commitExisting: opts.commitExisting ?? true,
+      }),
     }),
   closeProject: (id: string) => request<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }),
   patchUi: (patch: Partial<UiState>) =>
