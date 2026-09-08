@@ -35,6 +35,18 @@
   --signal-dim: #6b4d21;
   /* Used at low opacity for selection and focus only, never as decoration. */
   --pulse: #4b9fd6;
+
+  /*
+   * The one colour outside amber, and it is not chrome.
+   *
+   * A diff is content, the same exception the terminal already gets -- these are
+   * literally its own green and red, from THEME in TerminalView.tsx. The
+   * greyscale rule governs the interface around content, and a patch stripped of
+   * +/- colour is materially harder to read, which is the opposite of the point
+   * of showing it.
+   */
+  --diff-add: #6bd968;
+  --diff-del: #ff6b6b;
   --danger: #e5707a;
 
   /* One monospace face for the whole app, and it is the one the user's own
@@ -907,4 +919,164 @@ button {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ---------------------------------------------------------------- the git -- */
+
+/*
+ * A worktree's changes: a short list of what changed, and the patch for the one
+ * selected taking the rest of the height.
+ *
+ * That split is deliberate. Reading the patch is the point; the list is only how
+ * you choose one, so it gets the smaller share and scrolls.
+ */
+.git {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.git__list {
+  flex: none;
+  max-height: 38%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.git__heading {
+  padding: 6px 4px 2px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
+}
+
+.git__row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 4px;
+  font: inherit;
+  text-align: left;
+  color: var(--graphite);
+}
+
+.git__row:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+.git__row--on {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+/* Two letters, so it is sized for two letters -- an abbreviated hash gets its
+   own width rather than making every file row carry a hash-sized gap. */
+.git__status {
+  flex: none;
+  min-width: 3ch;
+  color: var(--graphite-dim);
+}
+
+.git__status--hash {
+  min-width: 8ch;
+}
+
+.git__row--on .git__status {
+  color: var(--graphite);
+}
+
+.git__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git__empty {
+  margin: 0;
+  padding: 8px 4px;
+  color: var(--graphite);
+}
+
+.git__diff {
+  flex: 1;
+  min-height: 0;
+  padding-top: 6px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+/* Long lines scroll rather than wrap: a wrapped patch loses the one-line-per-
+   change alignment that makes it readable at all. */
+.diff {
+  min-width: max-content;
+}
+
+.diffline {
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--bone);
+}
+
+.diffline--add {
+  color: var(--diff-add);
+}
+
+.diffline--del {
+  color: var(--diff-del);
+}
+
+.diffline--hunk {
+  color: var(--graphite);
+}
+
+.diffline--meta {
+  color: var(--graphite-dim);
+}
+
+/* The bar segment above the pane: what the comparison is, and a way to re-read
+   it. Right-aligned and divided like the terminal tabs, for the same reasons. */
+.git__bar {
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.git__bar > * + * {
+  border-left: 1px solid var(--rule-bright);
+}
+
+.git__base,
+.git__behind {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
+.git__reload {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.git__reload:hover {
+  color: var(--bone);
+  background: var(--rule-bright);
 }

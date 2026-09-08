@@ -32,7 +32,7 @@ class SocketSink implements Sink {
 export const registerWs = (
   app: FastifyInstance,
   engine: SessionEngine,
-): { broadcastInvalidate: () => void } => {
+): { broadcastInvalidate: () => void; clientCount: () => number } => {
   const sinks = new Set<SocketSink>()
 
   const broadcast = (msg: ServerMsg): void => {
@@ -92,5 +92,9 @@ export const registerWs = (
     })
   })
 
-  return { broadcastInvalidate: () => broadcast({ t: 'invalidate' }) }
+  return {
+    broadcastInvalidate: () => broadcast({ t: 'invalidate' }),
+    /** So work nobody would see -- polling git, say -- can simply not happen. */
+    clientCount: () => sinks.size,
+  }
 }

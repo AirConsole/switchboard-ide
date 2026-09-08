@@ -33,6 +33,15 @@ export interface Worktree {
   missing?: boolean
   /** Changed tracked+untracked entries, for the tab's dirty dot. */
   dirty?: number
+  /**
+   * The commit checked out here.
+   *
+   * Carried so that "something changed in this worktree" can be detected when
+   * the working tree was clean before and after -- an agent committing its work
+   * moves HEAD and leaves `dirty` at zero, and without this that looks like
+   * nothing happened.
+   */
+  head?: string
 }
 
 export type SessionKind = 'claude' | 'shell'
@@ -84,11 +93,11 @@ export interface Session {
  * A panel a worktree can open beside its Claude session.
  *
  * Each open panel takes another column of the worktree's tile, so a worktree is
- * one column wide, or two, or -- once files and git join this union -- three or
- * four. Panels are per-worktree and persistent: minimizing a worktree to the
- * top bar and bringing it back restores the width it had.
+ * one column wide, or two, or -- once files joins this union -- four. Panels are
+ * per-worktree and persistent: minimizing a worktree to the top bar and bringing
+ * it back restores the width it had.
  */
-export type PanelName = 'terminals'
+export type PanelName = 'terminals' | 'git'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
@@ -130,4 +139,51 @@ export interface AppSnapshot {
   worktrees: Worktree[]
   sessions: Session[]
   ui: UiState
+}
+
+/**
+ * One changed file in a worktree.
+ *
+ * `status` is git's own two-letter code (index then worktree, `??` untracked),
+ * kept verbatim rather than flattened to an enum: the pair says things a single
+ * label cannot, like "staged as added, then modified again".
+ */
+export interface FileChange {
+  path: string
+  status: string
+  /** Renames carry where the file came from. */
+  from?: string
+}
+
+/** One commit this worktree's branch has that its base does not. */
+export interface Commit {
+  hash: string
+  /** Abbreviated hash, as git chose to abbreviate it. */
+  short: string
+  subject: string
+  author: string
+  /** Epoch ms of the author date. */
+  at: number
+}
+
+/**
+ * What a worktree has done, committed and not.
+ *
+ * Both halves are needed to answer "what did the agent change here": Claude
+ * normally commits its work, so uncommitted changes alone would be empty
+ * exactly when it finished cleanly.
+ */
+export interface WorktreeChanges {
+  worktreeId: string
+  branch: string | null
+  /**
+   * The ref the commits are measured against, and null when there is nothing
+   * sensible to compare with -- the main worktree, or a repo whose default
+   * branch is the one checked out here.
+   */
+  base: string | null
+  uncommitted: FileChange[]
+  commits: Commit[]
+  /** Commits the base has that this branch does not. Context, not a warning. */
+  behind: number
 }

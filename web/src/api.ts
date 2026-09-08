@@ -1,4 +1,4 @@
-import type { AppSnapshot, Project, Session, UiState, Worktree } from '@ide-n-dream/shared'
+import type { AppSnapshot, Project, Session, UiState, Worktree, WorktreeChanges } from '@ide-n-dream/shared'
 
 /**
  * A failed request, carrying the server's machine-readable `code` so callers can
@@ -72,6 +72,22 @@ export const api = {
       `/api/worktrees/${id}?force=${opts.force}&deleteBranch=${opts.deleteBranch}`,
       { method: 'DELETE' },
     ),
+  changes: (worktreeId: string) =>
+    request<WorktreeChanges>(`/api/worktrees/${worktreeId}/changes`),
+
+  /** The patch for one uncommitted file, or for one commit. */
+  diff: (
+    worktreeId: string,
+    what: { file: string; untracked: boolean; from?: string } | { commit: string },
+  ) => {
+    const query =
+      'commit' in what
+        ? `commit=${encodeURIComponent(what.commit)}`
+        : `file=${encodeURIComponent(what.file)}&untracked=${what.untracked}` +
+          (what.from === undefined ? '' : `&from=${encodeURIComponent(what.from)}`)
+    return request<{ patch: string }>(`/api/worktrees/${worktreeId}/diff?${query}`)
+  },
+
   createSession: (body: { worktreeId: string; kind: 'claude' | 'shell'; title?: string }) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(body) }),
   killSession: (id: string) => request<{ ok: true }>(`/api/sessions/${id}`, { method: 'DELETE' }),

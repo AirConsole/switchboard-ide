@@ -7,6 +7,7 @@ import {
 } from '../terminal/TerminalView.js'
 import { claudeSession, isRunning, stateLabel, terminalSessions } from '../selectors.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
+import { GitBar, GitPane, useGitState } from './GitPane.js'
 import {
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
@@ -33,10 +34,16 @@ const ADD_KEY = '__add'
  * panes do not shuffle underneath you: opening files would always put it in the
  * same place relative to the terminals.
  */
-export const PANELS: readonly PanelName[] = ['terminals']
+export const PANELS: readonly PanelName[] = ['terminals', 'git']
 
 /** What a panel is called in prose, for the toggle's tooltip. */
-const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals' }
+const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals', git: 'changes' }
+
+/** The counts a panel's label can be built from. */
+interface PanelCounts {
+  terminals: number
+  changes: number
+}
 
 /**
  * The toggle's label.
@@ -50,11 +57,17 @@ const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals' }
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
  */
-const panelLabel = (panel: PanelName, terminals: number): string => {
+const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
   switch (panel) {
     case 'terminals':
-      if (terminals === 0) return 'Add Terminal'
-      return terminals === 1 ? '1 Terminal' : `${terminals} Terminals`
+      if (counts.terminals === 0) return 'Add Terminal'
+      return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
+    case 'git':
+      // The count is uncommitted files, the same number the bar already shows
+      // beside the branch. Committed work has no number here because one figure
+      // cannot stand for both, and the panel itself says how many commits.
+      if (counts.changes === 0) return 'Changes'
+      return counts.changes === 1 ? '1 Change' : `${counts.changes} Changes`
   }
 }
 
@@ -230,6 +243,17 @@ const WorktreeTile = ({
    * phone showing only the terminals, they fall back to the one segment there
    * is.
    */
+  // Only reads git while its panel is on screen; see the note on useGitState.
+  const git = useGitState(
+    worktree.id,
+    `${worktree.dirty ?? 0}:${worktree.head ?? ''}`,
+    shownPanes.has('git'),
+  )
+  const counts: PanelCounts = {
+    terminals: terminals.length,
+    changes: worktree.dirty ?? 0,
+  }
+
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
   const minimizeHint = `Click to minimize ${worktree.name} to the top bar`
@@ -271,7 +295,7 @@ const WorktreeTile = ({
                 : `Open ${PANEL_NOUN[panel]} beside Claude`
             }
           >
-            {panelLabel(panel, terminals.length)}
+            {panelLabel(panel, counts)}
           </button>
         )
       })}
@@ -324,6 +348,7 @@ const WorktreeTile = ({
                 onClose={onCloseTerminal}
               />
             )}
+            {pane.kind === 'git' && <GitBar state={git} />}
             {index === controlsIndex && controls}
           </div>
         ))}
@@ -351,6 +376,7 @@ const WorktreeTile = ({
                 onNew={onNewTerminal}
               />
             )}
+            {pane.kind === 'git' && <GitPane state={git} branch={worktree.branch} />}
           </div>
         ))}
       </div>

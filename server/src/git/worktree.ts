@@ -111,6 +111,7 @@ export const listWorktrees = async (projectId: string, root: string): Promise<Wo
       path: w.path,
       isMain,
       missing: w.prunable,
+      ...(w.head === null ? {} : { head: w.head }),
     }
   })
 }

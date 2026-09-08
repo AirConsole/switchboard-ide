@@ -59,6 +59,43 @@ export class Workspace {
     this.cache = null
   }
 
+  /** Signature of everything a client would notice about the worktrees. */
+  private static signature(worktrees: Worktree[]): string {
+    return worktrees
+      .map((w) => `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.missing === true}`)
+      .join('|')
+  }
+
+  private lastSignature: string | null = null
+  private polling = false
+
+  /**
+   * Re-read the worktrees and say whether anything a client can see moved.
+   *
+   * Worktree state was only ever computed when a snapshot was asked for, and
+   * snapshots are only asked for after a mutation or on reconnect -- so a dirty
+   * count was a load-time value, and an agent editing or committing changed
+   * nothing on screen. This is what a caller polls to turn that into a push.
+   *
+   * Overlapping runs are dropped rather than queued: `git status` on a large
+   * repo can outlast the interval, and piling up would only make it worse.
+   */
+  async pollChanged(): Promise<boolean> {
+    if (this.polling) return false
+    this.polling = true
+    try {
+      this.invalidate()
+      const signature = Workspace.signature(await this.worktrees())
+      const changed = this.lastSignature !== null && this.lastSignature !== signature
+      this.lastSignature = signature
+      return changed
+    } catch {
+      return false
+    } finally {
+      this.polling = false
+    }
+  }
+
   async worktrees(): Promise<Worktree[]> {
     const now = Date.now()
     if (this.cache && now - this.cache.at < this.cacheTtlMs) return this.cache.worktrees

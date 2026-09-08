@@ -31,12 +31,42 @@ await app.register(fastifyWebsocket, {
   },
 })
 
-const { broadcastInvalidate } = registerWs(app, engine)
+const { broadcastInvalidate, clientCount } = registerWs(app, engine)
 registerApi(app, { store, engine, workspace, broadcastInvalidate })
 
 // Session changes alter the snapshot (a session dying, for instance), so drop
 // the worktree cache when they happen.
 engine.onSessionChange(() => workspace.invalidate())
+
+/**
+ * Notice when an agent changes the repository.
+ *
+ * Worktree state -- branch, HEAD, dirty count -- was only computed when a
+ * client asked for a snapshot, and snapshots are only asked for after a
+ * mutation or on reconnect. So the dirty count was whatever it had been at page
+ * load, and an agent editing or committing changed nothing on screen: the point
+ * of the git panel is precisely to see that.
+ *
+ * Polled rather than watched, because a watcher would not remove the work. The
+ * only reliable answer to "what changed" comes from git itself, so a filesystem
+ * watch decides *when* to run `git status`, not whether -- and the recursive
+ * watch it would need is the expensive, fragile half (an inotify watch per
+ * directory, node_modules exhausting the limit, an exclude list to maintain).
+ * Watching each worktree's `.git` would be cheap and would catch commits
+ * instantly, but it sees nothing when a file is merely edited, which is most of
+ * what an agent does.
+ *
+ * What it does avoid is spending anything when nobody is looking: with no
+ * client connected there is no snapshot to keep fresh, so the poll does not run
+ * at all.
+ */
+const WORKTREE_POLL_MS = 4000
+setInterval(() => {
+  if (clientCount() === 0) return
+  void workspace.pollChanged().then((changed) => {
+    if (changed) broadcastInvalidate()
+  })
+}, WORKTREE_POLL_MS).unref()
 
 /**
  * In dev the Vite server serves the UI and proxies here, so there is no build to

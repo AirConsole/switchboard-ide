@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
 import { HttpError, type Workspace } from '../workspace.js'
+import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 
 const openProjectBody = z.object({
   path: z.string().min(1),
@@ -34,6 +35,16 @@ const queryFlag = z
 const removeWorktreeQuery = z.object({
   force: queryFlag,
   deleteBranch: queryFlag,
+})
+const diffQuery = z.object({
+  /** An uncommitted file, relative to the worktree. */
+  file: z.string().min(1).optional(),
+  /** Or a commit to show the patch of. Mutually exclusive with `file`. */
+  commit: z.string().min(1).optional(),
+  /** An untracked file has no HEAD side, so it is diffed against /dev/null. */
+  untracked: queryFlag,
+  /** Where a renamed file came from, so the diff reads as a rename. */
+  from: z.string().min(1).optional(),
 })
 const createSessionBody = z.object({
   worktreeId: z.string().min(1),
@@ -130,6 +141,33 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     })
     broadcastInvalidate()
     return { ok: true }
+  })
+
+  /*
+   * What a worktree has changed, committed and not.
+   *
+   * Read-only on purpose: in this workflow the agent commits its own work, so
+   * the human's missing capability is seeing what it did, not driving git.
+   */
+  app.get('/api/worktrees/:id/changes', async (request) => {
+    const { id } = request.params as { id: string }
+    const { worktree, project } = await workspace.resolve(id)
+    return worktreeChanges({ worktreeId: worktree.id, root: project.root, path: worktree.path })
+  })
+
+  app.get('/api/worktrees/:id/diff', async (request) => {
+    const { id } = request.params as { id: string }
+    const query = diffQuery.parse(request.query)
+    const { worktree } = await workspace.resolve(id)
+    if (query.commit !== undefined) {
+      return { patch: await commitDiff(worktree.path, query.commit) }
+    }
+    if (query.file === undefined) {
+      throw new HttpError(400, 'Ask for either a file or a commit')
+    }
+    return {
+      patch: await fileDiff(worktree.path, query.file, query.untracked, query.from),
+    }
   })
 
   app.post('/api/sessions', async (request) => {
