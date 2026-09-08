@@ -92,6 +92,8 @@ export interface SessionStateMsg {
   liveness: SessionLiveness
   attention: AttentionState
   lastOutputAt: number
+  /** What the pane is running; changes as you use the terminal. */
+  command?: string
 }
 
 /** Something changed that invalidates the REST snapshot (session/worktree CRUD). */

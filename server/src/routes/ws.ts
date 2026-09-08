@@ -47,6 +47,7 @@ export const registerWs = (
       liveness: session.liveness,
       attention: session.attention,
       lastOutputAt: session.lastOutputAt,
+      ...(session.command === undefined ? {} : { command: session.command }),
     })
   })
 

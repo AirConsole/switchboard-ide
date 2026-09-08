@@ -14,8 +14,10 @@ worktree fast.
   no tile, and its chip keeps carrying state — so a minimized worktree can still
   tell you Claude is waiting on you. Click a chip to show or hide its tile.
 - **Terminals** — a per-worktree toggle that focuses one worktree: its Claude
-  tile plus a tile holding its shells, with everything else minimized to the top
-  bar. Switching it off restores exactly what was expanded before.
+  tile plus a tile holding its terminals, with everything else minimized to the
+  top bar. Each terminal is labelled with what it is running (`bash`, `vim`,
+  `npm`), and switching the toggle off restores exactly what was expanded
+  before.
 - **Worktrees** — create a branch + worktree and start Claude in it in one step;
   remove it (and optionally its branch) when done. Worktrees go in
   `<repo>/.claude/worktrees/<branch>`, which is where `claude --worktree` puts

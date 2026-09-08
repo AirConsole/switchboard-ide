@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
 import { TerminalView, TERMINAL_FONT_FAMILY } from '../terminal/TerminalView.js'
-import { claudeSession, isRunning, shellSessions, stateLabel } from '../selectors.js'
-import { ShellsTile } from './ShellsTile.js'
+import { claudeSession, isRunning, stateLabel, terminalSessions } from '../selectors.js'
+import { TerminalsTile } from './TerminalsTile.js'
 import {
   MIN_TILE_COLUMNS,
   TILE_CHROME_WIDTH,
@@ -29,7 +29,7 @@ const ADD_TILE_THRESHOLD = 2
 
 type Cell =
   | { kind: 'worktree'; key: string; worktree: Worktree }
-  | { kind: 'shells'; key: string; worktree: Worktree }
+  | { kind: 'terminals'; key: string; worktree: Worktree }
   | { kind: 'add'; key: string }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
@@ -110,8 +110,8 @@ const WorktreeTile = ({
           onClick={onToggleTerminals}
           title={
             terminalsOpen
-              ? 'Close the shells and restore the other worktrees'
-              : 'Show this worktree’s shells and minimize the others'
+              ? 'Close the terminals and restore the other worktrees'
+              : 'Show this worktree’s terminals and minimize the others'
           }
         >
           Terminals
@@ -169,38 +169,38 @@ export interface OverviewProps {
   sessions: Session[]
   minimized: string[]
   terminalsFor: string | null
-  activeShellByWorktree: Record<string, string>
+  activeTerminalByWorktree: Record<string, string>
   onStart: (worktreeId: string) => void
   onMinimize: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onToggleTerminals: (worktreeId: string) => void
   onNewWorktree: () => void
-  onSelectShell: (worktreeId: string, sessionId: string) => void
-  onNewShell: (worktreeId: string) => void
-  onCloseShell: (sessionId: string) => void
+  onSelectTerminal: (worktreeId: string, sessionId: string) => void
+  onNewTerminal: (worktreeId: string) => void
+  onCloseTerminal: (sessionId: string) => void
 }
 
 /**
  * The whole app: a grid of tiles.
  *
- * Cells are the expanded worktrees, plus the shells tile of whichever worktree
- * has Terminals on, placed right after it. They are all laid out by the same
- * rules, so the shells tile is as wide and as legible as any Claude tile.
+ * Cells are the expanded worktrees, plus the terminals tile of whichever
+ * worktree has Terminals on, placed right after it. They are all laid out by
+ * the same rules, so it is as wide and as legible as any Claude tile.
  */
 export const Overview = ({
   worktrees,
   sessions,
   minimized,
   terminalsFor,
-  activeShellByWorktree,
+  activeTerminalByWorktree,
   onStart,
   onMinimize,
   onRemoveWorktree,
   onToggleTerminals,
   onNewWorktree,
-  onSelectShell,
-  onNewShell,
-  onCloseShell,
+  onSelectTerminal,
+  onNewTerminal,
+  onCloseTerminal,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -211,7 +211,7 @@ export const Overview = ({
     if (minimizedIds.has(worktree.id)) continue
     cells.push({ kind: 'worktree', key: worktree.id, worktree })
     if (worktree.id === terminalsFor) {
-      cells.push({ kind: 'shells', key: `${worktree.id}:shells`, worktree })
+      cells.push({ kind: 'terminals', key: `${worktree.id}:terminals`, worktree })
     }
   }
   // With little to show, the grid has room to be the action and the explanation
@@ -234,18 +234,17 @@ export const Overview = ({
                 if (cell.kind === 'add') {
                   return <AddTile key={cell.key} onClick={onNewWorktree} />
                 }
-                if (cell.kind === 'shells') {
-                  const shells = shellSessions(sessions, cell.worktree.id)
+                if (cell.kind === 'terminals') {
                   return (
-                    <ShellsTile
+                    <TerminalsTile
                       key={cell.key}
                       worktree={cell.worktree}
-                      shells={shells}
-                      activeShellId={activeShellByWorktree[cell.worktree.id] ?? null}
+                      terminals={terminalSessions(sessions, cell.worktree.id)}
+                      activeTerminalId={activeTerminalByWorktree[cell.worktree.id] ?? null}
                       fontSize={TILE_FONT_SIZE}
-                      onSelectShell={(sessionId) => onSelectShell(cell.worktree.id, sessionId)}
-                      onNewShell={() => onNewShell(cell.worktree.id)}
-                      onCloseShell={onCloseShell}
+                      onSelect={(sessionId) => onSelectTerminal(cell.worktree.id, sessionId)}
+                      onNew={() => onNewTerminal(cell.worktree.id)}
+                      onClose={onCloseTerminal}
                     />
                   )
                 }

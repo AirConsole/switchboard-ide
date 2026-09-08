@@ -70,6 +70,12 @@ export interface Session {
   /** Epoch ms of the last byte of output. */
   lastOutputAt: number
   createdAt: number
+  /**
+   * The command the pane is currently running (`bash`, `vim`, `npm`, ...), as
+   * tmux reports it. Refreshed by the poller, and used to label a terminal with
+   * what it is doing rather than an arbitrary number.
+   */
+  command?: string
   /** Ready-to-paste escape hatch, e.g. `tmux -L ide-n-dream attach -t idn-V1StGXR8`. */
   attachCommand: string
 }
@@ -91,8 +97,8 @@ export interface UiState {
    * restores the layout instead of leaving everything collapsed.
    */
   minimizedBeforeTerminals: string[] | null
-  /** Selected shell per worktree, so its shells tile reopens where you left it. */
-  activeShellByWorktree: Record<string, string>
+  /** Selected terminal per worktree, so its tile reopens where you left it. */
+  activeTerminalByWorktree: Record<string, string>
 }
 
 export const defaultUiState = (): UiState => ({
@@ -101,7 +107,7 @@ export const defaultUiState = (): UiState => ({
   minimized: [],
   terminalsFor: null,
   minimizedBeforeTerminals: null,
-  activeShellByWorktree: {},
+  activeTerminalByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */

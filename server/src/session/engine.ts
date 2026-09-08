@@ -86,6 +86,8 @@ class LiveSession {
   lastOutputAt = Date.now()
   dead = false
   deadStatus: number | null = null
+  /** What the pane is running, refreshed by the poller. */
+  command: string | null = null
 
   /** Sole input authority; see FocusMsg in the shared protocol. */
   inputOwner: Sink | null = null
@@ -295,6 +297,7 @@ class LiveSession {
       ...this.record,
       liveness: this.liveness,
       exitStatus: this.deadStatus,
+      ...(this.command === null ? {} : { command: this.command }),
       attention: this.attention,
       lastOutputAt: this.lastOutputAt,
     }
@@ -388,6 +391,11 @@ export class SessionEngine {
         continue
       }
       if (pane.dead && live.liveness === 'live') live.markDead(pane.deadStatus)
+      if (pane.command !== '' && pane.command !== live.command) {
+        live.command = pane.command
+        // The label changed, so the UI needs to hear about it.
+        this.emit(live)
+      }
       live.refreshAttention()
     }
   }

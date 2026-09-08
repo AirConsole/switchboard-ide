@@ -6,7 +6,7 @@ import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { Overview } from './views/Overview.js'
-import { claudeSession, orderWorktrees, shellSessions } from './selectors.js'
+import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
 
 export const App = (): React.ReactElement => {
   const { projects, worktrees, sessions, ui, loaded, error, refresh, setUi, setError } = useStore()
@@ -40,12 +40,17 @@ export const App = (): React.ReactElement => {
     void request.then(() => refresh()).catch(fail)
   }
 
-  const newShell = (worktreeId: string): void => {
+  const newTerminal = (worktreeId: string): void => {
+    // The wire calls it a shell -- the pane runs $SHELL -- while the interface
+    // calls it a terminal.
     void api
       .createSession({ worktreeId, kind: 'shell' })
       .then((session) => {
         setUi({
-          activeShellByWorktree: { ...ui.activeShellByWorktree, [worktreeId]: session.id },
+          activeTerminalByWorktree: {
+            ...ui.activeTerminalByWorktree,
+            [worktreeId]: session.id,
+          },
         })
         return refresh()
       })
@@ -57,8 +62,8 @@ export const App = (): React.ReactElement => {
     const minimized = wasMinimized
       ? ui.minimized.filter((id) => id !== worktreeId)
       : [...ui.minimized, worktreeId]
-    // Minimizing the worktree whose shells are open closes them too: the tile
-    // belongs to a worktree that is no longer on screen.
+    // Minimizing the worktree whose terminals are open closes them too: the
+    // tile belongs to a worktree that is no longer on screen.
     const closesTerminals = !wasMinimized && ui.terminalsFor === worktreeId
     setUi({
       minimized,
@@ -67,10 +72,10 @@ export const App = (): React.ReactElement => {
   }
 
   /**
-   * Terminals is a focus mode: it shows one worktree's Claude and its shells,
-   * and minimizes everything else. Switching it off restores exactly what was
-   * expanded before, so focusing is a reversible detour rather than something
-   * you have to rebuild afterwards.
+   * Terminals is a focus mode: it shows one worktree's Claude and its
+   * terminals, and minimizes everything else. Switching it off restores exactly
+   * what was expanded before, so focusing is a reversible detour rather than
+   * something you have to rebuild afterwards.
    */
   const toggleTerminals = (worktreeId: string): void => {
     if (ui.terminalsFor === worktreeId) {
@@ -89,7 +94,7 @@ export const App = (): React.ReactElement => {
       minimized: projectWorktrees.filter((w) => w.id !== worktreeId).map((w) => w.id),
     })
     // The tile is only useful with something in it.
-    if (shellSessions(sessions, worktreeId).length === 0) newShell(worktreeId)
+    if (terminalSessions(sessions, worktreeId).length === 0) newTerminal(worktreeId)
   }
 
   if (!loaded) {
@@ -194,19 +199,22 @@ export const App = (): React.ReactElement => {
         sessions={sessions}
         minimized={ui.minimized}
         terminalsFor={ui.terminalsFor}
-        activeShellByWorktree={ui.activeShellByWorktree}
+        activeTerminalByWorktree={ui.activeTerminalByWorktree}
         onStart={startClaude}
         onMinimize={toggleMinimized}
         onRemoveWorktree={setRemoving}
         onToggleTerminals={toggleTerminals}
         onNewWorktree={() => setShowNewWorktree(true)}
-        onSelectShell={(worktreeId, sessionId) =>
+        onSelectTerminal={(worktreeId, sessionId) =>
           setUi({
-            activeShellByWorktree: { ...ui.activeShellByWorktree, [worktreeId]: sessionId },
+            activeTerminalByWorktree: {
+              ...ui.activeTerminalByWorktree,
+              [worktreeId]: sessionId,
+            },
           })
         }
-        onNewShell={newShell}
-        onCloseShell={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
+        onNewTerminal={newTerminal}
+        onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />
 
       {dialogs}

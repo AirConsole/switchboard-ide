@@ -35,7 +35,12 @@ interface AppState extends AppSnapshot {
   setUi: (patch: Partial<UiState>) => void
   applySessionState: (
     sessionId: string,
-    next: { liveness: SessionLiveness; attention: AttentionState; lastOutputAt: number },
+    next: {
+      liveness: SessionLiveness
+      attention: AttentionState
+      lastOutputAt: number
+      command?: string
+    },
   ) => void
   setError: (message: string | null) => void
   worktreesForActiveProject: () => Worktree[]
@@ -46,7 +51,7 @@ let uiSaveTimer: number | null = null
 /**
  * Changes waiting to be written. They accumulate rather than replace: two
  * setUi calls inside the debounce window are common (switching Terminals on
- * also selects a shell), and sending only the last one silently dropped the
+ * also selects a terminal), and sending only the last one silently dropped the
  * first -- the focus mode never reached the server and did not survive a
  * reload.
  */
@@ -124,6 +129,9 @@ export const bindSocketToStore = (): void => {
       liveness: msg.liveness,
       attention: msg.attention,
       lastOutputAt: msg.lastOutputAt,
+      // Omitted rather than sent as undefined, so a message without it does not
+      // wipe the label the session already had.
+      ...(msg.command === undefined ? {} : { command: msg.command }),
     })
   })
   terminalSocket.onInvalidate(() => void useStore.getState().refresh())

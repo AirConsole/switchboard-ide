@@ -4,7 +4,14 @@ import type { Session, Worktree } from '@ide-n-dream/shared'
 export const claudeSession = (sessions: Session[], worktreeId: string): Session | undefined =>
   sessions.find((s) => s.worktreeId === worktreeId && s.kind === 'claude')
 
-export const shellSessions = (sessions: Session[], worktreeId: string): Session[] =>
+/**
+ * The worktree's terminals.
+ *
+ * The wire calls these `shell` sessions, because the pane literally runs $SHELL
+ * and that kind is recorded in tmux metadata that running sessions are adopted
+ * by. The interface calls them terminals.
+ */
+export const terminalSessions = (sessions: Session[], worktreeId: string): Session[] =>
   sessions.filter((s) => s.worktreeId === worktreeId && s.kind === 'shell')
 
 /**
