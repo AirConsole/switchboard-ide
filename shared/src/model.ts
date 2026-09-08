@@ -60,6 +60,12 @@ export interface Session {
   cols: number
   rows: number
   liveness: SessionLiveness
+  /**
+   * Exit status once `liveness` is dead: 0 for a deliberate exit, non-zero for
+   * a failure, null when tmux did not report one. Lets the UI tell "you typed
+   * /exit" apart from "it crashed".
+   */
+  exitStatus?: number | null
   attention: AttentionState
   /** Epoch ms of the last byte of output. */
   lastOutputAt: number

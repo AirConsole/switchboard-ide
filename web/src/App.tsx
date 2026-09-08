@@ -8,7 +8,7 @@ import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { SplitView } from './views/SplitView.js'
 import { WorktreeView } from './views/WorktreeView.js'
-import { orderWorktrees, shellSessions } from './selectors.js'
+import { claudeSession, orderWorktrees, shellSessions } from './selectors.js'
 
 export const App = (): React.ReactElement => {
   const {
@@ -58,10 +58,15 @@ export const App = (): React.ReactElement => {
   }
 
   const startClaude = (worktreeId: string): void => {
-    void api
-      .createSession({ worktreeId, kind: 'claude' })
-      .then(() => refresh())
-      .catch(fail)
+    const existing = claudeSession(sessions, worktreeId)
+    // A worktree has one Claude session. If it exited, revive that one in place
+    // -- respawning keeps its tmux session and history -- rather than leaving a
+    // dead session behind and stacking a second one beside it.
+    if (existing && existing.liveness !== 'dead') return
+    const request = existing
+      ? api.respawnSession(existing.id)
+      : api.createSession({ worktreeId, kind: 'claude' })
+    void request.then(() => refresh()).catch(fail)
   }
 
   const newShell = (worktreeId: string): void => {

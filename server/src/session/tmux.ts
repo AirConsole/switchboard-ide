@@ -95,11 +95,14 @@ export const hasSession = async (name: string): Promise<boolean> => {
 export const exactTarget = (name: string): string => `=${name}`
 
 /**
- * `set-option`/`show-options` take a *target-pane*, which rejects the `=name`
- * form outright ("no such session: =idn-x") even though every session-targeting
- * command accepts it. Verified on tmux 3.3a. Hence the bare name here.
+ * Target for commands that take a *target-pane* rather than a target-session:
+ * set-option, show-options and respawn-pane.
+ *
+ * These reject the `=name` form outright ("no such session: =idn-x" /
+ * "can't find pane: =idn-x") even though every session-targeting command
+ * accepts it. Verified on tmux 3.3a. Hence the bare name here.
  */
-export const optionTarget = (name: string): string => name
+export const paneTarget = (name: string): string => name
 
 /** tmux forbids `.` and `:` in session names (they are target separators). */
 export const isValidSessionName = (name: string): boolean =>
@@ -183,13 +186,13 @@ export interface SessionMeta {
 }
 
 export const writeMeta = async (name: string, meta: SessionMeta): Promise<void> => {
-  await tmux('set-option', '-t', optionTarget(name), META_OPTION, JSON.stringify(meta))
+  await tmux('set-option', '-t', paneTarget(name), META_OPTION, JSON.stringify(meta))
 }
 
 /** Read one session's metadata. Missing option yields '' and exit 0 under -qv. */
 export const readMeta = async (name: string): Promise<SessionMeta | null> => {
   try {
-    const { stdout } = await tmux('show-options', '-t', optionTarget(name), '-qv', META_OPTION)
+    const { stdout } = await tmux('show-options', '-t', paneTarget(name), '-qv', META_OPTION)
     return parseMeta(stdout.trim())
   } catch {
     return null
@@ -332,7 +335,8 @@ export const respawnSession = async (
   command: string,
   args: string[] = [],
 ): Promise<void> => {
-  await tmux('respawn-pane', '-k', '-t', exactTarget(name), '--', command, ...args)
+  // A pane target, so the bare name -- see paneTarget.
+  await tmux('respawn-pane', '-k', '-t', paneTarget(name), '--', command, ...args)
 }
 
 /** Args for a node-pty spawn of `tmux` that attaches to one session. */

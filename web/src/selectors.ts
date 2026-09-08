@@ -35,8 +35,15 @@ export const orderWorktrees = (worktrees: Worktree[], tabOrder: string[]): Workt
 
 export const stateLabel = (session: Session | undefined): string => {
   if (!session) return 'not running'
-  if (session.liveness === 'dead') return 'exited'
+  if (session.liveness === 'dead') {
+    // A deliberate /exit reports 0; anything else is worth showing.
+    return session.exitStatus ? `exited (${session.exitStatus})` : 'exited'
+  }
   if (session.attention === 'needs-you') return 'needs you'
   if (session.attention === 'working') return 'working'
   return 'idle'
 }
+
+/** Whether a session is present AND still running. */
+export const isRunning = (session: Session | undefined): boolean =>
+  session !== undefined && session.liveness !== 'dead'

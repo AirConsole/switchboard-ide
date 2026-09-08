@@ -294,6 +294,7 @@ class LiveSession {
     return {
       ...this.record,
       liveness: this.liveness,
+      exitStatus: this.deadStatus,
       attention: this.attention,
       lastOutputAt: this.lastOutputAt,
     }
