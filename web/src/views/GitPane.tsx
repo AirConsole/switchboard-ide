@@ -21,6 +21,22 @@ export type Selection =
  */
 const MAX_DIFF_LINES = 3000
 
+/**
+ * How often an open panel re-reads git for itself.
+ *
+ * It has to, because no cheap signal notices the commonest thing an agent does.
+ * The server pushes when a worktree's dirty count or HEAD moves, and neither
+ * changes when a file already in the list is edited again -- so the panel sat
+ * showing a patch that was minutes out of date while the count beside it stayed
+ * correct, which read as "the chip updates and the view does not".
+ *
+ * Only a panel actually on screen polls, so the cost is proportional to what is
+ * being watched rather than to how many worktrees exist. Results are compared
+ * before they are stored, so an unchanged patch re-renders nothing and cannot
+ * throw away your scroll position.
+ */
+const POLL_MS = 3000
+
 export interface GitState {
   changes: WorktreeChanges | null
   patch: string | null
@@ -54,6 +70,13 @@ export const useGitState = (
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
+  // Only while the panel is on screen; see the note on POLL_MS.
+  useEffect(() => {
+    if (!enabled) return
+    const timer = setInterval(reload, POLL_MS)
+    return () => clearInterval(timer)
+  }, [enabled, reload])
+
   useEffect(() => {
     if (!enabled) return
     let live = true
@@ -61,7 +84,9 @@ export const useGitState = (
       .changes(worktreeId)
       .then((next) => {
         if (!live) return
-        setChanges(next)
+        setChanges((prev) =>
+          prev !== null && JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+        )
         setError(null)
       })
       .catch((err: unknown) => {
@@ -109,7 +134,9 @@ export const useGitState = (
     void api
       .diff(worktreeId, what)
       .then((res) => {
-        if (live) setPatch(res.patch)
+        // Reference equality is what stops the diff re-rendering every poll,
+        // which would also reset the scroll position under the reader.
+        if (live) setPatch((prev) => (prev === res.patch ? prev : res.patch))
       })
       .catch((err: unknown) => {
         if (live) setError(err instanceof Error ? err.message : String(err))
