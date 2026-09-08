@@ -43,9 +43,9 @@ const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals' }
  *
  * Terminals count themselves rather than repeating the panel's name: the number
  * is the useful part at a glance, and with none open the toggle says what the
- * click will actually do, which is make one. The count is of the terminals the
- * panel would show, exited ones included -- a label reading "new" over a tab
- * strip that already has a tab in it would be a contradiction.
+ * click will actually do, which is add one. The count is of the terminals the
+ * panel would show, exited ones included -- a label offering to add the first
+ * one over a tab strip that already has a tab in it would contradict itself.
  *
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
@@ -53,7 +53,7 @@ const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals' }
 const panelLabel = (panel: PanelName, terminals: number): string => {
   switch (panel) {
     case 'terminals':
-      if (terminals === 0) return 'New Terminal'
+      if (terminals === 0) return 'Add Terminal'
       return terminals === 1 ? '1 Terminal' : `${terminals} Terminals`
   }
 }

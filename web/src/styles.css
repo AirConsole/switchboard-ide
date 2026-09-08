@@ -355,6 +355,24 @@ button {
   min-width: 0;
 }
 
+/*
+ * A hairline between adjacent controls, at the same weight as the bar's own
+ * bottom edge.
+ *
+ * Without frames the controls had nothing to delimit them and read as a run of
+ * words; a full-height rule between them is what makes each one legible as its
+ * own button without putting a box back around it. It falls between controls
+ * only, so the status label that leads the group and the outermost button both
+ * stay open to the bar.
+ *
+ * At --rule-bright rather than --rule: the bar's own edge can afford to recede,
+ * a line that has to separate two adjacent targets cannot. It disappears where
+ * a control is filled, which is the one place the fill already does the job.
+ */
+.tile__controls > * + * {
+  border-left: 1px solid var(--graphite-dim);
+}
+
 .tile__body {
   display: grid;
   flex: 1;
@@ -540,6 +558,10 @@ button {
   font-size: 12px;
   color: var(--graphite);
   white-space: nowrap;
+}
+
+.termtab + .termtab {
+  border-left: 1px solid var(--graphite-dim);
 }
 
 .termtab:hover {
