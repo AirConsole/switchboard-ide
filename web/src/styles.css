@@ -26,6 +26,10 @@
   --graphite: #7d8797;
   --graphite-dim: #59616e;
 
+  /* The terminal ground. Must match THEME.background in TerminalView.tsx, or
+     the padding around a terminal shows as a visible frame. */
+  --terminal-bg: #0e1116;
+
   /* The only saturated colour in the interface. Reserved for "needs you". */
   --signal: #ffb454;
   --signal-dim: #6b4d21;
@@ -409,7 +413,7 @@ button {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: #0e1116;
+  background: var(--terminal-bg);
   padding: 6px 4px 6px 8px;
 }
 
@@ -501,11 +505,17 @@ button {
   white-space: nowrap;
 }
 
-.terminal {
+/*
+ * NOT `.terminal`: xterm.js puts that class on its own root element, so a rule
+ * named `.terminal` also styles xterm's internals. This padding landing on
+ * xterm's root shrank its rendered screen inside its viewport, and the viewport
+ * defaults to pure black, which showed as a black frame around every terminal.
+ */
+.pane__terminal {
   flex: 1;
   min-height: 0;
   padding: 6px 4px 6px 8px;
-  background: #0e1116;
+  background: var(--terminal-bg);
 }
 
 /* The secondary terminal strip: extra shells in the same working directory. */
@@ -571,7 +581,7 @@ button {
 .strip__body {
   flex: 1;
   min-height: 0;
-  background: #0e1116;
+  background: var(--terminal-bg);
   padding: 6px 4px 6px 8px;
 }
 
@@ -809,6 +819,15 @@ button {
    duplicates ours. */
 .xterm {
   height: 100%;
+}
+
+/*
+ * xterm.css paints the viewport pure black so the scrollbar looks opaque on
+ * macOS. Transparent instead, so any gap between the rendered screen and its
+ * container shows the terminal ground rather than a black band.
+ */
+.xterm .xterm-viewport {
+  background-color: transparent;
 }
 
 .xterm .xterm-screen {

@@ -106,7 +106,7 @@ export const WorktreeView = ({
           </span>
         </div>
         {claude ? (
-          <div className="terminal">
+          <div className="pane__terminal">
             <TerminalView session={claude} primary={true} />
           </div>
         ) : (
