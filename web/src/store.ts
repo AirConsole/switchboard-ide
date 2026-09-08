@@ -43,6 +43,14 @@ interface AppState extends AppSnapshot {
 }
 
 let uiSaveTimer: number | null = null
+/**
+ * Changes waiting to be written. They accumulate rather than replace: two
+ * setUi calls inside the debounce window are common (switching Terminals on
+ * also selects a shell), and sending only the last one silently dropped the
+ * first -- the focus mode never reached the server and did not survive a
+ * reload.
+ */
+let pendingUiPatch: Partial<UiState> = {}
 
 export const useStore = create<AppState>((set, get) => ({
   projects: [],
@@ -82,11 +90,14 @@ export const useStore = create<AppState>((set, get) => ({
     const ui = { ...get().ui, ...patch }
     set({ ui })
     localStorage.setItem(UI_CACHE_KEY, JSON.stringify(ui))
-    // Debounced: pane drags and tab switches would otherwise write on every frame.
+    // Debounced: rapid toggles would otherwise write on every click.
+    pendingUiPatch = { ...pendingUiPatch, ...patch }
     if (uiSaveTimer !== null) window.clearTimeout(uiSaveTimer)
     uiSaveTimer = window.setTimeout(() => {
       uiSaveTimer = null
-      void api.patchUi(patch).catch(() => {})
+      const body = pendingUiPatch
+      pendingUiPatch = {}
+      void api.patchUi(body).catch(() => {})
     }, 200)
   },
 

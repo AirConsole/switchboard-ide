@@ -16,10 +16,7 @@ export const worktreeNeedsYou = (sessions: Session[], worktreeId: string): boole
     (s) => s.worktreeId === worktreeId && s.kind === 'claude' && s.attention === 'needs-you',
   )
 
-export const waitingCount = (sessions: Session[]): number =>
-  sessions.filter((s) => s.kind === 'claude' && s.attention === 'needs-you').length
-
-/** Main worktree first, then alphabetical, with the user's tab order applied. */
+/** Main worktree first, then alphabetical, with the user's chip order applied. */
 export const orderWorktrees = (worktrees: Worktree[], tabOrder: string[]): Worktree[] => {
   const rank = new Map(tabOrder.map((id, index) => [id, index]))
   return [...worktrees].sort((a, b) => {

@@ -74,39 +74,34 @@ export interface Session {
   attachCommand: string
 }
 
-export type ViewName = 'split' | 'detail'
-
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
   activeProjectId: string | null
-  view: ViewName
-  activeWorktreeId: string | null
-  /** Focused session per worktree, so switching tabs returns you where you were. */
-  activeSessionByWorktree: Record<string, string>
-  /** Worktree tab order, by worktree id. */
+  /** Worktree order in the top bar, by id. */
   tabOrder: string[]
   /**
-   * Worktrees shown as a title bar only in the overview, by id. They sort to
-   * the bottom, and a column of nothing but these is folded into its neighbour.
+   * Worktrees present only in the top bar, by id: no tile in the grid. Their
+   * chip still carries state, so a minimized worktree can still call for you.
    */
   minimized: string[]
-  /** Height of the secondary terminal strip in the detail view, in px. */
-  terminalStripHeight: number
-  /** Width of the (v2) side panel, in px. */
-  sidePanelWidth: number
-  sidePanelOpen: boolean
+  /** The worktree whose shells tile is open, if any. */
+  terminalsFor: string | null
+  /**
+   * What was minimized before Terminals was switched on, so switching it off
+   * restores the layout instead of leaving everything collapsed.
+   */
+  minimizedBeforeTerminals: string[] | null
+  /** Selected shell per worktree, so its shells tile reopens where you left it. */
+  activeShellByWorktree: Record<string, string>
 }
 
 export const defaultUiState = (): UiState => ({
   activeProjectId: null,
-  view: 'split',
-  activeWorktreeId: null,
-  activeSessionByWorktree: {},
   tabOrder: [],
   minimized: [],
-  terminalStripHeight: 260,
-  sidePanelWidth: 320,
-  sidePanelOpen: false,
+  terminalsFor: null,
+  minimizedBeforeTerminals: null,
+  activeShellByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */

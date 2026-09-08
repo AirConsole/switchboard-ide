@@ -21,6 +21,27 @@ export interface PersistedState {
 
 const emptyState = (): PersistedState => ({ version: 1, projects: [], ui: defaultUiState() })
 
+/**
+ * Merge stored UI state over the defaults, keeping only keys the current shape
+ * declares. Retired fields then drop out of state.json on first load rather
+ * than lingering there forever, confusing anyone who reads the file.
+ */
+const pickKnownUiKeys = (stored: unknown): UiState => {
+  const defaults = defaultUiState()
+  if (typeof stored !== 'object' || stored === null) return defaults
+  const source = stored as Record<string, unknown>
+  const result = { ...defaults }
+  for (const key of Object.keys(defaults) as (keyof UiState)[]) {
+    if (source[key] !== undefined) {
+      // The shape is the authority on which keys exist; the values themselves
+      // come from a file the user could have edited, so they stay unchecked
+      // beyond being present.
+      ;(result as Record<string, unknown>)[key] = source[key]
+    }
+  }
+  return result
+}
+
 export class StateStore {
   private state: PersistedState = emptyState()
   private saveTimer: NodeJS.Timeout | null = null
@@ -40,7 +61,7 @@ export class StateStore {
           projects: (Array.isArray(candidate.projects) ? candidate.projects : []).map(
             (project) => ({ ...project, worktreeRoot: defaultWorktreeRoot(project.root) }),
           ),
-          ui: { ...defaultUiState(), ...(candidate.ui ?? {}) },
+          ui: pickKnownUiKeys(candidate.ui),
         }
       }
     } catch {

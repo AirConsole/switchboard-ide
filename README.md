@@ -6,11 +6,16 @@ worktree fast.
 
 ## What it does
 
-- **Overview** — every worktree as a live, interactive terminal tile, sized so
-  each gets at least 80 columns. A worktree where Claude is blocked on a prompt
-  is marked amber; you can answer it straight from the tile.
-- **Worktree view** — Claude full size, plus extra shells in the same working
-  directory, with a top bar of worktree tabs and a count of what is waiting.
+- **One view: a grid of tiles.** Every expanded worktree is a live, interactive
+  terminal tile, sized so each gets at least 80 columns before they wrap. A
+  worktree where Claude is blocked on a prompt is marked amber; you can answer
+  it straight from the tile.
+- **Every worktree lives in the top bar.** Minimizing one leaves it there with
+  no tile, and its chip keeps carrying state — so a minimized worktree can still
+  tell you Claude is waiting on you. Click a chip to show or hide its tile.
+- **Terminals** — a per-worktree toggle that focuses one worktree: its Claude
+  tile plus a tile holding its shells, with everything else minimized to the top
+  bar. Switching it off restores exactly what was expanded before.
 - **Worktrees** — create a branch + worktree and start Claude in it in one step;
   remove it (and optionally its branch) when done. Worktrees go in
   `<repo>/.claude/worktrees/<branch>`, which is where `claude --worktree` puts
@@ -53,7 +58,7 @@ want to reach it from another machine.
 ```
 browser ── one WebSocket (JSON control + binary output) ──> server
                                                              │
-   xterm.js per terminal                    SessionEngine ────┤
+   xterm.js per tile                        SessionEngine ────┤
    CodeMirror 6 for files (planned)           │               │
                                               │  node-pty ──> tmux (private socket)
                                               │  @xterm/headless mirror per session
@@ -68,8 +73,9 @@ A few decisions worth knowing about, because they are not obvious:
 - **Reconnects repaint from a server-side terminal emulator**, not from a byte
   buffer. Claude Code runs on the alternate screen, where replaying raw history is
   meaningless and slicing mid-escape-sequence corrupts the screen.
-- **Only the focused detail view sets the pty size.** Overview tiles shrink their
-  font instead, so glancing at the overview never reflows a running TUI.
+- **Each tile owns the size of its own session.** A session appears in exactly
+  one tile, so tiles can size their pty without ever fighting each other; size
+  ownership is explicit on the server rather than inferred.
 - **Exactly one attachment can type at a time.** Terminal apps send queries that
   xterm.js auto-answers, so two writers would inject duplicate replies into the
   app's stdin.
@@ -83,8 +89,8 @@ A few decisions worth knowing about, because they are not obvious:
 
 ## Status
 
-Working: overview, worktree view, terminals, worktree and session lifecycle,
-persistence across restarts.
+Working: the tile grid, the top bar, minimizing, the Terminals focus mode,
+worktree and session lifecycle, persistence across restarts.
 
 Not built yet: the file tree and CodeMirror editor, git history and diff viewer,
 and registering as a Claude Code IDE (the `~/.claude/ide/<port>.lock` protocol) so

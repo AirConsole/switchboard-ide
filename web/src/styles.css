@@ -129,9 +129,12 @@ button {
   border-radius: 1px;
 }
 
-/* Worktree tabs are strips, not pills: square, hairline-separated, dense.
-   Position and marking carry the state, the way a flight strip does. */
-.tabs {
+/*
+ * Every worktree is a chip here, whether or not it has a tile. Square and
+ * hairline-separated rather than pill-shaped: this is an instrument panel, and
+ * position plus marking carry the state the way a flight strip does.
+ */
+.chips {
   display: flex;
   align-items: stretch;
   overflow-x: auto;
@@ -140,106 +143,68 @@ button {
   flex: 1;
 }
 
-.tab {
+.chip {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 14px;
   border-right: 1px solid var(--rule);
-  border-left: var(--rail) solid transparent;
+  border-bottom: 2px solid transparent;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--graphite);
   white-space: nowrap;
-  position: relative;
+  color: var(--graphite);
 }
 
-.tab:hover {
+.chip:hover {
   background: var(--slab-raised);
   color: var(--bone);
 }
 
-.tab--active {
-  background: var(--ink);
+/* A worktree with a tile on screen is underlined; a minimized one is not, and
+   dims. That distinction has to carry on its own for a worktree with no tile. */
+.chip--shown {
   color: var(--bone);
-  border-left-color: var(--rule-bright);
+  border-bottom-color: var(--rule-bright);
 }
 
-/* A tab whose agent is waiting gets the signal rail. This is the same language
-   as the overview tiles, so the meaning transfers between views. */
-.tab--waiting {
-  border-left-color: var(--signal);
+.chip--minimized {
+  color: var(--graphite-dim);
+}
+
+.chip--minimized:hover {
+  color: var(--graphite);
+}
+
+/* The one saturated colour in the chrome, and the reason minimizing is safe:
+   a worktree with no tile can still call for you from here. The underline is
+   left alone so it keeps meaning exactly one thing -- "this has a tile" -- and
+   the two signals stay independent. */
+.chip--waiting {
   color: var(--signal);
 }
 
-.tab__dirty {
+.chip--waiting.chip--shown {
+  border-bottom-color: var(--signal);
+}
+
+.chip__branch {
+  color: var(--graphite-dim);
+}
+
+.chip__dirty {
   font-size: 10px;
   color: var(--graphite-dim);
 }
 
-.tab__branch {
+.chip--add {
+  padding: 0 12px;
+  font-size: 14px;
   color: var(--graphite-dim);
 }
 
-.topbar__actions {
-  display: flex;
-  align-items: stretch;
-  margin-left: auto;
-  border-left: 1px solid var(--rule);
-}
-
-.topbar__button {
-  padding: 0 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--graphite);
-  border-right: 1px solid var(--rule);
-}
-
-.topbar__button:last-child {
-  border-right: none;
-}
-
-.topbar__button:hover {
-  background: var(--slab-raised);
+.chip--add:hover {
   color: var(--bone);
-}
-
-/*
- * The signature element: a single live readout of how many agents are blocked.
- * It is the only amber thing in the chrome, and when nothing is waiting it goes
- * quiet rather than green -- absence of signal, not a second signal.
- */
-.waiting {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 14px;
-  border-right: 1px solid var(--rule);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--graphite-dim);
-  white-space: nowrap;
-}
-
-.waiting--active {
-  color: var(--signal);
-}
-
-.waiting__count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border: 1px solid currentColor;
-  border-radius: 2px;
-  font-size: 11px;
-  letter-spacing: 0;
 }
 
 /* ------------------------------------------------------------------ views -- */
@@ -329,31 +294,6 @@ button {
   font-family: var(--font-mono);
   font-size: 11px;
   min-width: 0;
-}
-
-/* Opening the worktree is the whole header bar, so it stays one wide target. */
-.tile__open {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  font: inherit;
-  color: inherit;
-}
-
-.tile__open:hover .tile__name {
-  text-decoration: underline;
-}
-
-/*
- * A minimized tile keeps its header and drops its terminal, so it must take
- * only the height that header needs -- the expanded tiles in the same column
- * then share everything left over.
- */
-.tile--minimized {
-  flex: 0 0 auto;
 }
 
 .tile__minimize {
@@ -457,24 +397,6 @@ button {
   border-color: var(--graphite);
 }
 
-/*
- * The bar form, used once the overview has worktrees worth the space. Sized and
- * padded like a minimized worktree's header so the two read as one row of the
- * same kind, but kept dashed so it still reads as an action rather than a
- * worktree. Doubled class so it wins over .tile--add regardless of order.
- */
-.tile--add.tile--add--bar {
-  display: flex;
-  align-items: center;
-  /* justify-content, not justify-items: this is a flex container, and
-     .tile--add's `place-content: center` would otherwise centre the label away
-     from where a minimized worktree's name sits. */
-  justify-content: flex-start;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 6px 10px;
-}
-
 .tile--add:hover .tile--add__mark {
   color: var(--bone);
 }
@@ -483,10 +405,6 @@ button {
   font-family: var(--font-mono);
   font-size: 18px;
   color: var(--graphite-dim);
-}
-
-.tile--add--bar .tile--add__mark {
-  font-size: 13px;
 }
 
 .tile--add__label {
@@ -503,125 +421,87 @@ button {
   line-height: 1.5;
 }
 
-/* ------------------------------------------------------------ detail view -- */
-
-.detail {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  height: 100%;
-  min-height: 0;
+/*
+ * Terminals is a mode, not a jump, so it reads as a toggle that stays lit while
+ * it is on rather than a button you press and forget.
+ */
+.tile__toggle {
+  flex: none;
+  margin-left: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--rule-bright);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
 }
 
-.pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+.tile__toggle:hover {
+  color: var(--bone);
+  border-color: var(--graphite);
 }
 
-.pane__head {
+.tile__toggle--on {
+  color: var(--ink);
+  background: var(--graphite);
+  border-color: var(--graphite);
+}
+
+/* The shells tile is a tile like any other; only its header differs. */
+.shelltabs {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--slab);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  gap: 4px;
+  margin-left: auto;
+  overflow-x: auto;
+  scrollbar-width: none;
   min-width: 0;
 }
 
-.pane__title {
-  color: var(--bone);
-}
-
-.pane__hint {
-  margin-left: auto;
-  color: var(--graphite-dim);
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/*
- * NOT `.terminal`: xterm.js puts that class on its own root element, so a rule
- * named `.terminal` also styles xterm's internals. This padding landing on
- * xterm's root shrank its rendered screen inside its viewport, and the viewport
- * defaults to pure black, which showed as a black frame around every terminal.
- */
-.pane__terminal {
-  flex: 1;
-  min-height: 0;
-  padding: 6px 4px 6px 8px;
-  background: var(--terminal-bg);
-}
-
-/* The secondary terminal strip: extra shells in the same working directory. */
-.strip {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--rule);
-  min-height: 0;
-}
-
-.strip__handle {
-  height: 5px;
-  cursor: row-resize;
-  background: var(--slab);
-  border-bottom: 1px solid var(--rule);
-}
-
-.strip__handle:hover {
-  background: var(--rule-bright);
-}
-
-.strip__tabs {
-  display: flex;
-  align-items: stretch;
-  background: var(--slab);
-  border-bottom: 1px solid var(--rule);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.strip__tab {
+.shelltab {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  border-right: 1px solid var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--graphite);
   white-space: nowrap;
 }
 
-.strip__tab:hover {
+.shelltab--active {
+  border-color: var(--graphite);
   color: var(--bone);
-  background: var(--slab-raised);
 }
 
-.strip__tab--active {
-  color: var(--bone);
-  background: var(--ink);
+.shelltab__pick {
+  padding: 2px 5px;
+  font: inherit;
+  color: inherit;
 }
 
-.strip__close {
-  color: var(--graphite-dim);
-  font-size: 13px;
+.shelltab__close {
+  padding: 2px 4px 2px 0;
+  font-size: 11px;
   line-height: 1;
+  color: var(--graphite-dim);
 }
 
-.strip__close:hover {
+.shelltab__close:hover {
   color: var(--danger);
 }
 
-.strip__body {
-  flex: 1;
-  min-height: 0;
-  background: var(--terminal-bg);
-  padding: 6px 4px 6px 8px;
+.shelltab--add {
+  padding: 2px 7px;
+  font-size: 12px;
+  color: var(--graphite-dim);
+}
+
+.shelltab--add:hover {
+  color: var(--bone);
+  border-color: var(--graphite);
 }
 
 /* ------------------------------------------------------- empty and errors -- */
