@@ -10,7 +10,7 @@ import type {
 import { encodeOutputFrame } from '@ide-n-dream/shared'
 import { config } from '../config.js'
 import { TerminalMirror } from './mirror.js'
-import { classify, WORKING_WINDOW_MS } from './attention.js'
+import { classify, REPAINT_QUIET_MS, WORKING_WINDOW_MS } from './attention.js'
 import {
   attachArgs,
   attachCommandFor,
@@ -83,7 +83,19 @@ class LiveSession {
   pty: import('node-pty').IPty | null = null
   liveness: SessionLiveness = 'live'
   attention: AttentionState = 'idle'
-  lastOutputAt = Date.now()
+  /**
+   * When output last arrived, and zero until it does.
+   *
+   * Not `Date.now()`: a session adopted at startup has no idea when it last
+   * spoke, and claiming "just now" made every one of them read as working for
+   * the first second after a restart.
+   */
+  lastOutputAt = 0
+  /**
+   * Output arriving before this is a repaint we provoked, not activity.
+   * See the note in onOutput().
+   */
+  private repaintQuietUntil = 0
   dead = false
   deadStatus: number | null = null
   /** What the pane is running, refreshed by the poller. */
@@ -182,7 +194,17 @@ class LiveSession {
 
   private onOutput(chunk: string): void {
     this.reattachAttempts = 0
-    this.lastOutputAt = Date.now()
+    /*
+     * Output we asked for does not mean the agent is doing anything.
+     *
+     * Resizing a pane makes the TUI repaint its whole screen, so a tile merely
+     * appearing -- which resizes the pty to its new pane's geometry -- used to
+     * flash "working" for the length of the window and then settle back to
+     * idle, on a session that had been resting the entire time. The bytes still
+     * reach the mirror and every watcher; they just do not count as activity.
+     */
+    const provoked = Date.now() < this.repaintQuietUntil
+    if (!provoked) this.lastOutputAt = Date.now()
     this.mirror.write(chunk)
 
     const bytes = Buffer.from(chunk, 'utf8')
@@ -193,10 +215,12 @@ class LiveSession {
       this.flushTimer = setTimeout(() => this.flushOutput(), 12)
     }
 
-    if (this.attention !== 'working') {
+    if (!provoked && this.attention !== 'working') {
       this.attention = 'working'
       this.onStateChange(this)
     }
+    // Scheduled either way, so a session that was working when the resize hit
+    // still gets reclassified once the repaint has gone quiet.
     this.scheduleIdleCheck()
   }
 
@@ -278,6 +302,8 @@ class LiveSession {
     this.record.rows = rows
     this.mirror.resize(cols, rows)
     this.pty?.resize(cols, rows)
+    // Whatever comes back from this is the TUI redrawing at the new size.
+    this.repaintQuietUntil = Date.now() + REPAINT_QUIET_MS
     if (process.env.IDN_DEBUG_SIZE) {
       console.log(`[size] ${this.record.tmuxName} -> applied ${cols}x${rows}`)
     }

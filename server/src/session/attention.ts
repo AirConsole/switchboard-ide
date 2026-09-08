@@ -4,6 +4,18 @@ import type { AttentionState, SessionKind } from '@ide-n-dream/shared'
 export const WORKING_WINDOW_MS = 900
 
 /**
+ * How long after a resize we caused that output is read as a repaint rather
+ * than as the agent doing something.
+ *
+ * Long enough for a full-screen TUI redraw to land through tmux, short enough
+ * that an agent genuinely producing output is marked working again on its next
+ * chunk. Erring long only delays a "working" label; erring short puts that
+ * label on a session that has been resting all along, which is the failure that
+ * is actually visible.
+ */
+export const REPAINT_QUIET_MS = 500
+
+/**
  * Patterns that mean Claude Code is blocked on a human answer.
  *
  * Deliberately narrow. The idle input box also draws a `❯`, so matching a bare
