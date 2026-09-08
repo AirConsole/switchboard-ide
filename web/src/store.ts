@@ -54,9 +54,25 @@ export const useStore = create<AppState>((set, get) => ({
 
   refresh: async () => {
     try {
-      const snapshot = await api.snapshot()
-      set({ ...snapshot, loaded: true, error: null })
-      localStorage.setItem(UI_CACHE_KEY, JSON.stringify(snapshot.ui))
+      const { ui: storedUi, ...rest } = await api.snapshot()
+      /*
+       * The client owns UI state; the server stores it only so a reload can
+       * restore it. So the server's copy is adopted on the first load and
+       * ignored afterwards.
+       *
+       * Taking it on every refresh undid changes made moments earlier, because
+       * writes are debounced: removing a worktree set the view to the overview
+       * and then immediately refreshed, and the snapshot -- still carrying the
+       * old view -- put you back in the detail view of a different worktree.
+       */
+      const firstLoad = !get().loaded
+      set({
+        ...rest,
+        ui: firstLoad ? storedUi : get().ui,
+        loaded: true,
+        error: null,
+      })
+      if (firstLoad) localStorage.setItem(UI_CACHE_KEY, JSON.stringify(storedUi))
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err), loaded: true })
     }

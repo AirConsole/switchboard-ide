@@ -37,8 +37,11 @@ export const App = (): React.ReactElement => {
     () => orderWorktrees(worktrees.filter((w) => w.projectId === project?.id), ui.tabOrder),
     [worktrees, project?.id, ui.tabOrder],
   )
-  const activeWorktree =
-    projectWorktrees.find((w) => w.id === ui.activeWorktreeId) ?? projectWorktrees[0]
+  // Only an exact match counts. Falling back to some other worktree would
+  // silently show work you did not ask for, so if the one you were in has gone
+  // -- removed here, from another tab, or on the command line -- the render
+  // below drops to the overview instead.
+  const activeWorktree = projectWorktrees.find((w) => w.id === ui.activeWorktreeId)
 
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
 
