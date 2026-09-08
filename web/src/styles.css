@@ -62,7 +62,7 @@ body {
   background: var(--ink);
   color: var(--bone);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -82,7 +82,7 @@ button {
 /* Micro-labels are the instrument voice: mono, uppercase, tracked out. */
 .micro {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--graphite);
@@ -112,7 +112,7 @@ button {
   padding: 0 14px;
   border-right: 1px solid var(--rule);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--bone);
   white-space: nowrap;
 }
@@ -151,7 +151,7 @@ button {
   border-right: 1px solid var(--rule);
   border-bottom: 2px solid transparent;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
   color: var(--graphite);
 }
@@ -193,13 +193,13 @@ button {
 }
 
 .chip__dirty {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--graphite-dim);
 }
 
 .chip--add {
   padding: 0 12px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--graphite-dim);
 }
 
@@ -292,14 +292,14 @@ button {
   padding: 6px 8px 6px 10px;
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   min-width: 0;
 }
 
 .tile__minimize {
   flex: none;
   padding: 0 3px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
   color: var(--graphite-dim);
 }
@@ -315,7 +315,7 @@ button {
 .tile__remove {
   flex: none;
   padding: 0 3px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
   color: var(--graphite-dim);
 }
@@ -340,7 +340,7 @@ button {
 
 .tile__state {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--graphite-dim);
@@ -363,7 +363,7 @@ button {
 .tile__idle-text {
   margin: 0;
   color: var(--graphite);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .tile__screen {
@@ -403,20 +403,20 @@ button {
 
 .tile--add__mark {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 20px;
   color: var(--graphite-dim);
 }
 
 .tile--add__label {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--bone);
 }
 
 .tile--add__hint {
   margin: 0;
   max-width: 34ch;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--graphite-dim);
   line-height: 1.5;
 }
@@ -432,7 +432,7 @@ button {
   border: 1px solid var(--rule-bright);
   border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--graphite);
@@ -466,7 +466,7 @@ button {
   border: 1px solid var(--rule);
   border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--graphite);
   white-space: nowrap;
 }
@@ -484,7 +484,7 @@ button {
 
 .termtab__close {
   padding: 2px 4px 2px 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   color: var(--graphite-dim);
 }
@@ -495,7 +495,7 @@ button {
 
 .termtab--add {
   padding: 2px 7px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--graphite-dim);
 }
 
@@ -520,7 +520,7 @@ button {
 .empty__title {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 500;
   color: var(--bone);
 }
@@ -539,7 +539,7 @@ button {
   background: #2a1d1f;
   border-bottom: 1px solid #4a2c30;
   color: #f0c7cb;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .banner__dismiss {
@@ -559,7 +559,7 @@ button {
   border-radius: var(--radius);
   background: var(--slab-raised);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--bone);
@@ -620,7 +620,7 @@ button {
 .dialog__title {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--bone);
 }
@@ -648,7 +648,7 @@ button {
 
 .field__label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--graphite);
@@ -660,7 +660,7 @@ button {
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--bone);
 }
 
@@ -670,7 +670,7 @@ button {
 }
 
 .field__hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--graphite-dim);
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
@@ -681,7 +681,7 @@ button {
   align-items: center;
   gap: 8px;
   color: var(--graphite);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* The folder picker reads as a path list, in the vernacular of the thing it
@@ -702,7 +702,7 @@ button {
   padding: 7px 12px;
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--bone);
   text-align: left;
 }
@@ -717,7 +717,7 @@ button {
 
 .picker__tag {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--graphite-dim);

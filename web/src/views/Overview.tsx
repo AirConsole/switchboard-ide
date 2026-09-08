@@ -1,6 +1,10 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
-import { TerminalView, TERMINAL_FONT_FAMILY } from '../terminal/TerminalView.js'
+import {
+  TerminalView,
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+} from '../terminal/TerminalView.js'
 import { claudeSession, isRunning, stateLabel, terminalSessions } from '../selectors.js'
 import { TerminalsTile } from './TerminalsTile.js'
 import {
@@ -9,14 +13,6 @@ import {
   measureMonoCharWidth,
   planOverviewColumns,
 } from './overviewLayout.js'
-
-/**
- * Tiles use a smaller type size than a full-window terminal would, so a
- * glanceable slice fits, but they still size the terminal to the tile rather
- * than scaling it down: a scaled terminal is unreadable, and cols/rows derived
- * from the real tile give legible text at whatever size the grid allows.
- */
-const TILE_FONT_SIZE = 12
 
 /**
  * Gap between tiles, in px. Applied inline rather than from the stylesheet so
@@ -138,7 +134,7 @@ const WorktreeTile = ({
       </div>
       <div className="tile__screen">
         {running && session ? (
-          <TerminalView session={session} primary={true} fontSize={TILE_FONT_SIZE} />
+          <TerminalView session={session} primary={true} fontSize={TERMINAL_FONT_SIZE} />
         ) : (
           <div className="tile__idle">
             <p className="tile__idle-text">Claude is not running in this worktree.</p>
@@ -218,7 +214,7 @@ export const Overview = ({
   // of what a worktree is; beyond that the top bar's + carries it.
   if (cells.length < ADD_TILE_THRESHOLD) cells.push({ kind: 'add', key: '__add' })
 
-  const charWidth = measureMonoCharWidth(TILE_FONT_SIZE, TERMINAL_FONT_FAMILY)
+  const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minTileWidth = MIN_TILE_COLUMNS * charWidth + TILE_CHROME_WIDTH
   const columns = planOverviewColumns(cells, width, minTileWidth, GAP)
 
@@ -241,7 +237,7 @@ export const Overview = ({
                       worktree={cell.worktree}
                       terminals={terminalSessions(sessions, cell.worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[cell.worktree.id] ?? null}
-                      fontSize={TILE_FONT_SIZE}
+                      fontSize={TERMINAL_FONT_SIZE}
                       onSelect={(sessionId) => onSelectTerminal(cell.worktree.id, sessionId)}
                       onNew={() => onNewTerminal(cell.worktree.id)}
                       onClose={onCloseTerminal}

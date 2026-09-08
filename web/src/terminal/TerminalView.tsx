@@ -23,8 +23,15 @@ const MIRROR_SCROLLBACK = 5000
 export const TERMINAL_FONT_FAMILY =
   '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace'
 
-/** Type size in the detail view, and the default when none is given. */
-export const TERMINAL_FONT_SIZE = 13
+/**
+ * Type size for every terminal.
+ *
+ * It is not only a readability choice: the overview derives its minimum tile
+ * width from this font's character width, so raising it makes tiles wider and
+ * can cost a column. 14px is the largest size that still fits two 80-column
+ * tiles side by side on a 1500px window; 15px drops that to one.
+ */
+export const TERMINAL_FONT_SIZE = 14
 
 export interface TerminalViewProps {
   session: Session
