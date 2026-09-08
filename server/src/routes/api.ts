@@ -152,7 +152,12 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/worktrees/:id/changes', async (request) => {
     const { id } = request.params as { id: string }
     const { worktree, project } = await workspace.resolve(id)
-    return worktreeChanges({ worktreeId: worktree.id, root: project.root, path: worktree.path })
+    return worktreeChanges({
+      worktreeId: worktree.id,
+      root: project.root,
+      path: worktree.path,
+      isMain: worktree.isMain,
+    })
   })
 
   app.get('/api/worktrees/:id/diff', async (request) => {

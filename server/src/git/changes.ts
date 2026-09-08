@@ -72,7 +72,7 @@ export const parseStatus = (out: string): FileChange[] => {
 }
 
 /**
- * How much history to show when there is nothing ahead of the base.
+ * How much history the main worktree shows when it has nothing ahead.
  *
  * Enough to see what has been going on, not so much that the list becomes a
  * log viewer -- the panel is for reviewing a worktree, and `git log` in a
@@ -110,6 +110,16 @@ export const worktreeChanges = async (opts: {
   worktreeId: string
   root: string
   path: string
+  /**
+   * Only the main worktree falls back to history.
+   *
+   * A branch worktree with nothing ahead of its base has done nothing yet, and
+   * the history it would show is the base branch's, not its own -- listing it
+   * would credit this worktree with commits it did not make. The main worktree
+   * is the one place where "what does this have that its base does not" has no
+   * answer to give, so it is the one place history is the right answer.
+   */
+  isMain: boolean
 }): Promise<WorktreeChanges> => {
   const branch = await currentBranch(opts.path)
   const base = await resolveReviewBase(opts.root, branch)
@@ -117,14 +127,12 @@ export const worktreeChanges = async (opts: {
   const uncommitted = parseStatus(
     await git(opts.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
   )
-  const nothingAhead = async (
-    withBase: string | null,
-  ): Promise<WorktreeChanges> => ({
+  const nothingAhead = async (withBase: string | null): Promise<WorktreeChanges> => ({
     worktreeId: opts.worktreeId,
     branch,
     base: withBase,
     uncommitted,
-    commits: await recentCommits(opts.path),
+    commits: opts.isMain ? await recentCommits(opts.path) : [],
     commitScope: 'recent',
     behind: 0,
   })
