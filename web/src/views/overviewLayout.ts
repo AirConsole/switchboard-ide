@@ -5,7 +5,12 @@
  */
 export const MIN_PANE_COLUMNS = 80
 
-/** Tile border plus the padding around the terminal inside one pane, in px. */
+/**
+ * Everything in one pane's width that is not terminal, in px: the 8px inset
+ * either side of the character grid, plus the pane's divider or the tile's
+ * border. Kept a little over the true 17 so the column floor holds with margin.
+ * Change `.tile__pane`'s padding and this has to move with it.
+ */
 export const PANE_CHROME_WIDTH = 18
 
 /**

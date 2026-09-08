@@ -365,12 +365,15 @@ button {
  * only, so the status label that leads the group and the outermost button both
  * stay open to the bar.
  *
- * At --rule-bright rather than --rule: the bar's own edge can afford to recede,
- * a line that has to separate two adjacent targets cannot. It disappears where
- * a control is filled, which is the one place the fill already does the job.
+ * At --rule-bright, the structural line weight: enough to delimit two adjacent
+ * targets, not enough to compete with the words in them. It goes quiet against
+ * a filled control, which is the one place the fill already does the job. Judge
+ * this by sampling rendered pixels, never from a screenshot -- resampling
+ * blends a 1px line away, which is how it once got read as too faint and pushed
+ * to a text weight that was plainly too loud.
  */
 .tile__controls > * + * {
-  border-left: 1px solid var(--graphite-dim);
+  border-left: 1px solid var(--rule-bright);
 }
 
 .tile__body {
@@ -379,12 +382,23 @@ button {
   min-height: 0;
 }
 
+/*
+ * One pane: a terminal, on the terminal's own ground with room around it.
+ *
+ * The inset matters more than it looks. Without it the character grid butts
+ * straight into the tile's edge and the terminal reads as pasted onto the box
+ * rather than sitting in it -- and the first column of text ends up a pixel
+ * from a border. It is counted in PANE_CHROME_WIDTH, so the 80-column floor
+ * still holds; changing it here means changing that too.
+ */
 .tile__pane {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  background: var(--terminal-bg);
+  padding: 8px;
 }
 
 .tile__pane + .tile__pane {
@@ -412,8 +426,20 @@ button {
   display: block;
 }
 
+/*
+ * The tile's title, and the most prominent thing in its chrome.
+ *
+ * Larger and heavier than anything else in the bar, because it answers the
+ * question you ask of a screen full of tiles first -- which worktree is this --
+ * and every other thing in the bar is subordinate to it. Colour cannot do the
+ * work: --bone is already the brightest the palette has, and amber belongs to
+ * attention alone. So it is carried by size and weight, with the branch and
+ * dirty count dropping to the same 11px as the status label so the gap between
+ * a title and its metadata is unmistakable.
+ */
 .tile__name {
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--bone);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -421,6 +447,7 @@ button {
 }
 
 .tile__branch {
+  font-size: 11px;
   color: var(--graphite-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -455,14 +482,6 @@ button {
   margin: 0;
   color: var(--graphite);
   font-size: 13px;
-}
-
-.tile__screen {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--terminal-bg);
-  padding: 6px 4px 6px 8px;
 }
 
 /*
@@ -540,12 +559,20 @@ button {
   background: var(--graphite);
 }
 
-/* The tab strip sits in the bar segment above the pane it drives. It is the
-   part that gives way when a narrow tile has to fit identity and tabs in one
-   segment, so it scrolls rather than pushing the controls off the end. */
+/*
+ * The tab strip sits in the bar segment above the pane it drives, pushed to the
+ * right of it.
+ *
+ * Right-aligned so it ends where the worktree's own controls end, on the tile's
+ * edge, instead of starting at the pane's left and leaving a ragged gap in the
+ * middle of the bar. It is also the part that gives way when a narrow tile has
+ * to fit identity, tabs and controls in one segment, so it scrolls rather than
+ * pushing anything off the end.
+ */
 .termtabs {
   display: flex;
   align-items: stretch;
+  margin-left: auto;
   overflow-x: auto;
   scrollbar-width: none;
   min-width: 0;
@@ -561,7 +588,7 @@ button {
 }
 
 .termtab + .termtab {
-  border-left: 1px solid var(--graphite-dim);
+  border-left: 1px solid var(--rule-bright);
 }
 
 .termtab:hover {
