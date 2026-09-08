@@ -948,19 +948,44 @@ button {
   border-bottom: 1px solid var(--rule-bright);
 }
 
+/*
+ * A group heading, with a rule running from the label to the edge.
+ *
+ * The label alone was not enough: two lists of monospace rows one after the
+ * other read as one list with a stray caption in the middle of it, and which
+ * rows are uncommitted work and which are commits is the whole structure of
+ * this panel. The rule closes the group off; the space above separates it from
+ * the one before.
+ */
 .git__heading {
-  padding: 6px 4px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 0;
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--graphite-dim);
 }
 
+.git__heading::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule-bright);
+}
+
+.git__heading:not(:first-child) {
+  margin-top: 10px;
+}
+
+/* Indented under its heading, so a row belongs to a group by position and not
+   only by which caption happens to be above it. */
 .git__row {
   display: flex;
   gap: 8px;
   width: 100%;
-  padding: 2px 4px;
+  padding: 2px 4px 2px 10px;
   font: inherit;
   text-align: left;
   color: var(--graphite);
@@ -1079,4 +1104,38 @@ button {
 .git__reload:hover {
   color: var(--bone);
   background: var(--rule-bright);
+}
+
+/*
+ * A file inside a patch.
+ *
+ * This is all that survives of git's four-line-per-file header, and it has to
+ * do that header's whole job when a commit touches several files: hunks carry
+ * line numbers but never say which file they are in.
+ */
+.diff__file + .diff__file {
+  margin-top: 10px;
+}
+
+.diff__name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0 3px 4px;
+  border-left: 2px solid var(--rule-bright);
+  background: var(--slab);
+  font-size: 12px;
+  color: var(--bone);
+}
+
+.diff__path {
+  overflow-wrap: anywhere;
+}
+
+.diff__note {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
 }

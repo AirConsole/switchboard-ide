@@ -150,55 +150,137 @@ export const GitBar = ({
 }
 
 /**
- * Colour each patch line by what it is.
+ * One file's worth of a patch: what it is, and its hunks.
  *
- * Position matters, not just the prefix: `--- a/x` is a file header, but `--- x`
- * inside a hunk is a deleted line whose content begins with two dashes, and the
- * text alone cannot tell them apart. So everything between a `diff --git` and
- * that file's first `@@` is header, and only inside a hunk does a leading + or
- * - mean added or removed.
+ * Split up because a raw patch spends four or five lines per file saying things
+ * the reader can already see -- `diff --git`, the blob hashes, and the a/ and
+ * b/ paths repeated -- and in a column 80 characters wide that is most of a
+ * screenful of noise before the first change. All of it collapses to the one
+ * fact worth keeping: which file this is.
  */
-const classifyLines = (lines: string[]): string[] => {
-  let inHunk = false
-  return lines.map((line) => {
-    if (line.startsWith('diff --git')) {
-      inHunk = false
-      return 'diffline diffline--meta'
-    }
-    if (line.startsWith('@@')) {
-      inHunk = true
-      return 'diffline diffline--hunk'
-    }
-    if (!inHunk) return 'diffline diffline--meta'
-    // "\ No newline at end of file" is git talking, not file content.
-    if (line.startsWith('\\')) return 'diffline diffline--meta'
-    if (line.startsWith('+')) return 'diffline diffline--add'
-    if (line.startsWith('-')) return 'diffline diffline--del'
-    return 'diffline'
-  })
+interface DiffFile {
+  /** The path, or `old → new` for a rename. */
+  label: string
+  /** Set when the file is not simply modified: new, deleted, renamed, binary. */
+  note: string | null
+  /** Hunk headers and content, with the file headers dropped. */
+  lines: string[]
 }
 
-const Diff = ({ patch }: { patch: string }): React.ReactElement => {
-  const lines = useMemo(() => {
-    const all = patch.split('\n')
-    const shown = all.slice(0, MAX_DIFF_LINES)
-    return { shown, classes: classifyLines(shown), cut: Math.max(0, all.length - MAX_DIFF_LINES) }
-  }, [patch])
+const strip = (path: string): string => path.replace(/^[ab]\//, '')
 
-  if (patch.trim() === '') {
+/**
+ * Split a patch into files, keeping the hunks and discarding the headers.
+ *
+ * Everything between a `diff --git` and that file's first `@@` is header: that
+ * is also what makes the +/- classification below safe, since inside a hunk a
+ * leading dash is content, not a marker.
+ */
+export const parsePatch = (patch: string): DiffFile[] => {
+  const files: DiffFile[] = []
+  let file: DiffFile | null = null
+  let inHunk = false
+  let from: string | null = null
+
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('diff --git')) {
+      file = { label: '', note: null, lines: [] }
+      files.push(file)
+      inHunk = false
+      from = null
+      continue
+    }
+    if (file === null) continue
+
+    if (line.startsWith('@@')) inHunk = true
+    if (inHunk) {
+      file.lines.push(line)
+      continue
+    }
+
+    // Still in the header block: read what it says, then throw it away.
+    if (line.startsWith('--- ')) {
+      const path = line.slice(4)
+      if (path !== '/dev/null') from = strip(path)
+    } else if (line.startsWith('+++ ')) {
+      const path = line.slice(4)
+      if (path !== '/dev/null') file.label = strip(path)
+      else if (from !== null) file.label = from
+    } else if (line.startsWith('new file')) {
+      file.note = 'new'
+    } else if (line.startsWith('deleted file')) {
+      file.note = 'deleted'
+    } else if (line.startsWith('rename from ')) {
+      from = line.slice('rename from '.length)
+      file.note = 'renamed'
+    } else if (line.startsWith('rename to ')) {
+      file.label = `${from ?? ''} → ${line.slice('rename to '.length)}`
+    } else if (line.startsWith('Binary files')) {
+      file.note = 'binary'
+    }
+  }
+  return files.filter((f) => f.label !== '' || f.lines.length > 0)
+}
+
+/**
+ * Colour a hunk line.
+ *
+ * Only ever called with lines from inside a hunk, which is what makes a leading
+ * dash unambiguous: `--- a/x` never reaches here, so `--- x` can be read as a
+ * deleted line whose content begins with two dashes.
+ */
+const lineClass = (line: string): string => {
+  if (line.startsWith('@@')) return 'diffline diffline--hunk'
+  // "\ No newline at end of file" is git talking, not file content.
+  if (line.startsWith('\\')) return 'diffline diffline--meta'
+  if (line.startsWith('+')) return 'diffline diffline--add'
+  if (line.startsWith('-')) return 'diffline diffline--del'
+  return 'diffline'
+}
+
+/**
+ * The patch, one file at a time.
+ *
+ * `showFiles` names each file, which is what a commit needs -- it can touch any
+ * number of them and the hunks alone do not say which is which. A single
+ * selected file names itself in the list beside this, so it is left unlabelled;
+ * the exception is a file with no hunks at all, a pure rename, which would
+ * otherwise render as nothing.
+ */
+const Diff = ({ patch, showFiles }: { patch: string; showFiles: boolean }): React.ReactElement => {
+  const files = useMemo(() => parsePatch(patch), [patch])
+  const total = files.reduce((n, f) => n + f.lines.length, 0)
+
+  if (files.length === 0 || (total === 0 && files.every((f) => f.note === null))) {
     return <p className="git__empty">No textual difference.</p>
   }
+
+  let budget = MAX_DIFF_LINES
   return (
     <div className="diff">
-      {lines.shown.map((line, index) => (
-        // Index keys: this is a rendered text buffer, never reordered.
-        <div key={index} className={lines.classes[index]}>
-          {line === '' ? ' ' : line}
-        </div>
-      ))}
-      {lines.cut > 0 && (
+      {files.map((file) => {
+        const lines = file.lines.slice(0, Math.max(0, budget))
+        budget -= lines.length
+        return (
+          <div className="diff__file" key={`${file.label}${file.lines.length}`}>
+            {(showFiles || files.length > 1 || file.lines.length === 0) && (
+              <div className="diff__name">
+                <span className="diff__path">{file.label}</span>
+                {file.note !== null && <span className="diff__note">{file.note}</span>}
+              </div>
+            )}
+            {lines.map((line, index) => (
+              // Index keys: this is a rendered text buffer, never reordered.
+              <div key={index} className={lineClass(line)}>
+                {line === '' ? ' ' : line}
+              </div>
+            ))}
+          </div>
+        )
+      })}
+      {total > MAX_DIFF_LINES && (
         <div className="diffline diffline--meta">
-          … {lines.cut} more lines. Read this one in a terminal.
+          … {total - MAX_DIFF_LINES} more lines. Read this one in a terminal.
         </div>
       )}
     </div>
@@ -303,7 +385,7 @@ export const GitPane = ({ state, branch }: GitPaneProps): React.ReactElement => 
         {patch === null ? (
           selected === null ? null : <p className="git__empty">Reading the patch…</p>
         ) : (
-          <Diff patch={patch} />
+          <Diff patch={patch} showFiles={selected?.kind === 'commit'} />
         )}
       </div>
     </div>

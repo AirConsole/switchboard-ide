@@ -164,6 +164,14 @@ export const fileDiff = async (
   return git(cwd, ['diff', '--no-color', '-M', 'HEAD', '--', ...paths], MAX_DIFF_BYTES)
 }
 
-/** The unified diff a single commit introduced. */
+/**
+ * The unified diff a single commit introduced.
+ *
+ * `--first-parent` because `git show` prints nothing at all for a merge -- it
+ * has no single parent to diff against, so it declines to choose -- and a merge
+ * commit reading as "no textual difference" is a lie. Against the first parent
+ * it says what the merge brought in, which is the question being asked. For an
+ * ordinary commit with one parent it changes nothing.
+ */
 export const commitDiff = async (cwd: string, hash: string): Promise<string> =>
-  git(cwd, ['show', '--no-color', '--format=', '--patch', hash], MAX_DIFF_BYTES)
+  git(cwd, ['show', '--no-color', '--format=', '--patch', '--first-parent', hash], MAX_DIFF_BYTES)
