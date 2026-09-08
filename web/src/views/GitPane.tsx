@@ -358,9 +358,15 @@ export const GitPane = ({ state, branch }: GitPaneProps): React.ReactElement => 
 
         {changes.commits.length > 0 && (
           <>
+            {/* What the list is, said plainly: this worktree's own work, or --
+                on the base branch, where there is no "own work" -- just what
+                has happened here lately. */}
             <div className="git__heading">
-              {changes.commits.length === 1 ? '1 commit' : `${changes.commits.length} commits`}
-              {branch !== null && ` on ${branch}`}
+              {changes.commitScope === 'ahead'
+                ? `${changes.commits.length === 1 ? '1 commit' : `${changes.commits.length} commits`}${
+                    branch === null ? '' : ` on ${branch}`
+                  }`
+                : 'Recent commits'}
             </div>
             {changes.commits.map((commit) => (
               <button

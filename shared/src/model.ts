@@ -184,6 +184,18 @@ export interface WorktreeChanges {
   base: string | null
   uncommitted: FileChange[]
   commits: Commit[]
+  /**
+   * What `commits` is a list of.
+   *
+   * `ahead` means commits this branch has that its base does not, which is the
+   * question worth asking of a worktree an agent has been working in. `recent`
+   * is the fallback when that list is empty -- on the base branch itself, or a
+   * worktree that has not committed yet -- because a panel that answers "what
+   * happened here" with nothing at all is no use. The two are labelled
+   * differently, since one is this worktree's work and the other is just
+   * history.
+   */
+  commitScope: 'ahead' | 'recent'
   /** Commits the base has that this branch does not. Context, not a warning. */
   behind: number
 }

@@ -71,6 +71,15 @@ export const parseStatus = (out: string): FileChange[] => {
   return changes
 }
 
+/**
+ * How much history to show when there is nothing ahead of the base.
+ *
+ * Enough to see what has been going on, not so much that the list becomes a
+ * log viewer -- the panel is for reviewing a worktree, and `git log` in a
+ * terminal is right there for the rest.
+ */
+const RECENT_COMMITS = 20
+
 /** Field and record separators that cannot occur in a commit subject. */
 const FIELD = '\x1f'
 const RECORD = '\x1e'
@@ -85,6 +94,18 @@ export const parseCommits = (out: string): Commit[] =>
       return { hash, short, subject, author, at: Number(at) * 1000 }
     })
 
+const FORMAT = `--format=%H${FIELD}%h${FIELD}%s${FIELD}%an${FIELD}%at${RECORD}`
+
+/** The last few commits here, whatever branch this is. */
+const recentCommits = async (cwd: string): Promise<Commit[]> => {
+  try {
+    return parseCommits(await git(cwd, ['log', FORMAT, '-n', String(RECENT_COMMITS), 'HEAD']))
+  } catch {
+    // A repository with no commits yet has no HEAD to log.
+    return []
+  }
+}
+
 export const worktreeChanges = async (opts: {
   worktreeId: string
   root: string
@@ -96,31 +117,48 @@ export const worktreeChanges = async (opts: {
   const uncommitted = parseStatus(
     await git(opts.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
   )
+  const nothingAhead = async (
+    withBase: string | null,
+  ): Promise<WorktreeChanges> => ({
+    worktreeId: opts.worktreeId,
+    branch,
+    base: withBase,
+    uncommitted,
+    commits: await recentCommits(opts.path),
+    commitScope: 'recent',
+    behind: 0,
+  })
 
-  if (base === null) {
-    return { worktreeId: opts.worktreeId, branch, base, uncommitted, commits: [], behind: 0 }
-  }
+  // No sensible base: the main worktree, or a branch that is its own base.
+  if (base === null) return nothingAhead(null)
 
   // A base that is not an ancestor would make `base..HEAD` misleading, so both
   // counts come from the symmetric difference, which is what ahead/behind mean.
-  let commits: Commit[] = []
-  let behind = 0
+  let ahead: Commit[]
+  let behind: number
   try {
-    commits = parseCommits(
-      await git(opts.path, [
-        'log',
-        `--format=%H${FIELD}%h${FIELD}%s${FIELD}%an${FIELD}%at${RECORD}`,
-        `${base}..HEAD`,
-      ]),
-    )
+    ahead = parseCommits(await git(opts.path, ['log', FORMAT, `${base}..HEAD`]))
     behind = Number((await git(opts.path, ['rev-list', '--count', `HEAD..${base}`])).trim())
   } catch {
     // A base that no longer resolves (a deleted remote branch, say) is not a
-    // reason to fail the whole panel: the uncommitted half is still the truth.
-    return { worktreeId: opts.worktreeId, branch, base: null, uncommitted, commits: [], behind: 0 }
+    // reason to fail the whole panel: everything else is still the truth.
+    return nothingAhead(null)
   }
 
-  return { worktreeId: opts.worktreeId, branch, base, uncommitted, commits, behind }
+  // Nothing of its own to show yet, so show what has happened here instead.
+  if (ahead.length === 0) {
+    return { ...(await nothingAhead(base)), behind }
+  }
+
+  return {
+    worktreeId: opts.worktreeId,
+    branch,
+    base,
+    uncommitted,
+    commits: ahead,
+    commitScope: 'ahead',
+    behind,
+  }
 }
 
 /**
