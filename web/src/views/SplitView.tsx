@@ -86,9 +86,18 @@ const Tile = ({
       {/* A div, not a button: the remove control lives in here and a button
           cannot be nested inside another button. */}
       <div className="tile__head">
-        {/* The whole header bar opens the worktree, not just the words, so
-            there is no dead space to click. Only the X is carved out. */}
-        <button className="tile__open" onClick={onOpen} title={worktree.path}>
+        {/*
+          The whole header bar is the action, not just the words, so there is no
+          dead space to click -- only the controls on the right are carved out.
+          While minimized that action is "expand", not "open": the terminal you
+          would be navigating to is the very thing that is hidden, so bringing it
+          back is what a click means.
+        */}
+        <button
+          className="tile__open"
+          onClick={minimized ? onToggleMinimized : onOpen}
+          title={minimized ? `Expand ${worktree.name}` : worktree.path}
+        >
           <span className="tile__name">{worktree.name}</span>
           {worktree.branch && worktree.branch !== worktree.name && (
             <span className="tile__branch">{worktree.branch}</span>
@@ -100,15 +109,21 @@ const Tile = ({
           Minimizing keeps the header -- and with it the name, the state and the
           attention rail -- so a worktree that needs you still says so from the
           bottom of the overview.
+
+          There is no matching expand control: while minimized, the whole header
+          bar expands, so an icon for it would be a second button doing what the
+          thing it sits on already does.
         */}
-        <button
-          className="tile__minimize"
-          onClick={onToggleMinimized}
-          title={minimized ? `Expand ${worktree.name}` : `Minimize ${worktree.name}`}
-          aria-label={minimized ? `Expand ${worktree.name}` : `Minimize ${worktree.name}`}
-        >
-          {minimized ? '+' : '\u2212'}
-        </button>
+        {!minimized && (
+          <button
+            className="tile__minimize"
+            onClick={onToggleMinimized}
+            title={`Minimize ${worktree.name}`}
+            aria-label={`Minimize ${worktree.name}`}
+          >
+            {'\u2212'}
+          </button>
+        )}
         {/* The main worktree cannot be removed, so it gets no control. */}
         {!worktree.isMain && (
           <button
