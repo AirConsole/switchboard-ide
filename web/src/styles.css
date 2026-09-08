@@ -46,8 +46,10 @@
   --rail: 2px;
   --bar-h: 44px;
   /* A worktree tile's own bar. Its controls fill it edge to edge, so this is
-     the height of every button in a tile as well. */
-  --tile-bar-h: 32px;
+     the height of every button in a tile as well -- roomy enough that the
+     15px title is not wedged between two edges, and it costs a tile well
+     under half a terminal row. */
+  --tile-bar-h: 38px;
   --radius: 4px;
 
   color-scheme: dark;
