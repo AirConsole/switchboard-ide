@@ -16,12 +16,19 @@ import '@xterm/xterm/css/xterm.css'
 const MIRROR_SCROLLBACK = 5000
 
 /**
- * The terminal font. Exported because the overview derives its minimum tile
- * width from this font's character width, and the two must agree or the
- * "at least 80 columns" guarantee is only approximate.
+ * The terminal font: whatever the viewer's browser calls `monospace`.
+ *
+ * Deliberately not a stack of named fonts. This app is looked at beside the
+ * user's own terminal, and naming fonts meant the two rendered differently
+ * whenever one of them happened to be installed. `monospace` is exactly what an
+ * unconfigured VS Code terminal resolves to, so the two now agree by
+ * construction rather than by luck.
+ *
+ * Exported because the overview derives its minimum tile width from this font's
+ * character width, measured at runtime -- so the 80-column floor stays correct
+ * on whatever this resolves to, machine to machine.
  */
-export const TERMINAL_FONT_FAMILY =
-  '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace'
+export const TERMINAL_FONT_FAMILY = 'monospace'
 
 /**
  * Type size for every terminal.

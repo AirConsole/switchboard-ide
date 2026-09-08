@@ -37,7 +37,11 @@
   --pulse: #4b9fd6;
   --danger: #e5707a;
 
-  --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+  /* One monospace face for the whole app, and it is the viewer's own: naming
+     fonts made the chrome and the terminals disagree with the user's terminal
+     whenever a named font happened to be installed. Must stay in step with
+     TERMINAL_FONT_FAMILY in TerminalView.tsx. */
+  --font-mono: monospace;
   --font-ui: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   --rail: 2px;

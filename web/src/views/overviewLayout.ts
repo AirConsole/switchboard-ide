@@ -54,6 +54,12 @@ let cachedWidth = 0
  * Measured rather than estimated because the minimum tile width is derived from
  * it: a ratio that is even slightly low would hand tiles fewer than
  * MIN_TILE_COLUMNS columns, which is the one thing this layout guarantees.
+ *
+ * It does not match xterm's cell exactly -- canvas reports 8.429px for 14px
+ * monospace where xterm lays out cells of 8.0 -- and that is the right
+ * direction to be wrong in: tiles come out a few percent wider than strictly
+ * needed, so the column floor holds with margin. Do not "correct" this by
+ * shrinking the estimate without checking the rendered cols first.
  */
 export const measureMonoCharWidth = (fontSize: number, fontFamily: string): number => {
   const key = `${fontSize}px ${fontFamily}`
