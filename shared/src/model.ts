@@ -105,10 +105,20 @@ export interface UiState {
   /** Worktree order in the top bar, by id. */
   tabOrder: string[]
   /**
-   * Worktrees present only in the top bar, by id: no tile in the grid. Their
-   * chip still carries state, so a minimized worktree can still call for you.
+   * The worktrees that have a tile, leftmost first.
+   *
+   * An order, not a set, because it is what the grid renders: a worktree you
+   * ask for enters at the left and pushes the rest right, and whatever no
+   * longer fits falls off the right and is dropped from here. Being dropped is
+   * a real change of state rather than a trick of the width, so widening the
+   * window does not bring it back -- you ask for it again from the top bar,
+   * and it enters at the left like anything else.
+   *
+   * Null when nothing has been decided yet, which is not the same as empty:
+   * empty means every worktree was put away, null means this is a first run and
+   * the natural order should be seeded in.
    */
-  minimized: string[]
+  shown: string[] | null
   /** Panels open per worktree, in the order they sit beside Claude. */
   panels: Record<string, PanelName[]>
   /**
@@ -127,7 +137,7 @@ export interface UiState {
 export const defaultUiState = (): UiState => ({
   activeProjectId: null,
   tabOrder: [],
-  minimized: [],
+  shown: null,
   panels: {},
   newestPane: null,
   activeTerminalByWorktree: {},

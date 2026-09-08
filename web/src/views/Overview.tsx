@@ -14,10 +14,14 @@ import {
   measureMonoCharWidth,
   planColumns,
 } from './overviewLayout.js'
+import { useTileMotion, type Slot } from './tileMotion.js'
 
 /**
- * Gap between tiles, in px. Applied inline rather than from the stylesheet so
- * the layout arithmetic and the rendered spacing cannot drift apart.
+ * Gap between tiles, in px, and the same inset around the grid.
+ *
+ * Both live here rather than in the stylesheet because the tiles are positioned
+ * from measured pixels: the arithmetic and the rendered spacing are the same
+ * number or the tiles do not line up with their own gaps.
  */
 const GAP = 12
 
@@ -314,9 +318,7 @@ const WorktreeTile = ({
   )
 
   return (
-    // Grow in proportion to the panes held, so every pane in the grid is the
-    // same width whether its tile has one column or four.
-    <div className={`tile tile--${state}`} style={{ flexGrow: panes.length }}>
+    <div className={`tile tile--${state}`}>
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
@@ -399,7 +401,8 @@ const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
 export interface OverviewProps {
   worktrees: Worktree[]
   sessions: Session[]
-  minimized: string[]
+  /** Worktrees with a tile, leftmost first. Null until seeded. */
+  shown: string[] | null
   panels: Record<string, PanelName[]>
   newestPane: string | null
   activeTerminalByWorktree: Record<string, string>
@@ -407,31 +410,35 @@ export interface OverviewProps {
   onMinimize: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
-  /**
-   * Close panels the layout could not find room for. Reported from here
-   * because only the layout knows what fit.
-   */
   onCollapsePanels: (collapsed: { worktreeId: string; panel: PanelName }[]) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
   onCloseTerminal: (sessionId: string) => void
-  /** Which worktrees ended up with a tile on screen, so the top bar can tell. */
-  onVisibleWorktrees: (worktreeIds: string[]) => void
+  /**
+   * The order the grid settled on: what is shown, leftmost first, with
+   * whatever no longer fits left out. Only the layout knows how much fits.
+   */
+  onShownOrder: (worktreeIds: string[]) => void
 }
 
 /**
- * The whole app: worktree tiles side by side.
+ * The whole app: worktree tiles side by side, in the order you asked for them.
  *
- * There are no rows. Every pane is one full-height column, and a pane that
- * cannot have MIN_PANE_COLUMNS is pushed out rather than squeezed -- so the
- * narrower the window the less is on screen, down to a single column on a
- * phone.
+ * One rule governs the grid. A worktree you ask for enters at the left, the
+ * rest shift right, and whatever no longer fits falls off the right and is put
+ * away in the top bar -- for good, not until the window happens to widen again.
+ * That is what makes the grid followable: a tile only ever moves because you
+ * did something, and it always moves the same way.
+ *
+ * Panels are a separate question, settled inside a tile: they keep a fixed
+ * order beside Claude, and when a tile cannot have all of them the one you just
+ * opened is the one that gets the room.
  */
 export const Overview = ({
   worktrees,
   sessions,
-  minimized,
+  shown,
   panels,
   newestPane,
   activeTerminalByWorktree,
@@ -444,54 +451,141 @@ export const Overview = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
-  onVisibleWorktrees,
+  onShownOrder,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
 
-  const panes = wantedPanes(worktrees, minimized, panels)
-  // With little to show, the grid has room to be the action and the explanation
-  // of what a worktree is; beyond that the top bar's + carries it.
-  const expanded = new Set(panes.map((pane) => (pane.kind === 'add' ? ADD_KEY : pane.worktree.id)))
-  if (expanded.size < ADD_TILE_THRESHOLD) panes.push({ kind: 'add', key: ADD_KEY })
+  const byId = new Map(worktrees.map((worktree) => [worktree.id, worktree]))
+  /*
+   * A first run has no order to restore, so the worktrees are taken as they
+   * come. After that the stored order is the truth, filtered to what still
+   * exists -- a worktree removed elsewhere leaves no hole behind.
+   */
+  const order = (shown ?? worktrees.map((worktree) => worktree.id))
+    .map((id) => byId.get(id))
+    .filter((worktree): worktree is Worktree => worktree !== undefined)
 
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
-  const visible = planColumns(
-    panes,
-    (pane) => pane.key,
-    (pane) => (pane.kind === 'add' ? ADD_KEY : pane.worktree.id),
-    newestPane,
-    width,
-    minPaneWidth,
-    GAP,
-  )
-  const tiles = gatherTiles(visible)
+  // The measured box includes the grid's inset, which the tiles do not get.
+  const available = Math.max(0, width - GAP * 2)
+  const capacity = Math.max(1, Math.floor((available + GAP) / (minPaneWidth + GAP)))
 
   /*
-   * Panels with no room are collapsed, not remembered as open-behind-the-scenes.
+   * Take tiles from the left while they fit, and stop at the first that does
+   * not: everything from there on falls off the right together, so the tiles
+   * that remain are always a prefix of the order you asked for.
+   *
+   * The leftmost tile is kept whatever it costs. It is the one you most
+   * recently asked for, and a window too narrow for even that should still show
+   * it -- narrowed down, below, to the panes that fit.
+   */
+  const panesOf = (worktree: Worktree): Pane[] => {
+    const open = panels[worktree.id] ?? []
+    return [
+      { kind: 'claude' as const, key: paneKey(worktree.id, 'claude'), worktree },
+      ...PANELS.filter((panel) => open.includes(panel)).map((panel) => ({
+        kind: panel,
+        key: paneKey(worktree.id, panel),
+        worktree,
+      })),
+    ]
+  }
+
+  const fitting: { worktree: Worktree; panes: Pane[] }[] = []
+  let used = 0
+  for (const worktree of order) {
+    const panes = panesOf(worktree)
+    if (fitting.length > 0 && used + panes.length > capacity) break
+    fitting.push({ worktree, panes })
+    used += panes.length
+  }
+
+  /*
+   * Only the leftmost tile can still be over capacity, since every later one
+   * was admitted only if it fit. Narrow it by the pane rule: the pane you just
+   * asked for first, then the rest of the tile from the left.
+   */
+  const first = fitting[0]
+  if (first && used > capacity) {
+    first.panes = planColumns(
+      first.panes,
+      (pane) => pane.key,
+      () => first.worktree.id,
+      newestPane,
+      available,
+      minPaneWidth,
+      GAP,
+    )
+  }
+
+  /*
+   * With little to show, the grid has room to be the action and the explanation
+   * of what a worktree is; beyond that the top bar's + carries it.
+   *
+   * It has to earn its column like everything else. Appending it unconditionally
+   * put two tiles in a grid with room for one, and both came out at a fifth of
+   * the width a terminal needs.
+   */
+  const cells: { key: string; worktree: Worktree | null; panes: Pane[] }[] = fitting.map((tile) => ({
+    key: tile.worktree.id,
+    worktree: tile.worktree,
+    panes: tile.panes,
+  }))
+  if (cells.length < ADD_TILE_THRESHOLD && used + 1 <= capacity) {
+    cells.push({ key: ADD_KEY, worktree: null, panes: [{ kind: 'add', key: ADD_KEY }] })
+  }
+
+  /*
+   * Geometry, in px, because the tiles are positioned rather than flowed: an
+   * entry from off the left and an exit past the right edge are not things a
+   * flex row can express.
+   *
+   * Every pane in the grid is the same width whatever tile it belongs to, which
+   * is what keeps two worktrees side by side comparable.
+   */
+  const totalPanes = cells.reduce((n, cell) => n + cell.panes.length, 0)
+  const paneWidth =
+    totalPanes === 0 ? 0 : (available - GAP * Math.max(0, cells.length - 1)) / totalPanes
+  type Cell = (typeof cells)[number]
+  const slots: Slot<Cell>[] = []
+  let x = GAP
+  for (const cell of cells) {
+    const tileWidth = paneWidth * cell.panes.length
+    slots.push({ key: cell.key, left: x, width: tileWidth, data: cell })
+    x += tileWidth + GAP
+  }
+  const moving = useTileMotion(width > 0 ? slots : [])
+
+  /*
+   * Tell the app what the grid settled on.
+   *
+   * Falling off the right is a change of state, not a trick of the width, so it
+   * is written down: the worktree goes to the top bar and stays there until it
+   * is asked for again. This is also what seeds the order on a first run.
+   */
+  const settled = fitting.map((tile) => tile.worktree.id).join(',')
+  useEffect(() => {
+    if (width > 0) onShownOrder(settled === '' ? [] : settled.split(','))
+  }, [settled, width, onShownOrder])
+
+  /*
+   * Panels with no room are closed, not remembered as open-behind-the-scenes.
    *
    * A panel that is open but has no pane is a state with nothing to show for
    * itself: the tile looks exactly as it would with the panel closed, so the
-   * only honest thing its toggle can say is "closed". Rather than dress that up
-   * as a third state, the panel is closed for real and the toggle goes with it.
-   *
-   * Only worktrees that actually have a tile are considered. A minimized
-   * worktree has no panes at all, and collapsing its panels would throw away
-   * the width it is meant to come back at.
+   * only honest thing its toggle can say is "closed".
    */
-  const collapsedKeys = tiles
-    .filter((tile) => tile.worktree !== null)
+  const collapsedKey = fitting
     .flatMap((tile) =>
-      (panels[tile.worktree!.id] ?? [])
+      (panels[tile.worktree.id] ?? [])
         .filter((panel) => !tile.panes.some((pane) => pane.kind === panel))
-        .map((panel) => paneKey(tile.worktree!.id, panel)),
+        .map((panel) => paneKey(tile.worktree.id, panel)),
     )
-  const collapsedKey = collapsedKeys.join(',')
+    .join(',')
   useEffect(() => {
     if (width === 0 || collapsedKey === '') return
-    // One call for the lot: a patch per panel would each be built from the same
-    // pre-collapse state, and the last would undo the rest.
     onCollapsePanels(
       collapsedKey.split(',').map((key) => {
         const cut = key.lastIndexOf(':')
@@ -500,46 +594,47 @@ export const Overview = ({
     )
   }, [collapsedKey, width, onCollapsePanels])
 
-  /*
-   * Tell the top bar which worktrees actually got a tile.
-   *
-   * "Not minimized" is no longer the same as "on screen": a tile can be pushed
-   * out for want of width. A chip that claimed otherwise would be lying, and
-   * clicking it would minimize a worktree the user cannot even see.
-   */
-  const visibleKey = tiles
-    .filter((tile) => tile.worktree !== null)
-    .map((tile) => tile.key)
-    .join(',')
-  useEffect(() => {
-    if (width > 0) onVisibleWorktrees(visibleKey === '' ? [] : visibleKey.split(','))
-  }, [visibleKey, width, onVisibleWorktrees])
-
   return (
     <section className="view overview">
-      <div className="grid" ref={gridRef} style={{ gap: GAP }}>
+      <div className="grid" ref={gridRef}>
         {/* Nothing renders until the grid is measured, so a terminal is never
             built at a width that is about to change. */}
         {width > 0 &&
-          tiles.map((tile) => {
-            const worktree = tile.worktree
-            if (!worktree) return <AddTile key={tile.key} onClick={onNewWorktree} />
+          moving.map((slot) => {
+            const worktree = slot.data.worktree
             return (
-              <WorktreeTile
-                key={tile.key}
-                worktree={worktree}
-                panes={tile.panes}
-                session={claudeSession(sessions, worktree.id)}
-                terminals={terminalSessions(sessions, worktree.id)}
-                activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
-                onStart={() => onStart(worktree.id)}
-                onMinimize={() => onMinimize(worktree.id)}
-                onRemove={() => onRemoveWorktree(worktree.id)}
-                onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
-                onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
-                onNewTerminal={() => onNewTerminal(worktree.id)}
-                onCloseTerminal={onCloseTerminal}
-              />
+              <div
+                key={slot.key}
+                className={slot.leaving ? 'slot slot--leaving' : 'slot'}
+                style={{ left: slot.left, width: slot.width }}
+              >
+                {/*
+                 * Held at the width the tile will end at, so the terminal
+                 * inside is laid out once and a growing tile uncovers finished
+                 * content rather than reflowing it frame by frame. Whatever is
+                 * not uncovered yet is simply clipped.
+                 */}
+                <div className="slot__inner" style={{ width: slot.width }}>
+                  {worktree === null ? (
+                    <AddTile onClick={onNewWorktree} />
+                  ) : (
+                    <WorktreeTile
+                      worktree={worktree}
+                      panes={slot.data.panes}
+                      session={claudeSession(sessions, worktree.id)}
+                      terminals={terminalSessions(sessions, worktree.id)}
+                      activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
+                      onStart={() => onStart(worktree.id)}
+                      onMinimize={() => onMinimize(worktree.id)}
+                      onRemove={() => onRemoveWorktree(worktree.id)}
+                      onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
+                      onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
+                      onNewTerminal={() => onNewTerminal(worktree.id)}
+                      onCloseTerminal={onCloseTerminal}
+                    />
+                  )}
+                </div>
+              </div>
             )
           })}
       </div>

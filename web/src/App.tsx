@@ -15,14 +15,6 @@ export const App = (): React.ReactElement => {
   const [showOpenProject, setShowOpenProject] = useState(false)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
-  /**
-   * Worktrees with a tile actually on screen, reported by the overview.
-   *
-   * Not persisted and not derived from `minimized`: whether a tile fits depends
-   * on the window, so only the thing doing the layout can say.
-   */
-  const [shown, setShown] = useState<string[]>([])
-
   useEffect(() => {
     bindSocketToStore()
     void refresh()
@@ -34,7 +26,32 @@ export const App = (): React.ReactElement => {
     [worktrees, project?.id, ui.tabOrder],
   )
 
+  /**
+   * Which worktrees have a tile, leftmost first.
+   *
+   * Null in stored state means a first run rather than "none": the natural
+   * order is seeded in, and the grid writes back what actually fit.
+   */
+  const shown = ui.shown ?? projectWorktrees.map((worktree) => worktree.id)
+
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
+
+  /**
+   * Adopt the order the grid settled on.
+   *
+   * Written only when it differs, or the report of what is shown would feed
+   * straight back into the state it was computed from.
+   */
+  const setShownOrder = useCallback(
+    (ids: string[]): void => {
+      const current = ui.shown
+      if (current !== null && current.length === ids.length && current.every((id, i) => id === ids[i])) {
+        return
+      }
+      setUi({ shown: ids })
+    },
+    [ui.shown, setUi],
+  )
 
   const startClaude = (worktreeId: string): void => {
     const existing = claudeSession(sessions, worktreeId)
@@ -66,21 +83,20 @@ export const App = (): React.ReactElement => {
   }
 
   /**
-   * A chip toggles whether its worktree is on screen. Minimizing also happens
-   * by clicking a tile's own bar, and both land here.
+   * Show a worktree, or put it away.
    *
-   * Keyed on what is actually visible, not on `minimized`, because a tile can
-   * be absent for either reason. Bringing one back also marks it newest, which
-   * brings back the panels it had open too: the layout protects the newest pane
-   * and the rest of its tile, so a two-column worktree returns as two columns.
+   * Showing puts it at the front, which is the left of the grid: one rule for
+   * how anything arrives, whether you clicked its chip, just created it, or are
+   * bringing back something the width pushed out. Whatever no longer fits then
+   * falls off the right, and the grid tells us so.
    */
   const toggleMinimized = (worktreeId: string): void => {
     if (shown.includes(worktreeId)) {
-      setUi({ minimized: [...ui.minimized.filter((id) => id !== worktreeId), worktreeId] })
+      setUi({ shown: shown.filter((id) => id !== worktreeId) })
       return
     }
     setUi({
-      minimized: ui.minimized.filter((id) => id !== worktreeId),
+      shown: [worktreeId, ...shown.filter((id) => id !== worktreeId)],
       newestPane: paneKey(worktreeId, 'claude'),
     })
   }
@@ -171,8 +187,12 @@ export const App = (): React.ReactElement => {
           onClose={() => setShowNewWorktree(false)}
           onCreated={(worktreeId) => {
             setShowNewWorktree(false)
-            // A worktree you just created is the one you want to see.
-            setUi({ newestPane: paneKey(worktreeId, 'claude') })
+            // A worktree you just created is the one you want to see, so it
+            // arrives where everything else does: at the left.
+            setUi({
+              shown: [worktreeId, ...shown.filter((id) => id !== worktreeId)],
+              newestPane: paneKey(worktreeId, 'claude'),
+            })
             void refresh()
           }}
         />
@@ -185,7 +205,7 @@ export const App = (): React.ReactElement => {
             // A removed worktree leaves nothing of itself behind in the layout.
             const panels = { ...ui.panels }
             delete panels[removing]
-            setUi({ minimized: ui.minimized.filter((id) => id !== removing), panels })
+            setUi({ shown: shown.filter((id) => id !== removing), panels })
             setRemoving(null)
             void refresh()
           }}
@@ -229,7 +249,7 @@ export const App = (): React.ReactElement => {
       <Overview
         worktrees={projectWorktrees}
         sessions={sessions}
-        minimized={ui.minimized}
+        shown={ui.shown}
         panels={ui.panels}
         newestPane={ui.newestPane}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
@@ -247,7 +267,7 @@ export const App = (): React.ReactElement => {
             },
           })
         }
-        onVisibleWorktrees={setShown}
+        onShownOrder={setShownOrder}
         onNewTerminal={newTerminal}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />

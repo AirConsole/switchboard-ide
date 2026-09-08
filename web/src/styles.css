@@ -85,6 +85,15 @@
   --font-mono: Menlo, monospace;
   --font-ui: system-ui, sans-serif;
 
+  /*
+   * How long a tile takes to move. Must match MOTION_MS in tileMotion.ts.
+   *
+   * Short on purpose: the movement is there to answer "which one moved, and
+   * where did it go", which is a question you ask in the instant after
+   * clicking. Slower answers it no better and makes every click feel sticky.
+   */
+  --motion: 140ms;
+
   --rail: 2px;
   --bar-h: 44px;
   /* A worktree tile's own bar. Its controls fill it edge to edge, so this is
@@ -282,19 +291,79 @@ button {
 /*
  * The overview fills the viewport exactly and never scrolls.
  *
- * There are no rows: every pane is one full-height column of equal width, and a
- * tile is as many of those as it has panes open. Which panes are on screen at
- * all is decided in overviewLayout.ts, since CSS cannot express "drop panes from
- * the right until the rest are 80 characters wide, except the one just opened".
- * The gap is applied inline from the same constant that the arithmetic uses.
+ * Tiles are positioned rather than flowed. A flex row cannot express a tile
+ * arriving from off the left or leaving past the right edge, and those are the
+ * whole point: one worktree enters, the rest shift over, and whatever no longer
+ * fits goes. Every offset comes from Overview.tsx, which measures this box --
+ * so the gap and the inset are one constant there, not a number in each place.
  */
 .grid {
-  display: flex;
-  padding: 12px;
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+/*
+ * One tile's place in the grid.
+ *
+ * `left` and `width` are set from measured pixels and transition, which is what
+ * makes a tile slide when the one to its left arrives or leaves. `transform` is
+ * left free for entering and leaving, so the two never fight over the same
+ * property.
+ *
+ * It clips, which is the other half of a tile resizing well: the tile inside is
+ * already at the width it will end at, so growing uncovers content that is
+ * finished rather than reflowing a terminal frame by frame.
+ */
+.slot {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  overflow: hidden;
+  transition:
+    left var(--motion) ease,
+    width var(--motion) ease,
+    transform var(--motion) ease;
+  animation: slot-in var(--motion) ease;
+}
+
+/* Entering: from just off its own left edge. Everything arrives at the left of
+   the grid, so that is off screen, which is where an arrival should come from. */
+@keyframes slot-in {
+  from {
+    transform: translateX(-110%);
+  }
+}
+
+/*
+ * Leaving: one last render in place, then out to the right.
+ *
+ * The node has to survive to be animated, so it is kept for the length of the
+ * movement (see useTileMotion) and moved by transform -- past the edge rather
+ * than to it, so nothing is left peeking. It stops taking clicks the moment it
+ * starts leaving.
+ */
+.slot--leaving {
+  transform: translateX(110%);
+  animation: none;
+  pointer-events: none;
+}
+
+/* Held at the width the tile will end at; see the note on .slot. */
+.slot__inner {
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot {
+    transition: none;
+    animation: none;
+  }
+  .slot--leaving {
+    display: none;
+  }
 }
 
 /* --------------------------------------------------------------- the tile -- */
@@ -302,9 +371,9 @@ button {
 .tile {
   display: flex;
   flex-direction: column;
-  /* Grows in proportion to the panes it holds -- flex-grow is set inline to
-     that count -- so every pane in the grid comes out the same width. */
-  flex: 1 1 0;
+  /* Fills the place the grid gave it; the width arithmetic lives there. */
+  width: 100%;
+  height: 100%;
   min-height: 0;
   background: var(--slab);
   border: 1px solid var(--rule);
@@ -537,7 +606,8 @@ button {
   place-content: center;
   justify-items: center;
   gap: 10px;
-  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   padding: 20px;
   border: 1px dashed var(--rule-bright);
