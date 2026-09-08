@@ -100,7 +100,13 @@ export const listWorktrees = async (projectId: string, root: string): Promise<Wo
     return {
       id: worktreeIdFor(w.path),
       projectId,
-      name: isMain ? basename(mainPath) : basename(w.path),
+      /*
+       * The main worktree is named after its branch, not its directory: the
+       * directory is the repository, whose name the interface already shows
+       * beside it, so using it here just says the project twice. A detached
+       * main worktree has no branch to use, so it falls back to the directory.
+       */
+      name: isMain ? (w.branch ?? basename(mainPath)) : basename(w.path),
       branch: w.branch,
       path: w.path,
       isMain,
