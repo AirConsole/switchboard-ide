@@ -1,5 +1,20 @@
 import type { AppSnapshot, Project, Session, UiState, Worktree } from '@ide-n-dream/shared'
 
+/**
+ * A failed request, carrying the server's machine-readable `code` so callers can
+ * offer a specific recovery rather than only showing the message.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly details: Record<string, unknown> = {},
+  ) {
+    super(message)
+  }
+}
+
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -8,11 +23,20 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   if (!response.ok) {
     // The server puts the useful text in `error`; surfacing it beats a bare 400.
     const body: unknown = await response.json().catch(() => null)
-    const message =
-      body && typeof body === 'object' && 'error' in body
-        ? String((body as { error: unknown }).error)
-        : `${response.status} ${response.statusText}`
-    throw new Error(message)
+    if (body && typeof body === 'object') {
+      const { error, code, ...details } = body as {
+        error?: unknown
+        code?: unknown
+        [key: string]: unknown
+      }
+      throw new ApiError(
+        error === undefined ? `${response.status} ${response.statusText}` : String(error),
+        response.status,
+        typeof code === 'string' ? code : undefined,
+        details,
+      )
+    }
+    throw new ApiError(`${response.status} ${response.statusText}`, response.status)
   }
   return (await response.json()) as T
 }
@@ -26,8 +50,11 @@ export interface BrowseResult {
 export const api = {
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
   browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
-  openProject: (path: string) =>
-    request<Project>('/api/projects', { method: 'POST', body: JSON.stringify({ path }) }),
+  openProject: (path: string, opts: { create?: boolean } = {}) =>
+    request<Project>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ path, create: opts.create ?? false }),
+    }),
   closeProject: (id: string) => request<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),

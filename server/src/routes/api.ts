@@ -4,7 +4,11 @@ import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
 import { HttpError, type Workspace } from '../workspace.js'
 
-const openProjectBody = z.object({ path: z.string().min(1) })
+const openProjectBody = z.object({
+  path: z.string().min(1),
+  /** Create the directory and initialise a repository if it is not there yet. */
+  create: z.boolean().default(false),
+})
 const createWorktreeBody = z.object({
   projectId: z.string().min(1),
   branch: z.string().min(1),
@@ -39,7 +43,12 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {
-      void reply.status(error.status).send({ error: error.message })
+      // `code` and `details` travel to the client so it can offer a specific
+      // recovery (for example: create the missing directory) instead of just
+      // showing the message.
+      void reply
+        .status(error.status)
+        .send({ error: error.message, code: error.code, ...error.details })
       return
     }
     if (error instanceof z.ZodError) {
@@ -61,8 +70,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   })
 
   app.post('/api/projects', async (request) => {
-    const { path } = openProjectBody.parse(request.body)
-    const project = await workspace.openProject(path)
+    const { path, create } = openProjectBody.parse(request.body)
+    const project = await workspace.openProject(path, { create })
     broadcastInvalidate()
     return project
   })

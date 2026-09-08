@@ -196,5 +196,28 @@ export const pruneWorktrees = async (root: string): Promise<void> => {
   await git(root, 'worktree', 'prune')
 }
 
+/**
+ * Turn a directory into a usable project: `git init` plus an empty first commit.
+ *
+ * The commit is not optional. A repository with no commits has no HEAD, and
+ * `git worktree add` refuses to run against it ("fatal: not a valid object
+ * name: 'HEAD'"), so a freshly created project could not do the one thing this
+ * IDE exists for. An empty commit costs nothing and is trivial to amend.
+ */
+export const initRepository = async (path: string): Promise<void> => {
+  await git(path, 'init')
+  await git(path, 'commit', '--allow-empty', '-m', 'Initial commit')
+}
+
+/** Root of the repository containing `path`, or null when there is none. */
+export const enclosingRepoRoot = async (path: string): Promise<string | null> => {
+  try {
+    const out = await git(path, 'rev-parse', '--path-format=absolute', '--show-toplevel')
+    return out.trim() === '' ? null : out.trim()
+  } catch {
+    return null
+  }
+}
+
 export const worktreePathFor = (worktreeRoot: string, branch: string): string =>
   join(worktreeRoot, branch.replace(/\//g, '-'))

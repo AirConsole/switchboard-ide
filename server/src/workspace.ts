@@ -1,5 +1,5 @@
-import { access, readdir, stat } from 'node:fs/promises'
-import { basename, resolve } from 'node:path'
+import { access, mkdir, readdir, stat } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import type { AppSnapshot, Project, Worktree } from '@ide-n-dream/shared'
 import type { StateStore } from './state.js'
@@ -9,6 +9,8 @@ import {
   defaultWorktreeRoot,
   deleteBranch,
   dirtyCount,
+  enclosingRepoRoot,
+  initRepository,
   isGitRepo,
   isValidBranchName,
   listWorktrees,
@@ -23,6 +25,10 @@ export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Machine-readable tag so the client can offer a specific recovery. */
+    readonly code?: string,
+    /** Extra fields merged into the error response body. */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message)
   }
@@ -88,13 +94,40 @@ export class Workspace {
     }
   }
 
-  async openProject(path: string): Promise<Project> {
-    const expanded = expandHome(path)
-    if (!(await isDirectory(expanded))) throw new HttpError(400, `not a directory: ${expanded}`)
-    if (!(await isGitRepo(expanded))) throw new HttpError(400, `not a git repository: ${expanded}`)
+  /**
+   * Register a project.
+   *
+   * With `create`, a missing directory is created and initialised as a
+   * repository. Without it, a missing path is reported as `path-missing` so the
+   * client can offer to create it rather than dead-ending on an error.
+   */
+  async openProject(path: string, opts: { create?: boolean } = {}): Promise<Project> {
+    const target = resolve(expandHome(path))
+
+    if (!(await exists(target))) {
+      if (!opts.create) {
+        throw new HttpError(404, `Nothing exists at ${target}`, 'path-missing', {
+          path: target,
+          // Creating a repository inside another one is almost always a
+          // mistake, so let the client warn before it happens.
+          insideRepo: await enclosingRepoOf(target),
+        })
+      }
+      await mkdir(target, { recursive: true })
+    }
+
+    if (!(await isDirectory(target))) throw new HttpError(400, `Not a directory: ${target}`)
+
+    if (!(await isGitRepo(target))) {
+      if (!opts.create) {
+        throw new HttpError(400, `Not a git repository: ${target}`, 'not-a-repo', { path: target })
+      }
+      await initRepository(target)
+    }
+
     // Normalise to the repo root so opening a subdirectory (or a worktree of the
     // repo) registers the same project rather than a near-duplicate.
-    const root = await repoRoot(expanded)
+    const root = await repoRoot(target)
     const project: Project = {
       id: projectIdFor(root),
       name: basename(root),
@@ -191,6 +224,20 @@ export class Workspace {
     )
     const parent = resolve(dir, '..')
     return { path: dir, parent: parent === dir ? null : parent, entries }
+  }
+}
+
+/**
+ * The repository enclosing a path that does not exist yet, found by walking up
+ * to the nearest directory that does exist and asking git from there.
+ */
+const enclosingRepoOf = async (target: string): Promise<string | null> => {
+  let current = resolve(target)
+  for (;;) {
+    if (await isDirectory(current)) return enclosingRepoRoot(current)
+    const parent = dirname(current)
+    if (parent === current) return null
+    current = parent
   }
 }
 
