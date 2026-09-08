@@ -257,22 +257,6 @@ button {
   min-height: 0;
 }
 
-.overview__head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 16px 18px 10px;
-}
-
-.overview__title {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--bone);
-}
-
 /*
  * The overview fills the viewport exactly and never scrolls: every tile gets
  * the most width and height available.
@@ -286,7 +270,7 @@ button {
  */
 .grid {
   display: flex;
-  padding: 0 18px 18px;
+  padding: 12px;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -341,11 +325,42 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 6px 8px 6px 10px;
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-mono);
   font-size: 11px;
   min-width: 0;
+}
+
+/* Opening the worktree is the whole label, so it stays one wide target. */
+.tile__open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+}
+
+.tile__open:hover .tile__name {
+  text-decoration: underline;
+}
+
+/*
+ * Removal is destructive, so the control stays quiet until you go for it and
+ * only turns red on hover -- it should not read as part of the status line.
+ */
+.tile__remove {
+  flex: none;
+  padding: 0 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--graphite-dim);
+}
+
+.tile__remove:hover {
+  color: var(--danger);
 }
 
 .tile__name {

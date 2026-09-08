@@ -167,6 +167,7 @@ export const App = (): React.ReactElement => {
           onOpenWorktree={openWorktree}
           onStart={startClaude}
           onNewWorktree={() => setShowNewWorktree(true)}
+          onRemoveWorktree={setRemoving}
         />
       )}
 

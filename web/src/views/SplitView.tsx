@@ -57,9 +57,16 @@ interface TileProps {
   session: Session | undefined
   onOpen: () => void
   onStart: () => void
+  onRemove: () => void
 }
 
-const Tile = ({ worktree, session, onOpen, onStart }: TileProps): React.ReactElement => {
+const Tile = ({
+  worktree,
+  session,
+  onOpen,
+  onStart,
+  onRemove,
+}: TileProps): React.ReactElement => {
   const state = session
     ? session.liveness === 'dead'
       ? 'dead'
@@ -72,14 +79,29 @@ const Tile = ({ worktree, session, onOpen, onStart }: TileProps): React.ReactEle
 
   return (
     <div className={`tile tile--${state}`}>
-      <button className="tile__head" onClick={onOpen} title={worktree.path}>
-        <span className="tile__name">{worktree.name}</span>
-        {worktree.branch && worktree.branch !== worktree.name && (
-          <span className="tile__branch">{worktree.branch}</span>
-        )}
-        {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
+      {/* A div, not a button: the remove control lives in here and a button
+          cannot be nested inside another button. */}
+      <div className="tile__head">
+        <button className="tile__open" onClick={onOpen} title={worktree.path}>
+          <span className="tile__name">{worktree.name}</span>
+          {worktree.branch && worktree.branch !== worktree.name && (
+            <span className="tile__branch">{worktree.branch}</span>
+          )}
+          {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
+        </button>
         <span className="tile__state">{stateLabel(session)}</span>
-      </button>
+        {/* The main worktree cannot be removed, so it gets no control. */}
+        {!worktree.isMain && (
+          <button
+            className="tile__remove"
+            onClick={onRemove}
+            title={`Remove ${worktree.name}`}
+            aria-label={`Remove worktree ${worktree.name}`}
+          >
+            &times;
+          </button>
+        )}
+      </div>
       <div className="tile__screen">
         {session ? (
           // Tiles stay interactive on purpose: you can answer a prompt here
@@ -116,6 +138,7 @@ export interface SplitViewProps {
   onOpenWorktree: (worktreeId: string) => void
   onStart: (worktreeId: string) => void
   onNewWorktree: () => void
+  onRemoveWorktree: (worktreeId: string) => void
 }
 
 export const SplitView = ({
@@ -124,6 +147,7 @@ export const SplitView = ({
   onOpenWorktree,
   onStart,
   onNewWorktree,
+  onRemoveWorktree,
 }: SplitViewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -146,12 +170,8 @@ export const SplitView = ({
 
   return (
     <section className="view overview">
-      <div className="overview__head">
-        <h1 className="overview__title">Worktrees</h1>
-        <span className="micro">
-          {worktrees.length === 1 ? '1 worktree' : `${worktrees.length} worktrees`}
-        </span>
-      </div>
+      {/* No heading or count: the tiles name themselves, and the height is
+          better spent on terminals. */}
       <div className="grid" ref={gridRef} style={{ gap: GAP }}>
         {/* Nothing renders until the grid is measured, so a terminal is never
             built at a width that is about to change. */}
@@ -168,6 +188,7 @@ export const SplitView = ({
                     session={claudeSession(sessions, cell.worktree.id)}
                     onOpen={() => onOpenWorktree(cell.worktree.id)}
                     onStart={() => onStart(cell.worktree.id)}
+                    onRemove={() => onRemoveWorktree(cell.worktree.id)}
                   />
                 ),
               )}

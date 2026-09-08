@@ -18,9 +18,22 @@ const createWorktreeBody = z.object({
   /** Start a Claude session in the new worktree immediately. */
   startClaude: z.boolean().default(true),
 })
+/**
+ * A boolean in a query string, read by value rather than by truthiness.
+ *
+ * `z.coerce.boolean()` is wrong here, and dangerously so: it applies
+ * JavaScript's Boolean(), for which the string "false" is true. That made
+ * "discard uncommitted changes" and "delete the branch" permanently on, so
+ * unchecking them still threw away uncommitted work and deleted the branch.
+ */
+const queryFlag = z
+  .string()
+  .optional()
+  .transform((value) => value === 'true' || value === '1')
+
 const removeWorktreeQuery = z.object({
-  force: z.coerce.boolean().default(false),
-  deleteBranch: z.coerce.boolean().default(false),
+  force: queryFlag,
+  deleteBranch: queryFlag,
 })
 const createSessionBody = z.object({
   worktreeId: z.string().min(1),

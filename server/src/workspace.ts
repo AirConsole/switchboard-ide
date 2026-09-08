@@ -192,6 +192,22 @@ export class Workspace {
     const { worktree, project } = await this.resolve(opts.worktreeId)
     if (worktree.isMain) throw new HttpError(400, 'refusing to remove the main worktree')
 
+    // Refuse before touching anything. Sessions have to die before git will
+    // remove the directory, but killing them and only then discovering that git
+    // refuses would leave the worktree intact and its work in progress gone.
+    if (!opts.force) {
+      const dirty = await dirtyCount(worktree.path)
+      if (dirty > 0) {
+        throw new HttpError(
+          400,
+          `${worktree.path} has ${dirty} uncommitted change${dirty === 1 ? '' : 's'}. ` +
+            'Discard them to remove it.',
+          'worktree-dirty',
+          { dirty },
+        )
+      }
+    }
+
     await this.engine.killForWorktree(worktree.id)
     try {
       await removeWorktree(project.root, worktree.path, opts.force)
