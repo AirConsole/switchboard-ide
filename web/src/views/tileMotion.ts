@@ -26,8 +26,17 @@ export interface Slot<T> {
 }
 
 export interface MovingSlot<T> extends Slot<T> {
-  /** On its way out: rendered one last time, off to the right. */
+  /** On its way out: rendered one last time, off the edge it fell past. */
   leaving: boolean
+  /**
+   * Which edge it leaves by.
+   *
+   * A tile normally goes right, having been pushed along by something arriving
+   * at the left. But a tile that grows pushes the others the other way, and one
+   * shoved off the left edge has to leave by the left -- sending it right would
+   * fly it back across the whole grid it was just pushed out of.
+   */
+  exit: 'left' | 'right'
 }
 
 /**
@@ -45,7 +54,7 @@ export interface MovingSlot<T> extends Slot<T> {
  * movement is over.
  */
 export const useTileMotion = <T,>(slots: Slot<T>[]): MovingSlot<T>[] => {
-  const [leaving, setLeaving] = useState<Slot<T>[]>([])
+  const [leaving, setLeaving] = useState<(Slot<T> & { exit: 'left' | 'right' })[]>([])
   const previous = useRef<Slot<T>[]>([])
   // A string, so the effect runs when the placement actually changes rather
   // than on every render that rebuilds the array.
@@ -53,7 +62,24 @@ export const useTileMotion = <T,>(slots: Slot<T>[]): MovingSlot<T>[] => {
 
   useEffect(() => {
     const present = new Set(slots.map((s) => s.key))
-    const gone = previous.current.filter((s) => !present.has(s.key))
+    const wasAt = new Map(previous.current.map((s, index) => [s.key, index]))
+    /*
+     * Which way a tile left is read from where the survivors used to be. If
+     * every one of them was to its right, it was pushed off the left; if every
+     * one was to its left, off the right. Anything else -- a tile taken out of
+     * the middle -- goes right, which is the grid's default direction.
+     */
+    const survivorPositions = slots
+      .map((s) => wasAt.get(s.key))
+      .filter((index): index is number => index !== undefined)
+    const gone = previous.current
+      .filter((s) => !present.has(s.key))
+      .map((s) => {
+        const at = wasAt.get(s.key) ?? 0
+        const pushedLeft =
+          survivorPositions.length > 0 && survivorPositions.every((index) => index > at)
+        return { ...s, exit: pushedLeft ? ('left' as const) : ('right' as const) }
+      })
     previous.current = slots
 
     if (gone.length === 0) {
@@ -75,7 +101,7 @@ export const useTileMotion = <T,>(slots: Slot<T>[]): MovingSlot<T>[] => {
   }, [signature])
 
   return [
-    ...slots.map((s) => ({ ...s, leaving: false })),
+    ...slots.map((s) => ({ ...s, leaving: false, exit: 'right' as const })),
     // Kept exactly where they were, at the width they had: the stylesheet
     // slides them out, so there is one mechanism for the exit and the tile does
     // not reflow on its way off screen.

@@ -473,13 +473,19 @@ export const Overview = ({
   const capacity = Math.max(1, Math.floor((available + GAP) / (minPaneWidth + GAP)))
 
   /*
-   * Take tiles from the left while they fit, and stop at the first that does
-   * not: everything from there on falls off the right together, so the tiles
-   * that remain are always a prefix of the order you asked for.
+   * The tile you just acted on keeps its room, and the rest fill in from the
+   * left until the width runs out.
    *
-   * The leftmost tile is kept whatever it costs. It is the one you most
-   * recently asked for, and a window too narrow for even that should still show
-   * it -- narrowed down, below, to the panes that fit.
+   * The reservation is what makes a tile able to grow. Filling purely from the
+   * left meant the last tile in the row was the one that did not fit -- so
+   * opening a panel on the rightmost worktree pushed that very worktree off the
+   * grid, which is the opposite of what the click asked for. Reserving it
+   * instead means the others give way: they shift left and the leftmost leaves.
+   *
+   * It is the same principle as inside a tile, where the panel you just opened
+   * is the one that gets the room. And it is not sticky -- every chip click and
+   * every panel toggle moves it -- so a tile is only ever privileged for the
+   * one action you just took.
    */
   const panesOf = (worktree: Worktree): Pane[] => {
     const open = panels[worktree.id] ?? []
@@ -493,26 +499,39 @@ export const Overview = ({
     ]
   }
 
-  const fitting: { worktree: Worktree; panes: Pane[] }[] = []
+  const anchorId = newestPane === null ? null : newestPane.slice(0, newestPane.lastIndexOf(':'))
+  const anchor = order.find((worktree) => worktree.id === anchorId) ?? order[0]
+
+  const kept = new Set<string>()
   let used = 0
-  for (const worktree of order) {
-    const panes = panesOf(worktree)
-    if (fitting.length > 0 && used + panes.length > capacity) break
-    fitting.push({ worktree, panes })
-    used += panes.length
+  if (anchor) {
+    // Whatever it costs: a window too narrow for even this one still shows it,
+    // narrowed below to the panes that fit.
+    kept.add(anchor.id)
+    used = panesOf(anchor).length
   }
+  for (const worktree of order) {
+    if (kept.has(worktree.id)) continue
+    const panes = panesOf(worktree).length
+    if (used + panes > capacity) break
+    kept.add(worktree.id)
+    used += panes
+  }
+  const fitting = order
+    .filter((worktree) => kept.has(worktree.id))
+    .map((worktree) => ({ worktree, panes: panesOf(worktree) }))
 
   /*
-   * Only the leftmost tile can still be over capacity, since every later one
+   * Only the reserved tile can still be over capacity, since every other one
    * was admitted only if it fit. Narrow it by the pane rule: the pane you just
    * asked for first, then the rest of the tile from the left.
    */
-  const first = fitting[0]
-  if (first && used > capacity) {
-    first.panes = planColumns(
-      first.panes,
+  const reserved = fitting.find((tile) => tile.worktree.id === anchor?.id)
+  if (reserved && used > capacity) {
+    reserved.panes = planColumns(
+      reserved.panes,
       (pane) => pane.key,
-      () => first.worktree.id,
+      () => reserved.worktree.id,
       newestPane,
       available,
       minPaneWidth,
@@ -566,9 +585,18 @@ export const Overview = ({
    * is asked for again. This is also what seeds the order on a first run.
    */
   const settled = fitting.map((tile) => tile.worktree.id).join(',')
+  const anything = worktrees.length > 0
   useEffect(() => {
-    if (width > 0) onShownOrder(settled === '' ? [] : settled.split(','))
-  }, [settled, width, onShownOrder])
+    /*
+     * Nothing is written before there is anything to say.
+     *
+     * The first render happens before the snapshot arrives, when there are no
+     * worktrees at all -- and reporting "none of them fit" then wrote an empty
+     * order, which is indistinguishable from "you put them all away". The grid
+     * stayed empty for good, however many worktrees turned up a moment later.
+     */
+    if (width > 0 && anything) onShownOrder(settled === '' ? [] : settled.split(','))
+  }, [settled, width, anything, onShownOrder])
 
   /*
    * Panels with no room are closed, not remembered as open-behind-the-scenes.
@@ -605,7 +633,16 @@ export const Overview = ({
             return (
               <div
                 key={slot.key}
-                className={slot.leaving ? 'slot slot--leaving' : 'slot'}
+                className={[
+                  'slot',
+                  // Not a worktree, so it does not arrive like one; see the
+                  // note on .slot--from-right.
+                  slot.data.worktree === null ? 'slot--from-right' : '',
+                  slot.leaving ? 'slot--leaving' : '',
+                  slot.leaving && slot.exit === 'left' ? 'slot--leaving-left' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 style={{ left: slot.left, width: slot.width }}
               >
                 {/*

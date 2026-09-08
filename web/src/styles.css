@@ -338,6 +338,25 @@ button {
 }
 
 /*
+ * The add tile arrives from the right instead.
+ *
+ * Everything else enters at the left because you asked for it, and the tiles
+ * already there move over to make room. This one is not asked for: it appears
+ * at the right end when the grid happens to have a column spare, so that is
+ * where it should come from. Sliding in from the left would read as a worktree
+ * arriving and shoving the rest along.
+ */
+.slot--from-right {
+  animation-name: slot-in-right;
+}
+
+@keyframes slot-in-right {
+  from {
+    transform: translateX(110%);
+  }
+}
+
+/*
  * Leaving: one last render in place, then out to the right.
  *
  * The node has to survive to be animated, so it is kept for the length of the
@@ -349,6 +368,13 @@ button {
   transform: translateX(110%);
   animation: none;
   pointer-events: none;
+}
+
+/* Pushed off the left, by a tile that grew rather than by one arriving. It has
+   to go the way it was pushed; the other direction would fly it back across the
+   grid it was just squeezed out of. */
+.slot--leaving-left {
+  transform: translateX(-110%);
 }
 
 /* Held at the width the tile will end at; see the note on .slot. */
