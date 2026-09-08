@@ -16,19 +16,24 @@ import '@xterm/xterm/css/xterm.css'
 const MIRROR_SCROLLBACK = 5000
 
 /**
- * The terminal font: whatever the viewer's browser calls `monospace`.
+ * The terminal font.
  *
- * Deliberately not a stack of named fonts. This app is looked at beside the
- * user's own terminal, and naming fonts meant the two rendered differently
- * whenever one of them happened to be installed. `monospace` is exactly what an
- * unconfigured VS Code terminal resolves to, so the two now agree by
- * construction rather than by luck.
+ * Menlo named first, then the generic. This is the font the user's own VS Code
+ * terminal renders in: it sets no `terminal.integrated.fontFamily`, so it falls
+ * through to the browser's `monospace`, which on macOS is Menlo. Naming it
+ * makes that explicit instead of depending on a per-platform default, and the
+ * generic still catches any machine without it.
+ *
+ * Deliberately NOT a stack of fonts that may or may not be installed -- the
+ * earlier `"JetBrains Mono", "Fira Code", ...` meant this app and the terminal
+ * beside it rendered in different faces on any machine where one happened to
+ * be present.
  *
  * Exported because the overview derives its minimum tile width from this font's
  * character width, measured at runtime -- so the 80-column floor stays correct
  * on whatever this resolves to, machine to machine.
  */
-export const TERMINAL_FONT_FAMILY = 'monospace'
+export const TERMINAL_FONT_FAMILY = 'Menlo, monospace'
 
 /**
  * Type size for every terminal.
