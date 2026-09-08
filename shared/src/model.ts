@@ -79,6 +79,11 @@ export interface UiState {
   activeSessionByWorktree: Record<string, string>
   /** Worktree tab order, by worktree id. */
   tabOrder: string[]
+  /**
+   * Worktrees shown as a title bar only in the overview, by id. They sort to
+   * the bottom, and a column of nothing but these is folded into its neighbour.
+   */
+  minimized: string[]
   /** Height of the secondary terminal strip in the detail view, in px. */
   terminalStripHeight: number
   /** Width of the (v2) side panel, in px. */
@@ -92,6 +97,7 @@ export const defaultUiState = (): UiState => ({
   activeWorktreeId: null,
   activeSessionByWorktree: {},
   tabOrder: [],
+  minimized: [],
   terminalStripHeight: 260,
   sidePanelWidth: 320,
   sidePanelOpen: false,

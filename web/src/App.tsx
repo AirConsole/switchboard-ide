@@ -49,6 +49,14 @@ export const App = (): React.ReactElement => {
     setUi({ view: 'detail', activeWorktreeId: worktreeId })
   }
 
+  const toggleMinimized = (worktreeId: string): void => {
+    setUi({
+      minimized: ui.minimized.includes(worktreeId)
+        ? ui.minimized.filter((id) => id !== worktreeId)
+        : [...ui.minimized, worktreeId],
+    })
+  }
+
   const startClaude = (worktreeId: string): void => {
     void api
       .createSession({ worktreeId, kind: 'claude' })
@@ -171,6 +179,8 @@ export const App = (): React.ReactElement => {
           onStart={startClaude}
           onNewWorktree={() => setShowNewWorktree(true)}
           onRemoveWorktree={setRemoving}
+          minimized={ui.minimized}
+          onToggleMinimized={toggleMinimized}
         />
       )}
 

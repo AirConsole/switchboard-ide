@@ -7,57 +7,86 @@ export const MIN_TILE_COLUMNS = 80
 /** Tile border plus the padding around the terminal inside it, in px. */
 export const TILE_CHROME_WIDTH = 18
 
-export interface OverviewLayout {
-  columns: number
-  /** How many cells each column holds, left to right. */
-  perColumn: number[]
-}
+/**
+ * Order cells for the overview: minimized worktrees always last.
+ *
+ * Columns fill in order, so putting them last is what puts them at the bottom.
+ * Both groups keep their incoming order, so minimizing a worktree moves it down
+ * without reshuffling anything else.
+ */
+export const sortMinimizedLast = <T>(cells: T[], isMinimized: (cell: T) => boolean): T[] => [
+  ...cells.filter((cell) => !isMinimized(cell)),
+  ...cells.filter(isMinimized),
+]
 
 /**
- * Decide how to split `cellCount` cells across the width available.
+ * Split cells across the width available, then fold away any column that holds
+ * nothing but minimized worktrees.
  *
- * Use as few columns as possible while keeping every tile at least
- * `minCellWidth` wide, then stack each column's share of the cells at equal
- * heights. Leftover cells go to the rightmost columns, so the last column is
- * the first to split in two, then the one before it, and only once every column
- * holds two does any column hold three.
+ * Column count is the fewest that keeps every tile at least `minCellWidth`
+ * wide. Leftover cells go to the rightmost columns, so the last column is the
+ * first to split in two, then the one before it, and only once every column
+ * holds two does any column hold three. The leftmost column therefore keeps the
+ * fewest cells, and so the largest tiles.
  *
- * The result always fills the area exactly: no column is empty and nothing
- * scrolls, so every tile gets the most width and height on offer.
+ * Returns the cells per column, left to right. Nothing scrolls and no column is
+ * empty, so every tile gets the most width and height on offer.
  */
-export const planOverviewLayout = (
-  cellCount: number,
+export const planOverviewColumns = <T>(
+  cells: T[],
+  isMinimized: (cell: T) => boolean,
   availableWidth: number,
   minCellWidth: number,
   gap: number,
-): OverviewLayout => {
-  if (cellCount <= 0) return { columns: 0, perColumn: [] }
+): T[][] => {
+  if (cells.length === 0) return []
   // n columns occupy n * minCellWidth + (n - 1) * gap.
   const fits = Math.floor((availableWidth + gap) / (minCellWidth + gap))
   // At least one column even when the window is too narrow for the minimum --
   // one cramped tile beats no tile.
-  const columns = Math.max(1, Math.min(cellCount, fits))
-  const base = Math.floor(cellCount / columns)
-  const remainder = cellCount % columns
-  return {
-    columns,
-    // Filling from the right means the leftmost column keeps the fewest cells,
-    // and so the largest tiles.
-    perColumn: Array.from({ length: columns }, (_, index) =>
-      base + (index >= columns - remainder ? 1 : 0),
-    ),
-  }
-}
+  const count = Math.max(1, Math.min(cells.length, fits))
+  const base = Math.floor(cells.length / count)
+  const remainder = cells.length % count
 
-/** Deal `cells` into columns of the sizes the plan calls for. */
-export const splitIntoColumns = <T>(cells: T[], perColumn: number[]): T[][] => {
   const columns: T[][] = []
   let index = 0
-  for (const count of perColumn) {
-    columns.push(cells.slice(index, index + count))
-    index += count
+  for (let column = 0; column < count; column++) {
+    const size = base + (column >= count - remainder ? 1 : 0)
+    columns.push(cells.slice(index, index + size))
+    index += size
   }
-  return columns
+  return foldMinimizedColumns(columns, isMinimized)
+}
+
+/**
+ * Fold away a column holding nothing but minimized worktrees.
+ *
+ * A minimized tile is only a title bar, so such a column is a strip of headers
+ * holding a full column's width for no reason. Its cells move into the next
+ * column -- or the previous one, when it is already the last, which is the usual
+ * case since minimized cells sort to the end -- and the width it was holding
+ * goes to the columns that remain.
+ */
+const foldMinimizedColumns = <T>(columns: T[][], isMinimized: (cell: T) => boolean): T[][] => {
+  const result = columns.map((column) => [...column])
+  let at = 0
+  while (at < result.length && result.length > 1) {
+    const column = result[at]!
+    if (column.length === 0 || !column.every(isMinimized)) {
+      at++
+      continue
+    }
+    const into = at + 1 < result.length ? at + 1 : at - 1
+    // Keep reading order: cells from a folded column go in front of the column
+    // to their right, and behind the column to their left.
+    result[into] = into > at ? [...column, ...result[into]!] : [...result[into]!, ...column]
+    result.splice(at, 1)
+    // Deliberately not advancing. After folding right, the column that shifted
+    // into this slot has not been examined and may itself be all minimized.
+    // Folding left can only target a column that already held an expanded cell,
+    // so that one never needs re-examining.
+  }
+  return result
 }
 
 let cachedKey = ''

@@ -6,8 +6,8 @@ import {
   MIN_TILE_COLUMNS,
   TILE_CHROME_WIDTH,
   measureMonoCharWidth,
-  planOverviewLayout,
-  splitIntoColumns,
+  planOverviewColumns,
+  sortMinimizedLast,
 } from './overviewLayout.js'
 
 /**
@@ -25,8 +25,8 @@ const TILE_FONT_SIZE = 12
 const GAP = 12
 
 type Cell =
-  | { kind: 'worktree'; key: string; worktree: Worktree }
-  | { kind: 'add'; key: string }
+  | { kind: 'worktree'; key: string; worktree: Worktree; minimized: boolean }
+  | { kind: 'add'; key: string; minimized: false }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -55,17 +55,21 @@ const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; he
 interface TileProps {
   worktree: Worktree
   session: Session | undefined
+  minimized: boolean
   onOpen: () => void
   onStart: () => void
   onRemove: () => void
+  onToggleMinimized: () => void
 }
 
 const Tile = ({
   worktree,
   session,
+  minimized,
   onOpen,
   onStart,
   onRemove,
+  onToggleMinimized,
 }: TileProps): React.ReactElement => {
   const state = session
     ? session.liveness === 'dead'
@@ -78,7 +82,7 @@ const Tile = ({
     : 'idle'
 
   return (
-    <div className={`tile tile--${state}`}>
+    <div className={minimized ? `tile tile--${state} tile--minimized` : `tile tile--${state}`}>
       {/* A div, not a button: the remove control lives in here and a button
           cannot be nested inside another button. */}
       <div className="tile__head">
@@ -92,6 +96,19 @@ const Tile = ({
           {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
           <span className="tile__state">{stateLabel(session)}</span>
         </button>
+        {/*
+          Minimizing keeps the header -- and with it the name, the state and the
+          attention rail -- so a worktree that needs you still says so from the
+          bottom of the overview.
+        */}
+        <button
+          className="tile__minimize"
+          onClick={onToggleMinimized}
+          title={minimized ? `Expand ${worktree.name}` : `Minimize ${worktree.name}`}
+          aria-label={minimized ? `Expand ${worktree.name}` : `Minimize ${worktree.name}`}
+        >
+          {minimized ? '+' : '\u2212'}
+        </button>
         {/* The main worktree cannot be removed, so it gets no control. */}
         {!worktree.isMain && (
           <button
@@ -104,6 +121,7 @@ const Tile = ({
           </button>
         )}
       </div>
+      {!minimized && (
       <div className="tile__screen">
         {session ? (
           // Tiles stay interactive on purpose: you can answer a prompt here
@@ -118,6 +136,7 @@ const Tile = ({
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
@@ -141,6 +160,8 @@ export interface SplitViewProps {
   onStart: (worktreeId: string) => void
   onNewWorktree: () => void
   onRemoveWorktree: (worktreeId: string) => void
+  minimized: string[]
+  onToggleMinimized: (worktreeId: string) => void
 }
 
 export const SplitView = ({
@@ -150,25 +171,35 @@ export const SplitView = ({
   onStart,
   onNewWorktree,
   onRemoveWorktree,
+  minimized,
+  onToggleMinimized,
 }: SplitViewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
 
+  const minimizedIds = new Set(minimized)
   const cells: Cell[] = worktrees.map((worktree) => ({
     kind: 'worktree' as const,
     key: worktree.id,
     worktree,
+    minimized: minimizedIds.has(worktree.id),
   }))
   // Once the overview has real content, the grid is better spent on terminals
   // and the top bar already carries the action. With nothing (or almost
   // nothing) to show, this tile is both the action and the explanation of what
   // a worktree actually is.
-  if (worktrees.length <= 1) cells.push({ kind: 'add', key: '__add' })
+  if (worktrees.length <= 1) cells.push({ kind: 'add', key: '__add', minimized: false })
 
   const charWidth = measureMonoCharWidth(TILE_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minTileWidth = MIN_TILE_COLUMNS * charWidth + TILE_CHROME_WIDTH
-  const plan = planOverviewLayout(cells.length, width, minTileWidth, GAP)
-  const columns = splitIntoColumns(cells, plan.perColumn)
+  const isMinimized = (cell: Cell): boolean => cell.minimized
+  const columns = planOverviewColumns(
+    sortMinimizedLast(cells, isMinimized),
+    isMinimized,
+    width,
+    minTileWidth,
+    GAP,
+  )
 
   return (
     <section className="view overview">
@@ -188,9 +219,11 @@ export const SplitView = ({
                     key={cell.key}
                     worktree={cell.worktree}
                     session={claudeSession(sessions, cell.worktree.id)}
+                    minimized={cell.minimized}
                     onOpen={() => onOpenWorktree(cell.worktree.id)}
                     onStart={() => onStart(cell.worktree.id)}
                     onRemove={() => onRemoveWorktree(cell.worktree.id)}
+                    onToggleMinimized={() => onToggleMinimized(cell.worktree.id)}
                   />
                 ),
               )}

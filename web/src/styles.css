@@ -348,6 +348,27 @@ button {
 }
 
 /*
+ * A minimized tile keeps its header and drops its terminal, so it must take
+ * only the height that header needs -- the expanded tiles in the same column
+ * then share everything left over.
+ */
+.tile--minimized {
+  flex: 0 0 auto;
+}
+
+.tile__minimize {
+  flex: none;
+  padding: 0 3px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--graphite-dim);
+}
+
+.tile__minimize:hover {
+  color: var(--bone);
+}
+
+/*
  * Removal is destructive, so the control stays quiet until you go for it and
  * only turns red on hover -- it should not read as part of the status line.
  */
