@@ -15,6 +15,17 @@ import '@xterm/xterm/css/xterm.css'
  */
 const MIRROR_SCROLLBACK = 5000
 
+/**
+ * The terminal font. Exported because the overview derives its minimum tile
+ * width from this font's character width, and the two must agree or the
+ * "at least 80 columns" guarantee is only approximate.
+ */
+export const TERMINAL_FONT_FAMILY =
+  '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace'
+
+/** Type size in the detail view, and the default when none is given. */
+export const TERMINAL_FONT_SIZE = 13
+
 export interface TerminalViewProps {
   session: Session
   /**
@@ -59,8 +70,8 @@ export const TerminalView = ({
 
     const term = new Terminal({
       cursorBlink: primary,
-      fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: fontSize ?? 13,
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: fontSize ?? TERMINAL_FONT_SIZE,
       lineHeight: 1.2,
       theme: THEME,
       // Needed by the unicode11 addon and for wide-glyph handling generally --

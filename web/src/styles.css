@@ -273,18 +273,32 @@ button {
   color: var(--bone);
 }
 
+/*
+ * The overview fills the viewport exactly and never scrolls: every tile gets
+ * the most width and height available.
+ *
+ * Columns are equal width, and each column splits its height equally among the
+ * tiles it holds. How many columns there are, and which columns hold more
+ * tiles, is computed in overviewLayout.ts -- CSS cannot express "use as few
+ * columns as keeps every tile 80 characters wide, then split the leftmost
+ * column first". The gap is applied inline from the same constant the maths
+ * uses.
+ */
 .grid {
-  display: grid;
-  gap: 12px;
+  display: flex;
   padding: 0 18px 18px;
-  overflow-y: auto;
-  min-height: 0;
   flex: 1;
-  /* Wide enough that the terminal inside gets a usable number of rows at the
-     2:1 tile shape -- Claude's TUI needs roughly 20 to draw a dialog without
-     clipping it. The grid wraps to another row instead of shrinking further. */
-  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
-  align-content: start;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.grid__column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* --------------------------------------------------------------- the tile -- */
@@ -292,10 +306,8 @@ button {
 .tile {
   display: flex;
   flex-direction: column;
-  /* Width comes from the grid, height from this: a terminal is a landscape
-     thing, so tiles keep a 2:1 shape and the grid wraps to a new row rather
-     than stretching them. */
-  aspect-ratio: 2 / 1;
+  /* Fills whatever share of the column the layout gave it. */
+  flex: 1 1 0;
   min-height: 0;
   background: var(--slab);
   border: 1px solid var(--rule);
@@ -395,7 +407,7 @@ button {
   place-content: center;
   justify-items: center;
   gap: 10px;
-  aspect-ratio: 2 / 1;
+  flex: 1 1 0;
   min-height: 0;
   padding: 20px;
   border: 1px dashed var(--rule-bright);
