@@ -233,15 +233,13 @@ button {
 }
 
 /*
- * The overview fills the viewport exactly and never scrolls: every tile gets
- * the most width and height available.
+ * The overview fills the viewport exactly and never scrolls.
  *
- * Columns are equal width, and each column splits its height equally among the
- * tiles it holds. How many columns there are, and which columns hold more
- * tiles, is computed in overviewLayout.ts -- CSS cannot express "use as few
- * columns as keeps every tile 80 characters wide, then split the leftmost
- * column first". The gap is applied inline from the same constant the maths
- * uses.
+ * There are no rows: every tile is one full-height column of equal width. Which
+ * tiles are on screen at all is decided in overviewLayout.ts, since CSS cannot
+ * express "drop tiles from the right until the rest are 80 characters wide,
+ * except the one just opened". The gap is applied inline from the same constant
+ * that arithmetic uses.
  */
 .grid {
   display: flex;
@@ -250,14 +248,6 @@ button {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-}
-
-.grid__column {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 0;
 }
 
 /* --------------------------------------------------------------- the tile -- */

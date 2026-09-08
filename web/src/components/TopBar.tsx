@@ -5,8 +5,11 @@ export interface TopBarProps {
   project: Project | undefined
   worktrees: Worktree[]
   sessions: Session[]
-  /** Worktrees present only here, with no tile in the grid. */
-  minimized: string[]
+  /**
+   * Worktrees that actually have a tile on screen. Not the same as "not
+   * minimized": with no rows, a tile can be pushed out for want of width.
+   */
+  shown: string[]
   onOpenProject: () => void
   onNewWorktree: () => void
   onToggleMinimized: (worktreeId: string) => void
@@ -20,6 +23,10 @@ export interface TopBarProps {
  * tile on screen can still tell you Claude is waiting on you. Amber is reserved
  * for exactly that, here as everywhere else.
  *
+ * The underline means "on screen", which on a narrow window is not the same as
+ * "you asked for it" -- tiles get pushed out when they will not fit. Clicking a
+ * chip without one brings its tile back, displacing whatever has to go.
+ *
  * The right-hand side stays empty on purpose. A count of what is waiting would
  * only restate what the amber chips already say.
  */
@@ -27,12 +34,12 @@ export const TopBar = ({
   project,
   worktrees,
   sessions,
-  minimized,
+  shown,
   onOpenProject,
   onNewWorktree,
   onToggleMinimized,
 }: TopBarProps): React.ReactElement => {
-  const minimizedIds = new Set(minimized)
+  const shownIds = new Set(shown)
 
   return (
     <header className="topbar">
@@ -43,21 +50,21 @@ export const TopBar = ({
 
       <nav className="chips">
         {worktrees.map((worktree) => {
-          const isMinimized = minimizedIds.has(worktree.id)
+          const isShown = shownIds.has(worktree.id)
           const needsYou = worktreeNeedsYou(sessions, worktree.id)
           return (
             <button
               key={worktree.id}
               className={[
                 'chip',
-                isMinimized ? 'chip--minimized' : 'chip--shown',
+                isShown ? 'chip--shown' : 'chip--minimized',
                 needsYou ? 'chip--waiting' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
               onClick={() => onToggleMinimized(worktree.id)}
               title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
-                isMinimized ? 'Click to show its tile' : 'Click to minimize to the top bar'
+                isShown ? 'Click to minimize to the top bar' : 'Click to show its tile'
               }`}
             >
               {worktree.name}

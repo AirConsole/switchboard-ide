@@ -90,8 +90,16 @@ export interface UiState {
    * chip still carries state, so a minimized worktree can still call for you.
    */
   minimized: string[]
-  /** The worktree whose shells tile is open, if any. */
+  /** The worktree whose terminals tile is open, if any. */
   terminalsFor: string | null
+  /**
+   * The tile that most recently appeared because the user asked for it.
+   *
+   * There are no rows, so a narrow window pushes tiles out from the right --
+   * and this one is exempt. Without it, opening something on a phone would push
+   * out the very tile you just opened.
+   */
+  newestTile: string | null
   /**
    * What was minimized before Terminals was switched on, so switching it off
    * restores the layout instead of leaving everything collapsed.
@@ -106,6 +114,7 @@ export const defaultUiState = (): UiState => ({
   tabOrder: [],
   minimized: [],
   terminalsFor: null,
+  newestTile: null,
   minimizedBeforeTerminals: null,
   activeTerminalByWorktree: {},
 })

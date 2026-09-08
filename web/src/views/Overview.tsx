@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
 import {
   TerminalView,
@@ -11,7 +11,7 @@ import {
   MIN_TILE_COLUMNS,
   TILE_CHROME_WIDTH,
   measureMonoCharWidth,
-  planOverviewColumns,
+  planTiles,
 } from './overviewLayout.js'
 
 /**
@@ -22,6 +22,12 @@ const GAP = 12
 
 /** Below this many tiles, the grid has room to explain what a worktree is. */
 const ADD_TILE_THRESHOLD = 2
+
+/** How the add tile is identified in the layout. */
+const ADD_KEY = '__add'
+
+/** How a worktree's terminals tile is identified in the layout. */
+export const terminalsTileKey = (worktreeId: string): string => `${worktreeId}:terminals`
 
 type Cell =
   | { kind: 'worktree'; key: string; worktree: Worktree }
@@ -165,6 +171,7 @@ export interface OverviewProps {
   sessions: Session[]
   minimized: string[]
   terminalsFor: string | null
+  newestTile: string | null
   activeTerminalByWorktree: Record<string, string>
   onStart: (worktreeId: string) => void
   onMinimize: (worktreeId: string) => void
@@ -174,20 +181,23 @@ export interface OverviewProps {
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
   onCloseTerminal: (sessionId: string) => void
+  /** Which worktrees ended up with a tile on screen, so the top bar can tell. */
+  onVisibleWorktrees: (worktreeIds: string[]) => void
 }
 
 /**
- * The whole app: a grid of tiles.
+ * The whole app: tiles side by side, each a full-height column.
  *
- * Cells are the expanded worktrees, plus the terminals tile of whichever
- * worktree has Terminals on, placed right after it. They are all laid out by
- * the same rules, so it is as wide and as legible as any Claude tile.
+ * There are no rows. A tile that cannot have MIN_TILE_COLUMNS is pushed out
+ * rather than squeezed, so the narrower the window the fewer worktrees are on
+ * screen -- down to one on a phone.
  */
 export const Overview = ({
   worktrees,
   sessions,
   minimized,
   terminalsFor,
+  newestTile,
   activeTerminalByWorktree,
   onStart,
   onMinimize,
@@ -197,6 +207,7 @@ export const Overview = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onVisibleWorktrees,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -207,16 +218,31 @@ export const Overview = ({
     if (minimizedIds.has(worktree.id)) continue
     cells.push({ kind: 'worktree', key: worktree.id, worktree })
     if (worktree.id === terminalsFor) {
-      cells.push({ kind: 'terminals', key: `${worktree.id}:terminals`, worktree })
+      cells.push({ kind: 'terminals', key: terminalsTileKey(worktree.id), worktree })
     }
   }
   // With little to show, the grid has room to be the action and the explanation
   // of what a worktree is; beyond that the top bar's + carries it.
-  if (cells.length < ADD_TILE_THRESHOLD) cells.push({ kind: 'add', key: '__add' })
+  if (cells.length < ADD_TILE_THRESHOLD) cells.push({ kind: 'add', key: ADD_KEY })
 
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minTileWidth = MIN_TILE_COLUMNS * charWidth + TILE_CHROME_WIDTH
-  const columns = planOverviewColumns(cells, width, minTileWidth, GAP)
+  const plan = planTiles(cells, (cell) => cell.key, newestTile, width, minTileWidth, GAP)
+
+  /*
+   * Tell the top bar which worktrees actually got a tile.
+   *
+   * "Not minimized" is no longer the same as "on screen": a tile can be pushed
+   * out for want of width. A chip that claimed otherwise would be lying, and
+   * clicking it would minimize a worktree the user cannot even see.
+   */
+  const visibleKey = plan.visible
+    .filter((cell) => cell.kind === 'worktree')
+    .map((cell) => cell.key)
+    .join(',')
+  useEffect(() => {
+    if (width > 0) onVisibleWorktrees(visibleKey === '' ? [] : visibleKey.split(','))
+  }, [visibleKey, width, onVisibleWorktrees])
 
   return (
     <section className="view overview">
@@ -224,41 +250,37 @@ export const Overview = ({
         {/* Nothing renders until the grid is measured, so a terminal is never
             built at a width that is about to change. */}
         {width > 0 &&
-          columns.map((cellsInColumn, columnIndex) => (
-            <div className="grid__column" key={`column-${columnIndex}`} style={{ gap: GAP }}>
-              {cellsInColumn.map((cell) => {
-                if (cell.kind === 'add') {
-                  return <AddTile key={cell.key} onClick={onNewWorktree} />
-                }
-                if (cell.kind === 'terminals') {
-                  return (
-                    <TerminalsTile
-                      key={cell.key}
-                      worktree={cell.worktree}
-                      terminals={terminalSessions(sessions, cell.worktree.id)}
-                      activeTerminalId={activeTerminalByWorktree[cell.worktree.id] ?? null}
-                      fontSize={TERMINAL_FONT_SIZE}
-                      onSelect={(sessionId) => onSelectTerminal(cell.worktree.id, sessionId)}
-                      onNew={() => onNewTerminal(cell.worktree.id)}
-                      onClose={onCloseTerminal}
-                    />
-                  )
-                }
-                return (
-                  <WorktreeTile
-                    key={cell.key}
-                    worktree={cell.worktree}
-                    session={claudeSession(sessions, cell.worktree.id)}
-                    terminalsOpen={cell.worktree.id === terminalsFor}
-                    onStart={() => onStart(cell.worktree.id)}
-                    onMinimize={() => onMinimize(cell.worktree.id)}
-                    onRemove={() => onRemoveWorktree(cell.worktree.id)}
-                    onToggleTerminals={() => onToggleTerminals(cell.worktree.id)}
-                  />
-                )
-              })}
-            </div>
-          ))}
+          plan.visible.map((cell) => {
+            if (cell.kind === 'add') {
+              return <AddTile key={cell.key} onClick={onNewWorktree} />
+            }
+            if (cell.kind === 'terminals') {
+              return (
+                <TerminalsTile
+                  key={cell.key}
+                  worktree={cell.worktree}
+                  terminals={terminalSessions(sessions, cell.worktree.id)}
+                  activeTerminalId={activeTerminalByWorktree[cell.worktree.id] ?? null}
+                  fontSize={TERMINAL_FONT_SIZE}
+                  onSelect={(sessionId) => onSelectTerminal(cell.worktree.id, sessionId)}
+                  onNew={() => onNewTerminal(cell.worktree.id)}
+                  onClose={onCloseTerminal}
+                />
+              )
+            }
+            return (
+              <WorktreeTile
+                key={cell.key}
+                worktree={cell.worktree}
+                session={claudeSession(sessions, cell.worktree.id)}
+                terminalsOpen={cell.worktree.id === terminalsFor}
+                onStart={() => onStart(cell.worktree.id)}
+                onMinimize={() => onMinimize(cell.worktree.id)}
+                onRemove={() => onRemoveWorktree(cell.worktree.id)}
+                onToggleTerminals={() => onToggleTerminals(cell.worktree.id)}
+              />
+            )
+          })}
       </div>
     </section>
   )

@@ -1,47 +1,65 @@
 /**
- * Terminal columns every tile should get if the window allows it. Below this a
- * Claude session starts wrapping its own chrome awkwardly.
+ * Terminal columns every tile should get. Below this a Claude session starts
+ * wrapping its own chrome awkwardly, so a tile that cannot have this many is
+ * not shown at all.
  */
 export const MIN_TILE_COLUMNS = 80
 
 /** Tile border plus the padding around the terminal inside it, in px. */
 export const TILE_CHROME_WIDTH = 18
 
+export interface TilePlan<T> {
+  /** Tiles that fit, in display order. */
+  visible: T[]
+  /** Tiles pushed out for want of width, in display order. */
+  hidden: T[]
+  /** How many tiles fit at the minimum width. */
+  capacity: number
+}
+
 /**
- * Split tiles across the width available.
+ * Choose which tiles are shown, side by side.
  *
- * Column count is the fewest that keeps every tile at least `minCellWidth`
- * wide; the rest wrap. Leftover cells go to the rightmost columns, so the last
- * column is the first to hold two, then the one before it, and only once every
- * column holds two does any column hold three. The leftmost column therefore
- * keeps the fewest cells, and so the largest tiles.
+ * There are no rows: every tile is a full-height column. So as the window
+ * narrows, rather than letting columns shrink below MIN_TILE_COLUMNS, tiles are
+ * pushed out from the right until the rest fit.
  *
- * Returns the cells per column, left to right. Nothing scrolls and no column is
- * empty, so every tile gets the most width and height on offer.
+ * The exception is `newestKey` -- the tile that just appeared because you asked
+ * for it. Pushing that one out would mean your click appeared to do nothing, so
+ * it is kept and something else goes instead. On a phone, where only one tile
+ * fits, opening a worktree's terminals therefore displaces its Claude tile.
+ *
+ * Nothing is scrolled and no state is changed: this is only about what fits, so
+ * widening the window brings the rest straight back.
  */
-export const planOverviewColumns = <T>(
+export const planTiles = <T>(
   cells: T[],
+  keyOf: (cell: T) => string,
+  newestKey: string | null,
   availableWidth: number,
   minCellWidth: number,
   gap: number,
-): T[][] => {
-  if (cells.length === 0) return []
-  // n columns occupy n * minCellWidth + (n - 1) * gap.
-  const fits = Math.floor((availableWidth + gap) / (minCellWidth + gap))
-  // At least one column even when the window is too narrow for the minimum --
-  // one cramped tile beats no tile.
-  const count = Math.max(1, Math.min(cells.length, fits))
-  const base = Math.floor(cells.length / count)
-  const remainder = cells.length % count
+): TilePlan<T> => {
+  if (cells.length === 0) return { visible: [], hidden: [], capacity: 0 }
+  // n tiles occupy n * minCellWidth + (n - 1) * gap.
+  // At least one, even when the window is too narrow for the minimum: one
+  // cramped tile beats no tile.
+  const capacity = Math.max(1, Math.floor((availableWidth + gap) / (minCellWidth + gap)))
+  if (cells.length <= capacity) return { visible: cells, hidden: [], capacity }
 
-  const columns: T[][] = []
-  let index = 0
-  for (let column = 0; column < count; column++) {
-    const size = base + (column >= count - remainder ? 1 : 0)
-    columns.push(cells.slice(index, index + size))
-    index += size
+  const keep = new Set<string>()
+  // The newest tile claims its place first; the set then dedupes it when the
+  // fill below reaches it.
+  if (cells.some((cell) => keyOf(cell) === newestKey) && newestKey !== null) keep.add(newestKey)
+  for (const cell of cells) {
+    if (keep.size >= capacity) break
+    keep.add(keyOf(cell))
   }
-  return columns
+  return {
+    visible: cells.filter((cell) => keep.has(keyOf(cell))),
+    hidden: cells.filter((cell) => !keep.has(keyOf(cell))),
+    capacity,
+  }
 }
 
 let cachedKey = ''

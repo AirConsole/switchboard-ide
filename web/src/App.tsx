@@ -5,7 +5,7 @@ import { TopBar } from './components/TopBar.js'
 import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview } from './views/Overview.js'
+import { Overview, terminalsTileKey } from './views/Overview.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
 
 export const App = (): React.ReactElement => {
@@ -14,6 +14,13 @@ export const App = (): React.ReactElement => {
   const [showOpenProject, setShowOpenProject] = useState(false)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  /**
+   * Worktrees with a tile actually on screen, reported by the overview.
+   *
+   * Not persisted and not derived from `minimized`: whether a tile fits depends
+   * on the window, so only the thing doing the layout can say.
+   */
+  const [shown, setShown] = useState<string[]>([])
 
   useEffect(() => {
     bindSocketToStore()
@@ -57,17 +64,26 @@ export const App = (): React.ReactElement => {
       .catch(fail)
   }
 
+  /**
+   * A chip toggles whether its worktree is on screen.
+   *
+   * Keyed on what is actually visible, not on `minimized`, because a tile can
+   * be absent for either reason. Bringing one back also marks it newest, so on
+   * a window too narrow for two it wins its place instead of being pushed
+   * straight out again.
+   */
   const toggleMinimized = (worktreeId: string): void => {
-    const wasMinimized = ui.minimized.includes(worktreeId)
-    const minimized = wasMinimized
-      ? ui.minimized.filter((id) => id !== worktreeId)
-      : [...ui.minimized, worktreeId]
-    // Minimizing the worktree whose terminals are open closes them too: the
-    // tile belongs to a worktree that is no longer on screen.
-    const closesTerminals = !wasMinimized && ui.terminalsFor === worktreeId
+    if (shown.includes(worktreeId)) {
+      const closesTerminals = ui.terminalsFor === worktreeId
+      setUi({
+        minimized: [...ui.minimized.filter((id) => id !== worktreeId), worktreeId],
+        ...(closesTerminals ? { terminalsFor: null, minimizedBeforeTerminals: null } : {}),
+      })
+      return
+    }
     setUi({
-      minimized,
-      ...(closesTerminals ? { terminalsFor: null, minimizedBeforeTerminals: null } : {}),
+      minimized: ui.minimized.filter((id) => id !== worktreeId),
+      newestTile: worktreeId,
     })
   }
 
@@ -81,6 +97,7 @@ export const App = (): React.ReactElement => {
     if (ui.terminalsFor === worktreeId) {
       setUi({
         terminalsFor: null,
+        newestTile: worktreeId,
         minimized: ui.minimizedBeforeTerminals ?? ui.minimized,
         minimizedBeforeTerminals: null,
       })
@@ -88,6 +105,10 @@ export const App = (): React.ReactElement => {
     }
     setUi({
       terminalsFor: worktreeId,
+      // The terminals tile is what you just asked for, so it is the one that
+      // survives a window too narrow for both -- displacing the Claude tile
+      // rather than never appearing.
+      newestTile: terminalsTileKey(worktreeId),
       // Only remember the pre-focus layout once, so focusing straight from one
       // worktree to another still restores what was there before the first.
       minimizedBeforeTerminals: ui.minimizedBeforeTerminals ?? ui.minimized,
@@ -110,7 +131,7 @@ export const App = (): React.ReactElement => {
       project={project}
       worktrees={project ? projectWorktrees : []}
       sessions={sessions}
-      minimized={ui.minimized}
+      shown={shown}
       onOpenProject={() => setShowOpenProject(true)}
       onNewWorktree={() => setShowNewWorktree(true)}
       onToggleMinimized={toggleMinimized}
@@ -132,8 +153,10 @@ export const App = (): React.ReactElement => {
         <NewWorktreeDialog
           project={project}
           onClose={() => setShowNewWorktree(false)}
-          onCreated={() => {
+          onCreated={(worktreeId) => {
             setShowNewWorktree(false)
+            // A worktree you just created is the one you want to see.
+            setUi({ newestTile: worktreeId })
             void refresh()
           }}
         />
@@ -199,6 +222,7 @@ export const App = (): React.ReactElement => {
         sessions={sessions}
         minimized={ui.minimized}
         terminalsFor={ui.terminalsFor}
+        newestTile={ui.newestTile}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
         onStart={startClaude}
         onMinimize={toggleMinimized}
@@ -213,6 +237,7 @@ export const App = (): React.ReactElement => {
             },
           })
         }
+        onVisibleWorktrees={setShown}
         onNewTerminal={newTerminal}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />
