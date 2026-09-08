@@ -45,6 +45,9 @@
 
   --rail: 2px;
   --bar-h: 44px;
+  /* A worktree tile's own bar. Its controls fill it edge to edge, so this is
+     the height of every button in a tile as well. */
+  --tile-bar-h: 32px;
   --radius: 4px;
 
   color-scheme: dark;
@@ -297,6 +300,7 @@ button {
  */
 .tile__bar {
   display: grid;
+  min-height: var(--tile-bar-h);
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -309,37 +313,44 @@ button {
   background: var(--slab-raised);
 }
 
-.tile__label {
+/*
+ * Every control in the bar fills its height, and none of them carries a frame.
+ *
+ * A row of bordered pills inside a bordered bar draws the same edge twice and
+ * leaves the controls floating in it; full-height cells make the bar read as
+ * one toolbar, and give each control a target the whole height of the bar
+ * rather than a 16px pill in the middle of it. State is carried by fill, which
+ * is the only thing left once the frames are gone.
+ */
+.tile__seg {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
+  align-items: stretch;
   min-width: 0;
 }
 
 /*
- * The gutter is wide because the bar has no line at a segment boundary to say
- * where one pane's controls end -- so without it the worktree's own minimize
- * sits a few pixels from a terminal's close button, which is a misclick worth
- * paying 24px to avoid.
+ * A gutter where one pane's controls meet the next pane's, because with the
+ * frames gone the bar has nothing to mark that boundary -- and it is the seam
+ * where "remove this worktree" meets "close this terminal". The tile's outer
+ * edges get none, so the controls there stay flush with it.
  */
-.tile__seg {
+.tile__seg + .tile__seg {
+  padding-left: 12px;
+}
+
+.tile__label {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  /* Lines up with the terminal text below, which the pane insets by 8px. */
+  padding: 0 10px;
   min-width: 0;
-}
-
-.tile__seg:first-child {
-  padding-left: 10px;
 }
 
 /* Acts on the tile as a whole, so it sits at the tile's right edge. */
 .tile__controls {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: stretch;
   margin-left: auto;
   min-width: 0;
 }
@@ -367,18 +378,24 @@ button {
  * only turns red on hover -- it should not read as part of the status line.
  */
 .tile__remove {
+  display: flex;
+  align-items: center;
   flex: none;
-  padding: 0 3px;
-  font-size: 15px;
-  line-height: 1;
+  padding: 0 10px;
   color: var(--graphite-dim);
 }
 
 .tile__remove:hover {
   color: var(--danger);
+  background: var(--rule-bright);
+}
+
+.tile__icon {
+  display: block;
 }
 
 .tile__name {
+  font-size: 13px;
   color: var(--bone);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -393,6 +410,9 @@ button {
 }
 
 .tile__state {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -480,26 +500,26 @@ button {
  * press and forget.
  */
 .tile__toggle {
+  display: flex;
+  align-items: center;
   flex: none;
-  padding: 2px 7px;
-  border: 1px solid var(--rule-bright);
-  border-radius: 2px;
+  padding: 0 12px;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: var(--graphite);
 }
 
 .tile__toggle:hover {
   color: var(--bone);
-  border-color: var(--graphite);
+  background: var(--rule-bright);
 }
 
 .tile__toggle--on {
   color: var(--ink);
   background: var(--graphite);
-  border-color: var(--graphite);
 }
 
 /* The tab strip sits in the bar segment above the pane it drives. It is the
@@ -507,8 +527,7 @@ button {
    segment, so it scrolls rather than pushing the controls off the end. */
 .termtabs {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
   overflow-x: auto;
   scrollbar-width: none;
   min-width: 0;
@@ -516,29 +535,38 @@ button {
 
 .termtab {
   display: flex;
-  align-items: center;
-  border: 1px solid var(--rule);
-  border-radius: 2px;
+  align-items: stretch;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--graphite);
   white-space: nowrap;
 }
 
-.termtab--active {
-  border-color: var(--graphite);
+.termtab:hover {
   color: var(--bone);
+  background: var(--rule-bright);
+}
+
+/* Fill rather than a frame, one step quieter than a lit panel toggle: which
+   terminal you are looking at matters less than whether the panel is open. */
+.termtab--active {
+  color: var(--bone);
+  background: var(--rule-bright);
 }
 
 .termtab__pick {
-  padding: 2px 5px;
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 10px;
   font: inherit;
   color: inherit;
 }
 
 .termtab__close {
-  padding: 2px 4px 2px 0;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+  font-size: 13px;
   line-height: 1;
   color: var(--graphite-dim);
 }
@@ -548,14 +576,16 @@ button {
 }
 
 .termtab--add {
-  padding: 2px 7px;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 14px;
   color: var(--graphite-dim);
 }
 
 .termtab--add:hover {
   color: var(--bone);
-  border-color: var(--graphite);
+  background: var(--rule-bright);
 }
 
 /* ------------------------------------------------------- empty and errors -- */

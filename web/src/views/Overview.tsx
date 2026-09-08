@@ -35,8 +35,28 @@ const ADD_KEY = '__add'
  */
 export const PANELS: readonly PanelName[] = ['terminals']
 
-/** Human name for a panel's toggle. */
-const PANEL_LABEL: Record<PanelName, string> = { terminals: 'Terminals' }
+/** What a panel is called in prose, for the toggle's tooltip. */
+const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals' }
+
+/**
+ * The toggle's label.
+ *
+ * Terminals count themselves rather than repeating the panel's name: the number
+ * is the useful part at a glance, and with none open the toggle says what the
+ * click will actually do, which is make one. The count is of the terminals the
+ * panel would show, exited ones included -- a label reading "new" over a tab
+ * strip that already has a tab in it would be a contradiction.
+ *
+ * Exhaustive on purpose: adding a panel to PanelName will not compile until it
+ * says what it is called.
+ */
+const panelLabel = (panel: PanelName, terminals: number): string => {
+  switch (panel) {
+    case 'terminals':
+      if (terminals === 0) return 'New Terminal'
+      return terminals === 1 ? '1 Terminal' : `${terminals} Terminals`
+  }
+}
 
 /** How a pane is identified in the layout. */
 export const paneKey = (worktreeId: string, pane: 'claude' | PanelName): string =>
@@ -118,6 +138,31 @@ const gatherTiles = (panes: Pane[]): Tile[] => {
   }
   return tiles
 }
+
+/**
+ * Removing a worktree is the one destructive thing in the bar, so it is the one
+ * control that is not a word: an icon is read before it is parsed. Hairlines at
+ * the same weight as the rest of the chrome, and currentColor so it inherits
+ * the quiet-until-hovered treatment of the button around it.
+ */
+const TrashIcon = (): React.ReactElement => (
+  <svg
+    className="tile__icon"
+    viewBox="0 0 16 16"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <path d="M2.5 4.5h11" />
+    <path d="M6.25 2.5h3.5" />
+    <path d="M4.1 4.5l.55 8.1a1 1 0 0 0 1 .9h4.7a1 1 0 0 0 1-.9l.55-8.1" />
+    <path d="M6.6 7v3.8M9.4 7v3.8" />
+  </svg>
+)
 
 interface WorktreeTileProps {
   worktree: Worktree
@@ -222,11 +267,11 @@ const WorktreeTile = ({
             onClick={() => onTogglePanel(panel)}
             title={
               on
-                ? `Close ${PANEL_LABEL[panel].toLowerCase()}`
-                : `Open ${PANEL_LABEL[panel].toLowerCase()} beside Claude`
+                ? `Close ${PANEL_NOUN[panel]}`
+                : `Open ${PANEL_NOUN[panel]} beside Claude`
             }
           >
-            {PANEL_LABEL[panel]}
+            {panelLabel(panel, terminals.length)}
           </button>
         )
       })}
@@ -238,7 +283,7 @@ const WorktreeTile = ({
           title={`Remove ${worktree.name}`}
           aria-label={`Remove worktree ${worktree.name}`}
         >
-          &times;
+          <TrashIcon />
         </button>
       )}
     </div>
