@@ -19,6 +19,7 @@ import {
   pruneWorktrees,
   removeWorktree,
   repoRoot,
+  resolveDefaultBase,
   worktreePathFor,
 } from './git/worktree.js'
 
@@ -88,11 +89,24 @@ export class Workspace {
 
   async snapshot(): Promise<AppSnapshot> {
     return {
-      projects: this.store.projects,
+      projects: await this.describeProjects(),
       worktrees: await this.worktrees(),
       sessions: this.engine.list(),
       ui: this.store.ui,
     }
+  }
+
+  /**
+   * Projects with their derived base ref attached, so the UI can name the ref a
+   * new worktree will branch from instead of describing it vaguely.
+   */
+  private async describeProjects(): Promise<Project[]> {
+    return Promise.all(
+      this.store.projects.map(async (project) => ({
+        ...project,
+        defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
+      })),
+    )
   }
 
   /**
@@ -144,7 +158,7 @@ export class Workspace {
     }
     this.store.addProject(project)
     this.invalidate()
-    return project
+    return { ...project, defaultBase: await resolveDefaultBase(root).catch(() => undefined) }
   }
 
   closeProject(id: string): void {
@@ -170,8 +184,12 @@ export class Workspace {
     // report it as untracked.
     await ensureWorktreesIgnored(project.root)
 
+    // With no base named, branch from origin/<default-branch> so the worktree
+    // starts clean -- Claude Code's own default for `worktree.baseRef`.
+    const base = opts.base?.trim() || (await resolveDefaultBase(project.root))
+
     try {
-      await addWorktree({ root: project.root, path, branch, base: opts.base })
+      await addWorktree({ root: project.root, path, branch, base })
     } catch (err) {
       throw new HttpError(400, gitMessage(err))
     }

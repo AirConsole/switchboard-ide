@@ -8,6 +8,12 @@ export interface Project {
   root: string
   /** Absolute directory that new worktrees are created under. */
   worktreeRoot: string
+  /**
+   * Ref that new worktrees branch from unless one is given: normally
+   * `origin/<default-branch>`, or `HEAD` in a repository with no remote.
+   * Derived from the repository, never persisted.
+   */
+  defaultBase?: string
   addedAt: number
 }
 

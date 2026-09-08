@@ -37,6 +37,9 @@ export const NewWorktreeDialog = ({
   }
 
   const directory = `${project.worktreeRoot}/${branch.trim().replace(/\//g, '-') || '...'}`
+  // What the server will use if this is left empty.
+  const defaultBase = project.defaultBase ?? 'HEAD'
+  const hasRemoteBase = defaultBase !== 'HEAD'
 
   return (
     <div className="scrim" onClick={onClose}>
@@ -75,9 +78,14 @@ export const NewWorktreeDialog = ({
               className="field__input"
               value={base}
               spellCheck={false}
-              placeholder="current HEAD"
+              placeholder={defaultBase}
               onChange={(event) => setBase(event.target.value)}
             />
+            <span className="field__hint">
+              {hasRemoteBase
+                ? `Left empty, it branches from ${defaultBase} so the worktree starts clean. Name a ref to carry local state instead.`
+                : 'This repository has no remote, so it branches from your current HEAD.'}
+            </span>
           </div>
 
           <label className="check">

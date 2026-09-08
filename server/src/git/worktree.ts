@@ -272,3 +272,38 @@ export const enclosingRepoRoot = async (path: string): Promise<string | null> =>
 
 export const worktreePathFor = (worktreeRoot: string, branch: string): string =>
   join(worktreeRoot, branch.replace(/\//g, '-'))
+
+/** Used when a repository has no remote to be fresh against. */
+export const LOCAL_HEAD_BASE = 'HEAD'
+
+/**
+ * The ref new worktrees branch from when none is named.
+ *
+ * This matches Claude Code's `worktree.baseRef` default of `fresh`: branch from
+ * origin/<default-branch> "for a clean tree", rather than carrying whatever
+ * happens to be checked out locally. `head` -- the other setting -- is what
+ * typing a base by hand gives you.
+ *
+ * No fetch is performed: the remote-tracking ref is used as it stands, so this
+ * never blocks on the network.
+ */
+export const resolveDefaultBase = async (root: string): Promise<string> => {
+  // What the remote itself calls its default branch, when git has recorded it.
+  try {
+    const head = (
+      await git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+    ).trim()
+    if (head !== '') return head
+  } catch {
+    // origin/HEAD is only set by clone, or by `git remote set-head`.
+  }
+  for (const candidate of ['origin/main', 'origin/master']) {
+    try {
+      await git(root, 'rev-parse', '--verify', '--quiet', candidate)
+      return candidate
+    } catch {
+      // Not this one.
+    }
+  }
+  return LOCAL_HEAD_BASE
+}
