@@ -22,9 +22,22 @@
   --rule: #232a35;
   --rule-bright: #2f3846;
 
+  /*
+   * Three steps of text, and every one of them readable.
+   *
+   * Measured against the grounds below, the old greys were 4.71:1 (graphite)
+   * and 2.74:1 (graphite-dim) on --slab -- the dim one well under the 4.5:1
+   * text threshold and under even the 3:1 large-text one, which is why every
+   * status label, branch name and note in the interface was hard to read. The
+   * ladder is now 13.4 : 7.0 : 5.2 on --slab, and nothing drops below 4.8 on
+   * any ground including --slab-raised, which the bar uses on hover.
+   *
+   * Still a ladder, though: quiet is a real job here, and these stay clearly
+   * subordinate to --bone rather than all arriving at the same brightness.
+   */
   --bone: #dfe4ec;
-  --graphite: #7d8797;
-  --graphite-dim: #59616e;
+  --graphite: #9fa6b2;
+  --graphite-dim: #868f9d;
 
   /* The terminal ground. Must match THEME.background in TerminalView.tsx, or
      the padding around a terminal shows as a visible frame. */
@@ -49,11 +62,28 @@
   --diff-del: #ff6b6b;
   --danger: #e5707a;
 
-  /* One monospace face for the whole app, and it is the one the user's own
-     terminal renders in -- Menlo on macOS, the generic anywhere else. Must stay
-     in step with TERMINAL_FONT_FAMILY in TerminalView.tsx. */
+  /*
+   * Two faces, with one job each.
+   *
+   * --font-mono is for the terminal, the lines of a patch, and text that is
+   * literally an identifier being read character by character: the column of
+   * status codes and hashes, the folder picker, and the field you type a path
+   * into. Nothing else -- a file name in a list is a label, and is set as one. It is the face
+   * the user's own terminal renders in: Menlo on macOS, the generic elsewhere.
+   * Must stay in step with TERMINAL_FONT_FAMILY in TerminalView.tsx, which the
+   * 80-column arithmetic measures.
+   *
+   * --font-ui is for everything the interface says in its own voice: labels,
+   * buttons, headings, dialogs. Monospace was doing that job too, which made
+   * chrome and content indistinguishable and cost legibility at small sizes for
+   * nothing in return.
+   *
+   * Neither names a font that may or may not be installed. A stack of hopefuls
+   * means this app renders in a different face on every machine, which is the
+   * same mistake the terminal font already had to be rescued from.
+   */
   --font-mono: Menlo, monospace;
-  --font-ui: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: system-ui, sans-serif;
 
   --rail: 2px;
   --bar-h: 44px;
@@ -109,7 +139,7 @@ button {
 
 /* Micro-labels are the instrument voice: mono, uppercase, tracked out. */
 .micro {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -139,7 +169,7 @@ button {
   gap: 8px;
   padding: 0 14px;
   border-right: 1px solid var(--rule);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   color: var(--bone);
   white-space: nowrap;
@@ -178,7 +208,7 @@ button {
   padding: 0 14px;
   border-right: 1px solid var(--rule);
   border-bottom: 2px solid transparent;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   white-space: nowrap;
   color: var(--graphite);
@@ -316,7 +346,7 @@ button {
   display: grid;
   min-height: var(--tile-bar-h);
   border-bottom: 1px solid var(--rule);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 12px;
   /* The bar itself minimizes the worktree, so it has to read as clickable --
      everything in it that does its own job keeps its own cursor. */
@@ -526,13 +556,13 @@ button {
 }
 
 .tile--add__mark {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 20px;
   color: var(--graphite-dim);
 }
 
 .tile--add__label {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   color: var(--bone);
 }
@@ -555,7 +585,9 @@ button {
   align-items: center;
   flex: none;
   padding: 0 12px;
-  font-family: var(--font-mono);
+  /* Transparent until it is on, so switching it on does not move the label. */
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-ui);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -568,9 +600,18 @@ button {
   background: var(--rule-bright);
 }
 
+/*
+ * Underlined when its panel is on screen, exactly as a worktree's chip in the
+ * top bar is underlined when it has a tile.
+ *
+ * A filled block read as the loudest thing in the bar -- louder than the
+ * worktree's own name, for a control whose whole message is "this pane is
+ * open". The line says the same thing without competing, and says it in the
+ * vocabulary the top bar already taught.
+ */
 .tile__toggle--on {
-  color: var(--ink);
-  background: var(--graphite);
+  color: var(--bone);
+  border-bottom-color: var(--rule-bright);
 }
 
 /*
@@ -595,7 +636,8 @@ button {
 .termtab {
   display: flex;
   align-items: stretch;
-  font-family: var(--font-mono);
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-ui);
   font-size: 12px;
   color: var(--graphite);
   white-space: nowrap;
@@ -610,11 +652,11 @@ button {
   background: var(--rule-bright);
 }
 
-/* Fill rather than a frame, one step quieter than a lit panel toggle: which
-   terminal you are looking at matters less than whether the panel is open. */
+/* The same underline as a lit panel toggle and a shown chip: one mark for "this
+   is the one you are looking at", everywhere in the interface. */
 .termtab--active {
   color: var(--bone);
-  background: var(--rule-bright);
+  border-bottom-color: var(--rule-bright);
 }
 
 .termtab__pick {
@@ -666,7 +708,7 @@ button {
 
 .empty__title {
   margin: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 19px;
   font-weight: 500;
   color: var(--bone);
@@ -705,7 +747,7 @@ button {
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
   background: var(--slab-raised);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -766,7 +808,7 @@ button {
 
 .dialog__title {
   margin: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 500;
   color: var(--bone);
@@ -794,7 +836,7 @@ button {
 }
 
 .field__label {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -819,7 +861,7 @@ button {
 .field__hint {
   font-size: 12px;
   color: var(--graphite-dim);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   overflow-wrap: anywhere;
 }
 
@@ -935,7 +977,7 @@ button {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 12px;
 }
 
@@ -1002,10 +1044,12 @@ button {
 }
 
 /* Two letters, so it is sized for two letters -- an abbreviated hash gets its
-   own width rather than making every file row carry a hash-sized gap. */
+   own width rather than making every file row carry a hash-sized gap.
+   Monospace, because a column of codes and hashes only lines up if it is. */
 .git__status {
   flex: none;
   min-width: 3ch;
+  font-family: var(--font-mono);
   color: var(--graphite-dim);
 }
 
@@ -1044,6 +1088,9 @@ button {
 }
 
 .diffline {
+  /* Patch text is source: it has to be monospace or the columns a diff relies
+     on stop meaning anything. */
+  font-family: var(--font-mono);
   white-space: pre;
   font-size: 13px;
   line-height: 1.35;
@@ -1093,7 +1140,7 @@ button {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1128,6 +1175,8 @@ button {
   color: var(--bone);
 }
 
+/* A file identifier inside a patch is a section title, not source: the same
+   path in the list beside it is set the same way. */
 .diff__path {
   overflow-wrap: anywhere;
 }
