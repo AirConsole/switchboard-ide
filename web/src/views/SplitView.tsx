@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
 import { TerminalView, TERMINAL_FONT_FAMILY } from '../terminal/TerminalView.js'
-import { claudeSession, stateLabel } from '../selectors.js'
+import { claudeSession, isRunning, stateLabel } from '../selectors.js'
 import {
   MIN_TILE_COLUMNS,
   TILE_CHROME_WIDTH,
@@ -26,7 +26,13 @@ const GAP = 12
 
 type Cell =
   | { kind: 'worktree'; key: string; worktree: Worktree; minimized: boolean }
-  | { kind: 'add'; key: string; minimized: false }
+  /**
+   * Creating a worktree is always on offer. With an empty or nearly empty
+   * overview it takes a full tile and explains itself; once there is real
+   * content it shrinks to a bar and behaves like a minimized worktree, sinking
+   * to the bottom and folding columns the same way.
+   */
+  | { kind: 'add'; key: string; minimized: boolean }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -71,15 +77,22 @@ const Tile = ({
   onRemove,
   onToggleMinimized,
 }: TileProps): React.ReactElement => {
-  const state = session
-    ? session.liveness === 'dead'
-      ? 'dead'
+  // An exited session is offered as something to restart, not shown as a dead
+  // terminal: whatever it printed last is of no use at a glance, and the tile is
+  // more useful as a way back in.
+  const running = isRunning(session)
+  const state = !session
+    ? 'idle'
+    : session.liveness === 'dead'
+      // A deliberate /exit is not a failure, so it does not get the alarm rail.
+      ? session.exitStatus
+        ? 'dead'
+        : 'idle'
       : session.attention === 'needs-you'
         ? 'waiting'
         : session.attention === 'working'
           ? 'working'
           : 'idle'
-    : 'idle'
 
   return (
     <div className={minimized ? `tile tile--${state} tile--minimized` : `tile tile--${state}`}>
@@ -138,7 +151,7 @@ const Tile = ({
       </div>
       {!minimized && (
       <div className="tile__screen">
-        {session ? (
+        {running && session ? (
           // Tiles stay interactive on purpose: you can answer a prompt here
           // without opening the worktree.
           <TerminalView session={session} primary={true} fontSize={TILE_FONT_SIZE} />
@@ -156,17 +169,31 @@ const Tile = ({
   )
 }
 
-const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
-  <button className="tile--add" onClick={onClick}>
-    <span className="tile--add__mark" aria-hidden="true">
-      +
-    </span>
-    <span className="tile--add__label">New worktree</span>
-    <p className="tile--add__hint">
-      Branches off and checks out its own directory, with Claude running in it.
-    </p>
-  </button>
-)
+interface AddTileProps {
+  onClick: () => void
+  /** Render as a bar rather than a full tile. */
+  compact: boolean
+}
+
+const AddTile = ({ onClick, compact }: AddTileProps): React.ReactElement =>
+  compact ? (
+    <button className="tile--add tile--add--bar" onClick={onClick}>
+      <span className="tile--add__mark" aria-hidden="true">
+        +
+      </span>
+      <span className="tile--add__label">New worktree</span>
+    </button>
+  ) : (
+    <button className="tile--add" onClick={onClick}>
+      <span className="tile--add__mark" aria-hidden="true">
+        +
+      </span>
+      <span className="tile--add__label">New worktree</span>
+      <p className="tile--add__hint">
+        Branches off and checks out its own directory, with Claude running in it.
+      </p>
+    </button>
+  )
 
 export interface SplitViewProps {
   worktrees: Worktree[]
@@ -199,11 +226,10 @@ export const SplitView = ({
     worktree,
     minimized: minimizedIds.has(worktree.id),
   }))
-  // Once the overview has real content, the grid is better spent on terminals
-  // and the top bar already carries the action. With nothing (or almost
-  // nothing) to show, this tile is both the action and the explanation of what
-  // a worktree actually is.
-  if (worktrees.length <= 1) cells.push({ kind: 'add', key: '__add', minimized: false })
+  // Full tile while there is little to show, where it doubles as the
+  // explanation of what a worktree is; a bar once the grid has real content to
+  // spend its space on.
+  cells.push({ kind: 'add', key: '__add', minimized: worktrees.length >= 2 })
 
   const charWidth = measureMonoCharWidth(TILE_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minTileWidth = MIN_TILE_COLUMNS * charWidth + TILE_CHROME_WIDTH
@@ -228,7 +254,7 @@ export const SplitView = ({
             <div className="grid__column" key={`column-${columnIndex}`} style={{ gap: GAP }}>
               {cellsInColumn.map((cell) =>
                 cell.kind === 'add' ? (
-                  <AddTile key={cell.key} onClick={onNewWorktree} />
+                  <AddTile key={cell.key} onClick={onNewWorktree} compact={cell.minimized} />
                 ) : (
                   <Tile
                     key={cell.key}

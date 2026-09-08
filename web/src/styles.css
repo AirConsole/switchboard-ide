@@ -457,6 +457,24 @@ button {
   border-color: var(--graphite);
 }
 
+/*
+ * The bar form, used once the overview has worktrees worth the space. Sized and
+ * padded like a minimized worktree's header so the two read as one row of the
+ * same kind, but kept dashed so it still reads as an action rather than a
+ * worktree. Doubled class so it wins over .tile--add regardless of order.
+ */
+.tile--add.tile--add--bar {
+  display: flex;
+  align-items: center;
+  /* justify-content, not justify-items: this is a flex container, and
+     .tile--add's `place-content: center` would otherwise centre the label away
+     from where a minimized worktree's name sits. */
+  justify-content: flex-start;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+}
+
 .tile--add:hover .tile--add__mark {
   color: var(--bone);
 }
@@ -465,6 +483,10 @@ button {
   font-family: var(--font-mono);
   font-size: 18px;
   color: var(--graphite-dim);
+}
+
+.tile--add--bar .tile--add__mark {
+  font-size: 13px;
 }
 
 .tile--add__label {
