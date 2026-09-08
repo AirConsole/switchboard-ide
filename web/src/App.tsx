@@ -46,7 +46,7 @@ export const App = (): React.ReactElement => {
     setUi({ view: 'detail', activeWorktreeId: worktreeId })
   }
 
-  const startAgent = (worktreeId: string): void => {
+  const startClaude = (worktreeId: string): void => {
     void api
       .createSession({ worktreeId, kind: 'claude' })
       .then(() => refresh())
@@ -90,8 +90,8 @@ export const App = (): React.ReactElement => {
         <div className="empty">
           <h1 className="empty__title">No project open</h1>
           <p className="empty__body">
-            Choose a git repository. Every branch you work on becomes a worktree with its own Claude
-            session, and they all keep running whether or not this page is open.
+            Choose a git repository. Every branch you work on becomes a worktree with Claude running
+            in it, and they all keep running whether or not this page is open.
           </p>
           <button className="btn" onClick={() => setShowOpenProject(true)}>
             Open project
@@ -152,7 +152,7 @@ export const App = (): React.ReactElement => {
               },
             })
           }
-          onStartAgent={() => startAgent(activeWorktree.id)}
+          onStart={() => startClaude(activeWorktree.id)}
           onNewShell={() => newShell(activeWorktree.id)}
           onCloseSession={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
           onRestartSession={(sessionId) =>
@@ -165,7 +165,8 @@ export const App = (): React.ReactElement => {
           worktrees={projectWorktrees}
           sessions={sessions}
           onOpenWorktree={openWorktree}
-          onStartAgent={startAgent}
+          onStart={startClaude}
+          onNewWorktree={() => setShowNewWorktree(true)}
         />
       )}
 

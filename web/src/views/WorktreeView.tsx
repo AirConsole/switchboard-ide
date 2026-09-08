@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
 import { TerminalView } from '../terminal/TerminalView.js'
-import { agentSession, shellSessions, stateLabel } from '../selectors.js'
+import { claudeSession, shellSessions, stateLabel } from '../selectors.js'
 
 export interface WorktreeViewProps {
   worktree: Worktree
@@ -10,7 +10,7 @@ export interface WorktreeViewProps {
   activeShellId: string | null
   onStripHeight: (height: number) => void
   onSelectShell: (sessionId: string) => void
-  onStartAgent: () => void
+  onStart: () => void
   onNewShell: () => void
   onCloseSession: (sessionId: string) => void
   onRestartSession: (sessionId: string) => void
@@ -27,13 +27,13 @@ export const WorktreeView = ({
   activeShellId,
   onStripHeight,
   onSelectShell,
-  onStartAgent,
+  onStart,
   onNewShell,
   onCloseSession,
   onRestartSession,
   onRemoveWorktree,
 }: WorktreeViewProps): React.ReactElement => {
-  const agent = agentSession(sessions, worktree.id)
+  const claude = claudeSession(sessions, worktree.id)
   const shells = shellSessions(sessions, worktree.id)
   const activeShell = shells.find((s) => s.id === activeShellId) ?? shells[0]
 
@@ -80,14 +80,18 @@ export const WorktreeView = ({
       <div className="pane">
         <div className="pane__head">
           <span className="pane__title">{worktree.name}</span>
-          <span className="micro">{worktree.branch ?? 'detached'}</span>
-          <span className="micro">{stateLabel(agent)}</span>
+          {/* The branch is usually the same string as the name, so showing it
+              unconditionally just prints the worktree twice. */}
+          {worktree.branch !== worktree.name && (
+            <span className="micro">{worktree.branch ?? 'detached'}</span>
+          )}
+          <span className="micro">{stateLabel(claude)}</span>
           <button className="topbar__button" onClick={onNewShell}>
             New shell
           </button>
-          {agent?.liveness === 'dead' && (
-            <button className="topbar__button" onClick={() => onRestartSession(agent.id)}>
-              Restart agent
+          {claude?.liveness === 'dead' && (
+            <button className="topbar__button" onClick={() => onRestartSession(claude.id)}>
+              Restart Claude
             </button>
           )}
           {!worktree.isMain && (
@@ -97,23 +101,23 @@ export const WorktreeView = ({
           )}
           {/* The escape hatch: these are real tmux sessions, so the user can
               always take one over from a terminal. */}
-          <span className="pane__hint" title={agent?.attachCommand ?? worktree.path}>
-            {agent ? agent.attachCommand : worktree.path}
+          <span className="pane__hint" title={claude?.attachCommand ?? worktree.path}>
+            {claude ? claude.attachCommand : worktree.path}
           </span>
         </div>
-        {agent ? (
+        {claude ? (
           <div className="terminal">
-            <TerminalView session={agent} primary={true} />
+            <TerminalView session={claude} primary={true} />
           </div>
         ) : (
           <div className="empty">
-            <h2 className="empty__title">No agent in {worktree.name}</h2>
+            <h2 className="empty__title">Claude is not running in {worktree.name}</h2>
             <p className="empty__body">
-              Start a Claude session in this worktree. It runs in {worktree.path} and keeps running
-              if you close this tab or restart the server.
+              It will run in {worktree.path}, and keep running if you close this tab or restart the
+              server.
             </p>
-            <button className="btn" onClick={onStartAgent}>
-              Start agent
+            <button className="btn" onClick={onStart}>
+              Start Claude
             </button>
           </div>
         )}

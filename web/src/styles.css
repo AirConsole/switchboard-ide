@@ -280,7 +280,10 @@ button {
   overflow-y: auto;
   min-height: 0;
   flex: 1;
-  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  /* Wide enough that the terminal inside gets a usable number of rows at the
+     2:1 tile shape -- Claude's TUI needs roughly 20 to draw a dialog without
+     clipping it. The grid wraps to another row instead of shrinking further. */
+  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
   align-content: start;
 }
 
@@ -289,7 +292,11 @@ button {
 .tile {
   display: flex;
   flex-direction: column;
-  min-height: 260px;
+  /* Width comes from the grid, height from this: a terminal is a landscape
+     thing, so tiles keep a 2:1 shape and the grid wraps to a new row rather
+     than stretching them. */
+  aspect-ratio: 2 / 1;
+  min-height: 0;
   background: var(--slab);
   border: 1px solid var(--rule);
   border-left: var(--rail) solid var(--rule-bright);
@@ -376,7 +383,54 @@ button {
   min-height: 0;
   overflow: hidden;
   background: #0e1116;
-  padding: 6px 8px;
+  padding: 6px 4px 6px 8px;
+}
+
+/*
+ * Creating a worktree is the primary action of this view, not a menu item, so
+ * it sits in the grid as its own cell and is always present.
+ */
+.tile--add {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  aspect-ratio: 2 / 1;
+  min-height: 0;
+  padding: 20px;
+  border: 1px dashed var(--rule-bright);
+  border-left: 1px dashed var(--rule-bright);
+  border-radius: var(--radius);
+  background: none;
+  text-align: center;
+}
+
+.tile--add:hover {
+  border-color: var(--graphite);
+}
+
+.tile--add:hover .tile--add__mark {
+  color: var(--bone);
+}
+
+.tile--add__mark {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--graphite-dim);
+}
+
+.tile--add__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--bone);
+}
+
+.tile--add__hint {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12px;
+  color: var(--graphite-dim);
+  line-height: 1.5;
 }
 
 /* ------------------------------------------------------------ detail view -- */

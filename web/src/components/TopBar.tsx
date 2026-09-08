@@ -33,27 +33,35 @@ export const TopBar = ({
         {project ? project.name : 'Open project'}
       </button>
 
+      {/*
+        Tabs are for moving between worktrees while you are inside one. The
+        overview already shows every worktree as a tile, so repeating them here
+        would be the same list twice.
+      */}
       <nav className="tabs">
-        {worktrees.map((worktree) => {
-          const needsYou = worktreeNeedsYou(sessions, worktree.id)
-          const isActive = view === 'detail' && worktree.id === activeWorktreeId
-          return (
-            <button
-              key={worktree.id}
-              className={['tab', isActive ? 'tab--active' : '', needsYou ? 'tab--waiting' : '']
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => onSelectWorktree(worktree.id)}
-              title={worktree.path}
-            >
-              {worktree.name}
-              {worktree.branch && worktree.branch !== worktree.name && (
-                <span className="tab__branch">{worktree.branch}</span>
-              )}
-              {worktree.dirty ? <span className="tab__dirty">{worktree.dirty}&plusmn;</span> : null}
-            </button>
-          )
-        })}
+        {view === 'detail' &&
+          worktrees.map((worktree) => {
+            const needsYou = worktreeNeedsYou(sessions, worktree.id)
+            const isActive = worktree.id === activeWorktreeId
+            return (
+              <button
+                key={worktree.id}
+                className={['tab', isActive ? 'tab--active' : '', needsYou ? 'tab--waiting' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => onSelectWorktree(worktree.id)}
+                title={worktree.path}
+              >
+                {worktree.name}
+                {worktree.branch && worktree.branch !== worktree.name && (
+                  <span className="tab__branch">{worktree.branch}</span>
+                )}
+                {worktree.dirty ? (
+                  <span className="tab__dirty">{worktree.dirty}&plusmn;</span>
+                ) : null}
+              </button>
+            )
+          })}
       </nav>
 
       <div className="topbar__actions">
@@ -65,7 +73,11 @@ export const TopBar = ({
         */}
         <div
           className={waiting > 0 ? 'waiting waiting--active' : 'waiting'}
-          title={waiting > 0 ? 'Agents blocked on an answer from you' : 'No agent is waiting on you'}
+          title={
+            waiting > 0
+              ? 'Worktrees where Claude is blocked on an answer from you'
+              : 'Nothing is waiting on you'
+          }
         >
           {waiting > 0 ? (
             <>

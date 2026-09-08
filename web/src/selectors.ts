@@ -1,14 +1,14 @@
 import type { Session, Worktree } from '@ide-n-dream/shared'
 
-/** The claude session that represents a worktree's agent, if it has one. */
-export const agentSession = (sessions: Session[], worktreeId: string): Session | undefined =>
+/** The Claude session for a worktree. There is at most one. */
+export const claudeSession = (sessions: Session[], worktreeId: string): Session | undefined =>
   sessions.find((s) => s.worktreeId === worktreeId && s.kind === 'claude')
 
 export const shellSessions = (sessions: Session[], worktreeId: string): Session[] =>
   sessions.filter((s) => s.worktreeId === worktreeId && s.kind === 'shell')
 
 /**
- * A worktree needs you when any agent in it is blocked on an answer. This is the
+ * A worktree needs you when Claude in it is blocked on an answer. This is the
  * value the whole overview is built around, so it is derived in one place.
  */
 export const worktreeNeedsYou = (sessions: Session[], worktreeId: string): boolean =>
@@ -34,7 +34,7 @@ export const orderWorktrees = (worktrees: Worktree[], tabOrder: string[]): Workt
 }
 
 export const stateLabel = (session: Session | undefined): string => {
-  if (!session) return 'no agent'
+  if (!session) return 'not running'
   if (session.liveness === 'dead') return 'exited'
   if (session.attention === 'needs-you') return 'needs you'
   if (session.attention === 'working') return 'working'
