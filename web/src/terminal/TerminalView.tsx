@@ -91,7 +91,15 @@ export const TerminalView = ({
       cursorBlink: primary,
       fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: fontSize ?? TERMINAL_FONT_SIZE,
-      lineHeight: 1.2,
+      /*
+       * 1, not 1.2, for the same reason VS Code's terminal uses 1: the cell
+       * height is fontSize * lineHeight, and 14 * 1.2 = 16.8 is fractional.
+       * The WebGL renderer rasterises glyphs into an atlas and blits them per
+       * cell, so a fractional cell lands glyphs on half-pixels -- and at
+       * devicePixelRatio 2 that is what reads as soft next to a terminal whose
+       * cells are a whole number of pixels.
+       */
+      lineHeight: 1,
       theme: THEME,
       // Needed by the unicode11 addon and for wide-glyph handling generally --
       // Claude Code's TUI is full of box drawing and emoji-width characters.

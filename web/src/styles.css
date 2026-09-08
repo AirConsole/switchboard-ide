@@ -66,7 +66,15 @@ body {
   color: var(--bone);
   font-family: var(--font-ui);
   font-size: 14px;
-  -webkit-font-smoothing: antialiased;
+  /*
+   * No -webkit-font-smoothing override. On macOS `antialiased` swaps subpixel
+   * antialiasing for grayscale, which renders text thinner and rougher than the
+   * platform default -- and than the terminal it sits beside. Left alone, the
+   * browser does what it does everywhere else.
+   *
+   * Note it never applied to the terminals in the first place: those are drawn
+   * on a canvas, which this property does not reach.
+   */
 }
 
 button {
