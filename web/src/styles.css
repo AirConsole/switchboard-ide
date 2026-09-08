@@ -302,11 +302,17 @@ button {
   font-size: 12px;
 }
 
+/*
+ * The gutter is wide because the bar has no line at a segment boundary to say
+ * where one pane's controls end -- so without it the worktree's own minimize
+ * sits a few pixels from a terminal's close button, which is a misclick worth
+ * paying 24px to avoid.
+ */
 .tile__seg {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 6px 12px;
   min-width: 0;
 }
 
@@ -491,12 +497,6 @@ button {
   color: var(--ink);
   background: var(--graphite);
   border-color: var(--graphite);
-}
-
-/* Open, but with no room for its pane -- the same "it exists, it is not on
-   screen" distinction the top bar's chips make. */
-.tile__toggle--pushed {
-  opacity: 0.5;
 }
 
 /* The tab strip sits in the bar segment above the pane it drives. It is the

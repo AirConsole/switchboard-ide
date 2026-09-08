@@ -125,7 +125,6 @@ interface WorktreeTileProps {
   panes: Pane[]
   session: Session | undefined
   terminals: Session[]
-  openPanels: PanelName[]
   activeTerminalId: string | null
   onStart: () => void
   onMinimize: () => void
@@ -151,7 +150,6 @@ const WorktreeTile = ({
   panes,
   session,
   terminals,
-  openPanels,
   activeTerminalId,
   onStart,
   onMinimize,
@@ -179,6 +177,16 @@ const WorktreeTile = ({
 
   const shownPanes = new Set(panes.map((pane) => pane.kind))
   const columns = `repeat(${panes.length}, minmax(0, 1fr))`
+  /*
+   * The worktree's controls stay with its Claude pane rather than moving to the
+   * last one, so opening a panel does not slide the button you just pressed out
+   * from under the pointer -- and every panel toggle keeps one address whether
+   * one panel is open or three. When Claude itself has been pushed out, on a
+   * phone showing only the terminals, they fall back to the one segment there
+   * is.
+   */
+  const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
+  const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
 
   const identity = (
     <>
@@ -196,23 +204,22 @@ const WorktreeTile = ({
     <div className="tile__controls">
       <span className="tile__state">{stateLabel(session)}</span>
       {PANELS.map((panel) => {
-        const open = openPanels.includes(panel)
-        // Open but pushed out for want of width: the same distinction the top
-        // bar's chips make, so the toggle never claims a pane that is not there.
-        const pushed = open && !shownPanes.has(panel)
+        /*
+         * Lit when the panel's pane is on screen, which is the only thing the
+         * toggle ever claims. A panel with no room for its pane is collapsed
+         * outright rather than held open behind the scenes, so this cannot
+         * disagree with what the tile is showing.
+         */
+        const on = shownPanes.has(panel)
         return (
           <button
             key={panel}
-            className={['tile__toggle', open ? 'tile__toggle--on' : '', pushed ? 'tile__toggle--pushed' : '']
-              .filter(Boolean)
-              .join(' ')}
+            className={on ? 'tile__toggle tile__toggle--on' : 'tile__toggle'}
             onClick={() => onTogglePanel(panel)}
             title={
-              pushed
-                ? `${PANEL_LABEL[panel]} are open but there is no room for them — widen the window`
-                : open
-                  ? `Close ${PANEL_LABEL[panel].toLowerCase()}`
-                  : `Open ${PANEL_LABEL[panel].toLowerCase()} beside Claude`
+              on
+                ? `Close ${PANEL_LABEL[panel].toLowerCase()}`
+                : `Open ${PANEL_LABEL[panel].toLowerCase()} beside Claude`
             }
           >
             {PANEL_LABEL[panel]}
@@ -262,7 +269,7 @@ const WorktreeTile = ({
                 onClose={onCloseTerminal}
               />
             )}
-            {index === panes.length - 1 && controls}
+            {index === controlsIndex && controls}
           </div>
         ))}
       </div>
@@ -319,6 +326,11 @@ export interface OverviewProps {
   onMinimize: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
+  /**
+   * Close panels the layout could not find room for. Reported from here
+   * because only the layout knows what fit.
+   */
+  onCollapsePanels: (collapsed: { worktreeId: string; panel: PanelName }[]) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
@@ -346,6 +358,7 @@ export const Overview = ({
   onMinimize,
   onRemoveWorktree,
   onTogglePanel,
+  onCollapsePanels,
   onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
@@ -373,6 +386,38 @@ export const Overview = ({
     GAP,
   )
   const tiles = gatherTiles(visible)
+
+  /*
+   * Panels with no room are collapsed, not remembered as open-behind-the-scenes.
+   *
+   * A panel that is open but has no pane is a state with nothing to show for
+   * itself: the tile looks exactly as it would with the panel closed, so the
+   * only honest thing its toggle can say is "closed". Rather than dress that up
+   * as a third state, the panel is closed for real and the toggle goes with it.
+   *
+   * Only worktrees that actually have a tile are considered. A minimized
+   * worktree has no panes at all, and collapsing its panels would throw away
+   * the width it is meant to come back at.
+   */
+  const collapsedKeys = tiles
+    .filter((tile) => tile.worktree !== null)
+    .flatMap((tile) =>
+      (panels[tile.worktree!.id] ?? [])
+        .filter((panel) => !tile.panes.some((pane) => pane.kind === panel))
+        .map((panel) => paneKey(tile.worktree!.id, panel)),
+    )
+  const collapsedKey = collapsedKeys.join(',')
+  useEffect(() => {
+    if (width === 0 || collapsedKey === '') return
+    // One call for the lot: a patch per panel would each be built from the same
+    // pre-collapse state, and the last would undo the rest.
+    onCollapsePanels(
+      collapsedKey.split(',').map((key) => {
+        const cut = key.lastIndexOf(':')
+        return { worktreeId: key.slice(0, cut), panel: key.slice(cut + 1) as PanelName }
+      }),
+    )
+  }, [collapsedKey, width, onCollapsePanels])
 
   /*
    * Tell the top bar which worktrees actually got a tile.
@@ -405,7 +450,6 @@ export const Overview = ({
                 panes={tile.panes}
                 session={claudeSession(sessions, worktree.id)}
                 terminals={terminalSessions(sessions, worktree.id)}
-                openPanels={panels[worktree.id] ?? []}
                 activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                 onStart={() => onStart(worktree.id)}
                 onMinimize={() => onMinimize(worktree.id)}
