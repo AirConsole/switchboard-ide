@@ -127,7 +127,6 @@ interface WorktreeTileProps {
   terminals: Session[]
   activeTerminalId: string | null
   onStart: () => void
-  onMinimize: () => void
   onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
   onSelectTerminal: (sessionId: string) => void
@@ -152,7 +151,6 @@ const WorktreeTile = ({
   terminals,
   activeTerminalId,
   onStart,
-  onMinimize,
   onRemove,
   onTogglePanel,
   onSelectTerminal,
@@ -200,6 +198,11 @@ const WorktreeTile = ({
     </>
   )
 
+  /*
+   * No minimize control: the worktree's chip in the top bar already toggles
+   * whether it has a tile, and a button here would only be a second place to
+   * learn the same gesture.
+   */
   const controls = (
     <div className="tile__controls">
       <span className="tile__state">{stateLabel(session)}</span>
@@ -226,14 +229,6 @@ const WorktreeTile = ({
           </button>
         )
       })}
-      <button
-        className="tile__minimize"
-        onClick={onMinimize}
-        title={`Minimize ${worktree.name} to the top bar`}
-        aria-label={`Minimize ${worktree.name}`}
-      >
-        {'−'}
-      </button>
       {/* The main worktree cannot be removed, so it gets no control. */}
       {!worktree.isMain && (
         <button
@@ -323,7 +318,6 @@ export interface OverviewProps {
   newestPane: string | null
   activeTerminalByWorktree: Record<string, string>
   onStart: (worktreeId: string) => void
-  onMinimize: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /**
@@ -355,7 +349,6 @@ export const Overview = ({
   newestPane,
   activeTerminalByWorktree,
   onStart,
-  onMinimize,
   onRemoveWorktree,
   onTogglePanel,
   onCollapsePanels,
@@ -452,7 +445,6 @@ export const Overview = ({
                 terminals={terminalSessions(sessions, worktree.id)}
                 activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                 onStart={() => onStart(worktree.id)}
-                onMinimize={() => onMinimize(worktree.id)}
                 onRemove={() => onRemoveWorktree(worktree.id)}
                 onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                 onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}

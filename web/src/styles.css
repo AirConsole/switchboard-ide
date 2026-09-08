@@ -347,18 +347,6 @@ button {
   border-left: 1px solid var(--rule);
 }
 
-.tile__minimize {
-  flex: none;
-  padding: 0 3px;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--graphite-dim);
-}
-
-.tile__minimize:hover {
-  color: var(--bone);
-}
-
 /*
  * Removal is destructive, so the control stays quiet until you go for it and
  * only turns red on hover -- it should not read as part of the status line.
