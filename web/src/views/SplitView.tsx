@@ -82,14 +82,16 @@ const Tile = ({
       {/* A div, not a button: the remove control lives in here and a button
           cannot be nested inside another button. */}
       <div className="tile__head">
+        {/* The whole header bar opens the worktree, not just the words, so
+            there is no dead space to click. Only the X is carved out. */}
         <button className="tile__open" onClick={onOpen} title={worktree.path}>
           <span className="tile__name">{worktree.name}</span>
           {worktree.branch && worktree.branch !== worktree.name && (
             <span className="tile__branch">{worktree.branch}</span>
           )}
           {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
+          <span className="tile__state">{stateLabel(session)}</span>
         </button>
-        <span className="tile__state">{stateLabel(session)}</span>
         {/* The main worktree cannot be removed, so it gets no control. */}
         {!worktree.isMain && (
           <button

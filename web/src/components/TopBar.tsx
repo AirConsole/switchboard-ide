@@ -64,40 +64,46 @@ export const TopBar = ({
           })}
       </nav>
 
-      <div className="topbar__actions">
-        {/*
-          The signature readout. It is the only amber element in the chrome, and
-          it answers the question the whole app exists to answer. With nothing
-          blocked it goes quiet rather than turning green: absence of signal,
-          not a second signal competing for attention.
-        */}
-        <div
-          className={waiting > 0 ? 'waiting waiting--active' : 'waiting'}
-          title={
-            waiting > 0
-              ? 'Worktrees where Claude is blocked on an answer from you'
-              : 'Nothing is waiting on you'
-          }
-        >
-          {waiting > 0 ? (
-            <>
-              <span className="waiting__count">{waiting}</span>
-              waiting
-            </>
-          ) : (
-            'all clear'
-          )}
+      {/*
+        Nothing on the right in the overview. "Overview" would point at the view
+        you are already in, and the waiting count restates what the tiles' own
+        amber rails already show. The detail view keeps both, because from
+        inside a worktree you cannot see the others.
+      */}
+      {view === 'detail' && (
+        <div className="topbar__actions">
+          {/*
+            The signature readout: the only amber element in the chrome, and it
+            answers the question the whole app exists to answer. With nothing
+            blocked it goes quiet rather than turning green -- absence of signal,
+            not a second signal competing for attention. It earns its place here
+            and not in the overview, where the tiles show their own state.
+          */}
+          <div
+            className={waiting > 0 ? 'waiting waiting--active' : 'waiting'}
+            title={
+              waiting > 0
+                ? 'Worktrees where Claude is blocked on an answer from you'
+                : 'Nothing is waiting on you'
+            }
+          >
+            {waiting > 0 ? (
+              <>
+                <span className="waiting__count">{waiting}</span>
+                waiting
+              </>
+            ) : (
+              'all clear'
+            )}
+          </div>
+          <button className="topbar__button" onClick={onShowOverview}>
+            Overview
+          </button>
+          <button className="topbar__button" onClick={onNewWorktree} disabled={!project}>
+            New worktree
+          </button>
         </div>
-        <button
-          className={view === 'split' ? 'topbar__button topbar__button--active' : 'topbar__button'}
-          onClick={onShowOverview}
-        >
-          Overview
-        </button>
-        <button className="topbar__button" onClick={onNewWorktree} disabled={!project}>
-          New worktree
-        </button>
-      </div>
+      )}
     </header>
   )
 }

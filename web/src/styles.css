@@ -207,11 +207,6 @@ button {
   color: var(--bone);
 }
 
-.topbar__button--active {
-  color: var(--bone);
-  background: var(--slab-raised);
-}
-
 /*
  * The signature element: a single live readout of how many agents are blocked.
  * It is the only amber thing in the chrome, and when nothing is waiting it goes
@@ -336,11 +331,12 @@ button {
   min-width: 0;
 }
 
-/* Opening the worktree is the whole label, so it stays one wide target. */
+/* Opening the worktree is the whole header bar, so it stays one wide target. */
 .tile__open {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font: inherit;
