@@ -66,8 +66,8 @@ export const App = (): React.ReactElement => {
   }
 
   /**
-   * A chip toggles whether its worktree is on screen, and is the only way to
-   * minimize one -- the tile carries no button for it.
+   * A chip toggles whether its worktree is on screen. Minimizing also happens
+   * by clicking a tile's own bar, and both land here.
    *
    * Keyed on what is actually visible, not on `minimized`, because a tile can
    * be absent for either reason. Bringing one back also marks it newest, which
@@ -234,6 +234,7 @@ export const App = (): React.ReactElement => {
         newestPane={ui.newestPane}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
         onStart={startClaude}
+        onMinimize={toggleMinimized}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
         onCollapsePanels={collapsePanels}

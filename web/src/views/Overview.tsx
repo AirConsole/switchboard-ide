@@ -127,6 +127,7 @@ interface WorktreeTileProps {
   terminals: Session[]
   activeTerminalId: string | null
   onStart: () => void
+  onMinimize: () => void
   onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
   onSelectTerminal: (sessionId: string) => void
@@ -151,6 +152,7 @@ const WorktreeTile = ({
   terminals,
   activeTerminalId,
   onStart,
+  onMinimize,
   onRemove,
   onTogglePanel,
   onSelectTerminal,
@@ -185,24 +187,23 @@ const WorktreeTile = ({
    */
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
+  const minimizeHint = `Click to minimize ${worktree.name} to the top bar`
 
+  /*
+   * A real button, not text with a handler on the bar around it: clicking the
+   * bar is the mouse gesture, and this is the same thing reachable by keyboard.
+   * Both call the same handler, and the bar's guard below lets this one win.
+   */
   const identity = (
-    <>
-      {/* Plain text: with one view there is nowhere for a click on it to go.
-          Everything actionable is an explicit control. */}
+    <button className="tile__label" onClick={onMinimize} title={minimizeHint}>
       <span className="tile__name">{worktree.name}</span>
       {worktree.branch && worktree.branch !== worktree.name && (
         <span className="tile__branch">{worktree.branch}</span>
       )}
       {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
-    </>
+    </button>
   )
 
-  /*
-   * No minimize control: the worktree's chip in the top bar already toggles
-   * whether it has a tile, and a button here would only be a second place to
-   * learn the same gesture.
-   */
   const controls = (
     <div className="tile__controls">
       <span className="tile__state">{stateLabel(session)}</span>
@@ -250,7 +251,21 @@ const WorktreeTile = ({
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
-        title={session ? `${worktree.path}\n${session.attachCommand}` : worktree.path}
+        title={
+          session
+            ? `${worktree.path}\n${session.attachCommand}\n${minimizeHint}`
+            : `${worktree.path}\n${minimizeHint}`
+        }
+        onClick={(event) => {
+          /*
+           * Minimizing is the bar's own gesture, so it fires on the bar itself
+           * and on the identity -- but never through something that already
+           * does its own job. Panel toggles, remove and a panel's controls
+           * would otherwise minimize the worktree out from under the click.
+           */
+          if ((event.target as HTMLElement).closest('button, .termtabs')) return
+          onMinimize()
+        }}
       >
         {panes.map((pane, index) => (
           <div className="tile__seg" key={pane.key}>
@@ -318,6 +333,7 @@ export interface OverviewProps {
   newestPane: string | null
   activeTerminalByWorktree: Record<string, string>
   onStart: (worktreeId: string) => void
+  onMinimize: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /**
@@ -349,6 +365,7 @@ export const Overview = ({
   newestPane,
   activeTerminalByWorktree,
   onStart,
+  onMinimize,
   onRemoveWorktree,
   onTogglePanel,
   onCollapsePanels,
@@ -445,6 +462,7 @@ export const Overview = ({
                 terminals={terminalSessions(sessions, worktree.id)}
                 activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                 onStart={() => onStart(worktree.id)}
+                onMinimize={() => onMinimize(worktree.id)}
                 onRemove={() => onRemoveWorktree(worktree.id)}
                 onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                 onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}

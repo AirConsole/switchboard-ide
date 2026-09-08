@@ -300,6 +300,21 @@ button {
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-mono);
   font-size: 12px;
+  /* The bar itself minimizes the worktree, so it has to read as clickable --
+     everything in it that does its own job keeps its own cursor. */
+  cursor: pointer;
+}
+
+.tile__bar:hover {
+  background: var(--slab-raised);
+}
+
+.tile__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  min-width: 0;
 }
 
 /*
