@@ -90,6 +90,18 @@ class LiveSession {
   /** Sole input authority; see FocusMsg in the shared protocol. */
   inputOwner: Sink | null = null
 
+  /**
+   * The attachment whose geometry the pty follows: the most recent view to
+   * attach or resize as primary.
+   *
+   * Picking "the first primary attachment" instead was a real bug: a leaked or
+   * lingering socket kept its stale geometry at the front of the map and
+   * overrode the view actually on screen, so the browser shrank its terminal
+   * while the pty stayed large. On the alternate screen there is no reflow to
+   * paper over that, so the mismatch showed as permanent corruption.
+   */
+  sizeOwner: Sink | null = null
+
   private pendingOut: Uint8Array[] = []
   private flushTimer: NodeJS.Timeout | null = null
   private idleTimer: NodeJS.Timeout | null = null
@@ -229,8 +241,33 @@ class LiveSession {
    * With no primary attached the size is left alone: an overview tile must never
    * reflow a running TUI just by being looked at.
    */
+  /** Drop attachments whose socket has gone away. */
+  private pruneClosed(): void {
+    for (const [sink] of this.attachments) {
+      if (!sink.open) {
+        this.attachments.delete(sink)
+        if (this.sizeOwner === sink) this.sizeOwner = null
+        if (this.inputOwner === sink) this.inputOwner = null
+      }
+    }
+  }
+
   applySize(): void {
-    const primary = [...this.attachments.values()].find((a) => a.primary)
+    this.pruneClosed()
+    const owned = this.sizeOwner ? this.attachments.get(this.sizeOwner) : undefined
+    // Fall back to the most recently added primary, not the first.
+    const primary =
+      owned?.primary === true
+        ? owned
+        : [...this.attachments.values()].filter((a) => a.primary).at(-1)
+    if (process.env.IDN_DEBUG_SIZE) {
+      console.log(
+        `[size] ${this.record.tmuxName} attachments=${this.attachments.size}` +
+          ` primary=${primary ? `${primary.cols}x${primary.rows}` : 'none'}` +
+          ` owner=${owned ? 'yes' : 'no'}` +
+          ` record=${this.record.cols}x${this.record.rows} pty=${this.pty ? 'yes' : 'NULL'}`,
+      )
+    }
     if (!primary) return
     const { cols, rows } = primary
     if (cols < 2 || rows < 2) return
@@ -239,6 +276,9 @@ class LiveSession {
     this.record.rows = rows
     this.mirror.resize(cols, rows)
     this.pty?.resize(cols, rows)
+    if (process.env.IDN_DEBUG_SIZE) {
+      console.log(`[size] ${this.record.tmuxName} -> applied ${cols}x${rows}`)
+    }
     for (const attachment of this.attachments.values()) {
       if (attachment.sink.open) {
         attachment.sink.sendJson({ t: 'size', sessionId: this.record.id, cols, rows })
@@ -471,7 +511,10 @@ export class SessionEngine {
     attachment.rows = rows
     live.attachments.set(sink, attachment)
 
-    if (primary) live.applySize()
+    if (primary) {
+      live.sizeOwner = sink
+      live.applySize()
+    }
     // First attachment gets input authority so a single open view just works.
     if (live.inputOwner === null) live.inputOwner = sink
 
@@ -496,19 +539,22 @@ export class SessionEngine {
   detach(sink: Sink, sessionId: string): void {
     const live = this.sessions.get(sessionId)
     if (!live) return
+    this.dropAttachment(live, sink)
+  }
+
+  detachAll(sink: Sink): void {
+    for (const live of this.sessions.values()) this.dropAttachment(live, sink)
+  }
+
+  private dropAttachment(live: LiveSession, sink: Sink): void {
     live.attachments.delete(sink)
     if (live.inputOwner === sink) {
       live.inputOwner = live.attachments.keys().next().value ?? null
     }
-  }
-
-  detachAll(sink: Sink): void {
-    for (const live of this.sessions.values()) {
-      live.attachments.delete(sink)
-      if (live.inputOwner === sink) {
-        live.inputOwner = live.attachments.keys().next().value ?? null
-      }
-    }
+    // Deliberately no resize here: the geometry the departing view set stays
+    // until another view claims ownership, so closing a tab does not reflow a
+    // running TUI.
+    if (live.sizeOwner === sink) live.sizeOwner = null
   }
 
   focus(sink: Sink, sessionId: string): void {
@@ -536,6 +582,9 @@ export class SessionEngine {
     if (!attachment) return
     attachment.cols = cols
     attachment.rows = rows
-    if (attachment.primary) live.applySize()
+    if (attachment.primary) {
+      live.sizeOwner = sink
+      live.applySize()
+    }
   }
 }

@@ -8,6 +8,13 @@ import type { Session } from '@ide-n-dream/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import '@xterm/xterm/css/xterm.css'
 
+/**
+ * Must match the server's mirror scrollback (IDN_MIRROR_SCROLLBACK). xterm's
+ * reflow is deterministic, so identical content plus identical scrollback keeps
+ * this terminal and the mirror in step through a resize.
+ */
+const MIRROR_SCROLLBACK = 5000
+
 export interface TerminalViewProps {
   session: Session
   /**
@@ -56,13 +63,18 @@ export const TerminalView = ({
       fontSize: fontSize ?? 13,
       lineHeight: 1.2,
       theme: THEME,
-      scrollback: 10000,
       // Needed by the unicode11 addon and for wide-glyph handling generally --
       // Claude Code's TUI is full of box drawing and emoji-width characters.
       allowProposedApi: true,
-      // The server decides geometry; a tile must never renegotiate it.
-      cols: session.cols,
-      rows: session.rows,
+      // Provisional: corrected from the element's real size below, before we
+      // attach. Starting from the session record would use a value that is
+      // often stale, and being wrong here is expensive -- see the note on
+      // sizing below.
+      cols: 80,
+      rows: 24,
+      // Match the server-side mirror, so a reflow on one side produces the same
+      // result as on the other.
+      scrollback: MIRROR_SCROLLBACK,
     })
 
     const fit = new FitAddon()
@@ -73,6 +85,22 @@ export const TerminalView = ({
     term.unicode.activeVersion = '11'
 
     term.open(host)
+
+    /*
+     * Size to the element BEFORE attaching.
+     *
+     * The server serializes its mirror at the geometry we ask for, so asking
+     * with the size we are actually going to use means the first paint lands in
+     * a terminal of matching dimensions and needs no follow-up resize. Getting
+     * this wrong is not a cosmetic glitch: a TUI on the alternate screen has no
+     * reflow, so painting a snapshot taken at one size into a terminal of
+     * another size loses content permanently, and the app -- which only sends
+     * incremental updates -- never repaints the difference.
+     */
+    const initial = fit.proposeDimensions()
+    if (initial && initial.cols >= 2 && initial.rows >= 2) {
+      term.resize(initial.cols, initial.rows)
+    }
 
     // WebGL only for the terminal actually being read. A grid of live WebGL
     // contexts exhausts the browser's context limit and drops them all.
@@ -138,18 +166,22 @@ export const TerminalView = ({
 
     const consumer: ConsumerOptions = {
       primary,
-      cols: session.cols,
-      rows: session.rows,
+      cols: term.cols,
+      rows: term.rows,
       onData: (payload) => term.write(payload),
       onSnapshot: (snapshot, cols, rows) => {
+        // Always adopt the server's geometry, primary or not. This terminal has
+        // to be an exact replica of the mirror the snapshot came from; if it is
+        // not, every later incremental update from the app lands on different
+        // cells here than the app believes it is writing.
+        if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows)
         // A repaint replaces the screen wholesale; clearing first stops old
         // contents showing through where the snapshot is shorter.
         term.reset()
-        if (!primary) term.resize(cols, rows)
         term.write(snapshot)
       },
       onSize: (cols, rows) => {
-        if (!primary) term.resize(cols, rows)
+        if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows)
       },
     }
     const unsubscribe = terminalSocket.subscribe(session.id, consumer)

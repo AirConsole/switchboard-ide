@@ -62,6 +62,11 @@ class TerminalSocket {
     }
 
     ws.onclose = () => {
+      // Only react if this is still the live socket. Without the check, a close
+      // event arriving for an already-replaced socket cleared `this.ws` and
+      // scheduled another connect, leaving two open sockets attached to the same
+      // sessions -- and a stale one competing for terminal geometry.
+      if (this.ws !== ws) return
       this.ws = null
       this.scheduleReconnect()
     }
