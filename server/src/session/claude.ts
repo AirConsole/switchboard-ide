@@ -119,6 +119,99 @@ const readTail = async (path: string): Promise<string | null> => {
   }
 }
 
+/**
+ * One transcript line, as far as "what is this conversation doing" cares.
+ *
+ * `prompt` is a human turn beginning, `turn-end` is Claude finishing one, and
+ * everything else -- assistant messages, tool results, attachments, mode
+ * records -- is neither.
+ */
+type Mark = { kind: 'prompt'; text: string } | { kind: 'turn-end' } | null
+
+/**
+ * A slash command, written back the way it was typed.
+ *
+ * Claude records `/plan foo` as an XML block rather than as prose, and -- this
+ * is the part that matters -- writes **no `last-prompt` entry for it at all**.
+ * Measured in a live transcript: `last-prompt` read "commit and merge", then
+ * the `/plan` arrived as a user message, and the next `last-prompt` was already
+ * the prompt after it. So a window showed the previous instruction for the
+ * whole of a plan, and the turn looked, to anything reading turn boundaries,
+ * like it had never started.
+ */
+const COMMAND = /<command-name>([^<]*)<\/command-name>/
+const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
+
+/** Wrappers that are machinery around a turn rather than something asked. */
+const NOT_A_PROMPT = ['<local-command-stdout>', '<system-reminder>', '<attachment>']
+
+const readCommand = (content: string): string | null => {
+  const name = COMMAND.exec(content)
+  if (!name) return null
+  const args = COMMAND_ARGS.exec(content)?.[1]?.trim() ?? ''
+  const label = (name[1] ?? '').trim()
+  if (label === '') return null
+  return args === '' ? label : `${label} ${args}`
+}
+
+/*
+ * Cheap rejects before parsing: most lines are assistant messages or tool
+ * results, and this runs for every worktree on every poll.
+ *
+ * Tolerant of whitespace rather than matching `"type":"user"` literally. Claude
+ * writes compact JSON, so the literal worked -- and then failed on the first
+ * fixture written by anything else, which is a poor way to find out that a
+ * pre-filter is really a parser.
+ */
+const INTERESTING = /"(?:last-prompt|turn_duration)"|"type"\s*:\s*"user"/
+
+const markOf = (line: string): Mark => {
+  if (!INTERESTING.test(line)) return null
+  let row: unknown
+  try {
+    row = JSON.parse(line)
+  } catch {
+    // A half-written last line in a live transcript.
+    return null
+  }
+  if (typeof row !== 'object' || row === null) return null
+  const record = row as {
+    type?: unknown
+    subtype?: unknown
+    lastPrompt?: unknown
+    isMeta?: unknown
+    isSidechain?: unknown
+    message?: { content?: unknown }
+  }
+  if (record.subtype === 'turn_duration') return { kind: 'turn-end' }
+  if (record.type === 'last-prompt') {
+    if (typeof record.lastPrompt !== 'string' || record.lastPrompt === '') return null
+    return { kind: 'prompt', text: record.lastPrompt }
+  }
+  if (record.type !== 'user') return null
+  // A subagent's own transcript, or something the harness injected.
+  if (record.isMeta === true || record.isSidechain === true) return null
+  const content = record.message?.content
+  // An array is tool results; only a string is something a person sent.
+  if (typeof content !== 'string' || content.trim() === '') return null
+  const command = readCommand(content)
+  if (command !== null) return { kind: 'prompt', text: command }
+  if (NOT_A_PROMPT.some((wrapper) => content.startsWith(wrapper))) return null
+  return { kind: 'prompt', text: content }
+}
+
+/** The newest thing in a transcript tail that says what the turn is doing. */
+const newestMark = (text: string): Exclude<Mark, null> | null => {
+  const lines = text.split('\n')
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index]
+    if (line === undefined) continue
+    const mark = markOf(line)
+    if (mark !== null) return mark
+  }
+  return null
+}
+
 export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
   const newest = await newestTranscript(transcriptDir(cwd))
   if (newest === null) return undefined
@@ -127,22 +220,16 @@ export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
   const lines = text.split('\n')
   for (let index = lines.length - 1; index >= 0; index--) {
     const line = lines[index]
-    // Cheap reject before parsing: most lines are assistant messages.
-    if (line === undefined || !line.includes('"last-prompt"')) continue
-    try {
-      const row: unknown = JSON.parse(line)
-      if (typeof row !== 'object' || row === null) continue
-      const record = row as { type?: unknown; lastPrompt?: unknown }
-      if (record.type !== 'last-prompt' || typeof record.lastPrompt !== 'string') continue
-      const prompt = record.lastPrompt.replace(/\s+/g, ' ').trim()
-      if (prompt === '') continue
-      return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
-    } catch {
-      // A half-written line at the end of a live transcript: keep looking back.
-    }
+    if (line === undefined) continue
+    const mark = markOf(line)
+    if (mark === null || mark.kind !== 'prompt') continue
+    const prompt = mark.text.replace(/\s+/g, ' ').trim()
+    if (prompt === '') continue
+    return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
   }
   return undefined
 }
+
 
 /**
  * Where a worktree's conversation stands: has the last thing asked been
@@ -182,28 +269,10 @@ export const turnState = async (cwd: string, now = Date.now()): Promise<TurnStat
   if (newest === null) return 'unknown'
   const text = await readTail(newest.path)
   if (text === null) return 'unknown'
-  const stale = now - newest.at > IN_TURN_STALE_MS
-  const lines = text.split('\n')
-  for (let index = lines.length - 1; index >= 0; index--) {
-    const line = lines[index]
-    if (line === undefined) continue
-    const isTurnEnd = line.includes('"turn_duration"')
-    // A prompt entry is written with an empty string at startup, before
-    // anything has been asked; that one is not a turn beginning.
-    const isPrompt = line.includes('"last-prompt"') && !line.includes('"lastPrompt":""')
-    if (!isTurnEnd && !isPrompt) continue
-    try {
-      const row = JSON.parse(line) as { type?: unknown; subtype?: unknown; lastPrompt?: unknown }
-      if (row.subtype === 'turn_duration') return 'between-turns'
-      if (row.type === 'last-prompt' && typeof row.lastPrompt === 'string' && row.lastPrompt !== '') {
-        // Nothing has written here in half a minute, so whatever this prompt
-        // started is not still going; let the screen answer instead.
-        return stale ? 'unknown' : 'in-turn'
-      }
-    } catch {
-      // A half-written last line: keep looking back.
-    }
-  }
-  // A transcript with neither kind of entry cannot answer the question.
-  return 'unknown'
+  const mark = newestMark(text)
+  if (mark === null) return 'unknown'
+  if (mark.kind === 'turn-end') return 'between-turns'
+  // Nothing has written here in half a minute, so whatever this prompt started
+  // is not still going; let the screen answer instead.
+  return now - newest.at > IN_TURN_STALE_MS ? 'unknown' : 'in-turn'
 }

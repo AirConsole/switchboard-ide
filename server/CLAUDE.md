@@ -121,7 +121,13 @@ whether to broadcast `invalidate` — and it polls only while a client is
 connected.
 
 `prompt` is the last thing the user asked Claude in that worktree, read from the
-tail of the newest transcript in `transcriptDir(path)`. Claude writes two
+tail of the newest transcript in `transcriptDir(path)`. **A slash command is not
+written as a `last-prompt` entry at all** -- it arrives as a `user` message
+holding `<command-name>/plan</command-name>` and its args -- so one backward
+scan classifies both kinds of line, and both `lastPrompt()` and `turnState()`
+read it. Before that, a `/plan` left the window showing the *previous*
+instruction for the whole turn, and left `turnState` reading the previous turn's
+end, which said "idle" while Claude was working. Claude writes two
 candidates and `lastPrompt()` takes the second on purpose: `ai-title` is Claude's
 own name for the conversation but is set from its opening subject and goes stale
 within the hour, while `last-prompt` is rewritten every turn. Neither costs a
