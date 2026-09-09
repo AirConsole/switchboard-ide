@@ -1,4 +1,4 @@
-import type { Session, Worktree } from '@ide-n-dream/shared'
+import type { Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 
 /** The Claude session for a worktree. There is at most one. */
 export const claudeSession = (sessions: Session[], worktreeId: string): Session | undefined =>
@@ -71,3 +71,35 @@ export const stateLabel = (session: Session | undefined): string => {
 /** Whether a session is present AND still running. */
 export const isRunning = (session: Session | undefined): boolean =>
   session !== undefined && session.liveness !== 'dead'
+
+/** A worktree's todo, with where it sits in that worktree's run queue. */
+export interface TodoView {
+  todo: WorktreeTodo
+  /** 1-based place in the queue, or null when RUN NEXT is off. */
+  position: number | null
+}
+
+/**
+ * One worktree's todos, oldest first, each with its queue position.
+ *
+ * The list keeps creation order even as things are queued: sorting queued ones
+ * to the top would move a row out from under the pointer that just queued it,
+ * and take the focus of anything being edited in it with it. The position and
+ * the queued row's own mark carry the order instead.
+ */
+export const worktreeTodos = (todos: WorktreeTodo[], worktreeId: string): TodoView[] => {
+  const mine = todos.filter((t) => t.worktreeId === worktreeId)
+  const queue = mine
+    .filter((t) => t.queuedAt !== undefined)
+    .sort((a, b) => (a.queuedAt ?? 0) - (b.queuedAt ?? 0))
+  return [...mine]
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((todo) => {
+      const at = queue.indexOf(todo)
+      return { todo, position: at === -1 ? null : at + 1 }
+    })
+}
+
+/** How many of a worktree's todos are waiting to be typed into Claude. */
+export const queuedTodoCount = (todos: WorktreeTodo[], worktreeId: string): number =>
+  todos.filter((t) => t.worktreeId === worktreeId && t.queuedAt !== undefined).length

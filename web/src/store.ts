@@ -60,6 +60,7 @@ export const useStore = create<AppState>((set, get) => ({
   projects: [],
   worktrees: [],
   sessions: [],
+  todos: [],
   ui: cachedUi(),
   loaded: false,
   error: null,

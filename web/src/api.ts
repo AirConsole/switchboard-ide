@@ -1,4 +1,12 @@
-import type { AppSnapshot, Project, Session, UiState, Worktree, WorktreeChanges } from '@ide-n-dream/shared'
+import type {
+  AppSnapshot,
+  Project,
+  Session,
+  UiState,
+  Worktree,
+  WorktreeChanges,
+  WorktreeTodo,
+} from '@ide-n-dream/shared'
 
 /**
  * A failed request, carrying the server's machine-readable `code` so callers can
@@ -107,6 +115,21 @@ export const api = {
           (what.from === undefined ? '' : `&from=${encodeURIComponent(what.from)}`)
     return request<{ patch: string }>(`/api/worktrees/${worktreeId}/diff?${query}`)
   },
+
+  /*
+   * Todos are read from the snapshot, not fetched: every one of these mutations
+   * makes the server broadcast an invalidate, which refetches it. A GET here
+   * would be a second answer to a question the snapshot already answers.
+   */
+  createTodo: (worktreeId: string, body: { title?: string; prompt: string }) =>
+    request<WorktreeTodo>(`/api/worktrees/${worktreeId}/todos`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** Null clears a title; `queued` is the RUN NEXT toggle. */
+  patchTodo: (id: string, patch: { title?: string | null; prompt?: string; queued?: boolean }) =>
+    request<WorktreeTodo>(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteTodo: (id: string) => request<{ ok: true }>(`/api/todos/${id}`, { method: 'DELETE' }),
 
   createSession: (body: { worktreeId: string; kind: 'claude' | 'shell'; title?: string }) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(body) }),

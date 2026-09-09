@@ -1,12 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import type { PanelName, Project, Session, Worktree } from '@ide-n-dream/shared'
+import type { PanelName, Project, Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import {
   TerminalView,
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
 } from '../terminal/TerminalView.js'
 import { api } from '../api.js'
-import { claudeSession, isRunning, stateLabel, terminalSessions } from '../selectors.js'
+import {
+  claudeSession,
+  isRunning,
+  stateLabel,
+  terminalSessions,
+  worktreeTodos,
+  type TodoView,
+} from '../selectors.js'
+import { TodoBar, TodoPane } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { GitBar, GitPane, useGitState } from './GitPane.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
@@ -74,13 +82,20 @@ const nearestOffset = (
  * panes do not shuffle underneath you: opening files would always put it in the
  * same place relative to the terminals.
  */
-export const PANELS: readonly PanelName[] = ['terminals', 'git']
+export const PANELS: readonly PanelName[] = ['todo', 'terminals', 'git']
 
 /** What a panel is called in prose, for the toggle's tooltip. */
-const PANEL_NOUN: Record<PanelName, string> = { terminals: 'terminals', git: 'changes' }
+const PANEL_NOUN: Record<PanelName, string> = {
+  todo: 'todos',
+  terminals: 'terminals',
+  git: 'changes',
+}
 
 /** The counts a panel's label can be built from. */
 interface PanelCounts {
+  todos: number
+  /** Todos waiting to be typed into Claude. */
+  queued: number
   terminals: number
   changes: number
 }
@@ -99,6 +114,14 @@ interface PanelCounts {
  */
 const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
   switch (panel) {
+    case 'todo':
+      // What is queued outranks what is merely written down: one is about to
+      // happen to this worktree and the other is a list. With nothing queued it
+      // counts itself like the terminals do, and with nothing at all it says
+      // what the click will do.
+      if (counts.queued > 0) return counts.queued === 1 ? '1 Queued' : `${counts.queued} Queued`
+      if (counts.todos === 0) return 'Add Todo'
+      return counts.todos === 1 ? '1 Todo' : `${counts.todos} Todos`
     case 'terminals':
       if (counts.terminals === 0) return 'Add Terminal'
       return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
@@ -222,6 +245,8 @@ interface WorktreeTileProps {
    * into.
    */
   project: Project | undefined
+  /** This worktree's todos, in list order, each with its queue position. */
+  todos: TodoView[]
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
@@ -263,6 +288,7 @@ interface WorktreeTileProps {
 const WorktreeTile = ({
   worktree,
   project,
+  todos,
   panes,
   focus,
   session,
@@ -329,6 +355,8 @@ const WorktreeTile = ({
     shownPanes.has('git'),
   )
   const counts: PanelCounts = {
+    todos: todos.length,
+    queued: todos.filter((view) => view.position !== null).length,
     terminals: terminals.length,
     changes: worktree.dirty ?? 0,
   }
@@ -442,7 +470,8 @@ const WorktreeTile = ({
            * something that already does its own job -- a panel toggle, sleep,
            * remove, or a panel's own controls in the bar.
            */
-          if ((event.target as HTMLElement).closest('button, .termtabs, .git__bar')) return
+          if ((event.target as HTMLElement).closest('button, .termtabs, .git__bar, .todo__bar'))
+            return
           onReveal()
         }}
       >
@@ -459,6 +488,7 @@ const WorktreeTile = ({
                 onClose={onCloseTerminal}
               />
             )}
+            {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
             {pane.kind === 'git' && <GitBar state={git} />}
             {index === controlsIndex && controls}
           </div>
@@ -508,6 +538,9 @@ const WorktreeTile = ({
                 fontSize={TERMINAL_FONT_SIZE}
                 onNew={onNewTerminal}
               />
+            )}
+            {pane.kind === 'todo' && (
+              <TodoPane worktreeId={worktree.id} todos={todos} claudeRunning={running} />
             )}
             {pane.kind === 'git' && <GitPane state={git} branch={worktree.branch} />}
           </div>
@@ -569,6 +602,8 @@ export interface OverviewProps {
   worktrees: Worktree[]
   /** Every open project, so a tile can name the one it belongs to. */
   projects: Project[]
+  /** Every todo, across every worktree; each tile takes its own. */
+  todos: WorktreeTodo[]
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
@@ -615,6 +650,7 @@ export interface OverviewProps {
 export const Overview = ({
   worktrees,
   projects,
+  todos,
   sessions,
   panels,
   activeTerminalByWorktree,
@@ -999,6 +1035,7 @@ export const Overview = ({
                     <WorktreeTile
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
+                      todos={worktreeTodos(todos, worktree.id)}
                       panes={slot.data.panes}
                       /*
                        * Non-null only for the worktree just navigated to, and a

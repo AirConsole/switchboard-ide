@@ -18,7 +18,8 @@ export interface ProjectGroup {
 }
 
 export const App = (): React.ReactElement => {
-  const { projects, worktrees, sessions, ui, loaded, error, refresh, setUi, setError } = useStore()
+  const { projects, worktrees, sessions, todos, ui, loaded, error, refresh, setUi, setError } =
+    useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
   const [addingTo, setAddingTo] = useState<Project | null>(null)
@@ -219,6 +220,7 @@ export const App = (): React.ReactElement => {
     <TopBar
       groups={groups}
       sessions={sessions}
+      todos={todos}
       onOpenProject={() => setShowOpenProject(true)}
       onCloseProject={(id) => void api.closeProject(id).then(refresh).catch(fail)}
       onNewWorktree={setAddingTo}
@@ -313,6 +315,7 @@ export const App = (): React.ReactElement => {
       <Overview
         worktrees={rowWorktrees}
         projects={projects}
+        todos={todos}
         sessions={sessions}
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}

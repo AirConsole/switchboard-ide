@@ -1,7 +1,8 @@
 import { access, mkdir, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { AppSnapshot, Project, Worktree } from '@ide-n-dream/shared'
+import { customAlphabet } from 'nanoid'
+import type { AppSnapshot, Project, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
@@ -23,6 +24,9 @@ import {
   worktreePathFor,
 } from './git/worktree.js'
 import { lastPrompt } from './session/claude.js'
+
+/** Opaque, unlike a worktree id: nothing derives a todo from its path. */
+const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
 
 export class HttpError extends Error {
   constructor(
@@ -137,6 +141,7 @@ export class Workspace {
       projects: await this.describeProjects(),
       worktrees: await this.worktrees(),
       sessions: this.engine.list(),
+      todos: this.store.todos,
       ui: this.store.ui,
     }
   }
@@ -209,8 +214,12 @@ export class Workspace {
     return { ...project, defaultBase: await resolveDefaultBase(root).catch(() => undefined) }
   }
 
-  closeProject(id: string): void {
+  async closeProject(id: string): Promise<void> {
+    // Collected before the project goes, because afterwards its worktrees are
+    // no longer listed and there is nothing left to match todos against.
+    const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
     this.store.removeProject(id)
+    this.store.removeTodosFor(mine)
     this.invalidate()
   }
 
@@ -294,7 +303,102 @@ export class Workspace {
       }
     }
     await pruneWorktrees(project.root).catch(() => {})
+    this.store.removeTodosFor([worktree.id])
     this.invalidate()
+  }
+
+  // --- todos -----------------------------------------------------------------
+
+  /**
+   * Free text from a browser, on its way to being typed into a terminal.
+   *
+   * Every control byte goes, ESC included: without this a prompt could carry
+   * its own escape sequences into the TUI -- a literal `ESC[201~` would end the
+   * bracketed paste early and hand the rest to the app as keys. Newlines and
+   * tabs stay, because they are the point.
+   */
+  private static clean(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+  }
+
+  async createTodo(input: {
+    worktreeId: string
+    title?: string
+    prompt: string
+  }): Promise<WorktreeTodo> {
+    // Throws 404 for a worktree that is not there, before anything is stored.
+    await this.resolve(input.worktreeId)
+    const prompt = Workspace.clean(input.prompt).trim()
+    if (prompt === '') throw new HttpError(400, 'a todo needs a prompt')
+    const todo: WorktreeTodo = {
+      id: newTodoId(),
+      worktreeId: input.worktreeId,
+      prompt,
+      createdAt: Date.now(),
+      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+    }
+    this.store.addTodo(todo)
+    return todo
+  }
+
+  /**
+   * Edit a todo, or move it in and out of the run queue.
+   *
+   * `queued` is a boolean on the wire and a timestamp in the store: the client
+   * says whether it wants the todo to run, and the server decides where in the
+   * queue that puts it. Otherwise two browsers could disagree about the order.
+   */
+  updateTodo(
+    id: string,
+    patch: { title?: string | null; prompt?: string; queued?: boolean },
+  ): WorktreeTodo {
+    const todo = this.store.todo(id)
+    if (!todo) throw new HttpError(404, 'no such todo')
+    // Its prompt may already be on its way into Claude; editing it now would
+    // change something that has effectively been sent.
+    if (todo.dispatchingAt !== undefined) {
+      throw new HttpError(409, 'that todo is being sent to Claude', 'todo-dispatching')
+    }
+    const next: Partial<WorktreeTodo> = {}
+    if (patch.title !== undefined) {
+      const title = patch.title === null ? '' : Workspace.clean(patch.title).trim()
+      next.title = title === '' ? undefined : title
+    }
+    if (patch.prompt !== undefined) {
+      const prompt = Workspace.clean(patch.prompt).trim()
+      if (prompt === '') throw new HttpError(400, 'a todo needs a prompt')
+      next.prompt = prompt
+    }
+    if (patch.queued !== undefined) {
+      next.queuedAt = patch.queued ? this.nextQueuedAt(todo.worktreeId) : undefined
+      // Queueing it again is the human saying "try that once more".
+      if (patch.queued) next.lastError = undefined
+    }
+    return this.store.patchTodo(id, next) ?? todo
+  }
+
+  deleteTodo(id: string): void {
+    const todo = this.store.todo(id)
+    if (!todo) throw new HttpError(404, 'no such todo')
+    if (todo.dispatchingAt !== undefined) {
+      throw new HttpError(409, 'that todo is being sent to Claude', 'todo-dispatching')
+    }
+    this.store.removeTodo(id)
+  }
+
+  /**
+   * The next place in a worktree's queue.
+   *
+   * Strictly after the last one rather than simply `Date.now()`: two clicks
+   * inside the same millisecond, or a clock that steps backwards, would
+   * otherwise tie and the order of `(1)` and `(2)` would be arbitrary.
+   */
+  private nextQueuedAt(worktreeId: string): number {
+    const last = this.store.todos
+      .filter((t) => t.worktreeId === worktreeId && t.queuedAt !== undefined)
+      .reduce((max, t) => Math.max(max, t.queuedAt ?? 0), 0)
+    return Math.max(Date.now(), last + 1)
   }
 
   /** Directory listing for the "Open project" picker. */

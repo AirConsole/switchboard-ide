@@ -10,6 +10,7 @@ store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
 components/TopBar    project groups, awake tabs, the zZ dropdown
 views/Overview       the row: spot arithmetic, scrolling, what fits
+views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/GitPane        changes, commits, diffs
 terminal/TerminalView  one xterm bound to one session
@@ -73,6 +74,19 @@ focus — and Claude reads Up as "recall the last prompt". `TerminalView`
 cancels it with a custom wheel handler, and only it: an app that has actually
 turned mouse reporting on still gets its wheel events. Measured with a stand-in
 agent that logs its stdin.
+
+## The todo panel holds no state of its own
+
+`TodoPane` fetches nothing and caches nothing: todos ride `AppSnapshot`, and
+every mutation makes the server broadcast an invalidate, which refetches it.
+`useGitState` exists because git is polled, expensive and carries a selection;
+copying that shape here would only add a second copy of the truth.
+
+The one piece of local state is the row's **draft**, and it is load-bearing: a
+field bound straight to the snapshot loses keystrokes whenever any unrelated
+mutation in the app refreshes it mid-sentence. The draft holds until the server
+echoes back exactly what was sent. Verified by typing into a prompt while a
+`curl` created a todo on another worktree — the keystrokes and the caret survive.
 
 ## UI state
 

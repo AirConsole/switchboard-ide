@@ -64,6 +64,45 @@ export interface Worktree {
   prompt?: string
 }
 
+/**
+ * A piece of work parked against a worktree, and optionally queued to be typed
+ * into that worktree's Claude.
+ *
+ * Persisted by the server rather than kept in `UiState`, because the server
+ * mutates them: dispatching one deletes it, and that has to happen with no
+ * browser connected. `UiState` is the client's own blob and is merged key by
+ * key without validation, so a server-owned collection there would race the
+ * client's next write.
+ */
+export interface WorktreeTodo {
+  id: string
+  worktreeId: string
+  /** Optional label. The prompt is what actually gets sent. */
+  title?: string
+  /** Free text, possibly several lines. Typed into Claude verbatim. */
+  prompt: string
+  createdAt: number
+  /**
+   * When RUN NEXT was pressed; absent when it is not queued.
+   *
+   * This *is* the queue: a worktree's queued todos in ascending `queuedAt`
+   * order, so the first one pressed is (1). A separate list of ids was the
+   * obvious alternative and was rejected -- it can disagree with the todos it
+   * points at, and a delete then has to touch two structures.
+   */
+  queuedAt?: number
+  /**
+   * Set and written to disk immediately *before* the first byte is typed.
+   *
+   * A todo found with this on startup was in flight when the process died. It
+   * is never sent again: typing the same prompt twice is far worse than not
+   * typing it, so the only safe reading of "we may have sent it" is "we did".
+   */
+  dispatchingAt?: number
+  /** Why the last attempt did not finish. Shown to the human, never retried. */
+  lastError?: string
+}
+
 export type SessionKind = 'claude' | 'shell'
 
 /**
@@ -117,7 +156,7 @@ export interface Session {
  * per-worktree and persistent: minimizing a worktree to the top bar and bringing
  * it back restores the width it had.
  */
-export type PanelName = 'terminals' | 'git'
+export type PanelName = 'todo' | 'terminals' | 'git'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
@@ -153,6 +192,7 @@ export interface AppSnapshot {
   projects: Project[]
   worktrees: Worktree[]
   sessions: Session[]
+  todos: WorktreeTodo[]
   ui: UiState
 }
 

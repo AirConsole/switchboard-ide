@@ -15,7 +15,10 @@ there is no "active" one. A project's **worktrees** are discovered from
 worktrees already there.
 
 A worktree is the unit, and it owns everything about itself: one Claude session,
-any number of terminals, its git panel, and later its files. It is **awake** or
+any number of terminals, its todos, its git panel, and later its files. A todo is
+a prompt you park against a worktree; RUN NEXT hands it to the server, which
+types it into that worktree's Claude once Claude has come to rest -- with the
+browser closed, if need be. It is **awake** or
 **asleep**. Awake means it has a window in the row; asleep means it is behind
 the top bar and, unless you said otherwise, nothing of it is running. Waking
 continues the conversation it was having rather than starting a new one.
