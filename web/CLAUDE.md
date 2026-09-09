@@ -141,17 +141,38 @@ from each row and from the editor's gutter instead. `PANE_CHROME_WIDTH` still
 describes the terminal panes, which are what set the minimum width -- the
 mismatch is not a bug to fix.
 
-## The wheel is not a keyboard
+## The mouse, and why it kept typing into agents
 
-On the alternate screen xterm.js turns a wheel notch into an Up or Down arrow
-and sends it as input — iTerm does the same, and in a terminal that owns the
-whole window it is reasonable. Here the wheel belongs to the row, and the
-pointer is over some tile whenever you scroll it, so that translation delivered
-arrow keys into whichever agent happened to be under the cursor — no click, no
-focus — and Claude reads Up as "recall the last prompt". `TerminalView`
-cancels it with a custom wheel handler, and only it: an app that has actually
-turned mouse reporting on still gets its wheel events. Measured with a stand-in
-agent that logs its stdin.
+Three rules, each of which was a bug first.
+
+**The encoding travels with the snapshot.** Claude asks for mouse tracking and
+SGR encoding together (`?1003h ?1006h`). `SerializeAddon` restores nine modes
+including the tracking mode, and cannot restore the encoding — xterm's public
+`IModes` does not expose it. So a repainting client, which calls `term.reset()`
+first, came back with tracking on and the encoding at xterm's default: the legacy
+`ESC [ M` + three bytes form, which an SGR app cannot read. `TerminalMirror`
+watches DECSET/DECRST for `1006`/`1016` and appends it to the snapshot itself.
+A repaint with no resize behind it — a socket drop, which is what a deploy is —
+is the window where this bit; a resize hid it, because the app redraws and
+re-declares its own modes.
+
+**Hovering is not input.** `buttons === 0` is stopped in the capture phase
+before xterm sees it. Nothing in an agent's interface needs the pointer's
+position, and in a row of windows the pointer crosses several agents on the way
+anywhere. Clicks and drags still report — `pointerdown` claims the keyboard
+before `mousedown`, so the pane is yours by the time the press is reported.
+
+**The wheel never becomes keystrokes.** On the alternate screen with no tracking
+mode, xterm.js translates a notch into an Up or Down arrow and sends it as
+input; in Claude, Up recalls the last prompt. `attachCustomWheelEventHandler`
+cancels exactly that, and nothing else: once a tracking mode is on, xterm binds
+its own wheel listener that reports to the app without consulting the hook.
+
+A legacy report is also refused on the way out, as a guard, because it cannot
+survive this transport: a byte above 127 (any column past 95) is a latin-1 code
+unit in a JSON string, node-pty re-encodes it as two UTF-8 bytes, and tmux then
+consumes the wrong three bytes and passes the rest on as text — measured as a
+bare `9999...8888` arriving in a prompt.
 
 ## The todo panel holds no state of its own
 
