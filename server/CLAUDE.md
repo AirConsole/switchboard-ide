@@ -19,6 +19,7 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
   dispatch.ts   hands queued todos to Claude when it comes to rest
   claude.ts     transcripts: --continue, the last prompt, and turn boundaries
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
+usage.ts        Claude's own limits, read from `claude -p /usage` and cached
 config.ts       every IDN_* env var, in one place
 ```
 
@@ -206,6 +207,28 @@ things in it are load-bearing:
   and inode -- `mtimeMs` is a double that rounds away exactly the sub-millisecond
   precision a write guard needs, and the inode catches a temp-file-and-rename.
 
+## Claude's usage limits
+
+`GET /api/usage` answers with what `claude -p /usage` last said, parsed into
+`{ label, percent, resets }` rows for the bars in the top bar.
+
+Print mode is why this is small: `-p` answers a slash command as plain text, so
+there is no pty to drive and no TUI to scrape. `--bare` does **not** work — it
+skips whatever handles the command and prints a cost summary instead.
+
+The reading costs a `claude` process, measured 4.3–4.6s, so it is cached for
+five minutes and there is no timer: the browser polls on the same interval and a
+poll inside the window is answered from the last reading, which also means
+nothing is spawned while nobody is looking. Concurrent requests share one
+in-flight read. `IDN_USAGE_CMD` overrides the binary and is deliberately *not*
+`IDN_CLAUDE_CMD`, which a scratch instance replaces with vim or a stand-in.
+
+Parsing keys on `% used`, because the rest of that report is full of percentages
+that are not limits ("96% of your usage came from subagent-heavy sessions"). An
+empty parse counts as a failure rather than a reading — `/usage` says something
+else entirely when it cannot answer — and a failure keeps the previous numbers
+and adds `error`, so the bars can show stale figures instead of vanishing.
+
 ## Adding to the API
 
 Put the logic in `workspace.ts` — it is the single funnel, and the interface a
@@ -223,6 +246,7 @@ A kill emits no event of its own, so any route that ends a session must call
 | `IDN_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |
 | `IDN_TMUX_CONF` | `server/tmux.conf` | The config loaded with `-f`. |
 | `IDN_CLAUDE_CMD` | `claude` | Command for agent sessions. |
+| `IDN_USAGE_CMD` | `claude` | The real binary, for reading `/usage`. |
 | `IDN_SHELL` | `$SHELL` | Command for terminal sessions. |
 | `IDN_MIRROR_SCROLLBACK` | `5000` | Lines each server-side mirror keeps. |
 | `IDN_MAX_FILE_BYTES` | `2097152` | Largest file the files panel opens or saves. |

@@ -8,7 +8,7 @@ object, and that is enough.
 App.tsx              projects -> groups -> the row; every dialog; UI state writes
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
-components/TopBar    project groups, awake tabs, the zZ dropdown
+components/TopBar    project groups, awake tabs, the zZ dropdown, usage bars
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip
@@ -37,10 +37,16 @@ Two consequences to preserve. **Every tile starts on a spot boundary**, so
 scrolling to `spot * pitch` lands a tile flush at the left edge and no tile is
 ever shown half-cut; the snap points are one out-of-flow `.grid__spot` marker
 per spot. And **a tile wider than the window is collapsed, not squeezed**:
-`panesOf` drops Claude's pane first, then the oldest expansions, keeping the
-newest `capacity` panels — which is why `ui.panels` is stored in opening order.
-A panel the layout could not keep is *closed* (`onCollapsePanels`), not left
-open with nothing behind it, so a toggle never lies about what is on screen.
+`panesOf` drops Claude's pane first, which is all it ever has to drop now that a
+worktree shows one panel at a time — a tile is one spot or two, so the only
+window it cannot fit whole is one a single pane already fills. That is what
+retired the machinery that used to close panels the layout could not keep:
+nothing is ever held open behind the scenes, so a toggle cannot lie about what
+is on screen.
+
+`ui.panels` is still a list per worktree, because stored state predates the
+one-at-a-time rule and can still name several. `openPanelsOf` takes the last —
+the newest wins, which is the rule a too-narrow window already used.
 
 `scrollTo` names a worktree and says nothing about where to put it: the row
 moves by the fewest spots that bring the whole of that tile on screen, and not

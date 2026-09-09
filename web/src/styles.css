@@ -282,16 +282,106 @@ button {
   color: var(--danger);
 }
 
+/*
+ * Claude's usage limits, at the right of the bar.
+ *
+ * `flex: none` after the scrolling tab strip, so it stays put however many
+ * worktrees are open -- it is a readout, and a readout that scrolls away is one
+ * you stop trusting.
+ *
+ * Three rows in a 38px bar is the whole constraint: 10px labels, 3px bars, 2px
+ * between. Below the 11px micro voice on purpose, because this is the one place
+ * in the interface reading a number matters more than reading a word, and the
+ * numbers stay in --graphite, which clears 7:1.
+ */
+.usage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: none;
+  gap: 2px;
+  padding: 0 12px;
+  border-left: 1px solid var(--rule);
+  cursor: default;
+}
+
+/* Fixed columns, so three bars line up as a column of bars rather than three
+   separate widgets. Tabular numerals for the same reason: 8% and 88% must not
+   move the bar beside them. */
+.usage__row {
+  display: grid;
+  grid-template-columns: 42px 54px 26px;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--graphite);
+}
+
+.usage__label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 0.04em;
+}
+
+.usage__track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule-bright);
+  overflow: hidden;
+}
+
+.usage__fill {
+  display: block;
+  height: 100%;
+  background: var(--graphite);
+}
+
+/* Louder once most of it is gone: the same greyscale ladder, one step up. No
+   colour -- amber and green are what say an agent wants you. */
+.usage__fill--high {
+  background: var(--bone);
+}
+
+.usage__percent {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The last read failed, so these are the previous numbers. Dimmed rather than
+ * removed: stale numbers beat none, and the tooltip says what went wrong.
+ *
+ * 0.8 and not less, because opacity is a contrast cut: --graphite over --slab
+ * measures 6.98:1, and dimming it to 0.5 would leave the labels at 2.74:1 --
+ * under the 4.5 floor the rest of the interface keeps. 0.8 measures 4.93:1.
+ */
+.usage--stale {
+  opacity: 0.8;
+}
+
+/* First in the bar, so the rule that separates it from the projects is on its
+   right. It is the one control here that is not about a worktree, and the
+   corner is where a thing like that belongs. */
 .topbar__open {
   display: flex;
   align-items: center;
+  gap: 7px;
   flex: none;
   padding: 0 14px;
-  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
   font-family: var(--font-ui);
   font-size: 12px;
   white-space: nowrap;
   color: var(--graphite);
+}
+
+/* Optically centred: a 14px box against 12px text sits a hair low on the
+   baseline it shares. */
+.topbar__icon {
+  flex: none;
+  margin-top: -1px;
 }
 
 .topbar__open:hover {
@@ -749,12 +839,22 @@ button {
   min-width: 0;
 }
 
-/* Acts on the tile as a whole, so it sits at the tile's right edge. */
+/*
+ * Acts on the tile as a whole, so it sits at the tile's right edge.
+ *
+ * `flex: none`, and that is load-bearing on a narrow window. With `min-width: 0`
+ * these were squeezed below their own content -- 243px of buttons into a 225px
+ * box on a 390px phone -- and what a flex row clips is its end, which is the
+ * lit panel toggle: the one control that gets Claude's pane back once a
+ * one-spot row has replaced it with a panel. The worktree's name and prompt
+ * take the squeeze instead, and they are already ellipsized to `fil…` at that
+ * width, so they lose nothing that was being read.
+ */
 .tile__controls {
   display: flex;
   align-items: stretch;
   margin-left: auto;
-  min-width: 0;
+  flex: none;
 }
 
 /*
@@ -901,25 +1001,6 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tile__state {
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--graphite-dim);
-  white-space: nowrap;
-}
-
-.tile--waiting .tile__state {
-  color: var(--signal);
-}
-
-.tile--done .tile__state {
-  color: var(--done);
 }
 
 .tile__idle {
@@ -2302,26 +2383,52 @@ button {
 /* The bar segment above the pane: where you are, whether it is saved, and how
    to save it. Right-aligned and divided like the terminal tabs, for the same
    reasons. */
+/*
+ * The panel's own controls, right-aligned in its segment.
+ *
+ * `overflow: hidden` decides what survives a window too narrow for all of it,
+ * and the render order is the priority: path, then what the commits are
+ * measured against, then Unsaved, then Save, then Refresh. Clipping takes the
+ * last first, so Save -- the only one of them that can lose work -- is the last
+ * thing to go, and Refresh, which the panel's own three-second poll makes
+ * optional anyway, is the first.
+ *
+ * Without it these spilled over the worktree's own controls instead of
+ * clipping inside their box, and REFRESH sat on top of the trash icon.
+ */
 .files__bar {
   display: flex;
   align-items: stretch;
   margin-left: auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .files__bar > * + * {
   border-left: 1px solid var(--rule-bright);
 }
 
+/*
+ * What the bar says, as opposed to what it does.
+ *
+ * These give way first: on a narrow window the segment holds the worktree's
+ * name, this, and the controls, and only the last two can be acted on. Without
+ * `min-width: 0` a nowrap span refuses to shrink below its text and pushes the
+ * bar over the controls beside it -- which measured as no overflow and was
+ * plainly wrong on screen, REFRESH sitting on top of the trash icon.
+ */
 .files__path,
 .files__base,
 .files__unsaved {
   display: flex;
   align-items: center;
+  min-width: 0;
   padding: 0 10px;
   font-size: 11px;
   color: var(--graphite-dim);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* A path is read character by character, so it is set in the mono face. */
@@ -2337,9 +2444,11 @@ button {
   color: var(--bone);
 }
 
+/* The actions keep their width; the labels above give way instead. */
 .files__save,
 .files__reload {
   display: flex;
+  flex: none;
   align-items: center;
   padding: 0 12px;
   font-family: var(--font-ui);

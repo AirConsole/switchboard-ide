@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Project, Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import type { ProjectGroup } from '../App.js'
+import { api } from '../api.js'
 import {
   claudeSession,
   mostUrgentStatus,
@@ -28,6 +29,33 @@ export interface TopBarProps {
    */
   activeId: string | null
 }
+
+/**
+ * Open a project.
+ *
+ * A square with a plus in it, because a square is already what a project is
+ * here -- `.group__mark` marks each open one with the same shape -- so this
+ * reads as "another one of those" rather than as a generic add. Hairlines at
+ * the chrome's own weight and currentColor, so it inherits the
+ * quiet-until-hovered treatment of the button around it, the way TrashIcon
+ * does in the row.
+ */
+const OpenProjectIcon = (): React.ReactElement => (
+  <svg
+    className="topbar__icon"
+    viewBox="0 0 16 16"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="2.3" y="2.3" width="11.4" height="11.4" rx="1.6" />
+    <path d="M8 5.3v5.4M5.3 8h5.4" />
+  </svg>
+)
 
 /** The tab class for a status: the line under it, and amber when blocked. */
 const statusClass = (status: WorktreeStatus): string =>
@@ -263,6 +291,90 @@ const Group = ({
 }
 
 /**
+ * How often the browser asks for Claude's usage limits.
+ *
+ * The same five minutes the server caches for, so a poll that lands inside the
+ * window is answered from the last reading rather than starting another
+ * `claude -p /usage`. The client is what decides when a reading is taken and
+ * the cache is what stops several tabs taking several -- which is also why a
+ * hidden page does not ask at all, and asks once when it comes back rather
+ * than on a timer nobody is watching.
+ */
+const USAGE_POLL_MS = 5 * 60 * 1000
+
+const useUsage = (): Usage | null => {
+  const [usage, setUsage] = useState<Usage | null>(null)
+  useEffect(() => {
+    let live = true
+    const read = (): void => {
+      if (document.hidden) return
+      void api
+        .usage()
+        .then((next) => {
+          if (live) setUsage(next)
+        })
+        // A failed read leaves the last numbers on screen; the server says so
+        // itself when its own read failed, and this is only the transport.
+        .catch(() => {})
+    }
+    read()
+    const timer = window.setInterval(read, USAGE_POLL_MS)
+    document.addEventListener('visibilitychange', read)
+    return () => {
+      live = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', read)
+    }
+  }, [])
+  return usage
+}
+
+/**
+ * Claude's usage limits, as bars.
+ *
+ * One row per limit `/usage` reported, in its order: the session, the week, and
+ * the week for whichever model has its own allowance. Greyscale, because these
+ * are not attention -- amber and green mean an agent wants you -- but the fill
+ * brightens once a limit is most of the way gone, which is the point at which
+ * it starts to matter what you spend it on.
+ *
+ * The reset times live in the tooltip. They are the second question ("when does
+ * this come back"), and putting them on the bar would double its width.
+ */
+const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | null => {
+  if (usage.limits.length === 0) return null
+  const title = [
+    ...usage.limits.map(
+      (limit) =>
+        `${limit.label}: ${limit.percent}% used${limit.resets === null ? '' : ` · resets ${limit.resets}`}`,
+    ),
+    usage.error === undefined
+      ? `read ${new Date(usage.fetchedAt).toLocaleTimeString()}`
+      : `last read ${new Date(usage.fetchedAt).toLocaleTimeString()} — ${usage.error}`,
+  ].join('\n')
+  return (
+    <div
+      className={usage.error === undefined ? 'usage' : 'usage usage--stale'}
+      title={title}
+      aria-label="Claude usage limits"
+    >
+      {usage.limits.map((limit) => (
+        <div className="usage__row" key={limit.label}>
+          <span className="usage__label">{limit.label}</span>
+          <span className="usage__track">
+            <i
+              className={limit.percent >= 80 ? 'usage__fill usage__fill--high' : 'usage__fill'}
+              style={{ width: `${limit.percent}%` }}
+            />
+          </span>
+          <span className="usage__percent">{limit.percent}%</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
  * The top bar is where every worktree lives, grouped by the project it belongs
  * to.
  *
@@ -285,8 +397,14 @@ export const TopBar = ({
   onNewWorktree,
   onWake,
   onReveal,
-}: TopBarProps): React.ReactElement => (
+}: TopBarProps): React.ReactElement => {
+  const usage = useUsage()
+  return (
   <header className="topbar">
+    <button className="topbar__open" onClick={onOpenProject} title="Open another project">
+      <OpenProjectIcon />
+      Open project
+    </button>
     <nav className="groups">
       {groups.map((group) => (
         <Group
@@ -302,8 +420,7 @@ export const TopBar = ({
         />
       ))}
     </nav>
-    <button className="topbar__open" onClick={onOpenProject} title="Open another project">
-      + Open project
-    </button>
+    {usage !== null && <UsageBars usage={usage} />}
   </header>
-)
+  )
+}

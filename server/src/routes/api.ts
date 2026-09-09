@@ -8,6 +8,7 @@ import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
+import { usage } from '../usage.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -150,6 +151,15 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/health', async () => ({ ok: true }))
 
   app.get('/api/snapshot', async () => workspace.snapshot())
+
+  /*
+   * Claude's own usage limits, cached for five minutes.
+   *
+   * Reading them costs a `claude -p /usage` process, so the cache is the point:
+   * the client polls on its own clock and every poll inside the window is
+   * answered from the last reading. See server/src/usage.ts.
+   */
+  app.get('/api/usage', async () => usage())
 
   app.get('/api/browse', async (request) => {
     const { path } = browseQuery.parse(request.query)
