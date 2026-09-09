@@ -57,13 +57,35 @@ The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
   state, and a browser tab of your own competes for terminal geometry. Use:
 
 ```sh
-scripts/scratch.sh up      # its own state dir, tmux socket and repos, on :8123
+scripts/scratch.sh up      # this checkout's own instance; prints its URL
+scripts/scratch.sh url     # that URL again, if you lost it
 scripts/scratch.sh down    # removes every trace
+scripts/scratch.sh list    # every scratch instance on the machine
 CLAUDE_CMD=vim scripts/scratch.sh up   # vim as the stand-in agent
 ```
 
-`vim` is the useful stand-in for anything about attention or resizing: silent at
-rest, full redraw on SIGWINCH. Close any browser tab you opened when you finish.
+Each checkout gets its own instance — its own state dir, tmux socket, scratch
+repositories and port, all derived from the checkout's path — so several
+worktrees can run one at once without reaching each other. **The port differs
+per worktree**, so read it from `up` or ask `url`; do not assume one. `vim` is
+the useful stand-in for anything about attention or resizing: silent at rest,
+full redraw on SIGWINCH. Close any browser tab you opened when you finish, and
+`down` before you go.
+
+## If you are working in a worktree
+
+The IDE develops itself, and the split that keeps that safe is: **worktrees
+develop, master deploys.**
+
+Your worktree is its own checkout with its own `dist/`, so building, testing and
+running a scratch instance here cannot reach the running IDE. Nothing you do in
+a worktree deploys — the live instance serves `server/dist` and `web/dist` from
+the master checkout alone. So do not build, start, or restart anything in
+`/home/andrin/src/ide` itself, and do not restart :8084; finish on your branch
+and let the merge into master be what ships it.
+
+A fresh worktree needs its own `pnpm install` before it can build, and `node-pty`
+compiles from source there, so the first one takes a while.
 
 ## Where worktrees live
 
