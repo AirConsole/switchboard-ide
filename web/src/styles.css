@@ -285,6 +285,27 @@ button {
 }
 
 /*
+ * The worktree you are in: marked at the top, and recessed into the row.
+ *
+ * A third fact about a tab, after awake-or-asleep and what Claude is doing, so
+ * it needs a channel of its own and it does not get colour -- amber and green
+ * are spoken for. The bar's two edges divide the work: the line under a tab is
+ * the agent's state, the band over it is you.
+ *
+ * The ground is the quieter half, and recessed rather than raised on purpose.
+ * --ink is what the row of windows sits on, so the tab reads as continuous
+ * with the window below it, and hover -- --slab-raised, lighter than the bar
+ * -- keeps pointing the other way. Hover does win over it while the pointer is
+ * there, which is why the band and not the ground is what has to carry this:
+ * 2px of --graphite-dim, the same weight as the state line opposite, quiet
+ * enough not to compete with it and bright enough to find at a glance.
+ */
+.chip--active {
+  background: var(--ink);
+  box-shadow: inset 0 2px 0 var(--graphite-dim);
+}
+
+/*
  * Awake or asleep is carried by brightness; what Claude is doing is carried by
  * the line under the tab.
  *

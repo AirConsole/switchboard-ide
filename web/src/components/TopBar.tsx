@@ -19,6 +19,11 @@ export interface TopBarProps {
   onWake: (worktreeId: string) => void
   /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
+  /**
+   * The worktree you are in: the one the row last brought into view, and whose
+   * Claude has the keyboard. Null before anything has been navigated to.
+   */
+  activeId: string | null
 }
 
 /** The tab class for a status: the line under it, and amber when blocked. */
@@ -55,6 +60,7 @@ const WorktreeLabel = ({ worktree }: { worktree: Worktree }): React.ReactElement
 const Group = ({
   group,
   sessions,
+  activeId,
   onCloseProject,
   onNewWorktree,
   onWake,
@@ -64,7 +70,7 @@ const Group = ({
   sessions: Session[]
 } & Pick<
   TopBarProps,
-  'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
+  'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
 >): React.ReactElement => {
   /*
    * Where to draw the dropdown, or null when it is closed.
@@ -115,7 +121,12 @@ const Group = ({
         'chip',
         sleeping ? 'chip--asleep' : 'chip--shown',
         statusClass(worktreeStatus(sessions, worktree.id)),
-      ].join(' ')}
+        // Where you are. A sleeping worktree is nowhere, whatever the row was
+        // last asked for -- it has no window to be in.
+        !sleeping && worktree.id === activeId ? 'chip--active' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
       title={[
         worktree.path,
@@ -248,6 +259,7 @@ const Group = ({
 export const TopBar = ({
   groups,
   sessions,
+  activeId,
   onOpenProject,
   onCloseProject,
   onNewWorktree,
@@ -261,6 +273,7 @@ export const TopBar = ({
           key={group.project.id}
           group={group}
           sessions={sessions}
+          activeId={activeId}
           onCloseProject={onCloseProject}
           onNewWorktree={onNewWorktree}
           onWake={onWake}
