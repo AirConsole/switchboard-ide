@@ -282,6 +282,85 @@ button {
   color: var(--danger);
 }
 
+/*
+ * Claude's usage limits, at the right of the bar.
+ *
+ * `flex: none` after the scrolling tab strip, so it stays put however many
+ * worktrees are open -- it is a readout, and a readout that scrolls away is one
+ * you stop trusting.
+ *
+ * Three rows in a 38px bar is the whole constraint: 10px labels, 3px bars, 2px
+ * between. Below the 11px micro voice on purpose, because this is the one place
+ * in the interface reading a number matters more than reading a word, and the
+ * numbers stay in --graphite, which clears 7:1.
+ */
+.usage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: none;
+  gap: 2px;
+  padding: 0 12px;
+  border-left: 1px solid var(--rule);
+  cursor: default;
+}
+
+/* Fixed columns, so three bars line up as a column of bars rather than three
+   separate widgets. Tabular numerals for the same reason: 8% and 88% must not
+   move the bar beside them. */
+.usage__row {
+  display: grid;
+  grid-template-columns: 42px 54px 26px;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--graphite);
+}
+
+.usage__label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 0.04em;
+}
+
+.usage__track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule-bright);
+  overflow: hidden;
+}
+
+.usage__fill {
+  display: block;
+  height: 100%;
+  background: var(--graphite);
+}
+
+/* Louder once most of it is gone: the same greyscale ladder, one step up. No
+   colour -- amber and green are what say an agent wants you. */
+.usage__fill--high {
+  background: var(--bone);
+}
+
+.usage__percent {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The last read failed, so these are the previous numbers. Dimmed rather than
+ * removed: stale numbers beat none, and the tooltip says what went wrong.
+ *
+ * 0.8 and not less, because opacity is a contrast cut: --graphite over --slab
+ * measures 6.98:1, and dimming it to 0.5 would leave the labels at 2.74:1 --
+ * under the 4.5 floor the rest of the interface keeps. 0.8 measures 4.93:1.
+ */
+.usage--stale {
+  opacity: 0.8;
+}
+
 .topbar__open {
   display: flex;
   align-items: center;

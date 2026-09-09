@@ -7,6 +7,7 @@ import type {
   Project,
   Session,
   UiState,
+  Usage,
   Worktree,
   WorktreeChanges,
   WorktreeTodo,
@@ -61,6 +62,9 @@ export interface BrowseResult {
 
 export const api = {
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
+
+  /** Claude's usage limits. The server caches these for five minutes. */
+  usage: () => request<Usage>('/api/usage'),
   browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
   openProject: (path: string, opts: { create?: boolean; commitExisting?: boolean } = {}) =>
     request<Project>('/api/projects', {

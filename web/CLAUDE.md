@@ -8,7 +8,7 @@ object, and that is enough.
 App.tsx              projects -> groups -> the row; every dialog; UI state writes
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
-components/TopBar    project groups, awake tabs, the zZ dropdown
+components/TopBar    project groups, awake tabs, the zZ dropdown, usage bars
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip

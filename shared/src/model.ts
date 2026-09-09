@@ -414,3 +414,31 @@ export interface FileSaved {
   mtimeMs: number
   size: number
 }
+
+/**
+ * One of Claude's usage limits, as `/usage` reports it.
+ *
+ * `percent` is what is *used*, 0-100, so a bar fills as the limit runs out.
+ * `resets` is Claude's own wording ("Sep 15, 9am (UTC)") rather than a parsed
+ * date: it is only ever shown, and re-deriving a timestamp from it would be a
+ * second place to be wrong about time zones.
+ */
+export interface UsageLimit {
+  /** Short label for the bar: `session`, `week`, or a model's name. */
+  label: string
+  percent: number
+  resets: string | null
+}
+
+/**
+ * What `claude -p /usage` last said, and when.
+ *
+ * `error` set with limits still present means the last read failed and these
+ * are the previous numbers; the bars can say they are stale rather than
+ * vanishing, which is the more useful of the two.
+ */
+export interface Usage {
+  limits: UsageLimit[]
+  fetchedAt: number
+  error?: string
+}
