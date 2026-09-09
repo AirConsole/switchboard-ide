@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Project, Session, Worktree } from '@ide-n-dream/shared'
 import type { ProjectGroup } from '../App.js'
 import { claudeSession, stateLabel, worktreeNeedsYou } from '../selectors.js'
@@ -50,8 +50,39 @@ const Group = ({
   TopBarProps,
   'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
 >): React.ReactElement => {
-  const [open, setOpen] = useState(false)
+  /*
+   * Where to draw the dropdown, or null when it is closed.
+   *
+   * It has to be positioned against the viewport rather than against the tab it
+   * hangs from: the tab lives in a horizontal scroller, and a scroller clips
+   * what overflows it in *both* directions -- `overflow-x: auto` computes
+   * `overflow-y` to auto as well. So an absolutely positioned menu was there in
+   * the markup, at the right coordinates, and cut off entirely by the 44px bar.
+   */
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null)
+  const anchor = useRef<HTMLButtonElement | null>(null)
+  const menu = useRef<HTMLDivElement | null>(null)
   const { project, awake, asleep } = group
+
+  // A dropdown that only closes by pressing the thing that opened it is a
+  // dropdown you get stuck with.
+  useEffect(() => {
+    if (at === null) return
+    const dismiss = (event: Event): void => {
+      const target = event.target as Node
+      if (menu.current?.contains(target) || anchor.current?.contains(target)) return
+      setAt(null)
+    }
+    const key = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setAt(null)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', key)
+    }
+  }, [at])
   const allAsleep = awake.length === 0 && asleep.length > 0
   // A sleeping worktree can still be one whose Claude was left running, so the
   // collapsed tab has to be able to call for you the way a tab does.
@@ -100,25 +131,32 @@ const Group = ({
       {allAsleep && asleep.map((worktree) => tab(worktree, true))}
 
       {!allAsleep && asleep.length > 0 && (
-        <div className="chip__drawer">
+        <>
           <button
+            ref={anchor}
             className={['chip', 'chip--asleep', asleepNeedsYou ? 'chip--waiting' : '']
               .filter(Boolean)
               .join(' ')}
-            onClick={() => setOpen((was) => !was)}
+            onClick={() => {
+              const box = anchor.current?.getBoundingClientRect()
+              setAt((was) =>
+                was !== null || box === undefined ? null : { left: box.left, top: box.bottom },
+              )
+            }}
             title={`${asleep.length} sleeping — click to pick one to wake`}
-            aria-expanded={open}
+            aria-expanded={at !== null}
           >
+            {/* The count is part of the label, so it is set at the label's size
+                rather than the tab's. */}
             <span className="chip__zz" aria-hidden="true">
-              zZ
+              zZ {asleep.length}
             </span>
-            {asleep.length}
             <span className="chip__caret" aria-hidden="true">
               {'▾'}
             </span>
           </button>
-          {open && (
-            <div className="menu">
+          {at !== null && (
+            <div className="menu" ref={menu} style={{ left: at.left, top: at.top }}>
               {asleep.map((worktree) => (
                 <button
                   key={worktree.id}
@@ -126,7 +164,7 @@ const Group = ({
                     worktreeNeedsYou(sessions, worktree.id) ? 'menu__row menu__row--waiting' : 'menu__row'
                   }
                   onClick={() => {
-                    setOpen(false)
+                    setAt(null)
                     onWake(worktree.id)
                   }}
                   title={worktree.path}
@@ -136,7 +174,7 @@ const Group = ({
               ))}
             </div>
           )}
-        </div>
+        </>
       )}
 
       <button

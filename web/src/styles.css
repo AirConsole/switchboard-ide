@@ -304,17 +304,15 @@ button {
   color: inherit;
 }
 
+/* Bigger than the label it follows: it is the only thing on the tab saying
+   "there is more behind this", so it has to be seen before it is read. */
 .chip__caret {
-  font-size: 9px;
-  color: var(--graphite-dim);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--graphite);
 }
 
-/* Anchors the dropdown of sleeping worktrees to its tab. */
-.chip__drawer {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-}
+
 
 /* The one saturated colour in the chrome, and the reason minimizing is safe:
    a worktree with no tile can still call for you from here. The underline is
@@ -1407,9 +1405,16 @@ button {
  * the tile's own ground, a hairline, and nothing else.
  */
 .menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
+  /*
+   * Fixed, not absolute, and positioned from the trigger's own rect.
+   *
+   * The tab it hangs from lives in a horizontal scroller, and a scroller clips
+   * in both directions -- so an absolutely positioned menu was drawn at the
+   * right place and then cut off by the 44px bar, present in the markup and
+   * invisible on screen. Fixed positioning is not clipped by an ancestor's
+   * overflow, which is the whole reason for it here.
+   */
+  position: fixed;
   z-index: 20;
   min-width: 180px;
   display: flex;
