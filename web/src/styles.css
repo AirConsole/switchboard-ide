@@ -1831,13 +1831,28 @@ button {
   outline-offset: -1px;
 }
 
-/* A fixed box whether or not there is a triangle in it, so a file's name lines
-   up under the directory holding it instead of a character to the left. */
+/*
+ * The disclosure triangle, in a fixed box whether or not there is one in it, so
+ * a file's name lines up under the directory holding it instead of a character
+ * to the left.
+ *
+ * Sized the way the zZ tab's caret had to be, and for the same reason. U+25BE
+ * draws a small triangle inside its em box, so a font-size that reads as large
+ * still puts a modest glyph on screen: at 9px the ink was 4.5x4.5 -- eleven
+ * pixels, the smallest mark in the interface and smaller than the caret's own
+ * 8.5x8.5. At 15px it is 7.5x7.5, thirty pixels, and still shorter than the
+ * 12px name beside it.
+ *
+ * The glyph has no side bearings at all -- its advance is its ink, 7.53px here
+ * -- so the box has to be wider than the advance or the triangle sits against
+ * the name.
+ */
 .files__twist {
   flex: none;
-  width: 9px;
-  font-size: 9px;
+  width: 11px;
+  font-size: 15px;
   line-height: 1;
+  text-align: center;
   color: var(--graphite-dim);
 }
 
