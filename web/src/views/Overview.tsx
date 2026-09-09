@@ -310,8 +310,8 @@ interface WorktreeTileProps {
   onReveal: () => void
   onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
-  /** Close panels, for reasons other than the layout running out of room. */
-  onCollapsePanels: (collapsed: { worktreeId: string; panel: PanelName }[]) => void
+  /** This worktree's queue ran itself out; the pane has nothing left to do. */
+  onQueueDrained: () => void
   onSelectTerminal: (sessionId: string) => void
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
@@ -348,7 +348,7 @@ const WorktreeTile = ({
   onReveal,
   onRemove,
   onTogglePanel,
-  onCollapsePanels,
+  onQueueDrained,
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
@@ -643,7 +643,7 @@ const WorktreeTile = ({
                  * the worktree, and a queue draining in a window you are not
                  * looking at must not drag the row over to it.
                  */
-                onQueueDrained={() => onCollapsePanels([{ worktreeId: worktree.id, panel: 'todo' }])}
+                onQueueDrained={onQueueDrained}
               />
             )}
             {pane.kind === 'files' && (
@@ -762,6 +762,8 @@ export interface OverviewProps {
   onReveal: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
+  /** A worktree's queue emptied itself into Claude; close its todo panel. */
+  onQueueDrained: (worktreeId: string) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
@@ -803,6 +805,7 @@ export const Overview = ({
   onReveal,
   onRemoveWorktree,
   onTogglePanel,
+  onQueueDrained,
   onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
@@ -1191,7 +1194,7 @@ export const Overview = ({
                       onReveal={() => onReveal(worktree.id)}
                       onRemove={() => onRemoveWorktree(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
-                      onCollapsePanels={onCollapsePanels}
+                      onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
