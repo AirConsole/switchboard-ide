@@ -1,91 +1,194 @@
+import { useState } from 'react'
 import type { Project, Session, Worktree } from '@ide-n-dream/shared'
+import type { ProjectGroup } from '../App.js'
 import { claudeSession, stateLabel, worktreeNeedsYou } from '../selectors.js'
 
 export interface TopBarProps {
-  project: Project | undefined
-  worktrees: Worktree[]
+  /** Every open project, in the order they were opened. */
+  groups: ProjectGroup[]
   sessions: Session[]
-  /**
-   * Worktrees that actually have a tile on screen. Not the same as "not
-   * minimized": with no rows, a tile can be pushed out for want of width.
-   */
-  shown: string[]
   onOpenProject: () => void
-  onNewWorktree: () => void
-  onToggleMinimized: (worktreeId: string) => void
+  onCloseProject: (projectId: string) => void
+  onNewWorktree: (project: Project) => void
+  onWake: (worktreeId: string) => void
+  /** Scroll an awake worktree's tile into view. */
+  onReveal: (worktreeId: string) => void
+}
+
+/** A worktree's tab: its name, its branch when that differs, its dirty count. */
+const WorktreeLabel = ({ worktree }: { worktree: Worktree }): React.ReactElement => (
+  <>
+    {worktree.name}
+    {worktree.branch && worktree.branch !== worktree.name && (
+      <span className="chip__branch">{worktree.branch}</span>
+    )}
+    {worktree.dirty ? <span className="chip__dirty">{worktree.dirty}&plusmn;</span> : null}
+  </>
+)
+
+/**
+ * One project: its name, its awake worktrees, its sleeping ones, and a way to
+ * add another.
+ *
+ * The sleeping ones collapse into a single tab, because a project's worktrees
+ * accumulate and most of them are not what you are working on today. The
+ * exception is a project where *everything* is asleep: collapsing then would
+ * leave a group showing nothing but a dropdown, hiding the only thing it has,
+ * so they are listed in place with a zZ in front until one of them is woken.
+ */
+const Group = ({
+  group,
+  sessions,
+  onCloseProject,
+  onNewWorktree,
+  onWake,
+  onReveal,
+}: {
+  group: ProjectGroup
+  sessions: Session[]
+} & Pick<
+  TopBarProps,
+  'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
+>): React.ReactElement => {
+  const [open, setOpen] = useState(false)
+  const { project, awake, asleep } = group
+  const allAsleep = awake.length === 0 && asleep.length > 0
+  // A sleeping worktree can still be one whose Claude was left running, so the
+  // collapsed tab has to be able to call for you the way a tab does.
+  const asleepNeedsYou = asleep.some((w) => worktreeNeedsYou(sessions, w.id))
+
+  const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => (
+    <button
+      key={worktree.id}
+      className={[
+        'chip',
+        sleeping ? 'chip--asleep' : 'chip--shown',
+        worktreeNeedsYou(sessions, worktree.id) ? 'chip--waiting' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
+      title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
+        sleeping ? 'Asleep — click to wake it' : 'Click to scroll to it'
+      }`}
+    >
+      {sleeping && (
+        <span className="chip__zz" aria-hidden="true">
+          zZ
+        </span>
+      )}
+      <WorktreeLabel worktree={worktree} />
+    </button>
+  )
+
+  return (
+    <div className="group">
+      <span className="group__name" title={project.root}>
+        <span className="group__mark" aria-hidden="true" />
+        {project.name}
+        <button
+          className="group__close"
+          onClick={() => onCloseProject(project.id)}
+          title={`Close ${project.name}. Its worktrees and their sessions are left alone.`}
+          aria-label={`Close project ${project.name}`}
+        >
+          &times;
+        </button>
+      </span>
+
+      {awake.map((worktree) => tab(worktree, false))}
+      {allAsleep && asleep.map((worktree) => tab(worktree, true))}
+
+      {!allAsleep && asleep.length > 0 && (
+        <div className="chip__drawer">
+          <button
+            className={['chip', 'chip--asleep', asleepNeedsYou ? 'chip--waiting' : '']
+              .filter(Boolean)
+              .join(' ')}
+            onClick={() => setOpen((was) => !was)}
+            title={`${asleep.length} sleeping — click to pick one to wake`}
+            aria-expanded={open}
+          >
+            <span className="chip__zz" aria-hidden="true">
+              zZ
+            </span>
+            {asleep.length}
+            <span className="chip__caret" aria-hidden="true">
+              {'▾'}
+            </span>
+          </button>
+          {open && (
+            <div className="menu">
+              {asleep.map((worktree) => (
+                <button
+                  key={worktree.id}
+                  className={
+                    worktreeNeedsYou(sessions, worktree.id) ? 'menu__row menu__row--waiting' : 'menu__row'
+                  }
+                  onClick={() => {
+                    setOpen(false)
+                    onWake(worktree.id)
+                  }}
+                  title={worktree.path}
+                >
+                  <WorktreeLabel worktree={worktree} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <button
+        className="chip chip--add"
+        onClick={() => onNewWorktree(project)}
+        title={`New worktree in ${project.name}`}
+        aria-label={`New worktree in ${project.name}`}
+      >
+        +
+      </button>
+    </div>
+  )
 }
 
 /**
- * The top bar is where every worktree lives.
+ * The top bar is where every worktree lives, grouped by the project it belongs
+ * to.
  *
- * A worktree always has a chip here whether or not it has a tile, which is what
- * makes minimizing safe: the chip keeps carrying state, so a worktree with no
- * tile on screen can still tell you Claude is waiting on you. Amber is reserved
- * for exactly that, here as everywhere else.
+ * Every open project is here at once — there is no active one — so the bar is
+ * also the index of a row that can be longer than the window: clicking an awake
+ * worktree scrolls to its tile. Tabs no longer toggle anything, because with
+ * nothing hidden to make room there is nothing to toggle; the only two states a
+ * worktree has are awake and asleep.
  *
- * The underline means "on screen", which on a narrow window is not the same as
- * "you asked for it" -- tiles get pushed out when they will not fit. Clicking a
- * chip without one brings its tile back, displacing whatever has to go.
- *
- * The right-hand side stays empty on purpose. A count of what is waiting would
- * only restate what the amber chips already say.
+ * Amber stays reserved for a worktree whose Claude is blocked on you, and it
+ * has to survive being asleep, since sleeping can leave Claude running.
  */
 export const TopBar = ({
-  project,
-  worktrees,
+  groups,
   sessions,
-  shown,
   onOpenProject,
+  onCloseProject,
   onNewWorktree,
-  onToggleMinimized,
-}: TopBarProps): React.ReactElement => {
-  const shownIds = new Set(shown)
-
-  return (
-    <header className="topbar">
-      <button className="topbar__project" onClick={onOpenProject} title="Open a different project">
-        <span className="topbar__mark" aria-hidden="true" />
-        {project ? project.name : 'Open project'}
-      </button>
-
-      <nav className="chips">
-        {worktrees.map((worktree) => {
-          const isShown = shownIds.has(worktree.id)
-          const needsYou = worktreeNeedsYou(sessions, worktree.id)
-          return (
-            <button
-              key={worktree.id}
-              className={[
-                'chip',
-                isShown ? 'chip--shown' : 'chip--minimized',
-                needsYou ? 'chip--waiting' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => onToggleMinimized(worktree.id)}
-              title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
-                isShown ? 'Click to minimize to the top bar' : 'Click to show its tile'
-              }`}
-            >
-              {worktree.name}
-              {worktree.branch && worktree.branch !== worktree.name && (
-                <span className="chip__branch">{worktree.branch}</span>
-              )}
-              {worktree.dirty ? <span className="chip__dirty">{worktree.dirty}&plusmn;</span> : null}
-            </button>
-          )
-        })}
-        {project && (
-          <button
-            className="chip chip--add"
-            onClick={onNewWorktree}
-            title="New worktree"
-            aria-label="New worktree"
-          >
-            +
-          </button>
-        )}
-      </nav>
-    </header>
-  )
-}
+  onWake,
+  onReveal,
+}: TopBarProps): React.ReactElement => (
+  <header className="topbar">
+    <nav className="groups">
+      {groups.map((group) => (
+        <Group
+          key={group.project.id}
+          group={group}
+          sessions={sessions}
+          onCloseProject={onCloseProject}
+          onNewWorktree={onNewWorktree}
+          onWake={onWake}
+          onReveal={onReveal}
+        />
+      ))}
+    </nav>
+    <button className="topbar__open" onClick={onOpenProject} title="Open another project">
+      + Open project
+    </button>
+  </header>
+)

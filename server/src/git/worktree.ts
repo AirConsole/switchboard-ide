@@ -12,18 +12,35 @@ const git = async (cwd: string, ...args: string[]): Promise<string> => {
   return stdout
 }
 
+/** '' for a local host; the base URL for a remote one. */
+export type HostKey = string
+
 /**
  * Ids are derived from the absolute path rather than generated.
  *
  * Sessions record their worktree id inside tmux, so the id must be identical
  * after an IDE restart or those sessions would be orphaned. Hashing the path
  * makes that automatic and needs no persistence to be correct.
+ *
+ * `host` is what keeps that true once a project can live on another
+ * ide-n-dream server. A path alone is not unique across machines -- two hosts
+ * with a checkout at the same path hash identically, and these ids key the
+ * state store, the tmux metadata and every route parameter, so the two would
+ * silently alias. A remote host contributes its base URL; a local one
+ * contributes nothing at all, which is deliberate: it keeps every id this
+ * machine has already recorded in tmux exactly as it was.
  */
-const idFor = (prefix: string, path: string): string =>
-  `${prefix}-${createHash('sha1').update(resolve(path)).digest('hex').slice(0, 10)}`
+const idFor = (prefix: string, path: string, host: HostKey = ''): string => {
+  // A local id hashes the bare path, byte for byte as it always has. Adding
+  // even a separator would change every id on this machine and orphan every
+  // session tmux is holding, which is the one thing this must not do.
+  const input = host === '' ? resolve(path) : `${host}\u0000${resolve(path)}`
+  return `${prefix}-${createHash('sha1').update(input).digest('hex').slice(0, 10)}`
+}
 
-export const projectIdFor = (root: string): string => idFor('p', root)
-export const worktreeIdFor = (path: string): string => idFor('wt', path)
+export const projectIdFor = (root: string, host: HostKey = ''): string => idFor('p', root, host)
+export const worktreeIdFor = (path: string, host: HostKey = ''): string =>
+  idFor('wt', path, host)
 
 export const isGitRepo = async (path: string): Promise<boolean> => {
   try {

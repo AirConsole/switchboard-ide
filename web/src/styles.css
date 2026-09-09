@@ -172,42 +172,88 @@ button {
   min-width: 0;
 }
 
-.topbar__project {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  border-right: 1px solid var(--rule);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  color: var(--bone);
-  white-space: nowrap;
-}
-
-.topbar__project:hover {
-  background: var(--slab-raised);
-}
-
-.topbar__mark {
-  width: 9px;
-  height: 9px;
-  border: 1px solid var(--graphite);
-  border-left-width: 4px;
-  border-radius: 1px;
-}
-
 /*
- * Every worktree is a chip here, whether or not it has a tile. Square and
- * hairline-separated rather than pill-shaped: this is an instrument panel, and
- * position plus marking carry the state the way a flight strip does.
+ * Every open project, side by side. There is no active project any more, so
+ * this is a list rather than a switcher.
  */
-.chips {
+.groups {
   display: flex;
   align-items: stretch;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   min-width: 0;
   flex: 1;
+}
+
+.groups::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * One project and its worktrees.
+ *
+ * The boundary between projects has to read as stronger than the boundary
+ * between two tabs, and the tabs already own the hairline. So a group is set
+ * apart by space and a brighter full-height rule, and its name is set in the
+ * label voice rather than the tab voice -- a project is not a thing you select.
+ */
+.group {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+}
+
+.group + .group {
+  margin-left: 10px;
+  border-left: 1px solid var(--graphite-dim);
+  padding-left: 10px;
+}
+
+.group__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.group__mark {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border: 1px solid var(--graphite);
+  border-radius: 1px;
+}
+
+.group__close {
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--graphite-dim);
+}
+
+.group__close:hover {
+  color: var(--danger);
+}
+
+.topbar__open {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0 14px;
+  border-left: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--graphite);
+}
+
+.topbar__open:hover {
+  color: var(--bone);
+  background: var(--slab-raised);
 }
 
 .chip {
@@ -228,19 +274,46 @@ button {
   color: var(--bone);
 }
 
-/* A worktree with a tile on screen is underlined; a minimized one is not, and
-   dims. That distinction has to carry on its own for a worktree with no tile. */
+/* Awake: it has a tile in the row, and clicking scrolls to it. */
 .chip--shown {
   color: var(--bone);
   border-bottom-color: var(--rule-bright);
 }
 
-.chip--minimized {
+/*
+ * Asleep: nothing of it is running and it has no tile. Quieter than an awake
+ * tab and with no underline, since the underline means "there is one of these
+ * in the row". It still gets to go amber, because sleeping can leave Claude
+ * running and a worktree that needs you must be able to say so from here.
+ */
+.chip--asleep {
+  color: var(--graphite);
+}
+
+.chip--asleep:hover {
+  color: var(--bone);
+}
+
+.chip__zz {
+  font-size: 10px;
+  letter-spacing: 0.06em;
   color: var(--graphite-dim);
 }
 
-.chip--minimized:hover {
-  color: var(--graphite);
+.chip--waiting .chip__zz {
+  color: inherit;
+}
+
+.chip__caret {
+  font-size: 9px;
+  color: var(--graphite-dim);
+}
+
+/* Anchors the dropdown of sleeping worktrees to its tab. */
+.chip__drawer {
+  position: relative;
+  display: flex;
+  align-items: stretch;
 }
 
 /* The one saturated colour in the chrome, and the reason minimizing is safe:
@@ -298,11 +371,25 @@ button {
  * so the gap and the inset are one constant there, not a number in each place.
  */
 .grid {
-  position: relative;
+  display: flex;
+  align-items: stretch;
   flex: 1;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  /* Every awake worktree is here whether or not it fits, so the row scrolls.
+     No scrollbar is drawn -- the top bar is the index -- but the scroller is a
+     real one, so a trackpad works and scrollIntoView can bring a tile over. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  /* The leading inset; each tile carries its own trailing margin, so a tile
+     collapsing to nothing takes its gap with it. */
+  padding: 12px 0 12px 12px;
+}
+
+.grid::-webkit-scrollbar {
+  display: none;
 }
 
 /*
@@ -317,64 +404,62 @@ button {
  * already at the width it will end at, so growing uncovers content that is
  * finished rather than reflowing a terminal frame by frame.
  */
+/*
+ * One tile's place in the row.
+ *
+ * Width comes from measured pixels and transitions, which is what makes a tile
+ * open and close in place -- positions are stable now, so there is no edge for
+ * one to fly in from and nothing to displace when it arrives.
+ *
+ * It clips, which is the other half of resizing well: the tile inside is
+ * already at the width it will end at, so growing uncovers content that is
+ * finished rather than reflowing a terminal frame by frame.
+ */
 .slot {
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
+  flex: 0 0 auto;
   overflow: hidden;
   transition:
-    left var(--motion) ease,
     width var(--motion) ease,
-    transform var(--motion) ease;
-  animation: slot-in var(--motion) ease;
-}
-
-/* Entering: from just off its own left edge. Everything arrives at the left of
-   the grid, so that is off screen, which is where an arrival should come from. */
-@keyframes slot-in {
-  from {
-    transform: translateX(-110%);
-  }
+    margin-right var(--motion) ease;
+  animation: slot-open var(--motion) ease;
 }
 
 /*
- * The add tile arrives from the right instead.
+ * Opening: grown from nothing.
  *
- * Everything else enters at the left because you asked for it, and the tiles
- * already there move over to make room. This one is not asked for: it appears
- * at the right end when the grid happens to have a column spare, so that is
- * where it should come from. Sliding in from the left would read as a worktree
- * arriving and shoving the rest along.
+ * A keyframe rather than a transition, because a freshly mounted node has no
+ * previous width to transition from -- CSS does not animate an initial value.
+ * With no `to`, the tile's own inline width is the end of the animation.
  */
-.slot--from-right {
-  animation-name: slot-in-right;
-}
-
-@keyframes slot-in-right {
+@keyframes slot-open {
   from {
-    transform: translateX(110%);
+    width: 0;
+    margin-right: 0;
   }
 }
 
 /*
- * Leaving: one last render in place, then out to the right.
+ * Closing: the width and the margin both go, so the gap shuts with the tile
+ * rather than leaving a hole where it was.
  *
- * The node has to survive to be animated, so it is kept for the length of the
- * movement (see useTileMotion) and moved by transform -- past the edge rather
- * than to it, so nothing is left peeking. It stops taking clicks the moment it
- * starts leaving.
+ * A keyframe, not a transition, and for a reason worth writing down: a tile on
+ * its way out is necessarily a *new* DOM node. React unmounts it the moment the
+ * worktree stops being awake, and only afterwards does the effect that keeps it
+ * alive run and put it back -- so by the time anything can animate it, it has
+ * no previous width to transition from. An animation does not need one.
+ *
+ * `forwards` holds it closed for the few frames before it is dropped for real.
  */
 .slot--leaving {
-  transform: translateX(110%);
-  animation: none;
+  animation: slot-close var(--motion) ease forwards;
   pointer-events: none;
 }
 
-/* Pushed off the left, by a tile that grew rather than by one arriving. It has
-   to go the way it was pushed; the other direction would fly it back across the
-   grid it was just squeezed out of. */
-.slot--leaving-left {
-  transform: translateX(-110%);
+@keyframes slot-close {
+  to {
+    width: 0;
+    margin-right: 0;
+  }
 }
 
 /* Held at the width the tile will end at; see the note on .slot. */
@@ -389,6 +474,9 @@ button {
   }
   .slot--leaving {
     display: none;
+  }
+  .grid {
+    scroll-behavior: auto;
   }
 }
 
@@ -1283,4 +1371,99 @@ button {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--graphite-dim);
+}
+
+/* ------------------------------------------------------------- dropdowns -- */
+
+/*
+ * A small panel hung under the control that opened it.
+ *
+ * Used for the sleeping worktrees of a project and for the sleep options. Both
+ * are short lists of things you pick one of, so they get the same treatment:
+ * the tile's own ground, a hairline, and nothing else.
+ */
+.menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--rule-bright);
+  border-radius: var(--radius);
+  background: var(--slab-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.menu--sleep {
+  left: auto;
+  right: 0;
+  gap: 6px;
+  padding: 8px;
+}
+
+.menu__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 2px;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--graphite);
+}
+
+.menu__row:hover {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+.menu__row--waiting {
+  color: var(--signal);
+}
+
+/* ---------------------------------------------------------------- sleep --- */
+
+/*
+ * Sleep, and sleep-but-keep-something.
+ *
+ * The plain half is the ordinary action and acts at once, because waking undoes
+ * the expensive part of it: the conversation continues rather than restarting.
+ * The caret is for what waking cannot undo -- a Claude mid-thought, and a
+ * terminal's scrollback, which nothing brings back.
+ */
+.tile__sleep {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex: none;
+}
+
+.tile__zz {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--graphite);
+}
+
+.tile__zz-more {
+  display: flex;
+  align-items: center;
+  padding: 0 5px 0 0;
+  font-size: 9px;
+  color: var(--graphite-dim);
+}
+
+.tile__zz:hover,
+.tile__zz-more:hover {
+  color: var(--bone);
+  background: var(--rule-bright);
 }

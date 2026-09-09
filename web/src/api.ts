@@ -72,6 +72,19 @@ export const api = {
       `/api/worktrees/${id}?force=${opts.force}&deleteBranch=${opts.deleteBranch}`,
       { method: 'DELETE' },
     ),
+  /** Stop what a worktree is running. Either half can be kept alive. */
+  sleepWorktree: (worktreeId: string, keep: { claude: boolean; terminals: boolean }) =>
+    request<{ ok: true; sessions: Session[] }>(
+      `/api/worktrees/${worktreeId}/sleep?keepClaude=${keep.claude}&keepTerminals=${keep.terminals}`,
+      { method: 'POST' },
+    ),
+
+  /** Make sure Claude is running in a worktree, resuming its conversation. */
+  wakeWorktree: (worktreeId: string) =>
+    request<{ ok: true; session?: Session }>(`/api/worktrees/${worktreeId}/wake`, {
+      method: 'POST',
+    }),
+
   changes: (worktreeId: string) =>
     request<WorktreeChanges>(`/api/worktrees/${worktreeId}/changes`),
 

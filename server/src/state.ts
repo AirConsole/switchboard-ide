@@ -59,7 +59,14 @@ export class StateStore {
           // migrates projects registered under an older convention instead of
           // leaving them pointed at a directory nothing else uses.
           projects: (Array.isArray(candidate.projects) ? candidate.projects : []).map(
-            (project) => ({ ...project, worktreeRoot: defaultWorktreeRoot(project.root) }),
+            (project) => ({
+              ...project,
+              // A project registered before hosts existed is a local one.
+              // Defaulting it here keeps the type honest about a field the
+              // stored file has never contained.
+              host: project.host ?? { kind: 'local' as const },
+              worktreeRoot: defaultWorktreeRoot(project.root),
+            }),
           ),
           ui: pickKnownUiKeys(candidate.ui),
         }
@@ -83,19 +90,22 @@ export class StateStore {
     return this.state.projects.find((p) => p.id === id)
   }
 
+  /**
+   * Register a project. The order they are added is the order they appear.
+   *
+   * Opening one no longer makes it "the" project: every registered project is
+   * open, so there is nothing to switch to. Forcing an active project here is
+   * exactly what made opening a second one hide the first.
+   */
   addProject(project: Project): void {
     const existing = this.state.projects.findIndex((p) => p.id === project.id)
     if (existing === -1) this.state.projects.push(project)
     else this.state.projects[existing] = project
-    this.state.ui.activeProjectId = project.id
     this.scheduleSave()
   }
 
   removeProject(id: string): void {
     this.state.projects = this.state.projects.filter((p) => p.id !== id)
-    if (this.state.ui.activeProjectId === id) {
-      this.state.ui.activeProjectId = this.state.projects[0]?.id ?? null
-    }
     this.scheduleSave()
   }
 

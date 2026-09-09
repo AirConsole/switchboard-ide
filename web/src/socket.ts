@@ -123,6 +123,18 @@ class TerminalSocket {
         return
       case 'error':
         console.warn('[terminal socket]', msg.message, msg.sessionId ?? '')
+        /*
+         * A session we asked for is gone -- killed by sleeping a worktree, or
+         * by anything else while we were disconnected.
+         *
+         * Its consumers have to be dropped rather than left waiting. A consumer
+         * only starts painting once it has had a snapshot, and no snapshot is
+         * ever coming, so it would sit discarding output for a session that no
+         * longer exists and its tile would be frozen for the life of the page.
+         * Reconnecting re-asks for every subscribed id, so without this a
+         * single vanished session poisons its tile permanently.
+         */
+        if (msg.sessionId !== undefined) this.consumers.delete(msg.sessionId)
         return
     }
   }

@@ -1,10 +1,21 @@
 /** Domain model shared by server and web. Persisted shapes live here too. */
 
-/** A registered git repository. One is "active" in the UI at a time. */
+/**
+ * Where a project's files and processes live.
+ *
+ * Only `local` is implemented. It is named now because it decides how ids are
+ * derived, and worktree ids are recorded inside tmux -- so adding the remote
+ * case later must not change the local derivation or every running session is
+ * orphaned. See `idFor` in server/src/git/worktree.ts.
+ */
+export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string; token?: string }
+
+/** A registered git repository. Every registered project is open. */
 export interface Project {
   id: string
   name: string
-  /** Absolute path to the main repository root. */
+  host: ProjectHost
+  /** Absolute path to the main repository root, on its host. */
   root: string
   /** Absolute directory that new worktrees are created under. */
   worktreeRoot: string
@@ -101,45 +112,30 @@ export type PanelName = 'terminals' | 'git'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
-  activeProjectId: string | null
-  /** Worktree order in the top bar, by id. */
-  tabOrder: string[]
   /**
-   * The worktrees that have a tile, leftmost first.
+   * The worktrees that are awake, by id. Everything else is asleep.
    *
-   * An order, not a set, because it is what the grid renders: a worktree you
-   * ask for enters at the left and pushes the rest right, and whatever no
-   * longer fits falls off the right and is dropped from here. Being dropped is
-   * a real change of state rather than a trick of the width, so widening the
-   * window does not bring it back -- you ask for it again from the top bar,
-   * and it enters at the left like anything else.
+   * A set, not an order: a tile's place in the row comes from its project and
+   * its name, so it is always where you last saw it. Nothing is hidden to make
+   * room -- the row overflows and scrolls -- so this says only what is running,
+   * never what happened to fit.
    *
-   * Null when nothing has been decided yet, which is not the same as empty:
-   * empty means every worktree was put away, null means this is a first run and
-   * the natural order should be seeded in.
+   * Null until seeded, which is not the same as empty. Empty means every
+   * worktree was put to sleep; null means this is a first run, and a worktree
+   * is taken to be awake if it already has live sessions. That way the IDE can
+   * be dropped on a repository with twenty worktrees and start with all twenty
+   * asleep and nothing running.
    */
-  shown: string[] | null
+  awake: string[] | null
   /** Panels open per worktree, in the order they sit beside Claude. */
   panels: Record<string, PanelName[]>
-  /**
-   * The pane that most recently appeared because the user asked for it, keyed
-   * `<worktreeId>:claude` or `<worktreeId>:<panel>`.
-   *
-   * There are no rows, so a narrow window pushes panes out from the right --
-   * and this one, plus the rest of its worktree, is exempt. Without it, opening
-   * a panel on a phone would push out the very pane you just opened.
-   */
-  newestPane: string | null
   /** Selected terminal per worktree, so its panel reopens where you left it. */
   activeTerminalByWorktree: Record<string, string>
 }
 
 export const defaultUiState = (): UiState => ({
-  activeProjectId: null,
-  tabOrder: [],
-  shown: null,
+  awake: null,
   panels: {},
-  newestPane: null,
   activeTerminalByWorktree: {},
 })
 

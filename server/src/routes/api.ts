@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify'
+import type { SessionKind } from '@ide-n-dream/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
 import { HttpError, type Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
+import { claudeArgs } from '../session/claude.js'
 
 const openProjectBody = z.object({
   path: z.string().min(1),
@@ -35,6 +37,12 @@ const queryFlag = z
 const removeWorktreeQuery = z.object({
   force: queryFlag,
   deleteBranch: queryFlag,
+})
+const sleepQuery = z.object({
+  /** Leave Claude thinking; only the tile goes away. */
+  keepClaude: queryFlag,
+  /** Leave the terminals running, whose scrollback a kill would lose. */
+  keepTerminals: queryFlag,
 })
 const diffQuery = z.object({
   /** An uncommitted file, relative to the worktree. */
@@ -173,6 +181,60 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return {
       patch: await fileDiff(worktree.path, query.file, query.untracked, query.from),
     }
+  })
+
+  /*
+   * Put a worktree to sleep: stop what it is running.
+   *
+   * The awake/asleep list itself is the client's -- what is on screen is a UI
+   * question -- but killing processes is not something a client can do, and
+   * neither is the invalidate that tells every other client the sessions have
+   * gone. A kill emits no event of its own.
+   */
+  app.post('/api/worktrees/:id/sleep', async (request) => {
+    const { id } = request.params as { id: string }
+    const { keepClaude, keepTerminals } = sleepQuery.parse(request.query)
+    const { worktree } = await workspace.resolve(id)
+    const kinds: SessionKind[] = []
+    if (!keepClaude) kinds.push('claude')
+    if (!keepTerminals) kinds.push('shell')
+    if (kinds.length > 0) await engine.killForWorktree(worktree.id, kinds)
+    broadcastInvalidate()
+    return { ok: true, sessions: engine.listForWorktree(worktree.id) }
+  })
+
+  /*
+   * Wake a worktree: make sure Claude is running in it, carrying on where it
+   * left off.
+   *
+   * Three cases, and the third is the one that matters. A live session is left
+   * alone. A dead record is revived in place, which keeps its tmux window and
+   * scrollback. And a worktree whose session was killed by sleeping has no
+   * record at all, so it gets a new one -- with `--continue`, or the
+   * conversation would silently start over.
+   */
+  app.post('/api/worktrees/:id/wake', async (request) => {
+    const { id } = request.params as { id: string }
+    const { worktree } = await workspace.resolve(id)
+    const existing = engine
+      .listForWorktree(worktree.id)
+      .find((session) => session.kind === 'claude')
+
+    if (existing && existing.liveness !== 'dead') {
+      return { ok: true, session: existing }
+    }
+    const args = await claudeArgs(worktree.path, true)
+    const session = existing
+      ? await engine.respawn(existing.id, args)
+      : await engine.create({
+          worktreeId: worktree.id,
+          projectId: worktree.projectId,
+          kind: 'claude',
+          cwd: worktree.path,
+          args,
+        })
+    broadcastInvalidate()
+    return { ok: true, session }
   })
 
   app.post('/api/sessions', async (request) => {

@@ -1,57 +1,104 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
 import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview, paneKey } from './views/Overview.js'
+import { Overview, paneKey, type SleepOptions } from './views/Overview.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
-import type { PanelName } from '@ide-n-dream/shared'
+import type { PanelName, Project, Worktree } from '@ide-n-dream/shared'
+
+/** A project and its worktrees, split into the awake ones and the sleeping. */
+export interface ProjectGroup {
+  project: Project
+  awake: Worktree[]
+  asleep: Worktree[]
+}
 
 export const App = (): React.ReactElement => {
   const { projects, worktrees, sessions, ui, loaded, error, refresh, setUi, setError } = useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
-  const [showNewWorktree, setShowNewWorktree] = useState(false)
+  const [addingTo, setAddingTo] = useState<Project | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  /**
+   * The pane to bring into view next.
+   *
+   * Deliberately not persisted: it is a consequence of the click you just made,
+   * not a fact about the layout. Restoring one on load would scroll you
+   * somewhere for a reason that no longer exists.
+   */
+  const [scrollTo, setScrollTo] = useState<string | null>(null)
+
   useEffect(() => {
     bindSocketToStore()
     void refresh()
   }, [refresh])
 
-  const project = projects.find((p) => p.id === ui.activeProjectId) ?? projects[0]
-  const projectWorktrees = useMemo(
-    () => orderWorktrees(worktrees.filter((w) => w.projectId === project?.id), ui.tabOrder),
-    [worktrees, project?.id, ui.tabOrder],
-  )
-
-  /**
-   * Which worktrees have a tile, leftmost first.
-   *
-   * Null in stored state means a first run rather than "none": the natural
-   * order is seeded in, and the grid writes back what actually fit.
-   */
-  const shown = ui.shown ?? projectWorktrees.map((worktree) => worktree.id)
-
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
 
   /**
-   * Adopt the order the grid settled on.
+   * Which worktrees are awake.
    *
-   * Written only when it differs, or the report of what is shown would feed
-   * straight back into the state it was computed from.
+   * Null in stored state means a first run, not "none awake", so it seeds from
+   * what is actually running: a worktree with live sessions is awake. That makes
+   * the arrival of sleep invisible on a machine already mid-work, and means the
+   * IDE dropped on a repository with twenty worktrees and nothing running starts
+   * with all twenty asleep.
    */
-  const setShownOrder = useCallback(
-    (ids: string[]): void => {
-      const current = ui.shown
-      if (current !== null && current.length === ids.length && current.every((id, i) => id === ids[i])) {
-        return
-      }
-      setUi({ shown: ids })
-    },
-    [ui.shown, setUi],
+  const awake = useMemo(() => {
+    if (ui.awake !== null) return new Set(ui.awake)
+    return new Set(
+      worktrees.filter((w) => sessions.some((s) => s.worktreeId === w.id)).map((w) => w.id),
+    )
+  }, [ui.awake, worktrees, sessions])
+
+  /**
+   * Projects in the order they were opened, each split into awake and asleep.
+   *
+   * Every registered project is open -- there is no active one -- so the top
+   * bar shows them all and the row shows every awake worktree across them.
+   */
+  const groups = useMemo<ProjectGroup[]>(
+    () =>
+      projects.map((project) => {
+        const mine = orderWorktrees(worktrees.filter((w) => w.projectId === project.id))
+        return {
+          project,
+          awake: mine.filter((w) => awake.has(w.id)),
+          asleep: mine.filter((w) => !awake.has(w.id)),
+        }
+      }),
+    [projects, worktrees, awake],
   )
+
+  /** Every awake worktree, in the order the row shows them. */
+  const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
+
+  const setAwake = (ids: Iterable<string>): void => setUi({ awake: [...ids] })
+
+  /**
+   * Wake a worktree: bring back its tile and its agent.
+   *
+   * The server does the part a client cannot -- resuming the conversation that
+   * was stopped rather than starting a blank one -- and we scroll to it, since
+   * with several worktrees awake it may well arrive off the side of the row.
+   */
+  const wake = (worktreeId: string): void => {
+    setAwake([...awake, worktreeId])
+    setScrollTo(paneKey(worktreeId, 'claude'))
+    void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
+  }
+
+  /**
+   * Sleep a worktree: give back its space and, unless told otherwise, its
+   * processes.
+   */
+  const sleep = (worktreeId: string, keep: SleepOptions): void => {
+    setAwake([...awake].filter((id) => id !== worktreeId))
+    void api.sleepWorktree(worktreeId, keep).then(refresh).catch(fail)
+  }
 
   const startClaude = (worktreeId: string): void => {
     const existing = claudeSession(sessions, worktreeId)
@@ -59,10 +106,9 @@ export const App = (): React.ReactElement => {
     // -- respawning keeps its tmux session and history -- rather than leaving a
     // dead session behind and stacking a second one beside it.
     if (existing && existing.liveness !== 'dead') return
-    const request = existing
-      ? api.respawnSession(existing.id)
-      : api.createSession({ worktreeId, kind: 'claude' })
-    void request.then(() => refresh()).catch(fail)
+    // Through wake either way, so a restart continues the conversation for the
+    // same reason waking does.
+    void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
   }
 
   const newTerminal = (worktreeId: string): void => {
@@ -83,33 +129,11 @@ export const App = (): React.ReactElement => {
   }
 
   /**
-   * Show a worktree, or put it away.
+   * A panel is another column of its worktree's tile, remembered per worktree.
    *
-   * Showing puts it at the front, which is the left of the grid: one rule for
-   * how anything arrives, whether you clicked its chip, just created it, or are
-   * bringing back something the width pushed out. Whatever no longer fits then
-   * falls off the right, and the grid tells us so.
-   */
-  const toggleMinimized = (worktreeId: string): void => {
-    if (shown.includes(worktreeId)) {
-      setUi({ shown: shown.filter((id) => id !== worktreeId) })
-      return
-    }
-    setUi({
-      shown: [worktreeId, ...shown.filter((id) => id !== worktreeId)],
-      newestPane: paneKey(worktreeId, 'claude'),
-    })
-  }
-
-  /**
-   * A panel is another column of its worktree's tile, opened and closed per
-   * worktree and remembered there.
-   *
-   * Nothing else is minimized to make room, and nothing is restored on the way
-   * out: the layout already pushes panes out from the right and brings them
-   * straight back, so opening a panel on a normal window displaces the
-   * worktrees to the right of it and closing it returns them. That makes this a
-   * reversible detour without a scrap of saved layout to get out of step.
+   * Nothing is displaced to make room any more: the tile simply gets wider and
+   * the row gets longer. Opening one scrolls to it, which is what makes it
+   * visible on a window too narrow to hold the tile whole.
    */
   const togglePanel = (worktreeId: string, panel: PanelName): void => {
     const open = ui.panels[worktreeId] ?? []
@@ -119,36 +143,13 @@ export const App = (): React.ReactElement => {
         ...ui.panels,
         [worktreeId]: wasOpen ? open.filter((name) => name !== panel) : [...open, panel],
       },
-      // What you just asked for is what survives a window too narrow for both:
-      // opening a panel displaces the Claude pane rather than never appearing,
-      // and closing it hands the protection back to Claude.
-      newestPane: paneKey(worktreeId, wasOpen ? 'claude' : panel),
     })
+    setScrollTo(paneKey(worktreeId, wasOpen ? 'claude' : panel))
     // The panel is only useful with something in it.
     if (panel === 'terminals' && !wasOpen && terminalSessions(sessions, worktreeId).length === 0) {
       newTerminal(worktreeId)
     }
   }
-
-  /**
-   * Close panels the layout could not fit.
-   *
-   * The layout is the only thing that knows what fit, so it says so and the
-   * state follows: a panel whose pane was pushed out is closed rather than kept
-   * open with nothing to show, which is what keeps its toggle honest.
-   */
-  const collapsePanels = useCallback(
-    (collapsed: { worktreeId: string; panel: PanelName }[]): void => {
-      const panels = { ...ui.panels }
-      for (const { worktreeId, panel } of collapsed) {
-        panels[worktreeId] = (panels[worktreeId] ?? []).filter((name) => name !== panel)
-      }
-      setUi({ panels })
-    },
-    // Stable between panel changes, so the layout's report does not re-fire on
-    // every unrelated render.
-    [ui.panels, setUi],
-  )
 
   if (!loaded) {
     return (
@@ -160,13 +161,13 @@ export const App = (): React.ReactElement => {
 
   const topBar = (
     <TopBar
-      project={project}
-      worktrees={project ? projectWorktrees : []}
+      groups={groups}
       sessions={sessions}
-      shown={shown}
       onOpenProject={() => setShowOpenProject(true)}
-      onNewWorktree={() => setShowNewWorktree(true)}
-      onToggleMinimized={toggleMinimized}
+      onCloseProject={(id) => void api.closeProject(id).then(refresh).catch(fail)}
+      onNewWorktree={setAddingTo}
+      onWake={wake}
+      onReveal={(worktreeId) => setScrollTo(paneKey(worktreeId, 'claude'))}
     />
   )
 
@@ -181,18 +182,16 @@ export const App = (): React.ReactElement => {
           }}
         />
       )}
-      {showNewWorktree && project && (
+      {addingTo && (
         <NewWorktreeDialog
-          project={project}
-          onClose={() => setShowNewWorktree(false)}
+          project={addingTo}
+          onClose={() => setAddingTo(null)}
           onCreated={(worktreeId) => {
-            setShowNewWorktree(false)
-            // A worktree you just created is the one you want to see, so it
-            // arrives where everything else does: at the left.
-            setUi({
-              shown: [worktreeId, ...shown.filter((id) => id !== worktreeId)],
-              newestPane: paneKey(worktreeId, 'claude'),
-            })
+            setAddingTo(null)
+            // A worktree you just made is one you want to work in, so it starts
+            // awake -- and it is scrolled to, since the row may be long.
+            setAwake([...awake, worktreeId])
+            setScrollTo(paneKey(worktreeId, 'claude'))
             void refresh()
           }}
         />
@@ -202,10 +201,10 @@ export const App = (): React.ReactElement => {
           worktree={worktrees.find((w) => w.id === removing)!}
           onClose={() => setRemoving(null)}
           onRemoved={() => {
-            // A removed worktree leaves nothing of itself behind in the layout.
+            // A removed worktree leaves nothing of itself behind.
             const panels = { ...ui.panels }
             delete panels[removing]
-            setUi({ shown: shown.filter((id) => id !== removing), panels })
+            setUi({ awake: [...awake].filter((id) => id !== removing), panels })
             setRemoving(null)
             void refresh()
           }}
@@ -214,7 +213,7 @@ export const App = (): React.ReactElement => {
     </>
   )
 
-  if (!project) {
+  if (projects.length === 0) {
     return (
       <div className="app">
         {topBar}
@@ -247,18 +246,20 @@ export const App = (): React.ReactElement => {
       )}
 
       <Overview
-        worktrees={projectWorktrees}
+        worktrees={rowWorktrees}
         sessions={sessions}
-        shown={ui.shown}
         panels={ui.panels}
-        newestPane={ui.newestPane}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
+        // With one project open there is no question which project a new
+        // worktree belongs to; with several there is, and the top bar's
+        // per-project + is the unambiguous way to say it.
+        addTo={projects.length === 1 ? (projects[0] ?? null) : null}
+        scrollTo={scrollTo}
         onStart={startClaude}
-        onMinimize={toggleMinimized}
+        onSleep={sleep}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
-        onCollapsePanels={collapsePanels}
-        onNewWorktree={() => setShowNewWorktree(true)}
+        onNewWorktree={() => setAddingTo(projects[0] ?? null)}
         onSelectTerminal={(worktreeId, sessionId) =>
           setUi({
             activeTerminalByWorktree: {
@@ -267,7 +268,6 @@ export const App = (): React.ReactElement => {
             },
           })
         }
-        onShownOrder={setShownOrder}
         onNewTerminal={newTerminal}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />

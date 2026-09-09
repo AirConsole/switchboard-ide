@@ -43,8 +43,6 @@ interface AppState extends AppSnapshot {
     },
   ) => void
   setError: (message: string | null) => void
-  worktreesForActiveProject: () => Worktree[]
-  sessionsForWorktree: (worktreeId: string) => Session[]
 }
 
 let uiSaveTimer: number | null = null
@@ -119,14 +117,6 @@ export const useStore = create<AppState>((set, get) => ({
     })),
 
   setError: (message) => set({ error: message }),
-
-  worktreesForActiveProject: () => {
-    const { worktrees, ui } = get()
-    if (!ui.activeProjectId) return []
-    return worktrees.filter((w) => w.projectId === ui.activeProjectId)
-  },
-
-  sessionsForWorktree: (worktreeId) => get().sessions.filter((s) => s.worktreeId === worktreeId),
 }))
 
 /** Wire push updates from the server into the store. Called once at startup. */

@@ -39,6 +39,12 @@ const nodePty = require('node-pty') as typeof import('node-pty')
  */
 const newId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
 
+/**
+ * The command line a kind gets when nothing asks for anything else. Shared by
+ * create and respawn, which used to hardcode it separately and disagree.
+ */
+const defaultArgs = (kind: SessionKind): string[] => (kind === 'claude' ? [] : ['-l'])
+
 export const DEFAULT_COLS = 120
 export const DEFAULT_ROWS = 34
 
@@ -68,6 +74,14 @@ export interface CreateSessionRequest {
   rows?: number
   /** Extra environment for the hosted command, e.g. IDE integration ports. */
   env?: Record<string, string>
+  /**
+   * Arguments for the hosted command, replacing the default for its kind.
+   *
+   * The one caller that needs this is waking a worktree, which starts Claude
+   * with `--continue` so the conversation that was stopped comes back rather
+   * than a blank one.
+   */
+  args?: string[]
 }
 
 let nextStreamId = 1
@@ -448,7 +462,7 @@ export class SessionEngine {
     const command = req.kind === 'claude' ? config.claudeCommand : config.shellCommand
     // A login shell so the user's PATH and profile apply, exactly as it would if
     // they had opened a terminal themselves.
-    const args = req.kind === 'claude' ? [] : ['-l']
+    const args = req.args ?? defaultArgs(req.kind)
 
     await createSession({
       name: tmuxName,
@@ -492,12 +506,19 @@ export class SessionEngine {
   }
 
   /** Restart the command in a dead session's pane, keeping the session. */
-  async respawn(sessionId: string): Promise<Session | undefined> {
+  /**
+   * Restart a dead session in place, keeping its tmux session and history.
+   *
+   * `args` matter here: without them this re-derived the command line from the
+   * session's kind alone, so reviving a Claude session always started a fresh
+   * conversation -- which is precisely what waking a worktree must not do.
+   */
+  async respawn(sessionId: string, args?: string[]): Promise<Session | undefined> {
     const live = this.sessions.get(sessionId)
     if (!live) return undefined
     const command = live.record.kind === 'claude' ? config.claudeCommand : config.shellCommand
-    const args = live.record.kind === 'claude' ? [] : ['-l']
-    await respawnSession(live.name, command, args)
+    const spawnArgs = args ?? defaultArgs(live.record.kind)
+    await respawnSession(live.name, command, spawnArgs)
     live.liveness = 'live'
     live.dead = false
     live.deadStatus = null
@@ -514,8 +535,18 @@ export class SessionEngine {
     live.dispose()
   }
 
-  async killForWorktree(worktreeId: string): Promise<void> {
-    const doomed = [...this.sessions.values()].filter((l) => l.record.worktreeId === worktreeId)
+  /**
+   * Kill a worktree's sessions, optionally only some kinds.
+   *
+   * Sleeping a worktree stops its processes to give the machine back, and the
+   * two opt-outs let you keep either half: Claude because you want it to carry
+   * on thinking, terminals because their scrollback is not recoverable the way
+   * a conversation is.
+   */
+  async killForWorktree(worktreeId: string, kinds?: SessionKind[]): Promise<void> {
+    const doomed = [...this.sessions.values()].filter(
+      (l) => l.record.worktreeId === worktreeId && (!kinds || kinds.includes(l.record.kind)),
+    )
     await Promise.all(doomed.map((l) => this.kill(l.record.id)))
   }
 

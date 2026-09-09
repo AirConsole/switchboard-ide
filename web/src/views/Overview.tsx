@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import type { PanelName, Session, Worktree } from '@ide-n-dream/shared'
+import type { PanelName, Project, Session, Worktree } from '@ide-n-dream/shared'
 import {
   TerminalView,
   TERMINAL_FONT_FAMILY,
@@ -8,25 +8,18 @@ import {
 import { claudeSession, isRunning, stateLabel, terminalSessions } from '../selectors.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { GitBar, GitPane, useGitState } from './GitPane.js'
-import {
-  MIN_PANE_COLUMNS,
-  PANE_CHROME_WIDTH,
-  measureMonoCharWidth,
-  planColumns,
-} from './overviewLayout.js'
+import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
+import { useNearViewport } from './useNearViewport.js'
 
 /**
- * Gap between tiles, in px, and the same inset around the grid.
+ * Space between tiles and around the row, in px.
  *
- * Both live here rather than in the stylesheet because the tiles are positioned
- * from measured pixels: the arithmetic and the rendered spacing are the same
- * number or the tiles do not line up with their own gaps.
+ * It lives here rather than in the stylesheet because tile widths are computed
+ * from a measured scrollport: the arithmetic and the rendered spacing have to be
+ * the same number or the row does not add up to the window.
  */
 const GAP = 12
-
-/** Below this many worktree tiles, the grid has room to explain itself. */
-const ADD_TILE_THRESHOLD = 2
 
 /** How the add tile is identified in the layout. */
 const ADD_KEY = '__add'
@@ -84,18 +77,6 @@ type Pane =
   | { kind: PanelName; key: string; worktree: Worktree }
   | { kind: 'add'; key: string }
 
-/**
- * A tile: one worktree and the panes it currently shows.
- *
- * A worktree is one tile however many columns it occupies, which is what lets
- * its bar run across the lot. The add tile is a group of one with no worktree.
- */
-interface Tile {
-  key: string
-  worktree: Worktree | null
-  panes: Pane[]
-}
-
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
   const [size, setSize] = useState({ width: 0, height: 0 })
   // A layout effect, so the first measurement lands before the browser paints
@@ -118,42 +99,6 @@ const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; he
     return () => observer.disconnect()
   }, [ref])
   return size
-}
-
-/** Which panes each expanded worktree wants, left to right. */
-const wantedPanes = (
-  worktrees: Worktree[],
-  minimized: string[],
-  panels: Record<string, PanelName[]>,
-): Pane[] => {
-  const minimizedIds = new Set(minimized)
-  const panes: Pane[] = []
-  for (const worktree of worktrees) {
-    if (minimizedIds.has(worktree.id)) continue
-    panes.push({ kind: 'claude', key: paneKey(worktree.id, 'claude'), worktree })
-    // Read through PANELS rather than the stored array, which comes from a file
-    // the user could have edited and may name a panel that no longer exists.
-    const open = panels[worktree.id] ?? []
-    for (const panel of PANELS) {
-      if (open.includes(panel)) panes.push({ kind: panel, key: paneKey(worktree.id, panel), worktree })
-    }
-  }
-  return panes
-}
-
-/** Consecutive panes of the same worktree, gathered into one tile. */
-const gatherTiles = (panes: Pane[]): Tile[] => {
-  const tiles: Tile[] = []
-  for (const pane of panes) {
-    const key = pane.kind === 'add' ? ADD_KEY : pane.worktree.id
-    const last = tiles[tiles.length - 1]
-    if (last && last.key === key) {
-      last.panes.push(pane)
-      continue
-    }
-    tiles.push({ key, worktree: pane.kind === 'add' ? null : pane.worktree, panes: [pane] })
-  }
-  return tiles
 }
 
 /**
@@ -181,15 +126,94 @@ const TrashIcon = (): React.ReactElement => (
   </svg>
 )
 
+/** What to leave running when a worktree goes to sleep. */
+export interface SleepOptions {
+  claude: boolean
+  terminals: boolean
+}
+
+/**
+ * Put this worktree to sleep, and say what to spare.
+ *
+ * The plain click sleeps at once, because sleeping is the ordinary way to put a
+ * worktree away and the expensive half of it is undone by waking: the
+ * conversation is continued, not restarted. The caret is for the two things
+ * waking cannot undo -- a Claude that is mid-thought, and a terminal's
+ * scrollback, which nothing brings back.
+ */
+const SleepControl = ({
+  name,
+  onSleep,
+}: {
+  name: string
+  onSleep: (keep: SleepOptions) => void
+}): React.ReactElement => {
+  const [open, setOpen] = useState(false)
+  const [keep, setKeep] = useState<SleepOptions>({ claude: false, terminals: false })
+
+  return (
+    <div className="tile__sleep">
+      <button
+        className="tile__zz"
+        onClick={() => onSleep({ claude: false, terminals: false })}
+        title={`Sleep ${name}: stop Claude and its terminals. Waking continues the conversation.`}
+        aria-label={`Sleep ${name}`}
+      >
+        zZ
+      </button>
+      <button
+        className="tile__zz-more"
+        onClick={() => setOpen((was) => !was)}
+        title="Sleep, keeping something running"
+        aria-label="Sleep options"
+        aria-expanded={open}
+      >
+        {'\u25be'}
+      </button>
+      {open && (
+        <div className="menu menu--sleep">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={keep.claude}
+              onChange={(event) => setKeep({ ...keep, claude: event.target.checked })}
+            />
+            Keep Claude running
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={keep.terminals}
+              onChange={(event) => setKeep({ ...keep, terminals: event.target.checked })}
+            />
+            Keep terminals
+          </label>
+          <button
+            className="btn"
+            onClick={() => {
+              setOpen(false)
+              onSleep(keep)
+            }}
+          >
+            Sleep
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface WorktreeTileProps {
   worktree: Worktree
-  /** The panes that fit, in display order. Never empty. */
+  /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   session: Session | undefined
   terminals: Session[]
   activeTerminalId: string | null
+  /** The scroller, so the tile can tell whether it is worth mounting. */
+  scroller: RefObject<HTMLElement | null>
   onStart: () => void
-  onMinimize: () => void
+  onSleep: (keep: SleepOptions) => void
   onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
   onSelectTerminal: (sessionId: string) => void
@@ -213,8 +237,9 @@ const WorktreeTile = ({
   session,
   terminals,
   activeTerminalId,
+  scroller,
   onStart,
-  onMinimize,
+  onSleep,
   onRemove,
   onTogglePanel,
   onSelectTerminal,
@@ -236,6 +261,15 @@ const WorktreeTile = ({
         : session.attention === 'working'
           ? 'working'
           : 'idle'
+
+  const tileRef = useRef<HTMLDivElement | null>(null)
+  /*
+   * Whether to build this tile's terminals at all. The tile is always here --
+   * its bar, name and state are what the row is for -- but a terminal off the
+   * side of the scrollport is a WebGL context and a render loop spent on
+   * nothing. See the note on useNearViewport.
+   */
+  const near = useNearViewport(tileRef, scroller)
 
   const shownPanes = new Set(panes.map((pane) => pane.kind))
   const columns = `repeat(${panes.length}, minmax(0, 1fr))`
@@ -260,21 +294,15 @@ const WorktreeTile = ({
 
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
-  const minimizeHint = `Click to minimize ${worktree.name} to the top bar`
 
-  /*
-   * A real button, not text with a handler on the bar around it: clicking the
-   * bar is the mouse gesture, and this is the same thing reachable by keyboard.
-   * Both call the same handler, and the bar's guard below lets this one win.
-   */
   const identity = (
-    <button className="tile__label" onClick={onMinimize} title={minimizeHint}>
+    <span className="tile__label">
       <span className="tile__name">{worktree.name}</span>
       {worktree.branch && worktree.branch !== worktree.name && (
         <span className="tile__branch">{worktree.branch}</span>
       )}
       {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
-    </button>
+    </span>
   )
 
   const controls = (
@@ -303,6 +331,7 @@ const WorktreeTile = ({
           </button>
         )
       })}
+      <SleepControl name={worktree.name} onSleep={onSleep} />
       {/* The main worktree cannot be removed, so it gets no control. */}
       {!worktree.isMain && (
         <button
@@ -318,25 +347,11 @@ const WorktreeTile = ({
   )
 
   return (
-    <div className={`tile tile--${state}`}>
+    <div className={`tile tile--${state}`} ref={tileRef}>
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
-        title={
-          session
-            ? `${worktree.path}\n${session.attachCommand}\n${minimizeHint}`
-            : `${worktree.path}\n${minimizeHint}`
-        }
-        onClick={(event) => {
-          /*
-           * Minimizing is the bar's own gesture, so it fires on the bar itself
-           * and on the identity -- but never through something that already
-           * does its own job. Panel toggles, remove and a panel's controls
-           * would otherwise minimize the worktree out from under the click.
-           */
-          if ((event.target as HTMLElement).closest('button, .termtabs')) return
-          onMinimize()
-        }}
+        title={session ? `${worktree.path}\n${session.attachCommand}` : worktree.path}
       >
         {panes.map((pane, index) => (
           <div className="tile__seg" key={pane.key}>
@@ -358,10 +373,10 @@ const WorktreeTile = ({
 
       <div className="tile__body" style={{ gridTemplateColumns: columns }}>
         {panes.map((pane) => (
-          <div className="tile__pane" key={pane.key}>
+          <div className="tile__pane" key={pane.key} data-pane={pane.key}>
             {pane.kind === 'claude' &&
               (running && session ? (
-                <TerminalView session={session} primary={true} fontSize={TERMINAL_FONT_SIZE} />
+                near && <TerminalView session={session} primary={true} fontSize={TERMINAL_FONT_SIZE} />
               ) : (
                 <div className="tile__idle">
                   <p className="tile__idle-text">Claude is not running in this worktree.</p>
@@ -370,7 +385,7 @@ const WorktreeTile = ({
                   </button>
                 </div>
               ))}
-            {pane.kind === 'terminals' && (
+            {pane.kind === 'terminals' && near && (
               <TerminalsScreen
                 terminals={terminals}
                 activeTerminalId={activeTerminalId}
@@ -399,95 +414,68 @@ const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
 )
 
 export interface OverviewProps {
+  /** Awake worktrees, in the order the row shows them. */
   worktrees: Worktree[]
   sessions: Session[]
-  /** Worktrees with a tile, leftmost first. Null until seeded. */
-  shown: string[] | null
   panels: Record<string, PanelName[]>
-  newestPane: string | null
   activeTerminalByWorktree: Record<string, string>
+  /**
+   * The project a new worktree would go to, when there is only one open.
+   *
+   * Null with several open, because the add tile would have to guess which one
+   * it added to -- the top bar's per-project `+` is unambiguous and is there
+   * either way.
+   */
+  addTo: Project | null
+  /**
+   * A pane to bring into view, keyed as `paneKey` builds them. Set when you
+   * click a worktree in the top bar or open one of its panels.
+   */
+  scrollTo: string | null
   onStart: (worktreeId: string) => void
-  onMinimize: (worktreeId: string) => void
+  onSleep: (worktreeId: string, keep: SleepOptions) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
-  onCollapsePanels: (collapsed: { worktreeId: string; panel: PanelName }[]) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
   onCloseTerminal: (sessionId: string) => void
-  /**
-   * The order the grid settled on: what is shown, leftmost first, with
-   * whatever no longer fits left out. Only the layout knows how much fits.
-   */
-  onShownOrder: (worktreeIds: string[]) => void
 }
 
 /**
- * The whole app: worktree tiles side by side, in the order you asked for them.
+ * The row: every awake worktree, always, side by side.
  *
- * One rule governs the grid. A worktree you ask for enters at the left, the
- * rest shift right, and whatever no longer fits falls off the right and is put
- * away in the top bar -- for good, not until the window happens to widen again.
- * That is what makes the grid followable: a tile only ever moves because you
- * did something, and it always moves the same way.
+ * Nothing is hidden to make room. A tile's place comes from its project and its
+ * name, so it is where you last saw it, and when there are more worktrees than
+ * the window can hold the row simply runs off the right and scrolls -- the top
+ * bar is how you get to the far end of it. That replaces a capacity walk, a
+ * reserved anchor, panels that collapsed when the width ran out, and tiles that
+ * fell off an edge and had to be asked back.
  *
- * Panels are a separate question, settled inside a tile: they keep a fixed
- * order beside Claude, and when a tile cannot have all of them the one you just
- * opened is the one that gets the room.
+ * What is left is one width rule and a scroller.
  */
 export const Overview = ({
   worktrees,
   sessions,
-  shown,
   panels,
-  newestPane,
   activeTerminalByWorktree,
+  addTo,
+  scrollTo,
   onStart,
-  onMinimize,
+  onSleep,
   onRemoveWorktree,
   onTogglePanel,
-  onCollapsePanels,
   onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
-  onShownOrder,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
 
-  const byId = new Map(worktrees.map((worktree) => [worktree.id, worktree]))
-  /*
-   * A first run has no order to restore, so the worktrees are taken as they
-   * come. After that the stored order is the truth, filtered to what still
-   * exists -- a worktree removed elsewhere leaves no hole behind.
-   */
-  const order = (shown ?? worktrees.map((worktree) => worktree.id))
-    .map((id) => byId.get(id))
-    .filter((worktree): worktree is Worktree => worktree !== undefined)
-
-  const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
-  const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
-  // The measured box includes the grid's inset, which the tiles do not get.
-  const available = Math.max(0, width - GAP * 2)
-  const capacity = Math.max(1, Math.floor((available + GAP) / (minPaneWidth + GAP)))
-
-  /*
-   * The tile you just acted on keeps its room, and the rest fill in from the
-   * left until the width runs out.
-   *
-   * The reservation is what makes a tile able to grow. Filling purely from the
-   * left meant the last tile in the row was the one that did not fit -- so
-   * opening a panel on the rightmost worktree pushed that very worktree off the
-   * grid, which is the opposite of what the click asked for. Reserving it
-   * instead means the others give way: they shift left and the leftmost leaves.
-   *
-   * It is the same principle as inside a tile, where the panel you just opened
-   * is the one that gets the room. And it is not sticky -- every chip click and
-   * every panel toggle moves it -- so a tile is only ever privileged for the
-   * one action you just took.
-   */
   const panesOf = (worktree: Worktree): Pane[] => {
+    // Read through PANELS rather than the stored array, which comes from a file
+    // the user could have edited and may name a panel that no longer exists.
     const open = panels[worktree.id] ?? []
     return [
       { kind: 'claude' as const, key: paneKey(worktree.id, 'claude'), worktree },
@@ -499,133 +487,75 @@ export const Overview = ({
     ]
   }
 
-  const anchorId = newestPane === null ? null : newestPane.slice(0, newestPane.lastIndexOf(':'))
-  const anchor = order.find((worktree) => worktree.id === anchorId) ?? order[0]
-
-  const kept = new Set<string>()
-  let used = 0
-  if (anchor) {
-    // Whatever it costs: a window too narrow for even this one still shows it,
-    // narrowed below to the panes that fit.
-    kept.add(anchor.id)
-    used = panesOf(anchor).length
-  }
-  for (const worktree of order) {
-    if (kept.has(worktree.id)) continue
-    const panes = panesOf(worktree).length
-    if (used + panes > capacity) break
-    kept.add(worktree.id)
-    used += panes
-  }
-  const fitting = order
-    .filter((worktree) => kept.has(worktree.id))
-    .map((worktree) => ({ worktree, panes: panesOf(worktree) }))
-
-  /*
-   * Only the reserved tile can still be over capacity, since every other one
-   * was admitted only if it fit. Narrow it by the pane rule: the pane you just
-   * asked for first, then the rest of the tile from the left.
-   */
-  const reserved = fitting.find((tile) => tile.worktree.id === anchor?.id)
-  if (reserved && used > capacity) {
-    reserved.panes = planColumns(
-      reserved.panes,
-      (pane) => pane.key,
-      () => reserved.worktree.id,
-      newestPane,
-      available,
-      minPaneWidth,
-      GAP,
-    )
-  }
-
-  /*
-   * With little to show, the grid has room to be the action and the explanation
-   * of what a worktree is; beyond that the top bar's + carries it.
-   *
-   * It has to earn its column like everything else. Appending it unconditionally
-   * put two tiles in a grid with room for one, and both came out at a fifth of
-   * the width a terminal needs.
-   */
-  const cells: { key: string; worktree: Worktree | null; panes: Pane[] }[] = fitting.map((tile) => ({
-    key: tile.worktree.id,
-    worktree: tile.worktree,
-    panes: tile.panes,
-  }))
-  if (cells.length < ADD_TILE_THRESHOLD && used + 1 <= capacity) {
+  const cells: { key: string; worktree: Worktree | null; panes: Pane[] }[] = worktrees.map(
+    (worktree) => ({ key: worktree.id, worktree, panes: panesOf(worktree) }),
+  )
+  if (addTo !== null) {
     cells.push({ key: ADD_KEY, worktree: null, panes: [{ kind: 'add', key: ADD_KEY }] })
   }
 
   /*
-   * Geometry, in px, because the tiles are positioned rather than flowed: an
-   * entry from off the left and an exit past the right edge are not things a
-   * flex row can express.
+   * One width for every pane in the row, and one rule to pick it.
    *
-   * Every pane in the grid is the same width whatever tile it belongs to, which
-   * is what keeps two worktrees side by side comparable.
+   * Panes share the window evenly while they all fit, which is what keeps two
+   * worktrees looking exactly as they always have. Past that they stop
+   * shrinking and take the 80-column floor instead, and the row overflows --
+   * a narrow pane is worse than a pane you have to scroll to.
+   *
+   * The floor is itself capped at the scrollport, so a single pane on a phone
+   * gets the whole width and reflows to it rather than being clipped: one
+   * cramped pane beats an empty screen. The same cap is why two panes on a
+   * phone come out one screenful each.
    */
+  const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
+  const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
   const totalPanes = cells.reduce((n, cell) => n + cell.panes.length, 0)
-  const paneWidth =
-    totalPanes === 0 ? 0 : (available - GAP * Math.max(0, cells.length - 1)) / totalPanes
+  /*
+   * The even share has to pay for every tile's margin, since in that case they
+   * all have to fit at once. The floor must not: it is measured against the
+   * scrollport, because "a pane never narrower than the window" is the whole
+   * point of it and there is no reason twelve sleeping-elsewhere tiles should
+   * make the one you are reading narrower.
+   */
+  const even = totalPanes === 0 ? 0 : Math.max(0, width - GAP - GAP * cells.length) / totalPanes
+  const floor = Math.min(Math.max(0, width - GAP * 2), minPaneWidth)
+  const paneWidth = totalPanes === 0 ? 0 : Math.max(floor, even)
+
   type Cell = (typeof cells)[number]
-  const slots: Slot<Cell>[] = []
-  let x = GAP
-  for (const cell of cells) {
-    const tileWidth = paneWidth * cell.panes.length
-    slots.push({ key: cell.key, left: x, width: tileWidth, data: cell })
-    x += tileWidth + GAP
-  }
+  const slots: Slot<Cell>[] = cells.map((cell) => ({
+    key: cell.key,
+    width: paneWidth * cell.panes.length,
+    data: cell,
+  }))
   const moving = useTileMotion(width > 0 ? slots : [])
 
   /*
-   * Tell the app what the grid settled on.
+   * Bring what was just asked for into view.
    *
-   * Falling off the right is a change of state, not a trick of the width, so it
-   * is written down: the worktree goes to the top bar and stays there until it
-   * is asked for again. This is also what seeds the order on a first run.
+   * This is what replaces displacing things to make the new thing visible. On a
+   * phone, where a pane is a screenful, opening a panel scrolls to it -- the
+   * same outcome as the old rule that pushed Claude out, without discarding any
+   * state to get there.
    */
-  const settled = fitting.map((tile) => tile.worktree.id).join(',')
-  const anything = worktrees.length > 0
   useEffect(() => {
+    if (scrollTo === null || width === 0) return
+    const grid = gridRef.current
+    const pane = grid?.querySelector(`[data-pane="${CSS.escape(scrollTo)}"]`)
+    if (!grid || !pane) return
     /*
-     * Nothing is written before there is anything to say.
-     *
-     * The first render happens before the snapshot arrives, when there are no
-     * worktrees at all -- and reporting "none of them fit" then wrote an empty
-     * order, which is indistinguishable from "you put them all away". The grid
-     * stayed empty for good, however many worktrees turned up a moment later.
+     * Aligned to the left inset rather than left to `scrollIntoView`, which
+     * takes the least action that makes an element visible -- and so does
+     * nothing at all for a pane already showing by a sliver, which is exactly
+     * the case here when a tile is wider than the window.
      */
-    if (width > 0 && anything) onShownOrder(settled === '' ? [] : settled.split(','))
-  }, [settled, width, anything, onShownOrder])
-
-  /*
-   * Panels with no room are closed, not remembered as open-behind-the-scenes.
-   *
-   * A panel that is open but has no pane is a state with nothing to show for
-   * itself: the tile looks exactly as it would with the panel closed, so the
-   * only honest thing its toggle can say is "closed".
-   */
-  const collapsedKey = fitting
-    .flatMap((tile) =>
-      (panels[tile.worktree.id] ?? [])
-        .filter((panel) => !tile.panes.some((pane) => pane.kind === panel))
-        .map((panel) => paneKey(tile.worktree.id, panel)),
-    )
-    .join(',')
-  useEffect(() => {
-    if (width === 0 || collapsedKey === '') return
-    onCollapsePanels(
-      collapsedKey.split(',').map((key) => {
-        const cut = key.lastIndexOf(':')
-        return { worktreeId: key.slice(0, cut), panel: key.slice(cut + 1) as PanelName }
-      }),
-    )
-  }, [collapsedKey, width, onCollapsePanels])
+    const delta = pane.getBoundingClientRect().left - grid.getBoundingClientRect().left - GAP
+    if (Math.abs(delta) > 1) grid.scrollTo({ left: grid.scrollLeft + delta, behavior: 'smooth' })
+  }, [scrollTo, width])
 
   return (
     <section className="view overview">
       <div className="grid" ref={gridRef}>
-        {/* Nothing renders until the grid is measured, so a terminal is never
+        {/* Nothing renders until the row is measured, so a terminal is never
             built at a width that is about to change. */}
         {width > 0 &&
           moving.map((slot) => {
@@ -633,17 +563,11 @@ export const Overview = ({
             return (
               <div
                 key={slot.key}
-                className={[
-                  'slot',
-                  // Not a worktree, so it does not arrive like one; see the
-                  // note on .slot--from-right.
-                  slot.data.worktree === null ? 'slot--from-right' : '',
-                  slot.leaving ? 'slot--leaving' : '',
-                  slot.leaving && slot.exit === 'left' ? 'slot--leaving-left' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                style={{ left: slot.left, width: slot.width }}
+                className={slot.leaving ? 'slot slot--leaving' : 'slot'}
+                // Its own width either way; a closing tile is taken to nothing
+                // by the keyframe, which is the only thing that can animate a
+                // node that was just re-created. See .slot--leaving.
+                style={{ width: slot.width, marginRight: GAP }}
               >
                 {/*
                  * Held at the width the tile will end at, so the terminal
@@ -661,8 +585,9 @@ export const Overview = ({
                       session={claudeSession(sessions, worktree.id)}
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
+                      scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
-                      onMinimize={() => onMinimize(worktree.id)}
+                      onSleep={(keep) => onSleep(worktree.id, keep)}
                       onRemove={() => onRemoveWorktree(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}

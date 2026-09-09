@@ -189,6 +189,9 @@ export class Workspace {
     const project: Project = {
       id: projectIdFor(root),
       name: basename(root),
+      // Only local projects can be opened by path. A remote one will arrive
+      // with a base URL instead, and its ids will be namespaced by it.
+      host: { kind: 'local' },
       root,
       worktreeRoot: defaultWorktreeRoot(root),
       addedAt: Date.now(),
