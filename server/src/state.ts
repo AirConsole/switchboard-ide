@@ -59,7 +59,6 @@ const reviveTodo = (value: unknown): WorktreeTodo | null => {
     worktreeId,
     prompt,
     createdAt: num('createdAt') ?? Date.now(),
-    ...(str('title') === undefined ? {} : { title: row.title as string }),
     ...(num('queuedAt') === undefined ? {} : { queuedAt: num('queuedAt') }),
     ...(num('dispatchingAt') === undefined ? {} : { dispatchingAt: num('dispatchingAt') }),
     ...(str('lastError') === undefined ? {} : { lastError: str('lastError') }),

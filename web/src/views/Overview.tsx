@@ -310,6 +310,8 @@ interface WorktreeTileProps {
   onReveal: () => void
   onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
+  /** This worktree's queue ran itself out; the pane has nothing left to do. */
+  onQueueDrained: () => void
   onSelectTerminal: (sessionId: string) => void
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
@@ -346,6 +348,7 @@ const WorktreeTile = ({
   onReveal,
   onRemove,
   onTogglePanel,
+  onQueueDrained,
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
@@ -630,7 +633,18 @@ const WorktreeTile = ({
               />
             )}
             {pane.kind === 'todo' && (
-              <TodoPane worktreeId={worktree.id} todos={todos} claudeRunning={running} />
+              <TodoPane
+                worktreeId={worktree.id}
+                todos={todos}
+                claudeRunning={running}
+                /*
+                 * Closed the way the layout closes a panel it could not keep,
+                 * rather than through the toggle: the toggle also scrolls to
+                 * the worktree, and a queue draining in a window you are not
+                 * looking at must not drag the row over to it.
+                 */
+                onQueueDrained={onQueueDrained}
+              />
             )}
             {pane.kind === 'files' && (
               <FilesPane
@@ -748,6 +762,8 @@ export interface OverviewProps {
   onReveal: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
+  /** A worktree's queue emptied itself into Claude; close its todo panel. */
+  onQueueDrained: (worktreeId: string) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
@@ -789,6 +805,7 @@ export const Overview = ({
   onReveal,
   onRemoveWorktree,
   onTogglePanel,
+  onQueueDrained,
   onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
@@ -967,23 +984,19 @@ export const Overview = ({
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       /*
-       * Not while typing. Cmd+Left is "start of line" in a text field, and the
-       * dialogs have real ones -- but xterm's own hidden textarea is not a text
-       * field in that sense, and skipping it would mean the shortcut died
-       * whenever a terminal had focus, which is most of the time.
+       * A dialog is the only thing that keeps this key.
+       *
+       * It is modal -- the row is behind a scrim and you are answering a
+       * question -- so stepping the windows underneath would be acting on
+       * something nobody asked about. Everywhere else the shortcut belongs to
+       * the row: a todo's prompt, the editor in the files panel and the
+       * terminals are all places you sit for minutes at a time, and a
+       * navigation key that dies wherever the caret happens to be is a
+       * navigation key you cannot rely on. Cmd+Left as "start of line" is the
+       * price, and Home still does it.
        */
       const target = event.target as HTMLElement | null
-      const typing =
-        target instanceof HTMLInputElement ||
-        (target instanceof HTMLTextAreaElement &&
-          !target.classList.contains('xterm-helper-textarea')) ||
-        /*
-         * The editor's writing surface is a contentEditable div rather than a
-         * textarea, so the two tests above sail straight past it -- and Cmd+Left
-         * means "start of line" inside it, not "previous worktree".
-         */
-        target?.isContentEditable === true
-      if (typing) return
+      if (target?.closest('.dialog')) return
 
       const grid = gridRef.current
       if (!grid || stops.length === 0 || pitch <= 0) return
@@ -1009,14 +1022,21 @@ export const Overview = ({
         }
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
+      /*
+       * Taken outright, and this handler listens in the capture phase so that
+       * it can be. A text field's own handling runs at the target, before a
+       * listener on the document would ever see the key: without capturing,
+       * the caret would jump to the start of the line *and* the row would step.
+       */
       event.preventDefault()
+      event.stopPropagation()
       // Through the same request the top bar makes, rather than scrolling from
       // here: arriving somewhere is one thing, and it also hands over the
       // keyboard.
       if (to?.worktree) onReveal(to.worktree.id)
     }
-    document.addEventListener('keydown', step)
-    return () => document.removeEventListener('keydown', step)
+    document.addEventListener('keydown', step, true)
+    return () => document.removeEventListener('keydown', step, true)
   }, [stops, activeId, pitch, width, onReveal])
 
   /*
@@ -1174,6 +1194,7 @@ export const Overview = ({
                       onReveal={() => onReveal(worktree.id)}
                       onRemove={() => onRemoveWorktree(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
+                      onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}

@@ -77,8 +77,6 @@ export interface Worktree {
 export interface WorktreeTodo {
   id: string
   worktreeId: string
-  /** Optional label. The prompt is what actually gets sent. */
-  title?: string
   /** Free text, possibly several lines. Typed into Claude verbatim. */
   prompt: string
   createdAt: number

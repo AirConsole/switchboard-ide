@@ -238,6 +238,28 @@ export const App = (): React.ReactElement => {
   }
 
   /**
+   * A worktree's todo queue has emptied itself into Claude.
+   *
+   * The panel was open to line work up; with the queue drained it is a list
+   * nobody asked to see, holding a spot in the row. Closed the way closing the
+   * last terminal closes its panel -- but without `reveal`, because that click
+   * is one you just made and this is a server typing a prompt into a window you
+   * may not even be looking at. Dragging the row over to it would be the row
+   * moving for something you did not do.
+   */
+  const queueDrained = useCallback(
+    (worktreeId: string): void => {
+      setUi({
+        panels: {
+          ...ui.panels,
+          [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'todo'),
+        },
+      })
+    },
+    [ui.panels, setUi],
+  )
+
+  /**
    * Open a file in a worktree's files panel.
    *
    * Opening also expands the directories above it, which is what makes a
@@ -437,6 +459,7 @@ export const App = (): React.ReactElement => {
         onReveal={reveal}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
+        onQueueDrained={queueDrained}
         onNewWorktree={() => setAddingTo(projects[0] ?? null)}
         onSelectTerminal={(worktreeId, sessionId) =>
           setUi({
