@@ -51,10 +51,10 @@ const wholeOnScreen = (
  * A tile of s spots at `spot` is whole on screen for every offset from
  * `spot + s - capacity` -- its right edge against the right edge of the window
  * -- to `spot`, its left edge against the left. The nearest of those to where
- * the row already sits is the answer: stepping onto the one-spot worktree just
- * off the right edge scrolls by one spot and keeps the one you were on beside
- * it, rather than pulling the new one to the front and taking everything else
- * off the screen with it.
+ * the row already sits is the answer: going to the one-spot worktree just off
+ * the right edge scrolls by one spot and keeps the one you were on beside it,
+ * rather than pulling the new one to the front and taking everything else off
+ * the screen with it.
  *
  * The range is never empty, because a tile is never wider than the window --
  * see `panesOf` -- so it always holds `spot` itself. Offsets are spot indices,
@@ -198,7 +198,7 @@ interface WorktreeTileProps {
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
   onSleep: () => void
-  /** Scroll this worktree to the leftmost spot. */
+  /** Bring this worktree wholly into view. */
   onReveal: () => void
   onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
@@ -506,16 +506,13 @@ export interface OverviewProps {
   /**
    * A request to bring a worktree's tile into view: its id, plus a counter so
    * that asking twice for the same one is two requests. Set when you click a
-   * worktree in the top bar, wake one, or open one of its panels.
-   *
-   * With `ifNeeded`, a tile already wholly on screen is left where it is and
-   * only the keyboard moves; see the step handler.
+   * worktree in the top bar, step to one, wake one, or open one of its panels.
    */
-  scrollTo: { id: string; nonce: number; ifNeeded: boolean } | null
+  scrollTo: { id: string; nonce: number } | null
   onStart: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
-  /** `ifNeeded`: scroll only if that worktree is not wholly on screen. */
-  onReveal: (worktreeId: string, ifNeeded?: boolean) => void
+  /** Bring that worktree wholly into view, and hand its Claude the keyboard. */
+  onReveal: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** Close panels a screenful could not hold. */
@@ -646,16 +643,16 @@ export const Overview = ({
    * state to get there.
    */
   /*
-   * Navigation is by the spot.
+   * Navigation is by the spot, and it moves as little as it can.
    *
-   * Every tile begins on a spot boundary, so scrolling to `spot * pitch` puts
-   * that tile hard against the left edge -- which is what clicking a worktree,
-   * anywhere it can be clicked, does. Whatever follows it fills the rest of the
-   * window, and the front of the tile after that shows if there is room for
-   * part of it, which is how you know the row continues.
+   * Every tile begins on a spot boundary, so every offset the row can rest at
+   * is `spot * pitch` for some spot, and a tile is never shown half-cut. Which
+   * of those offsets a request lands on is the least movement that brings the
+   * whole of the named worktree on screen -- see `nearestOffset`. Asking for a
+   * worktree says which one you want to see, not where on the screen to put
+   * it, so whatever was already in front of you stays there if it can.
    */
   const target = scrollTo === null ? undefined : cells.find((cell) => cell.key === scrollTo.id)
-  const ifNeeded = scrollTo?.ifNeeded === true
   /*
    * The request this has already answered.
    *
@@ -681,24 +678,18 @@ export const Overview = ({
     // later against a row that has since been scrolled by hand.
     answered.current = scrollTo.nonce
     /*
-     * A conditional request leaves a tile you can already see whole alone.
-     * There is nothing more of it to show, and pulling it to the left edge
-     * would slide every other window sideways for no gain -- the terminal you
-     * were reading beside it included. When it does have to scroll, it scrolls
-     * by as little as brings the tile fully on screen, which for a one-spot
-     * worktree just off the edge is one spot.
-     *
-     * A click still says where it wants the tile: at the leftmost spot.
+     * A tile you can already see the whole of is left exactly where it is:
+     * there is nothing more of it to show, and moving the row would slide
+     * every other window sideways for no gain -- the terminal you were reading
+     * beside it included.
      */
     const tile = { spot: target.spot, spots: target.panes.length }
-    if (ifNeeded && wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    const offset = ifNeeded
-      ? nearestOffset(tile, Math.round(grid.scrollLeft / pitch), spots)
-      : target.spot
+    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
+    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), spots)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
-  }, [scrollTo, target, ifNeeded, pitch, width, spots])
+  }, [scrollTo, target, pitch, width, spots])
 
   /*
    * Cmd+Left and Cmd+Right step through the worktrees.
@@ -715,10 +706,11 @@ export const Overview = ({
    * "Where you are" is the worktree that has the keyboard, so this is the
    * keyboard version of clicking the tab beside the one you are on.
    *
-   * A step scrolls only as far as it has to: a neighbour already wholly on
-   * screen just takes the keyboard. So the row stays put while you walk along
-   * the windows in front of you, and moves when you reach one you cannot see
-   * the whole of -- which, with panels open, is what "the next worktree" is.
+   * A step asks for its neighbour the way a tab click does, so it scrolls only
+   * as far as it has to: a neighbour already wholly on screen just takes the
+   * keyboard. The row stays put while you walk along the windows in front of
+   * you, and moves when you reach one you cannot see the whole of -- which,
+   * with panels open, is what "the next worktree" often is.
    */
   const stops = cells.filter((cell) => cell.worktree !== null)
   const activeId = scrollTo?.id ?? null
@@ -766,9 +758,8 @@ export const Overview = ({
       event.preventDefault()
       // Through the same request the top bar makes, rather than scrolling from
       // here: arriving somewhere is one thing, and it also hands over the
-      // keyboard. Conditionally, though -- a step means which worktree, not
-      // where to put it.
-      if (to?.worktree) onReveal(to.worktree.id, true)
+      // keyboard.
+      if (to?.worktree) onReveal(to.worktree.id)
     }
     document.addEventListener('keydown', step)
     return () => document.removeEventListener('keydown', step)

@@ -35,18 +35,14 @@ export const App = (): React.ReactElement => {
    * made, not a fact about the layout. Restoring one on load would scroll you
    * somewhere for a reason that no longer exists.
    *
-   * `ifNeeded` asks for the weaker thing: hand over the keyboard, and scroll
-   * only if the worktree is not already wholly on screen. Clicking a worktree
-   * says where you want it -- at the left edge -- but stepping along the row
-   * with the keyboard only says which one you mean.
+   * It names a worktree and nothing about where to put it: the row moves as
+   * far as it takes to show the whole of that one, and no further. Every way
+   * of asking -- a tab, a step, waking, opening a panel -- means the same
+   * thing by it.
    */
-  const [scrollTo, setScrollTo] = useState<{
-    id: string
-    nonce: number
-    ifNeeded: boolean
-  } | null>(null)
-  const reveal = (id: string, ifNeeded = false): void =>
-    setScrollTo((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1, ifNeeded }))
+  const [scrollTo, setScrollTo] = useState<{ id: string; nonce: number } | null>(null)
+  const reveal = (id: string): void =>
+    setScrollTo((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
 
   useEffect(() => {
     bindSocketToStore()

@@ -37,6 +37,12 @@ newest `capacity` panels — which is why `ui.panels` is stored in opening order
 A panel the layout could not keep is *closed* (`onCollapsePanels`), not left
 open with nothing behind it, so a toggle never lies about what is on screen.
 
+`scrollTo` names a worktree and says nothing about where to put it: the row
+moves by the fewest spots that bring the whole of that tile on screen, and not
+at all if it is already there (`nearestOffset`, `wholeOnScreen`). A tab click, a
+Cmd+arrow step, waking, and opening a panel all mean that same thing, so
+whatever you were already looking at stays in front of you when it can.
+
 `measureMonoCharWidth` is **floored** on purpose. xterm rasterises glyphs into
 an atlas and blits per cell, so a cell is a whole number of pixels: canvas says
 8.429px where xterm lays out 8. This value now decides how many tiles the window
