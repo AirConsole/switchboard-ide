@@ -6,12 +6,48 @@ import type {
   SessionLiveness,
   UiState,
   Worktree,
+  PanelName,
 } from '@ide-n-dream/shared'
 import { defaultUiState } from '@ide-n-dream/shared'
 import { api } from './api.js'
 import { terminalSocket } from './socket.js'
 
 const UI_CACHE_KEY = 'idn.ui'
+
+/**
+ * Bring a stored UiState up to the shape this build reads.
+ *
+ * The git panel became the files panel's Changes mode. A stored `panels` list
+ * still naming `git` is dropped by the row's own PANELS filter, so a worktree
+ * that had only that panel open would come back with no panel at all -- the
+ * Changes panel would simply cease to exist. It becomes `files`, which opens on
+ * Changes by default, so there is nothing else to write.
+ *
+ * The dedupe keeps the *last* occurrence, because `panesOf` keeps the newest
+ * panels when a window is too narrow for all of them: a worktree that had both
+ * open should keep the position of whichever was opened later.
+ *
+ * Reads an untrusted shape on purpose. Once `PanelName` lost `'git'`, comparing
+ * against it is a type error, and this is exactly the boundary where a value
+ * from disk has not been checked yet.
+ *
+ * Idempotent, and writes nothing: it runs again on every first load until the
+ * user next changes that worktree's panels. Delete it once no stored state
+ * names `git`.
+ */
+const migrateUi = (ui: UiState): UiState => {
+  const panels = ui.panels as unknown as Record<string, string[]>
+  const migrated: Record<string, PanelName[]> = {}
+  let moved = false
+  for (const [worktreeId, list] of Object.entries(panels)) {
+    const renamed = list.map((panel) => (panel === 'git' ? 'files' : panel))
+    if (renamed.some((panel, index) => panel !== list[index])) moved = true
+    // Last occurrence wins, so the survivor inherits the newer position.
+    const seen = renamed.filter((panel, index) => renamed.lastIndexOf(panel) === index)
+    migrated[worktreeId] = seen as PanelName[]
+  }
+  return moved ? { ...ui, panels: migrated } : ui
+}
 
 /**
  * UI state is owned by the server so the view is restored on any device, but a
@@ -22,7 +58,7 @@ const cachedUi = (): UiState => {
   try {
     const raw = localStorage.getItem(UI_CACHE_KEY)
     if (!raw) return defaultUiState()
-    return { ...defaultUiState(), ...(JSON.parse(raw) as Partial<UiState>) }
+    return migrateUi({ ...defaultUiState(), ...(JSON.parse(raw) as Partial<UiState>) })
   } catch {
     return defaultUiState()
   }
@@ -85,7 +121,7 @@ export const useStore = create<AppState>((set, get) => ({
        * and a missing one would arrive as undefined where the code expects a
        * record it can index.
        */
-      const adopted = { ...defaultUiState(), ...storedUi }
+      const adopted = migrateUi({ ...defaultUiState(), ...storedUi })
       set({
         ...rest,
         ui: firstLoad ? adopted : get().ui,

@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import type { PanelName, Project, Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type {
+  FilesMode,
+  PanelName,
+  Project,
+  Session,
+  Worktree,
+  WorktreeTodo,
+} from '@ide-n-dream/shared'
 import {
   TerminalView,
   TERMINAL_FONT_FAMILY,
@@ -16,7 +23,7 @@ import {
 } from '../selectors.js'
 import { TodoBar, TodoPane } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
-import { GitBar, GitPane, useGitState } from './GitPane.js'
+import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
@@ -94,14 +101,13 @@ const nearestOffset = (
  * thing it changed is the pane immediately beside it; the terminals and the
  * review of what was committed belong further out, at the tile's edge.
  */
-export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals', 'git']
+export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals']
 
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
-  files: 'files',
+  files: 'files and changes',
   terminals: 'terminals',
-  git: 'changes',
 }
 
 /** The counts a panel's label can be built from. */
@@ -138,20 +144,14 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
     case 'terminals':
       if (counts.terminals === 0) return 'Add Terminal'
       return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
-    case 'git':
-      // The count is uncommitted files, the same number the bar already shows
-      // beside the branch. Committed work has no number here because one figure
-      // cannot stand for both, and the panel itself says how many commits.
-      if (counts.changes === 0) return 'Changes'
-      return counts.changes === 1 ? '1 Change' : `${counts.changes} Changes`
     case 'files':
       /*
-       * Deliberately no count. The only number this panel could carry is how
-       * many files changed -- which is the number the Changes toggle two
-       * buttons along already carries, and two controls showing one figure
-       * would read as two facts.
+       * The count is uncommitted files, and it belongs on this toggle now that
+       * the panel opens on them: a number on a control promises that clicking
+       * shows you those N things, which is exactly what Changes mode does.
        */
-      return 'Files'
+      if (counts.changes === 0) return 'Files'
+      return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
   }
 }
 
@@ -286,6 +286,8 @@ interface WorktreeTileProps {
   /** The file this worktree has open, and the directories it has expanded. */
   openPath: string
   expandedDirs: string[]
+  /** Which face its files panel is showing. */
+  filesMode: FilesMode
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
@@ -299,6 +301,7 @@ interface WorktreeTileProps {
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (path: string) => void
   onToggleDir: (dir: string) => void
+  onFilesMode: (mode: FilesMode) => void
 }
 
 /**
@@ -322,6 +325,7 @@ const WorktreeTile = ({
   activeTerminalId,
   openPath,
   expandedDirs,
+  filesMode,
   scroller,
   onStart,
   onSleep,
@@ -333,6 +337,7 @@ const WorktreeTile = ({
   onCloseTerminal,
   onOpenPath,
   onToggleDir,
+  onFilesMode,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
   // frozen terminal -- but with what it printed on its way out, which is often
@@ -384,13 +389,26 @@ const WorktreeTile = ({
    * count, and a commit from a clean tree moves only HEAD.
    */
   const revision = `${worktree.dirty ?? 0}:${worktree.head ?? ''}`
-  // Only reads git while its panel is on screen; see the note on useGitState.
-  const git = useGitState(worktree.id, revision, shownPanes.has('git'))
-  // Likewise: inert until its own panel is open.
+  /*
+   * Both hooks are called for every tile, and at most one of them works.
+   *
+   * The panel shows one face at a time and the other two need nothing: Changes
+   * builds its rows from git's own list and never reads a directory, while
+   * Files never asks what changed. So an open panel polls for what you are
+   * looking at rather than for everything it could show.
+   */
+  const filesOpen = shownPanes.has('files')
+  const changes = useChangesState({
+    worktreeId: worktree.id,
+    revision,
+    enabled: filesOpen && filesMode !== 'files',
+    path: openPath,
+    mode: filesMode,
+  })
   const files = useFilesState({
     worktreeId: worktree.id,
     revision,
-    enabled: shownPanes.has('files'),
+    enabled: filesOpen && filesMode === 'files',
     path: openPath,
     expanded: expandedDirs,
     onOpen: onOpenPath,
@@ -514,7 +532,7 @@ const WorktreeTile = ({
            */
           if (
             (event.target as HTMLElement).closest(
-              'button, .termtabs, .git__bar, .todo__bar, .files__bar',
+              'button, .termtabs, .todo__bar, .files__bar',
             )
           ) {
             return
@@ -536,8 +554,9 @@ const WorktreeTile = ({
               />
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
-            {pane.kind === 'git' && <GitBar state={git} />}
-            {pane.kind === 'files' && <FilesBar state={files} />}
+            {pane.kind === 'files' && (
+              <FilesBar mode={filesMode} files={files} changes={changes} />
+            )}
             {index === controlsIndex && controls}
           </div>
         ))}
@@ -599,8 +618,16 @@ const WorktreeTile = ({
             {pane.kind === 'todo' && (
               <TodoPane worktreeId={worktree.id} todos={todos} claudeRunning={running} />
             )}
-            {pane.kind === 'git' && <GitPane state={git} branch={worktree.branch} />}
-            {pane.kind === 'files' && <FilesPane state={files} near={near} />}
+            {pane.kind === 'files' && (
+              <FilesPane
+                mode={filesMode}
+                onMode={onFilesMode}
+                files={files}
+                changes={changes}
+                branch={worktree.branch}
+                near={near}
+              />
+            )}
           </div>
         ))}
       </div>
@@ -641,13 +668,21 @@ const inner = (from: EventTarget | null, stop: Element, delta: number): boolean 
 }
 
 /**
- * How much wheel makes one spot.
+ * How much wheel makes one spot: a notch, and nothing smaller.
  *
- * A mouse notch is exactly 100px in Chrome, so one notch is one spot. A
- * trackpad arrives as a stream of small deltas instead and accumulates, which
- * makes a flick travel further than a nudge -- the thing a strip you scroll
- * along should do. Firefox reports lines rather than pixels; 40 is the usual
- * line for a wheel, so its three-line notch clears the same bar.
+ * A mouse notch is exactly 100px in Chrome, so one notch is one spot. It has
+ * to be a whole notch in one event, though, rather than a total accumulated
+ * over a gesture. A trackpad -- and a Magic Mouse -- reports a scroll as a
+ * stream of small deltas with momentum after it, so accumulating meant an
+ * incidental graze while reading moved the row a spot and a flick walked it
+ * several: measured over a tile's bar, ten trackpad-sized deltas of 12px took
+ * the row 0 -> 794, and a forty-event flick 0 -> 1588. Nobody asked for that,
+ * and it read as the row moving on its own.
+ *
+ * Sideways gestures still scroll the row, natively and by the pixel, which is
+ * the axis a trackpad has for a strip like this anyway. Firefox reports lines
+ * rather than pixels; 40 is the usual line for a wheel, so its three-line
+ * notch clears the same bar.
  */
 const WHEEL_STEP = 100
 const WHEEL_LINE = 40
@@ -669,6 +704,8 @@ export interface OverviewProps {
   openPathByWorktree: Record<string, string>
   /** Directories each worktree has expanded in its file tree. */
   expandedByWorktree: Record<string, string[]>
+  /** Which face each worktree's files panel is showing. */
+  filesModeByWorktree: Record<string, FilesMode>
   /**
    * The project a new worktree would go to, when there is only one open.
    *
@@ -683,6 +720,14 @@ export interface OverviewProps {
    * worktree in the top bar, step to one, wake one, or open one of its panels.
    */
   scrollTo: { id: string; nonce: number } | null
+  /**
+   * The worktree you are in, which is where a Cmd+arrow step counts from. It
+   * follows focus, not only navigation, so clicking into a window makes the
+   * next step continue from there.
+   */
+  activeId: string | null
+  /** Anything in this worktree took focus, so this is where you are now. */
+  onActivate: (worktreeId: string) => void
   onStart: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand its Claude the keyboard. */
@@ -697,6 +742,7 @@ export interface OverviewProps {
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
   onToggleDir: (worktreeId: string, dir: string) => void
+  onFilesMode: (worktreeId: string, mode: FilesMode) => void
 }
 
 /**
@@ -720,8 +766,11 @@ export const Overview = ({
   activeTerminalByWorktree,
   openPathByWorktree,
   expandedByWorktree,
+  filesModeByWorktree,
   addTo,
   scrollTo,
+  activeId,
+  onActivate,
   onStart,
   onSleep,
   onReveal,
@@ -734,6 +783,7 @@ export const Overview = ({
   onCloseTerminal,
   onOpenPath,
   onToggleDir,
+  onFilesMode,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -894,7 +944,6 @@ export const Overview = ({
    * with panels open, is what "the next worktree" often is.
    */
   const stops = cells.filter((cell) => cell.worktree !== null)
-  const activeId = scrollTo?.id ?? null
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
@@ -979,13 +1028,12 @@ export const Overview = ({
    * shorter straight back: a wheel notch is ~100px against a spot of ~780, so
    * adding pixels to `scrollLeft` would snap to where it started and read as
    * dead. Panels keep first claim through `inner`, and a gesture carries its
-   * own target so a fast flick steps on from where it is already going rather
-   * than from the tile it has not left yet.
+   * own target so a second notch steps on from where the row is already going
+   * rather than from the tile it has not left yet.
    */
   useEffect(() => {
     const grid = gridRef.current
     if (!grid || pitch <= 0) return
-    let carried = 0
     let aim: number | null = null
     let idle: ReturnType<typeof setTimeout> | undefined
     const onWheel = (event: WheelEvent): void => {
@@ -995,7 +1043,6 @@ export const Overview = ({
       // Sideways is the scroller's own axis, and it can have it.
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
       if (inner(event.target, grid, event.deltaY)) return
-      event.preventDefault()
 
       const pixels =
         event.deltaMode === 1
@@ -1003,17 +1050,13 @@ export const Overview = ({
           : event.deltaMode === 2
             ? event.deltaY * grid.clientWidth
             : event.deltaY
-      // Turning round abandons what was carried, so a reversal answers at once
-      // rather than paying off the distance it had already built up.
-      if (carried !== 0 && carried > 0 !== pixels > 0) carried = 0
-      carried += pixels
+      // One event, one notch, or the row stays where it is. See WHEEL_STEP.
+      if (Math.abs(pixels) < WHEEL_STEP) return
+      event.preventDefault()
       clearTimeout(idle)
       idle = setTimeout(() => {
-        carried = 0
         aim = null
       }, WHEEL_IDLE_MS)
-      if (Math.abs(carried) < WHEEL_STEP) return
-      carried = 0
 
       const from = aim ?? Math.round(grid.scrollLeft / pitch)
       const to = Math.min(Math.max(from + (pixels > 0 ? 1 : -1), 0), Math.max(0, totalSpots - 1))
@@ -1090,6 +1133,14 @@ export const Overview = ({
               <div
                 key={slot.key}
                 data-tile={slot.key}
+                /*
+                 * Focus anywhere inside a window says you are in that worktree
+                 * -- its Claude, a terminal, a tab strip, a panel's button --
+                 * and the top bar marks it. React's onFocus is focusin, which
+                 * bubbles, so this one listener covers everything the tile
+                 * will ever hold rather than each pane reporting for itself.
+                 */
+                onFocus={worktree === null ? undefined : () => onActivate(worktree.id)}
                 className={slot.leaving ? 'slot slot--leaving' : 'slot'}
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a
@@ -1122,6 +1173,7 @@ export const Overview = ({
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                       openPath={openPathByWorktree[worktree.id] ?? ''}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
+                      filesMode={filesModeByWorktree[worktree.id] ?? 'changes'}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
                       onSleep={() => onSleep(worktree.id)}
@@ -1133,6 +1185,7 @@ export const Overview = ({
                       onCloseTerminal={onCloseTerminal}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
+                      onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
                     />
                   )}
                 </div>

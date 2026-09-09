@@ -12,8 +12,8 @@ components/TopBar    project groups, awake tabs, the zZ dropdown
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip
-views/GitPane        changes, commits, diffs
-views/FilesPane      the file tree, and the file beside it
+views/ChangesPane    what changed and what was committed; the patch renderer
+views/FilesPane      the panel: its three modes, the sidebar, and the editor
 editor/CodeEditor    one CodeMirror view over one file
 editor/theme         the syntax palette and the editor's chrome
 editor/language      filename -> grammar, fetched on demand
@@ -69,10 +69,35 @@ attached the pty's geometry is left alone.
 
 ## The files pane
 
-An indented tree down the side, and the open file beside it. It was Finder's
-Miller columns first, on the argument that a pane eighty characters wide cannot
-afford to spend width on indentation -- and that turned out to be the wrong
-trade in use, so it is a tree. Four things in it are load-bearing:
+One panel with three faces -- **Changes**, **Commits**, **Files** -- switched
+from the top of its own sidebar. It was two panels, files and a git panel beside
+it; they answered questions about the same objects, kept two selections that
+drifted apart, and together cost a fifth column of the tile. The sidebar list was
+Finder's Miller columns first, on the argument that a pane eighty characters wide
+cannot afford to spend width on indentation -- that turned out to be the wrong
+trade in use, so it is a tree.
+
+Six things in it are load-bearing:
+
+- **One selection, `ui.openPathByWorktree`, serves all three modes.** Pick a
+  changed file and its diff opens; switch to Files and the editor opens that same
+  file, ancestors already expanded. That is most of the reason the two panels
+  became one. `untracked` and `from` are looked up from `changes.uncommitted` by
+  path when the diff is asked for, never stored, so there is no second copy to go
+  stale.
+- **At most one hook polls.** `useChangesState` is enabled outside Files mode and
+  `useFilesState` inside it, so an open panel reads what you are looking at
+  rather than everything it could show. **`enabled` is in the dependency array of
+  every fetch effect and must stay there**: that is what makes switching back
+  re-read within a render instead of showing the last poll's answer for three
+  more seconds.
+- **Save is in the bar in every mode, whenever there are unsaved edits.** The
+  buffer lives in the hook, which stays mounted across a switch, so scoping Save
+  to Files mode would keep an edit while removing every way to save it.
+- **The changed list folds single-child directory chains** (`web/src` as one
+  row). Its directory rows are inert labels, not buttons: everything there is
+  expanded already and the server has no diff of a directory. Only files are
+  selectable.
 
 - **`.files__file` is a flex column, and that is not cosmetic.** CodeMirror's
   host is sized by `flex: 1; min-height: 0` from it. A block container instead
@@ -110,23 +135,44 @@ from each row and from the editor's gutter instead. `PANE_CHROME_WIDTH` still
 describes the terminal panes, which are what set the minimum width -- the
 mismatch is not a bug to fix.
 
-## The wheel is not a keyboard
+## The mouse, and why it kept typing into agents
 
-On the alternate screen xterm.js turns a wheel notch into an Up or Down arrow
-and sends it as input — iTerm does the same, and in a terminal that owns the
-whole window it is reasonable. Here the wheel belongs to the row, and the
-pointer is over some tile whenever you scroll it, so that translation delivered
-arrow keys into whichever agent happened to be under the cursor — no click, no
-focus — and Claude reads Up as "recall the last prompt". `TerminalView`
-cancels it with a custom wheel handler, and only it: an app that has actually
-turned mouse reporting on still gets its wheel events. Measured with a stand-in
-agent that logs its stdin.
+Three rules, each of which was a bug first.
+
+**The encoding travels with the snapshot.** Claude asks for mouse tracking and
+SGR encoding together (`?1003h ?1006h`). `SerializeAddon` restores nine modes
+including the tracking mode, and cannot restore the encoding — xterm's public
+`IModes` does not expose it. So a repainting client, which calls `term.reset()`
+first, came back with tracking on and the encoding at xterm's default: the legacy
+`ESC [ M` + three bytes form, which an SGR app cannot read. `TerminalMirror`
+watches DECSET/DECRST for `1006`/`1016` and appends it to the snapshot itself.
+A repaint with no resize behind it — a socket drop, which is what a deploy is —
+is the window where this bit; a resize hid it, because the app redraws and
+re-declares its own modes.
+
+**Hovering is not input.** `buttons === 0` is stopped in the capture phase
+before xterm sees it. Nothing in an agent's interface needs the pointer's
+position, and in a row of windows the pointer crosses several agents on the way
+anywhere. Clicks and drags still report — `pointerdown` claims the keyboard
+before `mousedown`, so the pane is yours by the time the press is reported.
+
+**The wheel never becomes keystrokes.** On the alternate screen with no tracking
+mode, xterm.js translates a notch into an Up or Down arrow and sends it as
+input; in Claude, Up recalls the last prompt. `attachCustomWheelEventHandler`
+cancels exactly that, and nothing else: once a tracking mode is on, xterm binds
+its own wheel listener that reports to the app without consulting the hook.
+
+A legacy report is also refused on the way out, as a guard, because it cannot
+survive this transport: a byte above 127 (any column past 95) is a latin-1 code
+unit in a JSON string, node-pty re-encodes it as two UTF-8 bytes, and tmux then
+consumes the wrong three bytes and passes the rest on as text — measured as a
+bare `9999...8888` arriving in a prompt.
 
 ## The todo panel holds no state of its own
 
 `TodoPane` fetches nothing and caches nothing: todos ride `AppSnapshot`, and
 every mutation makes the server broadcast an invalidate, which refetches it.
-`useGitState` exists because git is polled, expensive and carries a selection;
+`useChangesState` exists because git is polled and expensive;
 copying that shape here would only add a second copy of the truth.
 
 The one piece of local state is the row's **draft**, and it is load-bearing: a

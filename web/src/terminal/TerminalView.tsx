@@ -213,6 +213,37 @@ export const TerminalView = ({
     })
 
     /*
+     * Hovering is not input. Nothing in a row of windows reports it.
+     *
+     * A row of windows breaks the assumption every terminal emulator makes,
+     * that the pointer is over the terminal you are typing into: here it
+     * crosses two or three agents on its way anywhere, and rests on one while
+     * you read. Claude asks for `1003` -- report any mouse event -- so xterm
+     * reported every movement, and nothing in Claude's interface needs to know
+     * where the pointer is. It was also the traffic that made this stack's
+     * mouse bugs visible: one sweep across a pane put 17 reports into the agent
+     * behind it.
+     *
+     * `buttons === 0` is the rule -- a bare move. A drag still reports, which
+     * keeps xterm's selection and an app's own drag working, and so does a
+     * click: `pointerdown` claims the keyboard before `mousedown` is
+     * dispatched, so by the time xterm reports the press the pane is already
+     * yours. Stopped in the capture phase, before xterm's listener on its own
+     * element ever sees it.
+     *
+     * Only where an app is actually reporting, though. With no tracking mode
+     * xterm's own mousemove is what underlines a link under the pointer and
+     * shapes the cursor, and a pane that reports nothing was never the problem
+     * -- a plain shell keeps both.
+     */
+    const hover = (event: MouseEvent): void => {
+      if (event.buttons === 0 && term.modes.mouseTrackingMode !== 'none') {
+        event.stopPropagation()
+      }
+    }
+    host.addEventListener('mousemove', hover, true)
+
+    /*
      * The wheel must never become keystrokes.
      *
      * On the alternate screen -- where Claude's TUI and vim live -- xterm.js
@@ -225,19 +256,40 @@ export const TerminalView = ({
      * tile's session. In Claude that recalls the previous prompt, which is
      * text appearing that nobody typed.
      *
-     * Only that translation is cancelled. An app that has actually asked for
-     * mouse reporting still gets its wheel events, since those are the app
-     * handling the mouse rather than input being invented for it. Returning
-     * false leaves the event unconsumed, so the wheel goes back to scrolling
-     * the row it was aimed at.
+     * Only that translation is cancelled, and only in that state: with a
+     * tracking mode on, xterm binds its own wheel listener that reports to the
+     * app and never consults this hook, so this is about a wheel over an app
+     * that has NOT asked for the mouse -- vim without it, or Claude before it
+     * sets its modes and after it exits. Returning false leaves the event
+     * unconsumed, so the wheel goes back to scrolling the row it was aimed at.
      */
     term.attachCustomWheelEventHandler(
-      () =>
-        !(term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode === 'none'),
+      () => !(term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode === 'none'),
     )
 
-    term.onData((data) => terminalSocket.input(session.id, data))
-    term.onBinary((data) => terminalSocket.input(session.id, data))
+    /*
+     * A legacy mouse report never goes on the wire.
+     *
+     * `ESC [ M` plus three bytes is xterm's default encoding, and in this stack
+     * it is always a mistake: every app here asks for SGR (Claude sets `?1006h`
+     * at startup; htop and vim do the same), and the mirror now carries that
+     * encoding through a repaint, so the default can only appear if some new
+     * desync has crept back in. It must not reach an agent if it does, for two
+     * reasons measured on this stack. One, a byte above 127 -- any column past
+     * 95 -- cannot survive `input`: the payload is a string of latin-1 code
+     * units, `JSON.parse(raw.toString())` on the server hands it on, and
+     * node-pty re-encodes it as two UTF-8 bytes, after which tmux consumes the
+     * wrong three bytes of the report and passes the rest on as text. The pty
+     * received a bare `9999...8888` -- the row byte of each report, printed
+     * into the prompt. Two, `looksTyped` counts those leftovers as the user
+     * typing, so a hover looked like activity.
+     */
+    const send = (data: string): void => {
+      if (data.startsWith('\x1b[M')) return
+      terminalSocket.input(session.id, data)
+    }
+    term.onData(send)
+    term.onBinary(send)
 
     const consumer: ConsumerOptions = {
       primary,
@@ -282,6 +334,10 @@ export const TerminalView = ({
 
     return () => {
       observer?.disconnect()
+      // The host outlives the terminal -- it is the persistent ref -- so a
+      // listener left on it would still be here after this term is disposed,
+      // stopping events for a terminal that no longer exists.
+      host.removeEventListener('mousemove', hover, true)
       unsubscribe()
       termRef.current = null
       term.dispose()

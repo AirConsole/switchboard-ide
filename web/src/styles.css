@@ -134,11 +134,15 @@
   --motion: 140ms;
 
   --rail: 2px;
-  --bar-h: 44px;
+  /* The top bar, and deliberately the same height as a window's own bar below:
+     two bars of one height read as the same instrument at two scales, where
+     44px read as a heading over the row. It also leaves the 13px tab and its
+     2px marks 10px of air above and 13px below, so nothing is wedged. */
+  --bar-h: 38px;
   /* A worktree tile's own bar. Its controls fill it edge to edge, so this is
      the height of every button in a tile as well -- roomy enough that the
      15px title is not wedged between two edges, and it costs a tile well
-     under half a terminal row. */
+     under half a terminal row. Kept in step with --bar-h above. */
   --tile-bar-h: 38px;
   --radius: 4px;
 
@@ -1829,7 +1833,7 @@ button {
    *
    * The tab it hangs from lives in a horizontal scroller, and a scroller clips
    * in both directions -- so an absolutely positioned menu was drawn at the
-   * right place and then cut off by the 44px bar, present in the markup and
+   * right place and then cut off by the bar itself, present in the markup and
    * invisible on screen. Fixed positioning is not clipped by an ancestor's
    * overflow, which is the whole reason for it here.
    */
@@ -1954,7 +1958,7 @@ button {
    * and narrow enough to leave the file a readable column; it grows a little on
    * a wide pane and stops, because a tree twice as wide shows nothing more.
    */
-  --files-tree-w: clamp(140px, 26%, 240px);
+  --files-tree-w: clamp(158px, 26%, 240px);
   --files-row-h: 20px;
   display: flex;
   height: 100%;
@@ -1970,9 +1974,59 @@ button {
   padding: 0;
 }
 
-.files__tree {
+.files__side {
   flex: 0 0 var(--files-tree-w);
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--rule);
+}
+
+/*
+ * Which face the panel is showing.
+ *
+ * Sentence case, and not the uppercase every other control in the interface
+ * uses, because it measured too wide to fit: at 11px with .08em tracking the
+ * three labels come to 225px against a 171px sidebar on a minimum-width pane.
+ * Sentence case at 11px is 157px, which fits with room. Shrinking the type or
+ * the words instead would have cost more than the capitals do.
+ */
+.files__modes {
+  flex: none;
+  display: flex;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.files__mode {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 6px;
+  /* Transparent until it is on, so switching does not move the label. */
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--graphite);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files__mode:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+/* The same underline as a lit panel toggle and a shown chip: one mark for
+   "this is the one you are looking at", everywhere in the interface. */
+.files__mode--on {
+  color: var(--bone);
+  border-bottom-color: var(--rule-bright);
+}
+
+.files__tree {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   /*
    * Load-bearing twice over. It is what makes the tree scroll on its own, and
@@ -1984,7 +2038,90 @@ button {
   /* A content scroller, like the git panel's list. */
   scrollbar-width: thin;
   padding: 4px 0;
-  border-right: 1px solid var(--rule);
+}
+
+/* A directory in the changed list: a label, not a control. Everything there is
+   expanded already, and the server has no diff of a directory to show. */
+.files__row--dir {
+  color: var(--graphite-dim);
+  cursor: default;
+}
+
+.files__row--dir:hover {
+  color: var(--graphite-dim);
+  background: none;
+}
+
+/* git's own two-letter code, pushed to the edge so the column of them lines up
+   however deep the names are. Monospace, or it does not line up at all. */
+.files__status {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+/* A group heading, with a rule running from the label to the edge. */
+.files__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 4px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
+}
+
+.files__heading::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule-bright);
+}
+
+/*
+ * A commit. Two lines rather than one, unlike a file row: a subject is prose
+ * and gets a whole sidebar's width here, where the same text on one line beside
+ * its hash would ellipsize away to nothing.
+ */
+.files__commit {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--graphite);
+}
+
+.files__commit:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+.files__commit--on {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+.files__hash {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+.files__commit--on .files__hash {
+  color: var(--graphite);
+}
+
+.files__subject {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .files__row {
@@ -2134,6 +2271,7 @@ button {
 }
 
 .files__path,
+.files__base,
 .files__unsaved {
   display: flex;
   align-items: center;
@@ -2156,7 +2294,8 @@ button {
   color: var(--bone);
 }
 
-.files__save {
+.files__save,
+.files__reload {
   display: flex;
   align-items: center;
   padding: 0 12px;
@@ -2168,7 +2307,8 @@ button {
   white-space: nowrap;
 }
 
-.files__save:hover:not(:disabled) {
+.files__save:hover:not(:disabled),
+.files__reload:hover {
   color: var(--bone);
   background: var(--rule-bright);
 }

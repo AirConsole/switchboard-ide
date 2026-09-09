@@ -10,7 +10,7 @@ import { Overview } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
-import type { PanelName, Project, Worktree } from '@ide-n-dream/shared'
+import type { FilesMode, PanelName, Project, Worktree } from '@ide-n-dream/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
 export interface ProjectGroup {
@@ -45,8 +45,20 @@ export const App = (): React.ReactElement => {
    * thing by it.
    */
   const [scrollTo, setScrollTo] = useState<{ id: string; nonce: number } | null>(null)
-  const reveal = (id: string): void =>
+  /**
+   * The worktree you are in.
+   *
+   * Not the same thing as the last scroll request, though navigating is one way
+   * to arrive: clicking into a terminal, a tab strip or a panel puts you in
+   * that worktree without asking the row to move, and the bar has to say so.
+   * It is also what a Cmd+arrow step counts from, so stepping continues from
+   * the window you clicked into rather than from the one you last navigated to.
+   */
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const reveal = (id: string): void => {
+    setActiveId(id)
     setScrollTo((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
+  }
 
   useEffect(() => {
     bindSocketToStore()
@@ -223,6 +235,21 @@ export const App = (): React.ReactElement => {
     [setUi],
   )
 
+  /**
+   * Which face a worktree's files panel shows.
+   *
+   * Stable between renders for the same reason `openPath` is: it is handed to
+   * every tile in the row, and a fresh identity each render would restart the
+   * panel's effects for every worktree at once.
+   */
+  const filesMode = useCallback(
+    (worktreeId: string, mode: FilesMode): void => {
+      const ui = uiRef.current
+      setUi({ filesModeByWorktree: { ...ui.filesModeByWorktree, [worktreeId]: mode } })
+    },
+    [setUi],
+  )
+
   /** Expand or collapse one directory of a worktree's file tree. */
   const toggleDir = useCallback(
     (worktreeId: string, dir: string): void => {
@@ -272,7 +299,7 @@ export const App = (): React.ReactElement => {
       onNewWorktree={setAddingTo}
       onWake={wake}
       onReveal={reveal}
-      activeId={scrollTo?.id ?? null}
+      activeId={activeId}
     />
   )
 
@@ -391,11 +418,14 @@ export const App = (): React.ReactElement => {
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
         openPathByWorktree={ui.openPathByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
+        filesModeByWorktree={ui.filesModeByWorktree}
         // With one project open there is no question which project a new
         // worktree belongs to; with several there is, and the top bar's
         // per-project + is the unambiguous way to say it.
         addTo={projects.length === 1 ? (projects[0] ?? null) : null}
         scrollTo={scrollTo}
+        activeId={activeId}
+        onActivate={setActiveId}
         onStart={startClaude}
         onSleep={setSleeping}
         onReveal={reveal}
@@ -414,6 +444,7 @@ export const App = (): React.ReactElement => {
         onNewTerminal={newTerminal}
         onOpenPath={openPath}
         onToggleDir={toggleDir}
+        onFilesMode={filesMode}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />
 
