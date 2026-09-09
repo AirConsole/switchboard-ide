@@ -238,6 +238,12 @@ const WorktreeTile = ({
   // An exited session is offered as something to restart, not shown as a dead
   // terminal: whatever it printed last is of no use at a glance.
   const running = isRunning(session)
+  /*
+   * `done` is a running Claude that has come to rest, and it is the only one of
+   * these that goes green. A worktree with no agent, or one that has exited,
+   * stays `idle` and stays grey: nothing is running there, so nothing has been
+   * finished -- the green is a claim about work, not about quiet.
+   */
   const state = !session
     ? 'idle'
     : session.liveness === 'dead'
@@ -249,7 +255,7 @@ const WorktreeTile = ({
         ? 'waiting'
         : session.attention === 'working'
           ? 'working'
-          : 'idle'
+          : 'done'
 
   const tileRef = useRef<HTMLDivElement | null>(null)
   /*

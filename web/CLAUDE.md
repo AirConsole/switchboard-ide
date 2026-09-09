@@ -95,8 +95,10 @@ the same reason — a moved node restarts its animation.
 Two custom properties, one job each: `--font-mono` for the terminal, patch
 lines, hashes, and paths — anything read character by character — and
 `--font-ui` for everything the interface says in its own voice. `--signal`
-(amber) means one thing only: Claude is blocked on you. A diff's green and red
-are the single exception, because a patch is content.
+(amber) means one thing only: Claude is blocked on you, and `--done` (green)
+one thing only: Claude is running and has come to rest. A worktree with nothing
+running has finished nothing, so it stays grey. A diff's green and red are the
+single exception to the rule, because a patch is content.
 
 Every text colour clears 4.5:1 on every ground it lands on, including
 `--slab-raised`; the three greys are a ladder (13.4 : 7.0 : 5.2). Class names

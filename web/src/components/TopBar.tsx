@@ -196,7 +196,9 @@ const Group = ({
                           ? 'menu__state menu__state--needs'
                           : status === 'working'
                             ? 'menu__state menu__state--working'
-                            : 'menu__state'
+                            : status === 'idle'
+                              ? 'menu__state menu__state--idle'
+                              : 'menu__state'
                       }
                     >
                       {stateLabel(claudeSession(sessions, worktree.id))}

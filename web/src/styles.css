@@ -43,9 +43,19 @@
      the padding around a terminal shows as a visible frame. */
   --terminal-bg: #0e1116;
 
-  /* The only saturated colour in the interface. Reserved for "needs you". */
+  /* Two saturated colours in the chrome, and each one answers a question you
+     ask of a row of agents: is this one blocked on me, and is this one done. */
   --signal: #ffb454;
   --signal-dim: #6b4d21;
+  /*
+   * Done: Claude is running and has come to rest.
+   *
+   * Not "nothing is running" -- that stays grey, because a worktree with no
+   * agent has finished nothing. Matched to --signal's luminance (9.81 : 9.70
+   * on --slab) so the two read as peers: amber is the one that wants you, green
+   * the one that is waiting to be read, and neither shouts over the other.
+   */
+  --done: #4ade80;
   /* Used at low opacity for selection and focus only, never as decoration. */
   --pulse: #4b9fd6;
 
@@ -305,8 +315,9 @@ button {
   border-bottom-color: var(--graphite);
 }
 
+/* Done, and the tab says so from across the bar. */
 .chip--idle {
-  border-bottom-color: var(--rule-bright);
+  border-bottom-color: var(--done);
 }
 
 /* Nothing running, so there is nothing to underline. */
@@ -543,6 +554,10 @@ button {
   border-left-color: var(--graphite);
 }
 
+.tile--done {
+  border-left-color: var(--done);
+}
+
 .tile--dead {
   border-left-color: var(--danger);
 }
@@ -750,6 +765,10 @@ button {
 
 .tile--waiting .tile__state {
   color: var(--signal);
+}
+
+.tile--done .tile__state {
+  color: var(--done);
 }
 
 .tile__idle {
@@ -1521,4 +1540,8 @@ button {
 
 .menu__state--working {
   color: var(--graphite);
+}
+
+.menu__state--idle {
+  color: var(--done);
 }
