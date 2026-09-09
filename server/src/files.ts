@@ -334,7 +334,7 @@ const revOf = (stats: BigIntStats): FileRev =>
  * The file as text, or the reason there is none.
  *
  * Two ways to not be text, and the second matters as much as the first. A NUL
- * byte early on is git's own heuristic, so this agrees with what the git panel
+ * byte early on is git's own heuristic, so this agrees with what the diff
  * decided about the same file. But a latin-1 file has no NUL, decodes happily
  * into U+FFFD, and saving it back would rewrite every non-ASCII byte in it --
  * so a strict decode is the check that actually protects the file.

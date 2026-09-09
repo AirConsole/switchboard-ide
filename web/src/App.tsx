@@ -10,7 +10,7 @@ import { Overview } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
-import type { PanelName, Project, Worktree } from '@ide-n-dream/shared'
+import type { FilesMode, PanelName, Project, Worktree } from '@ide-n-dream/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
 export interface ProjectGroup {
@@ -235,6 +235,21 @@ export const App = (): React.ReactElement => {
     [setUi],
   )
 
+  /**
+   * Which face a worktree's files panel shows.
+   *
+   * Stable between renders for the same reason `openPath` is: it is handed to
+   * every tile in the row, and a fresh identity each render would restart the
+   * panel's effects for every worktree at once.
+   */
+  const filesMode = useCallback(
+    (worktreeId: string, mode: FilesMode): void => {
+      const ui = uiRef.current
+      setUi({ filesModeByWorktree: { ...ui.filesModeByWorktree, [worktreeId]: mode } })
+    },
+    [setUi],
+  )
+
   /** Expand or collapse one directory of a worktree's file tree. */
   const toggleDir = useCallback(
     (worktreeId: string, dir: string): void => {
@@ -403,6 +418,7 @@ export const App = (): React.ReactElement => {
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
         openPathByWorktree={ui.openPathByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
+        filesModeByWorktree={ui.filesModeByWorktree}
         // With one project open there is no question which project a new
         // worktree belongs to; with several there is, and the top bar's
         // per-project + is the unambiguous way to say it.
@@ -428,6 +444,7 @@ export const App = (): React.ReactElement => {
         onNewTerminal={newTerminal}
         onOpenPath={openPath}
         onToggleDir={toggleDir}
+        onFilesMode={filesMode}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />
 

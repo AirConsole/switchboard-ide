@@ -283,7 +283,7 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       /*
        * A save moves no part of the poller's signature when the file was
        * already dirty -- `id:branch:head:dirty:missing` is unchanged by editing
-       * something that was modified anyway -- so the git panel beside this one
+       * something that was modified anyway -- so the changes list beside this one
        * would sit stale until something else happened. A kill has the same
        * problem and the same answer.
        */

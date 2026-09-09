@@ -1,5 +1,13 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FileEntry } from '@ide-n-dream/shared'
+import type { FileEntry, FilesMode } from '@ide-n-dream/shared'
+import {
+  ChangesList,
+  CommitsList,
+  Diff,
+  INDENT,
+  changeRows,
+  type ChangesState,
+} from './ChangesPane.js'
 import { ApiError, api } from '../api.js'
 import type { EditorFile } from '../editor/CodeEditor.js'
 
@@ -13,7 +21,8 @@ const CodeEditor = lazy(() => import('../editor/CodeEditor.js'))
 /**
  * How often an open panel re-reads the directories it is showing.
  *
- * The same reasoning as the git panel's own poll, which its `POLL_MS` sets out:
+ * The same reasoning as the changes poll, which `POLL_MS` in `ChangesPane` sets
+ * out:
  * the server pushes when a worktree's dirty count or HEAD moves, and neither
  * moves when a file already counted as changed is changed again -- or when an
  * agent creates a file in a directory you happen to have expanded.
@@ -109,7 +118,7 @@ const flatten = (
 /**
  * A worktree's files: the tree, and the file it has open.
  *
- * Inert while `enabled` is false, for the reason `useGitState` is: the hook is
+ * Inert while `enabled` is false, for the reason `useChangesState` is: the hook is
  * called for every tile whether or not its panel is open, and without this
  * every tile on screen would read directories to fill a panel nobody asked for.
  */
@@ -166,7 +175,7 @@ export const useFilesState = (opts: {
    *
    * Results are compared before they are stored, so a directory that has not
    * changed re-renders nothing and cannot throw away the tree's scroll position
-   * -- the same discipline the git panel keeps with its patch.
+   * -- the same discipline the changes hook keeps with its patch.
    */
   useEffect(() => {
     if (!enabled) return
@@ -379,69 +388,110 @@ export const useFilesState = (opts: {
 /**
  * The panel's controls, for the worktree's bar.
  *
- * Where you are, whether it is saved, and how to save it -- in the segment
- * above the pane they act on, structured like `GitBar` beside it.
+ * What it says depends on the mode -- where you are in Files, what the commits
+ * are measured against in the other two -- but **Save is shown in every mode
+ * whenever there are unsaved edits.** The buffer lives in the hook, which stays
+ * mounted across a mode switch, so switching to Changes with an unsaved edit
+ * would otherwise take away every way to save it while quietly keeping it.
  */
-export const FilesBar = ({ state }: { state: FilesState }): React.ReactElement => {
-  const open = state.path === '' ? null : state.path
+export const FilesBar = ({
+  mode,
+  files,
+  changes,
+}: {
+  mode: FilesMode
+  files: FilesState
+  changes: ChangesState
+}): React.ReactElement => {
+  const open = files.path === '' ? null : files.path
   const shortened = open === null ? null : open.split('/').slice(-2).join('/')
+  const base = changes.changes?.base ?? null
   return (
     <div className="files__bar">
-      {shortened !== null && (
+      {mode === 'files' && shortened !== null && (
         <span className="files__path" title={open ?? undefined}>
           {shortened}
         </span>
       )}
-      {state.dirty && <span className="files__unsaved">Unsaved</span>}
-      {open !== null && (
+      {mode !== 'files' && base !== null && (
+        <span className="files__base" title={`Commits are measured against ${base}`}>
+          vs {base}
+        </span>
+      )}
+      {mode !== 'files' && (changes.changes?.behind ?? 0) > 0 && (
+        <span
+          className="files__base"
+          title={`${base} has ${changes.changes?.behind} commits this branch does not`}
+        >
+          {changes.changes?.behind} behind
+        </span>
+      )}
+      {files.dirty && <span className="files__unsaved">Unsaved</span>}
+      {(files.dirty || (mode === 'files' && open !== null)) && (
         <button
           className="files__save"
-          onClick={state.save}
-          // Present whenever a file is open, so the first keystroke does not
-          // shove the path sideways to make room for it.
-          disabled={!state.dirty || state.saving}
+          onClick={files.save}
+          disabled={!files.dirty || files.saving}
           title="Save (⌘S)"
         >
           Save
+        </button>
+      )}
+      {mode !== 'files' && (
+        <button className="files__reload" onClick={changes.reload} title="Re-read git">
+          Refresh
         </button>
       )}
     </div>
   )
 }
 
-/** How far each level of the tree is indented, in px. */
-const INDENT = 11
+/** The switch, and what each face is called. Sentence case: see the CSS. */
+const MODES: readonly { mode: FilesMode; label: string }[] = [
+  { mode: 'changes', label: 'Changes' },
+  { mode: 'commits', label: 'Commits' },
+  { mode: 'files', label: 'Files' },
+]
 
 export interface FilesPaneProps {
-  state: FilesState
+  mode: FilesMode
+  onMode: (mode: FilesMode) => void
+  files: FilesState
+  changes: ChangesState
+  /** Named in the commits heading, so it says what the commits are on. */
+  branch: string | null
   /** Whether the tile is close enough to the scrollport to build an editor. */
   near: boolean
 }
 
 /**
- * A worktree's files: a tree down the side, and the open file beside it.
+ * A worktree's files: a list down the side, and what is selected beside it.
  *
- * The tree is the whole navigation -- click a directory to expand it, a file to
- * read it -- and it scrolls on its own, which is also what lets a wheel over it
- * scroll the tree rather than the row of windows behind it.
+ * Three faces of one panel rather than two panels, because they answer
+ * questions about the same objects and used to keep two selections that drifted
+ * apart -- you read a patch, wanted the whole file, and went to find it again
+ * next door. Here that is one click on the file already in front of you.
  */
-export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement => {
+export const FilesPane = ({
+  mode,
+  onMode,
+  files,
+  changes,
+  branch,
+  near,
+}: FilesPaneProps): React.ReactElement => {
   const treeRef = useRef<HTMLDivElement | null>(null)
   const selectedRef = useRef<HTMLButtonElement | null>(null)
-  const { rows, open, toggleDir } = state
-  /** The row the keyboard is on. Null until the tree is used with the keyboard. */
+  const { rows, open, toggleDir } = files
   const [cursor, setCursor] = useState<string | null>(null)
   const [keyFocus, setKeyFocus] = useState(0)
 
-  // The row the keyboard would act on: what it last landed on, else the open
-  // file, else the first thing in the tree.
-  const at = rows.findIndex((row) => row.path === (cursor ?? state.path))
+  const at = rows.findIndex((row) => row.path === (cursor ?? files.path))
   const here = at === -1 ? (rows.length > 0 ? 0 : -1) : at
 
-  // Bring a restored file into view without touching anything else.
   useLayoutEffect(() => {
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [state.path])
+  }, [files.path])
 
   useLayoutEffect(() => {
     if (keyFocus > 0) selectedRef.current?.focus()
@@ -454,23 +504,17 @@ export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement =
   }
 
   /*
-   * A tree's keys, and nothing invented: up and down through what is on screen,
+   * Finder's keys for the full tree: up and down through what is on screen,
    * right to open a directory, left to close it or step out to its parent.
    *
-   * Moving is not opening here, unlike a click. Arrowing past twenty files
-   * would otherwise read and render twenty of them; Enter is the one that says
-   * you meant it.
+   * Moving is not opening, unlike a click. Arrowing past twenty files would
+   * otherwise read and render twenty of them; Enter is the one that says you
+   * meant it.
    *
    * On the tree rather than on the document: with a dozen tiles awake, a
    * document-level arrow handler has no idea whose files it is moving.
    */
   const onKeyDown = (event: React.KeyboardEvent): void => {
-    /*
-     * Any modifier and it is not ours -- which is what leaves Cmd+Left and
-     * Cmd+Right to the row's worktree stepping while the keyboard is in the
-     * tree. A file row is not a text field, so that handler is right to take
-     * them there.
-     */
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
     const row = rows[here]
     const step = (to: number): void => {
@@ -502,7 +546,6 @@ export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement =
       case 'ArrowLeft': {
         if (!row) return
         event.preventDefault()
-        // Close an open directory; otherwise go out to the one holding this.
         if (row.kind === 'dir' && row.open) {
           setKeyFocus((n) => n + 1)
           toggleDir(row.path)
@@ -529,94 +572,162 @@ export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement =
    * An unsaved edit is not something to unmount. Off screen or not, it is the
    * thing you are working on.
    */
-  const mountEditor = near || state.dirty
+  const mountEditor = near || files.dirty
+  const changed = changes.changes?.uncommitted ?? []
+  const selectedChange = changed.find((c) => c.path === files.path)
+
+  const sidebar = (): React.ReactElement => {
+    if (mode === 'files') {
+      return (
+        <div className="files__tree" ref={treeRef} onKeyDown={onKeyDown}>
+          {!files.loading && rows.length === 0 && <p className="files__note">Nothing here.</p>}
+          {rows.map((row, index) => {
+            const isOpenFile = row.kind === 'file' && row.path === files.path
+            const onCursor = index === here
+            return (
+              <button
+                key={row.path}
+                ref={onCursor ? selectedRef : null}
+                className={[
+                  'files__row',
+                  isOpenFile ? 'files__row--on' : '',
+                  row.changed ? 'files__row--changed' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                style={{ paddingLeft: 6 + row.depth * INDENT }}
+                tabIndex={onCursor ? 0 : -1}
+                onClick={() => pick(row)}
+                title={row.path}
+              >
+                <span className="files__twist" aria-hidden="true">
+                  {row.kind === 'dir' ? (row.open ? '▾' : '▸') : ''}
+                </span>
+                <span className="files__name">{row.name}</span>
+              </button>
+            )
+          })}
+        </div>
+      )
+    }
+    if (mode === 'commits') {
+      const list = changes.changes
+      return (
+        <div className="files__tree">
+          {list !== null && (
+            <div className="files__heading">
+              {list.commitScope === 'ahead'
+                ? `${list.commits.length === 1 ? '1 commit' : `${list.commits.length} commits`}${
+                    branch === null ? '' : ` on ${branch}`
+                  }`
+                : 'Recent commits'}
+            </div>
+          )}
+          {list !== null && (
+            <CommitsList
+              commits={list.commits}
+              scope={list.commitScope}
+              selected={changes.commit}
+              onSelect={changes.selectCommit}
+            />
+          )}
+        </div>
+      )
+    }
+    return (
+      <div className="files__tree">
+        {changed.length === 0 && changes.changes !== null && (
+          <p className="files__note">Nothing changed in this worktree.</p>
+        )}
+        <ChangesList rows={changeRows(changed)} path={files.path} onOpen={open} />
+      </div>
+    )
+  }
+
+  const content = (): React.ReactElement => {
+    if (mode === 'files') {
+      if (files.refusal !== null) return <p className="files__note">{files.refusal}</p>
+      if (files.file === null) return <p className="files__note">Pick a file to read it here.</p>
+      return mountEditor ? (
+        <Suspense fallback={null}>
+          <CodeEditor
+            file={files.file}
+            draft={files.draft}
+            onChange={files.edited}
+            onSave={files.save}
+          />
+        </Suspense>
+      ) : (
+        <></>
+      )
+    }
+    if (mode === 'changes' && files.path !== '' && selectedChange === undefined) {
+      /*
+       * The path is the panel's, not this mode's, so it can name a file that is
+       * not in the list -- one opened clean in Files mode, or one the agent
+       * committed while you were reading it. Say so, and ask git nothing.
+       */
+      return <p className="files__note">No uncommitted changes to this file.</p>
+    }
+    if (mode === 'changes' && files.path === '') {
+      return <p className="files__note">Pick a changed file to read its diff.</p>
+    }
+    if (changes.patch === null) return <></>
+    // A commit touches any number of files and the hunks never say which.
+    return <Diff patch={changes.patch} showFiles={mode === 'commits'} />
+  }
 
   return (
     <div
       className="files"
       onKeyDown={(event) => {
         /*
-         * Cmd+S with the keyboard in the tree would otherwise open the browser's
-         * Save Page dialog. The editor's own binding has already prevented it
-         * when the keyboard is in there.
+         * Cmd+S with the keyboard anywhere but the editor would otherwise open
+         * the browser's Save Page dialog. The editor's own binding has already
+         * prevented it when the keyboard is in there.
          */
         if (event.defaultPrevented) return
         if ((event.metaKey || event.ctrlKey) && event.key === 's') {
           event.preventDefault()
-          state.save()
+          files.save()
         }
       }}
     >
-      <div className="files__tree" ref={treeRef} onKeyDown={onKeyDown}>
-        {/* Nothing at all while the root is being read: a local directory
-            listing takes a few milliseconds, and a word that flashes for one
-            frame is worse than empty space. */}
-        {!state.loading && rows.length === 0 && <p className="files__note">Nothing here.</p>}
-        {rows.map((row, index) => {
-          const isOpenFile = row.kind === 'file' && row.path === state.path
-          const onCursor = index === here
-          return (
+      <div className="files__side">
+        <div className="files__modes">
+          {MODES.map(({ mode: name, label }) => (
             <button
-              key={row.path}
-              ref={onCursor ? selectedRef : null}
-              className={[
-                'files__row',
-                isOpenFile ? 'files__row--on' : '',
-                row.changed ? 'files__row--changed' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              style={{ paddingLeft: 6 + row.depth * INDENT }}
-              // Roving tabindex: Tab reaches the tree once, rather than walking
-              // through two hundred files to get past it.
-              tabIndex={onCursor ? 0 : -1}
-              onClick={() => pick(row)}
-              title={row.path}
+              key={name}
+              className={name === mode ? 'files__mode files__mode--on' : 'files__mode'}
+              onClick={() => onMode(name)}
             >
-              {/* A file gets the same spacer, so names line up under the
-                  directories they are in rather than by a character. */}
-              <span className="files__twist" aria-hidden="true">
-                {row.kind === 'dir' ? (row.open ? '▾' : '▸') : ''}
-              </span>
-              <span className="files__name">{row.name}</span>
+              {label}
             </button>
-          )
-        })}
+          ))}
+        </div>
+        {sidebar()}
       </div>
 
       <div className="files__file">
-        {state.error !== null && <div className="files__notice">{state.error}</div>}
+        {(files.error ?? changes.error) !== null && (
+          <div className="files__notice">{files.error ?? changes.error}</div>
+        )}
 
-        {state.conflict && (
+        {files.conflict && (
           <div className="files__notice">
             <span>This file changed on disk while you were editing it.</span>
             <span className="files__notice-actions">
-              <button className="files__act" onClick={state.overwrite}>
+              <button className="files__act" onClick={files.overwrite}>
                 Overwrite
               </button>
-              <button className="files__act" onClick={state.revert}>
+              <button className="files__act" onClick={files.revert}>
                 Discard my edits
               </button>
             </span>
           </div>
         )}
 
-        {state.refusal !== null ? (
-          <p className="files__note">{state.refusal}</p>
-        ) : state.file === null ? (
-          <p className="files__note">Pick a file to read it here.</p>
-        ) : (
-          mountEditor && (
-            <Suspense fallback={null}>
-              <CodeEditor
-                file={state.file}
-                draft={state.draft}
-                onChange={state.edited}
-                onSave={state.save}
-              />
-            </Suspense>
-          )
-        )}
+        {content()}
       </div>
     </div>
   )

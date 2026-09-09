@@ -156,7 +156,18 @@ export interface Session {
  * per-worktree and persistent: minimizing a worktree to the top bar and bringing
  * it back restores the width it had.
  */
-export type PanelName = 'todo' | 'files' | 'terminals' | 'git'
+export type PanelName = 'todo' | 'files' | 'terminals'
+
+/**
+ * Which face of the files panel a worktree is showing.
+ *
+ * The panel used to be two: files, and a `git` panel beside it. They asked
+ * questions about the same objects and kept two selections that drifted apart,
+ * and together they cost a fifth column of the tile -- a window of 3362px to
+ * see one worktree whole. One panel with three faces answers the same questions
+ * from one selection, in four columns.
+ */
+export type FilesMode = 'changes' | 'commits' | 'files'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
@@ -182,9 +193,13 @@ export interface UiState {
   /**
    * The file each worktree has open in its files panel, `''` for none.
    *
-   * Unlike the git panel's selection, which is deliberately *not* persisted
-   * because a file may have stopped differing by the time you come back, a path
-   * is stable: a file you were reading is still a file.
+   * One path serves all three modes: pick a changed file and its diff opens,
+   * switch to Files and the editor opens that same file. That shared selection
+   * is most of the reason the two panels became one.
+   *
+   * Unlike the commit selection, which is deliberately *not* persisted because
+   * a rebase or an amend makes a stored hash name nothing, a path is stable: a
+   * file you were reading is still a file.
    */
   openPathByWorktree: Record<string, string>
   /**
@@ -196,6 +211,18 @@ export interface UiState {
    * restored file is always visible without this having to be derived.
    */
   expandedByWorktree: Record<string, string[]>
+  /**
+   * Which face of the files panel each worktree is showing.
+   *
+   * Persisted, on the same test as the open file rather than a different one:
+   * does the fact survive the round trip. A mode does, and more surely than a
+   * path -- `changes` is a meaningful answer in every worktree in every state,
+   * including a clean one, so there is nothing here that can go stale. It is
+   * the same kind of fact as which terminal a worktree has selected.
+   *
+   * Absent means `changes`, and nothing is written until the switch is used.
+   */
+  filesModeByWorktree: Record<string, FilesMode>
 }
 
 export const defaultUiState = (): UiState => ({
@@ -204,6 +231,7 @@ export const defaultUiState = (): UiState => ({
   activeTerminalByWorktree: {},
   openPathByWorktree: {},
   expandedByWorktree: {},
+  filesModeByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
@@ -342,7 +370,7 @@ export interface FileContent {
   text?: string
   /**
    * A NUL byte in the first 8000 bytes -- git's own heuristic, so this panel
-   * and the git panel beside it agree about the same file -- or bytes that are
+   * and the panel's Changes mode agree about the same file -- or bytes that are
    * not valid UTF-8.
    *
    * The second half matters as much as the first: a latin-1 file contains no
