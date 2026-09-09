@@ -322,24 +322,40 @@ button {
 /*
  * The worktree you are in: bracketed in its agent's own colour.
  *
- * Left, top and right, and the fourth side is left to the line that is already
- * there -- the state line under the tab -- which closes the frame itself. Same
- * colour, because the bracket borrows `--tab-state` rather than introducing
- * one: amber when that agent is blocked on you, green when it is done, grey
- * while it is working. So the frame says "you are here" by existing at all,
- * and what it is made of still says what the agent is doing. No new colour is
- * spent, which is what makes it affordable at this size.
+ * Three sides and open at the foot, so the tab reads as a tab -- a mouth onto
+ * the window below it rather than a box floating in the bar -- and the top
+ * corners are rounded because that is where a three-sided frame ends and it
+ * should end deliberately. The state line that used to run along the bottom is
+ * hidden here, and nothing is lost by hiding it: the bracket is drawn in that
+ * same colour, so the tab you are in still says what its agent is doing, once
+ * instead of twice.
  *
- * With no agent running there is no state to borrow: the fallback is grey, and
- * the frame stays open at the bottom because there is no line down there to
- * close it. The mark must not disappear in that case, or "where you are" would
- * go missing in exactly the worktree whose window shows least.
+ * The colour is borrowed rather than invented -- `--tab-state`, amber when
+ * that agent is blocked on you, green when it is done, grey while it is
+ * working -- so the frame says "you are here" by existing at all, and what it
+ * is made of says the rest. No new colour is spent, which is what makes it
+ * affordable at this size.
+ *
+ * With no agent running there is no state to borrow and the fallback is grey.
+ * The mark must not disappear in that case, or "where you are" would go
+ * missing in exactly the worktree whose window shows least; the price is that
+ * the active tab cannot tell "working" from "nothing running", which its own
+ * window says in words a glance away.
  *
  * Inset shadows rather than borders, because a border would make the tab wider
  * and the whole strip would shift by 2px every time you stepped to another
  * worktree. They are clipped to the padding box, so the tab's own 1px --rule
  * right border stays outside the bracket and the neighbour's does on the left:
- * a hairline either side of it, which is why the frame reads as centred.
+ * a hairline either side of it, which is why the frame reads as centred. They
+ * follow the radius too, so the corners curve with the tab.
+ *
+ * The 2px the state line would have taken becomes padding rather than being
+ * dropped: an inset shadow is clipped to the padding box, so with a border
+ * there -- even a transparent one -- the two side strokes stopped 2px short of
+ * the bar and the frame looked cut off rather than open. Trading the border for
+ * padding of the same width moves nothing: the box is stretched to the bar's
+ * height either way, so the content box keeps its size and place and the label
+ * does not shift by a pixel.
  *
  * The ground is the quieter half, and recessed rather than raised on purpose.
  * --ink is what the row of windows sits on, so the tab reads as continuous
@@ -350,6 +366,9 @@ button {
 .chip--active {
   --mark: var(--tab-state, var(--graphite-dim));
   background: var(--ink);
+  border-bottom-width: 0;
+  padding-bottom: 2px;
+  border-radius: var(--radius) var(--radius) 0 0;
   box-shadow:
     inset 2px 0 0 var(--mark),
     inset 0 2px 0 var(--mark),
