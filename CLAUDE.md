@@ -24,9 +24,12 @@ the top bar and, unless you said otherwise, nothing of it is running. Waking
 continues the conversation it was having rather than starting a new one.
 
 The row of windows is a strip you scroll along, and it is laid out in **spots**:
-one pane is one spot, so Claude alone is one spot wide and Claude plus terminals
-is two, up to four with the todo and files panels open as well. A spot is as wide as it needs to be for as many as fit to fill the
-window, never below 80 columns. Navigation always lands on a spot boundary.
+one pane is one spot, so Claude alone is one spot wide and Claude with a panel
+beside it is two. A worktree shows **one panel at a time** -- its todos, its
+files and changes, or its terminals -- so two spots is as wide as a window ever
+gets, and the whole of one always fits a screen that can hold two. A spot is as
+wide as it needs to be for as many as fit to fill the window, never below 80
+columns. Navigation always lands on a spot boundary.
 
 ## Commands
 

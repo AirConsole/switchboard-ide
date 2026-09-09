@@ -192,17 +192,18 @@ export const App = (): React.ReactElement => {
    * the row gets longer. Opening one scrolls to it, which is what makes it
    * visible on a window too narrow to hold the tile whole.
    */
+  /**
+   * Show one of a worktree's panels, or close the one that is showing.
+   *
+   * One at a time: a worktree is Claude and at most one panel, so a tile is one
+   * column or two and the whole of it fits a window that could only ever hold
+   * part of it before. Opening replaces rather than appends, which is also what
+   * makes the toggles a set of alternatives instead of a row of switches.
+   */
   const togglePanel = (worktreeId: string, panel: PanelName): void => {
     const open = ui.panels[worktreeId] ?? []
     const wasOpen = open.includes(panel)
-    setUi({
-      panels: {
-        // Appended, so the list stays in the order panels were opened -- which
-        // is how a tile with room for one pane knows which to show.
-        ...ui.panels,
-        [worktreeId]: wasOpen ? open.filter((name) => name !== panel) : [...open, panel],
-      },
-    })
+    setUi({ panels: { ...ui.panels, [worktreeId]: wasOpen ? [] : [panel] } })
     // The tile just changed width, so bring the whole of it back into view.
     reveal(worktreeId)
     // The panel is only useful with something in it.
@@ -259,26 +260,6 @@ export const App = (): React.ReactElement => {
       setUi({ expandedByWorktree: { ...ui.expandedByWorktree, [worktreeId]: next } })
     },
     [setUi],
-  )
-
-  /**
-   * Close panels the layout could not keep.
-   *
-   * The layout is the only thing that knows what fits, so it says so and the
-   * state follows -- a panel with nowhere to go is closed rather than left open
-   * with nothing to show, which is what keeps its toggle honest.
-   */
-  const collapsePanels = useCallback(
-    (collapsed: { worktreeId: string; panel: PanelName }[]): void => {
-      const next = { ...ui.panels }
-      for (const { worktreeId, panel } of collapsed) {
-        next[worktreeId] = (next[worktreeId] ?? []).filter((name) => name !== panel)
-      }
-      setUi({ panels: next })
-    },
-    // Stable between panel changes, so the layout's report does not re-fire on
-    // every unrelated render.
-    [ui.panels, setUi],
   )
 
   if (!loaded) {
@@ -431,7 +412,6 @@ export const App = (): React.ReactElement => {
         onReveal={reveal}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
-        onCollapsePanels={collapsePanels}
         onNewWorktree={() => setAddingTo(projects[0] ?? null)}
         onSelectTerminal={(worktreeId, sessionId) =>
           setUi({

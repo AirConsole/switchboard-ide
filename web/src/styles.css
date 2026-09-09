@@ -903,25 +903,6 @@ button {
   white-space: nowrap;
 }
 
-.tile__state {
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--graphite-dim);
-  white-space: nowrap;
-}
-
-.tile--waiting .tile__state {
-  color: var(--signal);
-}
-
-.tile--done .tile__state {
-  color: var(--done);
-}
-
 .tile__idle {
   display: grid;
   justify-items: start;
