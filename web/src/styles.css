@@ -1399,13 +1399,6 @@ button {
   font-size: 12px;
 }
 
-.menu--sleep {
-  left: auto;
-  right: 0;
-  gap: 6px;
-  padding: 8px;
-}
-
 .menu__row {
   display: flex;
   align-items: center;
@@ -1430,40 +1423,24 @@ button {
 /* ---------------------------------------------------------------- sleep --- */
 
 /*
- * Sleep, and sleep-but-keep-something.
+ * Sleep.
  *
- * The plain half is the ordinary action and acts at once, because waking undoes
- * the expensive part of it: the conversation continues rather than restarting.
- * The caret is for what waking cannot undo -- a Claude mid-thought, and a
- * terminal's scrollback, which nothing brings back.
+ * One control, and it asks before it acts: the dialog is where the two halves
+ * can be told apart, since Claude comes back where it left off and a terminal's
+ * scrollback does not. Dropdowns live in the top bar; a tile gets a modal.
  */
-.tile__sleep {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  flex: none;
-}
-
 .tile__zz {
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  flex: none;
+  padding: 0 10px;
   font-family: var(--font-ui);
   font-size: 11px;
   letter-spacing: 0.08em;
   color: var(--graphite);
 }
 
-.tile__zz-more {
-  display: flex;
-  align-items: center;
-  padding: 0 5px 0 0;
-  font-size: 9px;
-  color: var(--graphite-dim);
-}
-
-.tile__zz:hover,
-.tile__zz-more:hover {
+.tile__zz:hover {
   color: var(--bone);
   background: var(--rule-bright);
 }

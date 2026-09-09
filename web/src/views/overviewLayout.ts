@@ -27,11 +27,16 @@ let cachedWidth = 0
  * it: a ratio that is even slightly low would hand panes fewer than
  * MIN_PANE_COLUMNS columns, which is the one thing this layout guarantees.
  *
- * It does not match xterm's cell exactly -- canvas reports 8.429px for 14px
- * monospace where xterm lays out cells of 8.0 -- and that is the right
- * direction to be wrong in: panes come out a few percent wider than strictly
- * needed, so the column floor holds with margin. Do not "correct" this by
- * shrinking the estimate without checking the rendered cols first.
+ * Floored, because that is what xterm does. It rasterises glyphs into an atlas
+ * and blits them per cell, so a cell is a whole number of pixels: canvas
+ * reports 8.429px for 14px monospace and xterm lays out 8. Measured back from a
+ * rendered terminal, 764px of pane carried 95 columns -- 8.04px each.
+ *
+ * Taking the unfloored figure was safe while this was only a floor, but it now
+ * decides how many tiles the window is divided into, and 5% of slack is enough
+ * to cost a whole tile in a band of window widths. Floor is not a fudge factor:
+ * it is the cell the terminal will actually use, on whatever font this resolves
+ * to, which a fixed correction would not be.
  */
 export const measureMonoCharWidth = (fontSize: number, fontFamily: string): number => {
   const key = `${fontSize}px ${fontFamily}`
@@ -40,8 +45,9 @@ export const measureMonoCharWidth = (fontSize: number, fontFamily: string): numb
   const context = document.createElement('canvas').getContext('2d')
   if (!context) return fallback
   context.font = key
-  // Averaged over several characters to shrug off sub-pixel rounding.
-  const width = context.measureText('M'.repeat(20)).width / 20
+  // Averaged over several characters to shrug off sub-pixel rounding, then
+  // floored to the cell the terminal will really lay out.
+  const width = Math.floor(context.measureText('M'.repeat(20)).width / 20)
   if (!(width > 0)) return fallback
   cachedKey = key
   cachedWidth = width

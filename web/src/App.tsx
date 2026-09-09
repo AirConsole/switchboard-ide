@@ -5,7 +5,8 @@ import { TopBar } from './components/TopBar.js'
 import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview, paneKey, type SleepOptions } from './views/Overview.js'
+import { Overview } from './views/Overview.js'
+import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
 import type { PanelName, Project, Worktree } from '@ide-n-dream/shared'
 
@@ -22,14 +23,21 @@ export const App = (): React.ReactElement => {
   const [showOpenProject, setShowOpenProject] = useState(false)
   const [addingTo, setAddingTo] = useState<Project | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [sleeping, setSleeping] = useState<string | null>(null)
   /**
-   * The pane to bring into view next.
+   * A request to bring a worktree's tile into view.
    *
-   * Deliberately not persisted: it is a consequence of the click you just made,
-   * not a fact about the layout. Restoring one on load would scroll you
+   * Carries a counter, because asking twice for the same worktree has to be two
+   * requests: opening a second panel on a tile you already scrolled to changes
+   * its width again, and a bare id would compare equal and scroll nowhere.
+   *
+   * Deliberately not persisted -- it is a consequence of the click you just
+   * made, not a fact about the layout. Restoring one on load would scroll you
    * somewhere for a reason that no longer exists.
    */
-  const [scrollTo, setScrollTo] = useState<string | null>(null)
+  const [scrollTo, setScrollTo] = useState<{ id: string; nonce: number } | null>(null)
+  const reveal = (id: string): void =>
+    setScrollTo((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
 
   useEffect(() => {
     bindSocketToStore()
@@ -87,7 +95,7 @@ export const App = (): React.ReactElement => {
    */
   const wake = (worktreeId: string): void => {
     setAwake([...awake, worktreeId])
-    setScrollTo(paneKey(worktreeId, 'claude'))
+    reveal(worktreeId)
     void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
   }
 
@@ -96,6 +104,7 @@ export const App = (): React.ReactElement => {
    * processes.
    */
   const sleep = (worktreeId: string, keep: SleepOptions): void => {
+    setSleeping(null)
     setAwake([...awake].filter((id) => id !== worktreeId))
     void api.sleepWorktree(worktreeId, keep).then(refresh).catch(fail)
   }
@@ -140,11 +149,14 @@ export const App = (): React.ReactElement => {
     const wasOpen = open.includes(panel)
     setUi({
       panels: {
+        // Appended, so the list stays in the order panels were opened -- which
+        // is how a tile with room for one pane knows which to show.
         ...ui.panels,
         [worktreeId]: wasOpen ? open.filter((name) => name !== panel) : [...open, panel],
       },
     })
-    setScrollTo(paneKey(worktreeId, wasOpen ? 'claude' : panel))
+    // The tile just changed width, so bring the whole of it back into view.
+    reveal(worktreeId)
     // The panel is only useful with something in it.
     if (panel === 'terminals' && !wasOpen && terminalSessions(sessions, worktreeId).length === 0) {
       newTerminal(worktreeId)
@@ -167,7 +179,7 @@ export const App = (): React.ReactElement => {
       onCloseProject={(id) => void api.closeProject(id).then(refresh).catch(fail)}
       onNewWorktree={setAddingTo}
       onWake={wake}
-      onReveal={(worktreeId) => setScrollTo(paneKey(worktreeId, 'claude'))}
+      onReveal={reveal}
     />
   )
 
@@ -191,9 +203,17 @@ export const App = (): React.ReactElement => {
             // A worktree you just made is one you want to work in, so it starts
             // awake -- and it is scrolled to, since the row may be long.
             setAwake([...awake, worktreeId])
-            setScrollTo(paneKey(worktreeId, 'claude'))
+            reveal(worktreeId)
             void refresh()
           }}
+        />
+      )}
+      {sleeping && worktrees.some((w) => w.id === sleeping) && (
+        <SleepWorktreeDialog
+          worktree={worktrees.find((w) => w.id === sleeping)!}
+          sessions={sessions}
+          onClose={() => setSleeping(null)}
+          onSleep={(keep) => sleep(sleeping, keep)}
         />
       )}
       {removing && worktrees.some((w) => w.id === removing) && (
@@ -256,7 +276,7 @@ export const App = (): React.ReactElement => {
         addTo={projects.length === 1 ? (projects[0] ?? null) : null}
         scrollTo={scrollTo}
         onStart={startClaude}
-        onSleep={sleep}
+        onSleep={setSleeping}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
         onNewWorktree={() => setAddingTo(projects[0] ?? null)}
