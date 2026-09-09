@@ -148,6 +148,28 @@ const CHROME: RegExp[] = [
 ]
 
 /**
+ * The glyph that opens one of Claude's blocks: a message, a tool result, or the
+ * line a finished turn leaves behind.
+ *
+ * What follows an opener is its own continuation -- prose wrapped over several
+ * indented lines -- and a continuation says nothing about whose block it is.
+ * So the opener is what gets read, and the lines under it are skipped until one
+ * is found.
+ */
+const BLOCK_START = /^\s*[●⎿✻✽]/
+
+/**
+ * The recap Claude prints when you come back after being away.
+ *
+ * Furniture, not work: it summarises a turn that has already finished, and it
+ * arrives *after* that turn's done line -- so the last thing above the input
+ * box is this rather than the marker, and the session read as busy for good.
+ * The transcript writes a `{"type":"system","subtype":"away_summary"}` for the
+ * same event.
+ */
+const RECAP = /^\s*●\s*recap:/i
+
+/**
  * Has Claude finished, on the evidence of the screen alone?
  *
  * `done` -- the last thing above the input box is the line a finished turn
@@ -177,13 +199,29 @@ export const screenState = (screen: string): 'done' | 'nothing' | 'busy' => {
    * so it answers `busy` instead and lets the transcript decide.
    */
   if (end === -1) return 'busy'
+  /*
+   * Walk up to the nearest block *opener* and let that decide. Reading the
+   * nearest non-blank line instead put the verdict on whichever line of prose
+   * happened to be last, which is a line that belongs to a block either way --
+   * and it is the block that says whether anything happened after the turn.
+   */
+  let printed = false
   for (let index = end - 1; index >= 0; index--) {
     const line = lines[index] ?? ''
     if (line.trim() === '') continue
     if (CHROME.some((re) => re.test(line))) continue
+    printed = true
+    // The recap and everything under it is furniture; keep looking above it.
+    if (RECAP.test(line)) {
+      printed = false
+      continue
+    }
+    if (!BLOCK_START.test(line)) continue
     return DONE_MARKER.test(line) ? 'done' : 'busy'
   }
-  return 'nothing'
+  // Lines that are neither chrome nor part of any block: a screen this cannot
+  // read, which is `busy` for the same reason a missing input box is.
+  return printed ? 'busy' : 'nothing'
 }
 
 /**
