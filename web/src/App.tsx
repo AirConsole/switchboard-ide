@@ -306,6 +306,7 @@ export const App = (): React.ReactElement => {
 
       <Overview
         worktrees={rowWorktrees}
+        projects={projects}
         sessions={sessions}
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}

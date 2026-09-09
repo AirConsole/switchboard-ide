@@ -128,6 +128,15 @@ const TrashIcon = (): React.ReactElement => (
 
 interface WorktreeTileProps {
   worktree: Worktree
+  /**
+   * The project it belongs to.
+   *
+   * Named in the bar because the row runs across every open project at once,
+   * and two projects can hold worktrees with the same name -- a `ui` beside
+   * another `ui` says nothing about which repository you are about to type
+   * into.
+   */
+  project: Project | undefined
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
@@ -168,6 +177,7 @@ interface WorktreeTileProps {
  */
 const WorktreeTile = ({
   worktree,
+  project,
   panes,
   focus,
   session,
@@ -235,6 +245,21 @@ const WorktreeTile = ({
 
   const identity = (
     <span className="tile__label">
+      {/* Dropped when the worktree already carries the project's name, since
+          saying it twice tells you nothing the once did not. */}
+      {project && project.name !== worktree.name && (
+        <>
+          <span className="tile__project" title={project.root}>
+            {project.name}
+          </span>
+          {/* The slash is its own element rather than punctuation glued to the
+              project's name, so a long project name ellipsizing does not take
+              the separator with it. */}
+          <span className="tile__slash" aria-hidden="true">
+            /
+          </span>
+        </>
+      )}
       <span className="tile__name">{worktree.name}</span>
       {worktree.branch && worktree.branch !== worktree.name && (
         <span className="tile__branch">{worktree.branch}</span>
@@ -382,6 +407,8 @@ const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
 export interface OverviewProps {
   /** Awake worktrees, in the order the row shows them. */
   worktrees: Worktree[]
+  /** Every open project, so a tile can name the one it belongs to. */
+  projects: Project[]
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
@@ -426,6 +453,7 @@ export interface OverviewProps {
  */
 export const Overview = ({
   worktrees,
+  projects,
   sessions,
   panels,
   activeTerminalByWorktree,
@@ -444,6 +472,7 @@ export const Overview = ({
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
+  const projectById = new Map(projects.map((project) => [project.id, project]))
 
   /*
    * A tile's panes. Each one takes a spot in the row.
@@ -694,6 +723,7 @@ export const Overview = ({
                   ) : (
                     <WorktreeTile
                       worktree={worktree}
+                      project={projectById.get(worktree.projectId)}
                       panes={slot.data.panes}
                       /*
                        * Non-null only for the worktree just navigated to, and a

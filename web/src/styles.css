@@ -684,6 +684,32 @@ button {
 }
 
 /*
+ * The project a worktree belongs to, said in front of its name.
+ *
+ * Dimmer and smaller than the name, with a slash between them, so the pair
+ * reads as one address whose second half is the part you were looking for.
+ */
+.tile__project {
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Shrinks before the worktree's own name does: with the bar tight, the half
+     you already know is the half that can go. */
+  flex-shrink: 8;
+}
+
+.tile__slash {
+  font-size: 11px;
+  color: var(--graphite-dim);
+  /* Pulled in on both sides: the label's 8px gap is the spacing between two
+     names, and this is punctuation inside one address. */
+  margin: 0 -3px;
+  flex: none;
+}
+
+/*
  * The tile's title, and the most prominent thing in its chrome.
  *
  * Larger and heavier than anything else in the bar, because it answers the
