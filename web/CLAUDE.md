@@ -23,23 +23,39 @@ views/useNearViewport  whether a tile is close enough to mount its terminal
 views/tileMotion       keeps a departing tile alive while it animates out
 ```
 
-## The row is a grid of spots
+## The row is a grid of units
 
 `Overview.tsx` holds the only layout arithmetic:
 
 ```ts
-spots = max(1, floor((width - GAP) / (minPaneWidth + GAP)))
-pitch = (width - GAP) / spots          // a spot plus the gap after it
-tileWidth = panes * pitch - GAP        // a tile swallows the gaps it covers
+unitPitch = (minPaneWidth + GAP) / 2   // a unit is half a pane
+units = max(2, floor((width - GAP) / unitPitch))
+pitch = (width - GAP) / units          // a unit plus the gap after it
+tileWidth = tileUnits * pitch - GAP    // a tile swallows the gaps it covers
 ```
 
-Two consequences to preserve. **Every tile starts on a spot boundary**, so
-scrolling to `spot * pitch` lands a tile flush at the left edge and no tile is
+**A unit is half a pane**, and that halving is the whole of it. Panes declare
+what they want in `PANE_UNITS`: two for Claude, a terminal or the todos, and
+three for the files panel — a spot and a half — because that panel spends a
+quarter of its width on the tree beside the editor and at one spot its editor
+came to 56–63 columns, under the 80 the layout exists to guarantee. Measured,
+and worse the wider the monitor: 57 columns at 3440px, because more spots fit
+and a two-pane tile is always two of them. At three units it is 90–107 columns
+from 1687px up. Nothing may ask for one unit: that is half a pane, and the
+80-column floor is a promise about panes.
+
+A panel asks and settles. Files wants three units but takes two rather than
+cost you Claude's pane on a window with only four — a narrower editor beats no
+agent — and only when even two will not fit is Claude dropped, which is the
+phone rule.
+
+Two consequences to preserve. **Every tile starts on a unit boundary**, so
+scrolling to `unit * pitch` lands a tile flush at the left edge and no tile is
 ever shown half-cut; the snap points are one out-of-flow `.grid__spot` marker
-per spot. And **a tile wider than the window is collapsed, not squeezed**:
+per unit. And **a tile wider than the window is collapsed, not squeezed**:
 `panesOf` drops Claude's pane first, which is all it ever has to drop now that a
-worktree shows one panel at a time — a tile is one spot or two, so the only
-window it cannot fit whole is one a single pane already fills. That is what
+worktree shows one panel at a time — a tile is two, four or five units, so the
+only window it cannot fit whole is one a single pane already fills. That is what
 retired the machinery that used to close panels the layout could not keep:
 nothing is ever held open behind the scenes, so a toggle cannot lie about what
 is on screen.
@@ -49,7 +65,7 @@ one-at-a-time rule and can still name several. `openPanelsOf` takes the last —
 the newest wins, which is the rule a too-narrow window already used.
 
 `scrollTo` names a worktree and says nothing about where to put it: the row
-moves by the fewest spots that bring the whole of that tile on screen, and not
+moves by the fewest units that bring the whole of that tile on screen, and not
 at all if it is already there (`nearestOffset`, `wholeOnScreen`). A tab click, a
 Cmd+arrow step, waking, and opening a panel all mean that same thing, so
 whatever you were already looking at stays in front of you when it can.
