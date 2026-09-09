@@ -152,7 +152,7 @@ const Group = ({
         <button
           className="group__close"
           onClick={() => onCloseProject(project.id)}
-          title={`Close ${project.name}. Its worktrees and their sessions are left alone.`}
+          title={`Close ${project.name}, and choose what happens to what it is running`}
           aria-label={`Close project ${project.name}`}
         >
           &times;

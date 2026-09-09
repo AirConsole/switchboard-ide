@@ -70,7 +70,9 @@ export const api = {
         commitExisting: opts.commitExisting ?? true,
       }),
     }),
-  closeProject: (id: string) => request<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }),
+  /** Close a project. `sleep` stops every session it is running on the way out. */
+  closeProject: (id: string, opts: { sleep: boolean }) =>
+    request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
   createWorktree: (body: { projectId: string; branch: string; base?: string; startClaude: boolean }) =>

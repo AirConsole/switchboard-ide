@@ -148,6 +148,19 @@ class LiveSession {
     this.mirror = new TerminalMirror(record.cols, record.rows)
   }
 
+  /**
+   * The project this session belongs to.
+   *
+   * It lives in the tmux metadata rather than on the `Session` record, because
+   * a client identifies a session by its worktree and never needs the project.
+   * Closing a project does, and it needs it from the session rather than from
+   * the worktree list -- a session whose worktree has since gone is still that
+   * project's process to stop.
+   */
+  get projectId(): string {
+    return this.meta.projectId
+  }
+
   get name(): string {
     return this.record.tmuxName
   }
@@ -591,6 +604,26 @@ export class SessionEngine {
     const doomed = [...this.sessions.values()].filter(
       (l) => l.record.worktreeId === worktreeId && (!kinds || kinds.includes(l.record.kind)),
     )
+    await Promise.all(doomed.map((l) => this.kill(l.record.id)))
+  }
+
+  /** Sessions belonging to a project, whatever worktree they are in. */
+  listForProject(projectId: string): Session[] {
+    return [...this.sessions.values()]
+      .filter((l) => l.projectId === projectId)
+      .map((l) => l.toRecord())
+  }
+
+  /**
+   * Stop everything a project is running.
+   *
+   * By the project recorded in each session rather than by walking the
+   * project's worktrees, so a session whose worktree has been removed -- or
+   * whose project directory has moved, and no longer lists it -- is still
+   * stopped rather than left running with nothing on screen owning it.
+   */
+  async killForProject(projectId: string): Promise<void> {
+    const doomed = [...this.sessions.values()].filter((l) => l.projectId === projectId)
     await Promise.all(doomed.map((l) => this.kill(l.record.id)))
   }
 
