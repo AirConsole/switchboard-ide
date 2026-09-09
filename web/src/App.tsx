@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
@@ -85,6 +85,25 @@ export const App = (): React.ReactElement => {
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
 
   const setAwake = (ids: Iterable<string>): void => setUi({ awake: [...ids] })
+
+  /*
+   * On arrival, the first worktree is the active one and its Claude has the
+   * keyboard.
+   *
+   * Once, and only once there is something to point at -- the first render
+   * happens before the snapshot lands. After that the active worktree is
+   * whatever you last navigated to, and this must not keep dragging it back.
+   */
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current) return
+    const first = rowWorktrees[0]
+    if (first === undefined) return
+    started.current = true
+    reveal(first.id)
+    // `reveal` is rebuilt every render and this fires once, so it is not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowWorktrees])
 
   /**
    * Wake a worktree: bring back its tile and its agent.

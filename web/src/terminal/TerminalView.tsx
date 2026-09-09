@@ -54,6 +54,16 @@ export interface TerminalViewProps {
   primary: boolean
   /** Fixed font size for tiles. When omitted the terminal fits its container. */
   fontSize?: number
+  /**
+   * Take the keyboard when this changes, and when it is already set at mount.
+   *
+   * A number rather than a flag because the same terminal may be asked for
+   * twice running -- navigating back to a worktree you were just on -- and
+   * because a terminal is often not mounted at the moment it is asked for: it
+   * is built when its tile comes near the scrollport, which is after the scroll
+   * that asked for it. Reading the request on mount is what closes that gap.
+   */
+  focus?: number | null
   className?: string
   onFocusCapture?: () => void
 }
@@ -78,10 +88,12 @@ export const TerminalView = ({
   session,
   primary,
   fontSize,
+  focus = null,
   className,
   onFocusCapture,
 }: TerminalViewProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const termRef = useRef<Terminal | null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -122,6 +134,7 @@ export const TerminalView = ({
     term.loadAddon(unicode)
     term.unicode.activeVersion = '11'
 
+    termRef.current = term
     term.open(host)
 
     /*
@@ -246,12 +259,22 @@ export const TerminalView = ({
     return () => {
       observer?.disconnect()
       unsubscribe()
+      termRef.current = null
       term.dispose()
     }
     // session.cols/rows are intentionally excluded: a primary terminal drives
     // them, so reacting to them here would tear the terminal down on every
     // resize it caused itself.
   }, [session.id, primary, fontSize])
+
+  /*
+   * Declared after the effect that builds the terminal, so on a fresh mount
+   * that one has already run and there is something to focus.
+   */
+  useEffect(() => {
+    if (focus === null) return
+    termRef.current?.focus()
+  }, [focus])
 
   return (
     <div
@@ -261,8 +284,17 @@ export const TerminalView = ({
       // start at and leaves the rest of the pane empty.
       className={className ? `term-host ${className}` : 'term-host'}
       ref={hostRef}
-      // Claiming input authority on pointer-down means clicking a tile in the
-      // overview lets you answer a prompt right there.
+      /*
+       * Whoever has the keyboard has the input authority, however they came by
+       * it. Claiming it on focus rather than only on pointer-down means a
+       * terminal handed the keyboard by navigating is as usable as one clicked
+       * into -- and React's onFocus follows focusin, so it hears the focus that
+       * lands on xterm's own hidden textarea.
+       */
+      onFocus={() => {
+        terminalSocket.focus(session.id)
+        onFocusCapture?.()
+      }}
       onPointerDown={() => {
         terminalSocket.focus(session.id)
         onFocusCapture?.()

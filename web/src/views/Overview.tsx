@@ -130,6 +130,16 @@ interface WorktreeTileProps {
   worktree: Worktree
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
+  /**
+   * Hand Claude the keyboard when this changes. Null for every worktree but
+   * the one just navigated to.
+   *
+   * Nothing happens when Claude has no pane here -- dropped because the window
+   * is too narrow for it, or not running at all -- which is the whole of "focus
+   * it if it is visible": the terminal that would take the keyboard does not
+   * exist, so nothing takes it.
+   */
+  focus: number | null
   session: Session | undefined
   terminals: Session[]
   activeTerminalId: string | null
@@ -159,6 +169,7 @@ interface WorktreeTileProps {
 const WorktreeTile = ({
   worktree,
   panes,
+  focus,
   session,
   terminals,
   activeTerminalId,
@@ -324,7 +335,14 @@ const WorktreeTile = ({
           <div className="tile__pane" key={pane.key} data-pane={pane.key}>
             {pane.kind === 'claude' &&
               (running && session ? (
-                near && <TerminalView session={session} primary={true} fontSize={TERMINAL_FONT_SIZE} />
+                near && (
+                  <TerminalView
+                    session={session}
+                    primary={true}
+                    fontSize={TERMINAL_FONT_SIZE}
+                    focus={focus}
+                  />
+                )
               ) : (
                 <div className="tile__idle">
                   <p className="tile__idle-text">Claude is not running in this worktree.</p>
@@ -571,12 +589,14 @@ export const Overview = ({
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
       event.preventDefault()
-      if (to === undefined) return
-      grid.scrollTo({ left: to.spot * pitch, behavior: 'smooth' })
+      // Through the same request the top bar makes, rather than scrolling from
+      // here: arriving somewhere is one thing, and it also hands over the
+      // keyboard.
+      if (to?.worktree) onReveal(to.worktree.id)
     }
     document.addEventListener('keydown', step)
     return () => document.removeEventListener('keydown', step)
-  }, [stops, pitch])
+  }, [stops, pitch, onReveal])
 
   /*
    * Keep your place across a resize.
@@ -675,6 +695,12 @@ export const Overview = ({
                     <WorktreeTile
                       worktree={worktree}
                       panes={slot.data.panes}
+                      /*
+                       * Non-null only for the worktree just navigated to, and a
+                       * fresh number each time it is asked for, so going back
+                       * to one you were on hands the keyboard over again.
+                       */
+                      focus={scrollTo?.id === worktree.id ? scrollTo.nonce : null}
                       session={claudeSession(sessions, worktree.id)}
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
