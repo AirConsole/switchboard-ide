@@ -123,10 +123,17 @@ interface PanelCounts {
  * The toggle's label.
  *
  * Terminals count themselves rather than repeating the panel's name: the number
- * is the useful part at a glance, and with none open the toggle says what the
- * click will actually do, which is add one. The count is of the terminals the
- * panel would show, exited ones included -- a label offering to add the first
- * one over a tab strip that already has a tab in it would contradict itself.
+ * is the useful part at a glance. The count is of the terminals the panel would
+ * show, exited ones included, so the label never disagrees with the tab strip
+ * under it.
+ *
+ * With none open the label is the bare noun, not "Add Terminal". Every toggle
+ * here opens its panel, and opening the terminals panel on a worktree with no
+ * terminal makes one -- so the verb was true but it was also the only one in a
+ * row of nouns, and it made the two widest labels in the bar the two that had
+ * the least to say. The bar carries the worktree's name, its prompt, its state,
+ * three toggles, sleep and remove in one segment; four characters of "Add " on
+ * each of two of them is width the name and the prompt want more.
  *
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
@@ -136,13 +143,12 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
     case 'todo':
       // What is queued outranks what is merely written down: one is about to
       // happen to this worktree and the other is a list. With nothing queued it
-      // counts itself like the terminals do, and with nothing at all it says
-      // what the click will do.
+      // counts itself like the terminals do.
       if (counts.queued > 0) return counts.queued === 1 ? '1 Queued' : `${counts.queued} Queued`
-      if (counts.todos === 0) return 'Add Todo'
+      if (counts.todos === 0) return 'Todo'
       return counts.todos === 1 ? '1 Todo' : `${counts.todos} Todos`
     case 'terminals':
-      if (counts.terminals === 0) return 'Add Terminal'
+      if (counts.terminals === 0) return 'Terminal'
       return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
     case 'files':
       /*
