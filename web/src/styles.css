@@ -134,11 +134,15 @@
   --motion: 140ms;
 
   --rail: 2px;
-  --bar-h: 44px;
+  /* The top bar, and deliberately the same height as a window's own bar below:
+     two bars of one height read as the same instrument at two scales, where
+     44px read as a heading over the row. It also leaves the 13px tab and its
+     2px marks 10px of air above and 13px below, so nothing is wedged. */
+  --bar-h: 38px;
   /* A worktree tile's own bar. Its controls fill it edge to edge, so this is
      the height of every button in a tile as well -- roomy enough that the
      15px title is not wedged between two edges, and it costs a tile well
-     under half a terminal row. */
+     under half a terminal row. Kept in step with --bar-h above. */
   --tile-bar-h: 38px;
   --radius: 4px;
 
@@ -1829,7 +1833,7 @@ button {
    *
    * The tab it hangs from lives in a horizontal scroller, and a scroller clips
    * in both directions -- so an absolutely positioned menu was drawn at the
-   * right place and then cut off by the 44px bar, present in the markup and
+   * right place and then cut off by the bar itself, present in the markup and
    * invisible on screen. Fixed positioning is not clipped by an ancestor's
    * overflow, which is the whole reason for it here.
    */

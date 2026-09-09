@@ -95,7 +95,7 @@ const Group = ({
    * hangs from: the tab lives in a horizontal scroller, and a scroller clips
    * what overflows it in *both* directions -- `overflow-x: auto` computes
    * `overflow-y` to auto as well. So an absolutely positioned menu was there in
-   * the markup, at the right coordinates, and cut off entirely by the 44px bar.
+   * the markup, at the right coordinates, and cut off entirely by the bar.
    */
   const [at, setAt] = useState<{ left: number; top: number } | null>(null)
   const anchor = useRef<HTMLButtonElement | null>(null)

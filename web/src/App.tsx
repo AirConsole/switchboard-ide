@@ -45,8 +45,20 @@ export const App = (): React.ReactElement => {
    * thing by it.
    */
   const [scrollTo, setScrollTo] = useState<{ id: string; nonce: number } | null>(null)
-  const reveal = (id: string): void =>
+  /**
+   * The worktree you are in.
+   *
+   * Not the same thing as the last scroll request, though navigating is one way
+   * to arrive: clicking into a terminal, a tab strip or a panel puts you in
+   * that worktree without asking the row to move, and the bar has to say so.
+   * It is also what a Cmd+arrow step counts from, so stepping continues from
+   * the window you clicked into rather than from the one you last navigated to.
+   */
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const reveal = (id: string): void => {
+    setActiveId(id)
     setScrollTo((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
+  }
 
   useEffect(() => {
     bindSocketToStore()
@@ -287,7 +299,7 @@ export const App = (): React.ReactElement => {
       onNewWorktree={setAddingTo}
       onWake={wake}
       onReveal={reveal}
-      activeId={scrollTo?.id ?? null}
+      activeId={activeId}
     />
   )
 
@@ -412,6 +424,8 @@ export const App = (): React.ReactElement => {
         // per-project + is the unambiguous way to say it.
         addTo={projects.length === 1 ? (projects[0] ?? null) : null}
         scrollTo={scrollTo}
+        activeId={activeId}
+        onActivate={setActiveId}
         onStart={startClaude}
         onSleep={setSleeping}
         onReveal={reveal}
