@@ -264,14 +264,33 @@ export type TurnState = 'between-turns' | 'in-turn' | 'unknown'
  */
 const IN_TURN_STALE_MS = 30_000
 
+/**
+ * The last mark read from a transcript, by directory.
+ *
+ * The tail read is skipped while the file has not moved, which is most of the
+ * time: this is asked of every quiet agent every couple of seconds, and a
+ * transcript only grows when something happens. The staleness rule below is
+ * still applied fresh each time, since that depends on the clock rather than on
+ * the file.
+ */
+const marks = new Map<string, { path: string; at: number; kind: 'prompt' | 'turn-end' }>()
+
 export const turnState = async (cwd: string, now = Date.now()): Promise<TurnState> => {
   const newest = await newestTranscript(transcriptDir(cwd))
   if (newest === null) return 'unknown'
-  const text = await readTail(newest.path)
-  if (text === null) return 'unknown'
-  const mark = newestMark(text)
-  if (mark === null) return 'unknown'
-  if (mark.kind === 'turn-end') return 'between-turns'
+  const cached = marks.get(cwd)
+  let kind: 'prompt' | 'turn-end'
+  if (cached !== undefined && cached.path === newest.path && cached.at === newest.at) {
+    kind = cached.kind
+  } else {
+    const text = await readTail(newest.path)
+    if (text === null) return 'unknown'
+    const mark = newestMark(text)
+    if (mark === null) return 'unknown'
+    kind = mark.kind
+    marks.set(cwd, { path: newest.path, at: newest.at, kind })
+  }
+  if (kind === 'turn-end') return 'between-turns'
   // Nothing has written here in half a minute, so whatever this prompt started
   // is not still going; let the screen answer instead.
   return now - newest.at > IN_TURN_STALE_MS ? 'unknown' : 'in-turn'
