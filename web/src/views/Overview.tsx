@@ -394,6 +394,21 @@ const WorktreeTile = ({
     </span>
   )
 
+  /*
+   * What this worktree is about, in the words you asked for it in.
+   *
+   * A row of windows all look alike -- same chrome, same terminal -- and the
+   * name only says which branch it is. This is the line that answers "which one
+   * is doing what" without reading four terminals. Quiet, because the state and
+   * the name still outrank it, and one line however long the prompt was; the
+   * whole of it is in the tooltip.
+   */
+  const prompt = worktree.prompt ? (
+    <span className="tile__prompt" title={worktree.prompt}>
+      {worktree.prompt}
+    </span>
+  ) : null
+
   const controls = (
     <div className="tile__controls">
       <span className="tile__state">{stateLabel(session)}</span>
@@ -468,6 +483,7 @@ const WorktreeTile = ({
         {panes.map((pane, index) => (
           <div className="tile__seg" key={pane.key}>
             {index === 0 && identity}
+            {index === 0 && prompt}
             {pane.kind === 'terminals' && (
               <TerminalsTabs
                 terminals={terminals}

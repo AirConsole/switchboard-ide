@@ -32,6 +32,7 @@ import {
   resolveDefaultBase,
   worktreePathFor,
 } from './git/worktree.js'
+import { lastPrompt } from './session/claude.js'
 
 /**
  * Ties the three sources of truth together: the state store (projects + UI),
@@ -59,7 +60,10 @@ export class Workspace {
   /** Signature of everything a client would notice about the worktrees. */
   private static signature(worktrees: Worktree[]): string {
     return worktrees
-      .map((w) => `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.missing === true}`)
+      .map(
+        (w) =>
+          `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.missing === true}:${w.prompt ?? ''}`,
+      )
       .join('|')
   }
 
@@ -102,7 +106,11 @@ export class Workspace {
       try {
         const list = await listWorktrees(project.id, project.root)
         for (const worktree of list) {
-          all.push({ ...worktree, dirty: await dirtyCount(worktree.path) })
+          all.push({
+            ...worktree,
+            dirty: await dirtyCount(worktree.path),
+            prompt: await lastPrompt(worktree.path),
+          })
         }
       } catch {
         // A project whose directory moved or was deleted should not break the

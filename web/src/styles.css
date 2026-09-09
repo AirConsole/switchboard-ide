@@ -314,6 +314,27 @@ button {
 }
 
 /*
+ * The worktree you are in: marked at the top, and recessed into the row.
+ *
+ * A third fact about a tab, after awake-or-asleep and what Claude is doing, so
+ * it needs a channel of its own and it does not get colour -- amber and green
+ * are spoken for. The bar's two edges divide the work: the line under a tab is
+ * the agent's state, the band over it is you.
+ *
+ * The ground is the quieter half, and recessed rather than raised on purpose.
+ * --ink is what the row of windows sits on, so the tab reads as continuous
+ * with the window below it, and hover -- --slab-raised, lighter than the bar
+ * -- keeps pointing the other way. Hover does win over it while the pointer is
+ * there, which is why the band and not the ground is what has to carry this:
+ * 2px of --graphite-dim, the same weight as the state line opposite, quiet
+ * enough not to compete with it and bright enough to find at a glance.
+ */
+.chip--active {
+  background: var(--ink);
+  box-shadow: inset 0 2px 0 var(--graphite-dim);
+}
+
+/*
  * Awake or asleep is carried by brightness; what Claude is doing is carried by
  * the line under the tab.
  *
@@ -340,6 +361,17 @@ button {
   border-bottom-color: var(--signal);
 }
 
+/*
+ * Restated under the pointer, for the reason `.tile:hover` names three sides:
+ * hover brightens a tab by setting `color`, and `.chip:hover` outweighs a
+ * single class, so reaching for the tab of the worktree that is blocked on you
+ * took the amber out of it on the way. Brightening is hover's to do; the
+ * signal is not.
+ */
+.chip--needs:hover {
+  color: var(--signal);
+}
+
 .chip--working {
   border-bottom-color: var(--graphite);
 }
@@ -364,10 +396,13 @@ button {
   color: inherit;
 }
 
-/* Bigger than the label it follows: it is the only thing on the tab saying
-   "there is more behind this", so it has to be seen before it is read. */
+/* Bigger than the label it follows, and bigger than any other text on the bar:
+   it is the only thing on the tab saying "there is more behind this", so it has
+   to be seen before it is read. U+25BE is a small triangle inside its em box --
+   about two fifths of it -- so the glyph still lands smaller than the 13px name
+   beside it even at this size. */
 .chip__caret {
-  font-size: 12px;
+  font-size: 17px;
   line-height: 1;
   color: var(--graphite);
 }
@@ -568,8 +603,18 @@ button {
   min-width: 0;
 }
 
+/*
+ * Three sides, named one at a time, because the fourth is not hover's to
+ * touch: the left border is the rail, and the rail is what says whether this
+ * agent is done, blocked on you or working. The `border-color` shorthand set
+ * all four, and `.tile:hover` outweighs `.tile--done` -- one class plus a
+ * pseudo-class against one class -- so putting the pointer anywhere over a
+ * window turned its status grey until you moved away.
+ */
 .tile:hover {
-  border-color: var(--rule-bright);
+  border-top-color: var(--rule-bright);
+  border-right-color: var(--rule-bright);
+  border-bottom-color: var(--rule-bright);
 }
 
 /* State is carried by the left rail, matching the tabs. Only "waiting" is
@@ -774,6 +819,27 @@ button {
 }
 
 .tile__branch {
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The last prompt, filling whatever the bar has left between the name and the
+ * controls.
+ *
+ * One line, always: a prompt runs to paragraphs and the bar is a bar. Dim and
+ * 11px so it stays under the worktree's name -- it says what this window is
+ * about, not which window it is -- and it is the interface speaking prose, so
+ * --font-ui rather than the mono the identifiers beside it use.
+ */
+.tile__prompt {
+  flex: 1;
+  align-self: center;
+  min-width: 0;
+  padding-right: 10px;
   font-size: 11px;
   color: var(--graphite-dim);
   overflow: hidden;
@@ -1540,10 +1606,18 @@ button {
   font-size: 12px;
 }
 
+/*
+ * Two lines now: what the worktree is, and what it was doing.
+ *
+ * A column, so the prompt gets a line of its own -- on the name's line it would
+ * have to fight the state label for the same few characters, and the whole
+ * point of it is that it is longer than a name.
+ */
 .menu__row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   padding: 5px 8px;
   border-radius: 2px;
   font: inherit;
@@ -1583,6 +1657,24 @@ button {
 }
 
 /* The state of one sleeping worktree, in the dropdown that lists them. */
+.menu__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Longer than a name and shorter than the menu is wide, so it sets the width
+   and everything above it lines up against it. */
+.menu__prompt {
+  max-width: 380px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .menu__state {
   margin-left: auto;
   padding-left: 12px;

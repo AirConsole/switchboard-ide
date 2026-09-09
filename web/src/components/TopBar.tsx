@@ -19,6 +19,11 @@ export interface TopBarProps {
   onWake: (worktreeId: string) => void
   /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
+  /**
+   * The worktree you are in: the one the row last brought into view, and whose
+   * Claude has the keyboard. Null before anything has been navigated to.
+   */
+  activeId: string | null
 }
 
 /** The tab class for a status: the line under it, and amber when blocked. */
@@ -55,6 +60,7 @@ const WorktreeLabel = ({ worktree }: { worktree: Worktree }): React.ReactElement
 const Group = ({
   group,
   sessions,
+  activeId,
   onCloseProject,
   onNewWorktree,
   onWake,
@@ -64,7 +70,7 @@ const Group = ({
   sessions: Session[]
 } & Pick<
   TopBarProps,
-  'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
+  'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
 >): React.ReactElement => {
   /*
    * Where to draw the dropdown, or null when it is closed.
@@ -115,11 +121,19 @@ const Group = ({
         'chip',
         sleeping ? 'chip--asleep' : 'chip--shown',
         statusClass(worktreeStatus(sessions, worktree.id)),
-      ].join(' ')}
+        // Where you are. A sleeping worktree is nowhere, whatever the row was
+        // last asked for -- it has no window to be in.
+        !sleeping && worktree.id === activeId ? 'chip--active' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
-      title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
-        sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view'
-      }`}
+      title={[
+        worktree.path,
+        stateLabel(claudeSession(sessions, worktree.id)),
+        ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+        sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
+      ].join('\n')}
     >
       {sleeping && (
         <span className="chip__zz" aria-hidden="true">
@@ -186,23 +200,29 @@ const Group = ({
                     }}
                     title={worktree.path}
                   >
-                    <WorktreeLabel worktree={worktree} />
-                    {/* Said in words rather than a dot: there is room here, and
-                        a sleeping worktree with Claude still running is the
-                        thing you most need to be able to tell apart. */}
-                    <span
-                      className={
-                        status === 'needs-you'
-                          ? 'menu__state menu__state--needs'
-                          : status === 'working'
-                            ? 'menu__state menu__state--working'
-                            : status === 'idle'
-                              ? 'menu__state menu__state--idle'
-                              : 'menu__state'
-                      }
-                    >
-                      {stateLabel(claudeSession(sessions, worktree.id))}
+                    <span className="menu__line">
+                      <WorktreeLabel worktree={worktree} />
+                      {/* Said in words rather than a dot: there is room here, and
+                          a sleeping worktree with Claude still running is the
+                          thing you most need to be able to tell apart. */}
+                      <span
+                        className={
+                          status === 'needs-you'
+                            ? 'menu__state menu__state--needs'
+                            : status === 'working'
+                              ? 'menu__state menu__state--working'
+                              : status === 'idle'
+                                ? 'menu__state menu__state--idle'
+                                : 'menu__state'
+                        }
+                      >
+                        {stateLabel(claudeSession(sessions, worktree.id))}
+                      </span>
                     </span>
+                    {/* What it was doing when you put it down. A sleeping
+                        worktree is the one you have least chance of recognising
+                        by name alone. */}
+                    {worktree.prompt && <span className="menu__prompt">{worktree.prompt}</span>}
                   </button>
                 )
               })}
@@ -239,6 +259,7 @@ const Group = ({
 export const TopBar = ({
   groups,
   sessions,
+  activeId,
   onOpenProject,
   onCloseProject,
   onNewWorktree,
@@ -252,6 +273,7 @@ export const TopBar = ({
           key={group.project.id}
           group={group}
           sessions={sessions}
+          activeId={activeId}
           onCloseProject={onCloseProject}
           onNewWorktree={onNewWorktree}
           onWake={onWake}

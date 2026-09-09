@@ -247,6 +247,7 @@ export const App = (): React.ReactElement => {
       onNewWorktree={setAddingTo}
       onWake={wake}
       onReveal={reveal}
+      activeId={scrollTo?.id ?? null}
     />
   )
 
