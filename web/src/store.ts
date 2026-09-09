@@ -37,6 +37,7 @@ interface AppState extends AppSnapshot {
     sessionId: string,
     next: {
       liveness: SessionLiveness
+      exitStatus: number | null
       attention: AttentionState
       lastOutputAt: number
       command?: string
@@ -124,6 +125,7 @@ export const bindSocketToStore = (): void => {
   terminalSocket.onSessionState((msg) => {
     useStore.getState().applySessionState(msg.sessionId, {
       liveness: msg.liveness,
+      exitStatus: msg.exitStatus ?? null,
       attention: msg.attention,
       lastOutputAt: msg.lastOutputAt,
       // Omitted rather than sent as undefined, so a message without it does not

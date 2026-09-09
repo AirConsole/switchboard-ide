@@ -85,6 +85,13 @@ export const api = {
       method: 'POST',
     }),
 
+  /**
+   * The last lines a dead session printed, for saying why it stopped. Asked for
+   * only when something has stopped, so it is not part of the snapshot.
+   */
+  sessionTail: (sessionId: string) =>
+    request<{ lines: string[] }>(`/api/sessions/${sessionId}/tail`),
+
   changes: (worktreeId: string) =>
     request<WorktreeChanges>(`/api/worktrees/${worktreeId}/changes`),
 

@@ -90,6 +90,13 @@ export interface SessionStateMsg {
   t: 'session-state'
   sessionId: string
   liveness: SessionLiveness
+  /**
+   * Set when `liveness` is dead. Carried here and not left to the next REST
+   * snapshot: death is pushed, and a client that only heard "dead" could say
+   * that a session had stopped but never why, which is the one thing worth
+   * saying about a Claude that would not start.
+   */
+  exitStatus?: number | null
   attention: AttentionState
   lastOutputAt: number
   /** What the pane is running; changes as you use the terminal. */

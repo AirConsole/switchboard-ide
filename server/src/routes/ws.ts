@@ -45,6 +45,7 @@ export const registerWs = (
       t: 'session-state',
       sessionId: session.id,
       liveness: session.liveness,
+      exitStatus: session.exitStatus ?? null,
       attention: session.attention,
       lastOutputAt: session.lastOutputAt,
       ...(session.command === undefined ? {} : { command: session.command }),

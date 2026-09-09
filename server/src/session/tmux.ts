@@ -327,6 +327,35 @@ export const listPanes = async (): Promise<PaneInfo[]> => {
 }
 
 /**
+ * tmux writes this line into a dead pane itself, from `remain-on-exit-format`.
+ * The interface says the same thing in its own words, so in a tail it is noise.
+ */
+const DEAD_PANE_NOTE = /^Pane is dead \(/
+
+/**
+ * What a pane has printed lately, oldest line first, blanks removed.
+ *
+ * `-S -<n>` reaches back into the scrollback rather than capturing the visible
+ * screen, because the line that explains an exit is usually no longer on it: a
+ * pane whose only command has died keeps scrolling as it is respawned, and the
+ * message that matters ends up above the fold. Measured on the real failure --
+ * `claude --continue` refusing -- where a plain capture returned blank lines.
+ */
+export const capturePane = async (name: string, lines: number): Promise<string[]> => {
+  let stdout: string
+  try {
+    ;({ stdout } = await tmux('capture-pane', '-p', '-S', `-${lines}`, '-t', paneTarget(name)))
+  } catch {
+    // A session that has gone away has nothing to say.
+    return []
+  }
+  return stdout
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line !== '' && !DEAD_PANE_NOTE.test(line))
+}
+
+/**
  * Bring a dead pane back to life in place, keeping the session (and its window
  * history) rather than making a new one.
  */

@@ -5,6 +5,7 @@ import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
 } from '../terminal/TerminalView.js'
+import { api } from '../api.js'
 import { claudeSession, isRunning, stateLabel, terminalSessions } from '../selectors.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { GitBar, GitPane, useGitState } from './GitPane.js'
@@ -102,6 +103,48 @@ const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; he
 }
 
 /**
+ * What a session said before it stopped, or nothing if it stopped cleanly.
+ *
+ * Only a failure gets one. A status of zero is someone typing /exit, where the
+ * tail is whatever happened to be on screen beforehand and explains nothing --
+ * whereas a non-zero exit is precisely the case where the pane held the only
+ * account of what went wrong and the interface used to throw it away. A dead
+ * pane says nothing further, so this is asked once per exit and not polled.
+ */
+const useExitOutput = (session: Session | undefined): string[] => {
+  const failed = session !== undefined && session.liveness === 'dead' && session.exitStatus !== 0
+  const sessionId = failed ? session.id : null
+  const [lines, setLines] = useState<string[]>([])
+  useEffect(() => {
+    if (sessionId === null) {
+      setLines([])
+      return
+    }
+    let cancelled = false
+    void api
+      .sessionTail(sessionId)
+      .then(({ lines: tail }) => {
+        if (!cancelled) setLines(tail)
+      })
+      // A session that has gone away in the meantime simply has nothing to show.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
+  return lines
+}
+
+/** Why Claude is not on screen, in the interface's own voice. */
+const idleReason = (session: Session | undefined): string => {
+  if (!session) return 'Claude is not running in this worktree.'
+  if (session.exitStatus === 0) return 'Claude exited.'
+  // No number from tmux, so do not invent one.
+  if (!session.exitStatus) return 'Claude is no longer running.'
+  return `Claude exited with status ${session.exitStatus}.`
+}
+
+/**
  * Removing a worktree is the one destructive thing in the bar, so it is the one
  * control that is not a word: an icon is read before it is parsed. Hairlines at
  * the same weight as the rest of the chrome, and currentColor so it inherits
@@ -193,9 +236,12 @@ const WorktreeTile = ({
   onNewTerminal,
   onCloseTerminal,
 }: WorktreeTileProps): React.ReactElement => {
-  // An exited session is offered as something to restart, not shown as a dead
-  // terminal: whatever it printed last is of no use at a glance.
+  // An exited session is offered as something to restart rather than left as a
+  // frozen terminal -- but with what it printed on its way out, which is often
+  // the only account of why it stopped. It was dropped here once, and a Claude
+  // that could not start looked like a button that did nothing.
   const running = isRunning(session)
+  const exitOutput = useExitOutput(session)
   const state = !session
     ? 'idle'
     : session.liveness === 'dead'
@@ -370,7 +416,22 @@ const WorktreeTile = ({
                 )
               ) : (
                 <div className="tile__idle">
-                  <p className="tile__idle-text">Claude is not running in this worktree.</p>
+                  <p className="tile__idle-text">{idleReason(session)}</p>
+                  {exitOutput.length > 0 && (
+                    <pre
+                      className="tile__idle-output"
+                      /*
+                       * Opened at the bottom, like a terminal: the last thing a
+                       * failing command says is the part that says why, and a
+                       * long one starts scrolled past it otherwise.
+                       */
+                      ref={(element) => {
+                        if (element) element.scrollTop = element.scrollHeight
+                      }}
+                    >
+                      {exitOutput.join('\n')}
+                    </pre>
+                  )}
                   <button className="btn" onClick={onStart}>
                     Start Claude
                   </button>

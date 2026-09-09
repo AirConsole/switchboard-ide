@@ -7,6 +7,20 @@ import { HttpError, type Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 
+/**
+ * How long a Claude started with `--continue` gets to prove it survived.
+ *
+ * `claude --continue` refuses outright when the conversation it would resume is
+ * already running somewhere else -- it prints why and exits 1, measured at 1.1s
+ * -- and a worktree in that state could never be started from here: every click
+ * respawned the same refusal, and the message was never on screen to say so.
+ * Comfortably longer than the measured failure, and paid only in the background.
+ */
+const CONTINUE_GRACE_MS = 5000
+
+/** Lines of a dead session's output the UI is given to explain the exit. */
+const TAIL_LINES = 20
+
 const openProjectBody = z.object({
   path: z.string().min(1),
   /** Create the directory and initialise a repository if it is not there yet. */
@@ -234,8 +248,47 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
           args,
         })
     broadcastInvalidate()
+    if (session && args.includes('--continue')) void fallBackIfContinueRefused(session.id)
     return { ok: true, session }
   })
+
+  /**
+   * The last thing a session printed, so the interface can say why it stopped
+   * instead of only that it did.
+   */
+  app.get('/api/sessions/:id/tail', async (request) => {
+    const { id } = request.params as { id: string }
+    if (!engine.get(id)) throw new HttpError(404, 'no such session')
+    return { lines: await engine.tail(id, TAIL_LINES) }
+  })
+
+  /**
+   * Start the conversation over when `--continue` bounced off it.
+   *
+   * Deliberately not awaited by the request: the refusal takes about a second
+   * to happen and a wake that is going to work must not wait for it. The client
+   * learns about the restart through the invalidate, like any other change.
+   *
+   * Only a non-zero exit qualifies. Someone typing /exit within the window exits
+   * zero, and restarting Claude under them would be the opposite of helpful.
+   */
+  /** Sessions a fallback is already watching; see below. */
+  const watchedForRefusal = new Set<string>()
+
+  const fallBackIfContinueRefused = async (sessionId: string): Promise<void> => {
+    // One watcher per session. Two clicks landing in the moment between the
+    // refusal and the restart would otherwise leave a second watcher behind,
+    // and it would kill the Claude the first one had just started.
+    if (watchedForRefusal.has(sessionId)) return
+    watchedForRefusal.add(sessionId)
+    try {
+      if (!(await engine.failedWithin(sessionId, CONTINUE_GRACE_MS))) return
+      // No args: the conversation could not be resumed, so this is a fresh one.
+      if (await engine.respawn(sessionId, [])) broadcastInvalidate()
+    } finally {
+      watchedForRefusal.delete(sessionId)
+    }
+  }
 
   app.post('/api/sessions', async (request) => {
     const body = createSessionBody.parse(request.body)

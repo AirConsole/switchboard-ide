@@ -15,6 +15,7 @@ import {
   attachArgs,
   attachCommandFor,
   childEnv,
+  capturePane,
   createSession,
   hasSession,
   killSession,
@@ -44,6 +45,9 @@ const newId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * create and respawn, which used to hardcode it separately and disagree.
  */
 const defaultArgs = (kind: SessionKind): string[] => (kind === 'claude' ? [] : ['-l'])
+
+/** How far back a tail looks for something worth showing. */
+const SCROLLBACK_SEARCHED = 200
 
 export const DEFAULT_COLS = 120
 export const DEFAULT_ROWS = 34
@@ -527,6 +531,46 @@ export class SessionEngine {
     return live.toRecord()
   }
 
+  /**
+   * Whether a session's command died with a non-zero status within `withinMs`.
+   *
+   * Polled on its own clock rather than waiting for `pollPanes`: two seconds is
+   * fine for painting a label, but this decides whether to restart a command,
+   * and the point of doing it is to have done it before anyone looks.
+   *
+   * A dead pane whose status tmux did not report is not a failure here. The
+   * only thing that could act on it is a guess, and guessing wrong restarts
+   * something the user stopped on purpose.
+   */
+  async failedWithin(sessionId: string, withinMs: number): Promise<boolean> {
+    const deadline = Date.now() + withinMs
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const live = this.sessions.get(sessionId)
+      // Killed while we waited -- sleeping a worktree does exactly this.
+      if (!live) return false
+      const pane = (await listPanes()).find((p) => p.sessionName === live.name)
+      if (!pane) return false
+      if (pane.dead) return (pane.deadStatus ?? 0) !== 0
+    }
+    return false
+  }
+
+  /**
+   * The last lines a session printed.
+   *
+   * Read from tmux, not from the mirror: the mirror holds only what has arrived
+   * since this process attached, so a session adopted after a server restart
+   * has an empty one, and it is exactly the sessions that died before anyone
+   * was watching that need explaining.
+   */
+  async tail(sessionId: string, lines: number): Promise<string[]> {
+    const live = this.sessions.get(sessionId)
+    if (!live) return []
+    const captured = await capturePane(live.name, SCROLLBACK_SEARCHED)
+    return captured.slice(-lines)
+  }
+
   async kill(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId)
     if (!live) return
@@ -597,6 +641,7 @@ export class SessionEngine {
       t: 'session-state',
       sessionId,
       liveness: live.liveness,
+      exitStatus: live.deadStatus,
       attention: live.attention,
       lastOutputAt: live.lastOutputAt,
     })

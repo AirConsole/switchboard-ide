@@ -768,6 +768,36 @@ button {
 }
 
 /*
+ * What the session printed before it stopped, verbatim.
+ *
+ * Mono, because it is terminal output being read line by line, and quiet,
+ * because the button beside it is the thing to do about it. Bounded and
+ * scrollable so a long traceback cannot push that button off the pane, and
+ * `pre-wrap` so a line too wide for a one-spot tile folds instead of hiding.
+ *
+ * The bound is nine lines in px, not a percentage of the pane. A percentage
+ * resolves against this element's grid area, which is sized by its own content:
+ * measured, `max-height: 40%` gave a 16px box around 33px of text and clipped
+ * the one line there was to explain the exit.
+ */
+.tile__idle-output {
+  margin: 0;
+  max-width: 100%;
+  /* Nine lines at the 12px/1.45 below, plus this element's own padding. */
+  max-height: 173px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-left: 1px solid var(--rule-bright);
+  background: var(--slab-raised);
+  color: var(--graphite);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
  * Creating a worktree is the primary action of this view, not a menu item, so
  * it sits in the grid as its own cell and is always present.
  */
