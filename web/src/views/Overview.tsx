@@ -529,6 +529,56 @@ export const Overview = ({
   }, [scrollTo, target, pitch, width])
 
   /*
+   * Cmd+Left and Cmd+Right step through the worktrees.
+   *
+   * The terminals have no claim on it: xterm produces nothing at all for a
+   * Cmd-modified arrow -- its keyboard handler bails out on `metaKey` before
+   * building a sequence -- so no bytes reach tmux, the shell or Claude. And it
+   * is the binding a terminal emulator would use anyway: Cmd+arrow means
+   * "switch tab" in iTerm and Terminal.
+   *
+   * The browser does claim it on macOS, where it is history back and forward,
+   * which is why the event is cancelled rather than merely acted on.
+   *
+   * "Where you are" is the worktree holding the leftmost spot, so this is the
+   * keyboard version of clicking the tab beside the one you are on.
+   */
+  const stops = cells.filter((cell) => cell.worktree !== null)
+  useEffect(() => {
+    const step = (event: KeyboardEvent): void => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      /*
+       * Not while typing. Cmd+Left is "start of line" in a text field, and the
+       * dialogs have real ones -- but xterm's own hidden textarea is not a text
+       * field in that sense, and skipping it would mean the shortcut died
+       * whenever a terminal had focus, which is most of the time.
+       */
+      const target = event.target as HTMLElement | null
+      const typing =
+        target instanceof HTMLInputElement ||
+        (target instanceof HTMLTextAreaElement &&
+          !target.classList.contains('xterm-helper-textarea'))
+      if (typing) return
+
+      const grid = gridRef.current
+      if (!grid || stops.length === 0 || pitch <= 0) return
+      const at = Math.round(grid.scrollLeft / pitch)
+      // The tile that holds the leftmost spot, then its neighbour.
+      let here = 0
+      for (let index = 0; index < stops.length; index++) {
+        if ((stops[index]?.spot ?? 0) <= at) here = index
+      }
+      const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
+      event.preventDefault()
+      if (to === undefined) return
+      grid.scrollTo({ left: to.spot * pitch, behavior: 'smooth' })
+    }
+    document.addEventListener('keydown', step)
+    return () => document.removeEventListener('keydown', step)
+  }, [stops, pitch])
+
+  /*
    * Keep your place across a resize.
    *
    * A scroll offset measured in the old spot width points somewhere arbitrary
