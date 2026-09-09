@@ -52,6 +52,30 @@ const brightOnly = (line: IBufferLine): string => {
 export class TerminalMirror {
   private readonly term: InstanceType<typeof Terminal>
   private readonly serializer: InstanceType<typeof SerializeAddon>
+  /**
+   * Which mouse report encoding the app asked for, because the snapshot has to
+   * carry that one by hand.
+   *
+   * `SerializeAddon` restores nine modes and the mouse *tracking* mode is one
+   * of them; the *encoding* is not, and cannot be -- xterm's public `IModes`
+   * never exposes it, so the addon has nothing to read. It lives on a private
+   * `coreMouseService.activeEncoding`.
+   *
+   * That asymmetry is a bug with teeth, because a repainting client calls
+   * `term.reset()` first, which sets tracking to none and the encoding back to
+   * xterm's default. Writing the snapshot then turns tracking back on and
+   * leaves the encoding at that default, which is the legacy X10 form: `ESC [ M`
+   * followed by button, column and row as single bytes. Claude asks for SGR
+   * (`ESC [ ? 1006 h`) at startup and cannot read X10, so after a repaint every
+   * pointer movement over a pane typed junk into its prompt.
+   *
+   * Measured: with the server restarted under a browser -- a socket drop, which
+   * is what a deploy is -- a sweep over a pane emitted `ESC[MC>9`, `ESC[MC@8`,
+   * and past column 95 the column byte exceeds 127, our JSON transport re-encodes
+   * it as two UTF-8 bytes, tmux consumes the wrong three bytes of the report and
+   * passes the remainder on as text: the pty received a bare `9999...8888`.
+   */
+  private mouseEncoding: 'default' | 'sgr' | 'sgr-pixels' = 'default'
 
   constructor(cols: number, rows: number) {
     this.term = new Terminal({
@@ -62,6 +86,28 @@ export class TerminalMirror {
     })
     this.serializer = new SerializeAddon()
     this.term.loadAddon(this.serializer)
+
+    /*
+     * Watch DECSET/DECRST for the encoding on its way past.
+     *
+     * Returning false means "not handled", so xterm's own handler still runs
+     * and still applies the mode -- this only listens. One sequence can carry
+     * several modes, and a parameter may itself be a subparameter list.
+     */
+    const watch = (params: (number | number[])[], set: boolean): boolean => {
+      for (const param of params) {
+        const mode = Array.isArray(param) ? param[0] : param
+        if (mode === 1006) this.mouseEncoding = set ? 'sgr' : 'default'
+        if (mode === 1016) this.mouseEncoding = set ? 'sgr-pixels' : 'default'
+      }
+      return false
+    }
+    this.term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) =>
+      watch(params, true),
+    )
+    this.term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) =>
+      watch(params, false),
+    )
   }
 
   get cols(): number {
@@ -89,7 +135,13 @@ export class TerminalMirror {
   /** A repaint of current screen + scrollback, safe to write into a fresh xterm. */
   async snapshot(): Promise<string> {
     await this.flush()
-    return this.serializer.serialize({ scrollback: config.mirrorScrollback })
+    const painted = this.serializer.serialize({ scrollback: config.mirrorScrollback })
+    // The encoding goes last, after the addon's own mode block, so it lands
+    // with the tracking mode it belongs to rather than before it. See
+    // `mouseEncoding` for what happens when it is missing.
+    if (this.mouseEncoding === 'sgr') return `${painted}\x1b[?1006h`
+    if (this.mouseEncoding === 'sgr-pixels') return `${painted}\x1b[?1016h`
+    return painted
   }
 
   /**
