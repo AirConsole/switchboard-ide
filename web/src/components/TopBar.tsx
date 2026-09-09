@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Project, Session, Worktree } from '@ide-n-dream/shared'
+import type { Project, Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import type { ProjectGroup } from '../App.js'
 import {
   claudeSession,
   mostUrgentStatus,
+  queuedTodoCount,
   stateLabel,
   worktreeStatus,
   type WorktreeStatus,
@@ -13,6 +14,8 @@ export interface TopBarProps {
   /** Every open project, in the order they were opened. */
   groups: ProjectGroup[]
   sessions: Session[]
+  /** Every todo, so a tab can say how much is queued behind it. */
+  todos: WorktreeTodo[]
   onOpenProject: () => void
   onCloseProject: (projectId: string) => void
   onNewWorktree: (project: Project) => void
@@ -37,13 +40,24 @@ const statusClass = (status: WorktreeStatus): string =>
         : 'chip--off'
 
 /** A worktree's tab: its name, its branch when that differs, its dirty count. */
-const WorktreeLabel = ({ worktree }: { worktree: Worktree }): React.ReactElement => (
+const WorktreeLabel = ({
+  worktree,
+  queued,
+}: {
+  worktree: Worktree
+  queued: number
+}): React.ReactElement => (
   <>
     {worktree.name}
     {worktree.branch && worktree.branch !== worktree.name && (
       <span className="chip__branch">{worktree.branch}</span>
     )}
     {worktree.dirty ? <span className="chip__dirty">{worktree.dirty}&plusmn;</span> : null}
+    {/* Said in the same quiet channel as the dirty count, because it is the same
+        kind of fact: how much work is parked here. Not in colour and not in the
+        underline -- those two already mean "blocked on you" and "done", and a
+        third meaning on either would make them argue. */}
+    {queued > 0 ? <span className="chip__queued">{queued} queued</span> : null}
   </>
 )
 
@@ -60,6 +74,7 @@ const WorktreeLabel = ({ worktree }: { worktree: Worktree }): React.ReactElement
 const Group = ({
   group,
   sessions,
+  todos,
   activeId,
   onCloseProject,
   onNewWorktree,
@@ -68,6 +83,7 @@ const Group = ({
 }: {
   group: ProjectGroup
   sessions: Session[]
+  todos: WorktreeTodo[]
 } & Pick<
   TopBarProps,
   'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
@@ -132,6 +148,9 @@ const Group = ({
         worktree.path,
         stateLabel(claudeSession(sessions, worktree.id)),
         ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+        ...(queuedTodoCount(todos, worktree.id) > 0
+          ? [`${queuedTodoCount(todos, worktree.id)} queued to run next here`]
+          : []),
         sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
       ].join('\n')}
     >
@@ -140,7 +159,7 @@ const Group = ({
           zZ
         </span>
       )}
-      <WorktreeLabel worktree={worktree} />
+      <WorktreeLabel worktree={worktree} queued={queuedTodoCount(todos, worktree.id)} />
     </button>
   )
 
@@ -201,7 +220,7 @@ const Group = ({
                     title={worktree.path}
                   >
                     <span className="menu__line">
-                      <WorktreeLabel worktree={worktree} />
+                      <WorktreeLabel worktree={worktree} queued={queuedTodoCount(todos, worktree.id)} />
                       {/* Said in words rather than a dot: there is room here, and
                           a sleeping worktree with Claude still running is the
                           thing you most need to be able to tell apart. */}
@@ -259,6 +278,7 @@ const Group = ({
 export const TopBar = ({
   groups,
   sessions,
+  todos,
   activeId,
   onOpenProject,
   onCloseProject,
@@ -273,6 +293,7 @@ export const TopBar = ({
           key={group.project.id}
           group={group}
           sessions={sessions}
+          todos={todos}
           activeId={activeId}
           onCloseProject={onCloseProject}
           onNewWorktree={onNewWorktree}

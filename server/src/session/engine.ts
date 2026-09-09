@@ -46,6 +46,28 @@ const newId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  */
 const defaultArgs = (kind: SessionKind): string[] => (kind === 'claude' ? [] : ['-l'])
 
+/**
+ * Whether a chunk from a browser is someone typing, as opposed to xterm.js
+ * answering the app.
+ *
+ * Terminal apps ask their terminal questions -- device attributes, cursor
+ * position -- and xterm.js replies on its own, through the same socket a
+ * keystroke takes. Measured with a tab merely open on a Claude session: those
+ * replies arrive steadily, and taking them for a human at the keyboard held the
+ * todo queue off for as long as the tab was open.
+ *
+ * So: strip the escape sequences and see whether anything is left. What remains
+ * is text, Return or backspace -- the things a person actually produces while
+ * drafting a prompt.
+ */
+const looksTyped = (data: string): boolean =>
+  data
+    // CSI (with its private-mode and intermediate bytes), then OSC, then SS3.
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1bO[A-Za-z]/g, '')
+    .replace(/\x1b/g, '') !== ''
+
 /** How far back a tail looks for something worth showing. */
 const SCROLLBACK_SEARCHED = 200
 
@@ -109,6 +131,14 @@ class LiveSession {
    * the first second after a restart.
    */
   lastOutputAt = 0
+  /**
+   * When a browser last sent this session a keystroke.
+   *
+   * Only the human's path sets it -- `SessionEngine.input` does, `write` does
+   * not -- because it exists to answer "is someone at this keyboard right now",
+   * and the queue typing into the session is not someone.
+   */
+  lastUserInputAt = 0
   /**
    * Output arriving before this is a repaint we provoked, not activity.
    * See the note in onOutput().
@@ -290,6 +320,24 @@ class LiveSession {
 
   write(data: string): void {
     this.pty?.write(data)
+  }
+
+  /** Whether there is a pty to write to at all; null through a reattach. */
+  get attached(): boolean {
+    return this.pty !== null
+  }
+
+  /**
+   * Write, and say whether there was anywhere for it to go.
+   *
+   * `write` swallows a null pty, which is right for a keystroke -- the human
+   * will press it again -- and wrong for a queued prompt, where "we sent it" and
+   * "it went nowhere" must not look the same.
+   */
+  tryWrite(data: string): boolean {
+    if (!this.pty) return false
+    this.pty.write(data)
+    return true
   }
 
   /**
@@ -716,7 +764,56 @@ export class SessionEngine {
     const live = this.sessions.get(sessionId)
     if (!live) return
     if (live.inputOwner !== sink) return
+    if (looksTyped(data)) live.lastUserInputAt = Date.now()
     live.write(data)
+  }
+
+  /**
+   * Type into a session from the server itself.
+   *
+   * Deliberately not `input()`: that one requires the caller to be the session's
+   * input owner, and there is no owner -- no Sink at all -- when this runs with
+   * every browser closed, which is the case the todo queue exists for. The
+   * safety this bypasses is "two viewers must not both answer the app's terminal
+   * queries", which is about duplicate auto-replies from xterm.js and has
+   * nothing to say about the server writing on purpose.
+   *
+   * Returns false when there was no pty to write to, so the caller can tell a
+   * prompt that went nowhere from one that was delivered.
+   */
+  typeInto(sessionId: string, data: string): boolean {
+    const live = this.sessions.get(sessionId)
+    if (!live) return false
+    return live.tryWrite(data)
+  }
+
+  /** Everything the dispatcher needs to decide whether it may type here. */
+  async inspect(sessionId: string): Promise<
+    | undefined
+    | {
+        kind: SessionKind
+        dead: boolean
+        hasPty: boolean
+        lastOutputAt: number
+        lastUserInputAt: number
+        tail: string
+        brightTail: string
+      }
+  > {
+    const live = this.sessions.get(sessionId)
+    if (!live) return undefined
+    // The emulator parses asynchronously, so a synchronous read can miss the
+    // repaint that would have changed the answer.
+    await live.mirror.flush()
+    return {
+      kind: live.record.kind,
+      dead: live.liveness === 'dead',
+      hasPty: live.attached,
+      lastOutputAt: live.lastOutputAt,
+      lastUserInputAt: live.lastUserInputAt,
+      tail: live.mirror.tailText(),
+      brightTail: live.mirror.tailText(12, { skipDim: true }),
+    }
   }
 
   resize(sink: Sink, sessionId: string, cols: number, rows: number): void {

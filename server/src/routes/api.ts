@@ -81,6 +81,22 @@ const createSessionBody = z.object({
   cols: z.number().int().positive().optional(),
   rows: z.number().int().positive().optional(),
 })
+/** A prompt is a paragraph, not an essay; the cap is a sanity bound, not a rule. */
+const PROMPT_MAX = 20_000
+
+const createTodoBody = z.object({
+  title: z.string().max(200).optional(),
+  prompt: z.string().min(1).max(PROMPT_MAX),
+})
+
+const patchTodoBody = z.object({
+  /** Null clears the title; absent leaves it alone. */
+  title: z.string().max(200).nullable().optional(),
+  prompt: z.string().min(1).max(PROMPT_MAX).optional(),
+  /** RUN NEXT. True appends to the end of this worktree's queue. */
+  queued: z.boolean().optional(),
+})
+
 /*
  * A worktree-relative path. `''` is the worktree root, which is a directory the
  * browser must be able to list, so there is no `.min(1)` here.
@@ -284,6 +300,34 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * neither is the invalidate that tells every other client the sessions have
    * gone. A kill emits no event of its own.
    */
+  /*
+   * Todos ride the snapshot rather than having a GET of their own: the client
+   * already refetches it on every invalidate, and a second way to read them
+   * would be a second thing that can disagree.
+   */
+  app.post('/api/worktrees/:id/todos', async (request) => {
+    const { id } = request.params as { id: string }
+    const body = createTodoBody.parse(request.body)
+    const todo = await workspace.createTodo({ worktreeId: id, ...body })
+    broadcastInvalidate()
+    return todo
+  })
+
+  app.patch('/api/todos/:id', async (request) => {
+    const { id } = request.params as { id: string }
+    const patch = patchTodoBody.parse(request.body)
+    const todo = workspace.updateTodo(id, patch)
+    broadcastInvalidate()
+    return todo
+  })
+
+  app.delete('/api/todos/:id', async (request) => {
+    const { id } = request.params as { id: string }
+    workspace.deleteTodo(id)
+    broadcastInvalidate()
+    return { ok: true }
+  })
+
   app.post('/api/worktrees/:id/sleep', async (request) => {
     const { id } = request.params as { id: string }
     const { keepClaude, keepTerminals } = sleepQuery.parse(request.query)

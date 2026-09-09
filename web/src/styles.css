@@ -463,6 +463,13 @@ button {
   color: var(--graphite-dim);
 }
 
+/* Byte-identical to the dirty count today, and named separately so the two
+   facts can part company later without one of them changing by accident. */
+.chip__queued {
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
 .chip--add {
   padding: 0 12px;
   font-size: 15px;
@@ -1616,6 +1623,195 @@ button {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--graphite-dim);
+}
+
+/* --------------------------------------------------------------- the todo -- */
+
+/*
+ * What this worktree is going to be asked to do next.
+ *
+ * Laid out like the git panel beside it -- a form pinned at the top, a list
+ * that takes the rest -- because they answer the same shape of question about
+ * one worktree and should not need learning twice.
+ */
+.todo {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.todo__new {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.todo__newfoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.todo__hint {
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+.todo__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * One todo: its title and controls on a line, its prompt under them.
+ *
+ * A grid rather than a flex row because the prompt is the tall part and has to
+ * span the whole width under both -- a title long enough to wrap must not push
+ * the buttons off the end.
+ */
+.todo__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+/*
+ * Queued, and it says so in weight rather than colour: amber means Claude is
+ * blocked on you and green means it is done, and neither is true of a todo.
+ */
+.todo__row--queued {
+  border-left: 2px solid var(--rule-bright);
+  padding-left: 8px;
+}
+
+/*
+ * Both fields are editable at rest, so they are inputs wearing no chrome until
+ * they have the caret. Clicking one then puts the caret where you clicked,
+ * with nothing to remount and no focus to hand over.
+ */
+.todo__title,
+.todo__prompt {
+  font-family: var(--font-ui);
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: none;
+  color: var(--bone);
+}
+
+.todo__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/*
+ * The prompt is prose you wrote, so it is --font-ui like everything else the
+ * interface says in words -- it ends up in a terminal, but it is not read there
+ * character by character the way a path or a hash is.
+ *
+ * It grows to its content (see useAutoGrow) rather than scrolling: a box with
+ * its own scrollbar inside a list that already scrolls is two scrollbars for
+ * one piece of text.
+ */
+.todo__prompt {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--graphite);
+  resize: none;
+  overflow: hidden;
+}
+
+.todo__title:focus,
+.todo__prompt:focus {
+  outline: none;
+  border-color: var(--pulse);
+  background: var(--ink);
+  color: var(--bone);
+}
+
+/* No rule for this anywhere in the file yet, and a UA default is unreadable on
+   this ground. */
+.todo__title::placeholder,
+.todo__prompt::placeholder {
+  color: var(--graphite-dim);
+}
+
+.todo__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todo__next {
+  padding: 3px 8px;
+  border-bottom: 2px solid transparent;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.todo__next:hover {
+  color: var(--bone);
+}
+
+/* Lit the way a panel toggle is lit -- the vocabulary the bar already teaches. */
+.todo__next--on {
+  color: var(--bone);
+  border-bottom-color: var(--rule-bright);
+}
+
+.todo__remove {
+  padding: 0 6px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--graphite-dim);
+}
+
+.todo__remove:hover {
+  color: var(--danger);
+}
+
+.todo__wait {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+.todo__empty {
+  padding: 12px 10px;
+  color: var(--graphite-dim);
+}
+
+/* Mirrors .git__bar exactly: the panel's own controls, at the bar's right. */
+.todo__bar {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.todo__bar > * + * {
+  border-left: 1px solid var(--rule-bright);
+}
+
+.todo__count {
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------- dropdowns -- */

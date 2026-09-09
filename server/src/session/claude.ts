@@ -59,8 +59,8 @@ const TAIL_BYTES = 256 * 1024
 /** Longer than any tile can show, short enough that the wire stays small. */
 const PROMPT_MAX = 300
 
-/** The newest transcript in a directory, or null if there is none. */
-const newestTranscript = async (dir: string): Promise<string | null> => {
+/** The newest transcript in a directory, with its mtime, or null. */
+const newestTranscript = async (dir: string): Promise<{ path: string; at: number } | null> => {
   let newest: { path: string; at: number } | null = null
   let entries: string[]
   try {
@@ -78,7 +78,7 @@ const newestTranscript = async (dir: string): Promise<string | null> => {
       // Vanished between the listing and the stat; there is nothing to compare.
     }
   }
-  return newest?.path ?? null
+  return newest
 }
 
 /**
@@ -99,10 +99,8 @@ const newestTranscript = async (dir: string): Promise<string | null> => {
  * Whitespace is collapsed because this lands on one line of a window's bar, and
  * a prompt is often several paragraphs.
  */
-export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
-  const path = await newestTranscript(transcriptDir(cwd))
-  if (path === null) return undefined
-  let text: string
+/** The last TAIL_BYTES of a file as text, whole lines only, or null. */
+const readTail = async (path: string): Promise<string | null> => {
   try {
     const handle = await open(path, 'r')
     try {
@@ -110,15 +108,22 @@ export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
       const start = Math.max(0, size - TAIL_BYTES)
       const buffer = Buffer.alloc(Math.min(size, TAIL_BYTES))
       await handle.read(buffer, 0, buffer.length, start)
-      text = buffer.toString('utf8')
+      const text = buffer.toString('utf8')
       // A tail cuts the first line in half, and half a line is not JSON.
-      if (start > 0) text = text.slice(text.indexOf('\n') + 1)
+      return start > 0 ? text.slice(text.indexOf('\n') + 1) : text
     } finally {
       await handle.close()
     }
   } catch {
-    return undefined
+    return null
   }
+}
+
+export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
+  const newest = await newestTranscript(transcriptDir(cwd))
+  if (newest === null) return undefined
+  const text = await readTail(newest.path)
+  if (text === null) return undefined
   const lines = text.split('\n')
   for (let index = lines.length - 1; index >= 0; index--) {
     const line = lines[index]
@@ -137,4 +142,68 @@ export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
     }
   }
   return undefined
+}
+
+/**
+ * Where a worktree's conversation stands: has the last thing asked been
+ * answered?
+ *
+ * Claude Code writes `{"type":"last-prompt",...}` when a prompt is submitted and
+ * `{"type":"system","subtype":"turn_duration",...}` when the turn it started
+ * ends. Whichever of the two is nearer the end of the transcript says which
+ * side of a turn the agent is on -- a precise "it has finished" rather than the
+ * silence-based guess `attention.ts` makes for the tile's label, and exactly the
+ * refinement that file's own comment names.
+ *
+ * Measured against a live session: two turns for one prompt (a background shell
+ * finished and produced a second turn) each closed with their own
+ * `turn_duration`, and both landed after the prompt that caused them.
+ *
+ * `unknown` means the transcript cannot answer -- no file, or one from a Claude
+ * that does not write those entries -- and the caller must fall back to
+ * something it can see for itself rather than treating it as "finished".
+ */
+export type TurnState = 'between-turns' | 'in-turn' | 'unknown'
+
+/**
+ * How recently the transcript must have been written for "a turn is running" to
+ * still be believable.
+ *
+ * A turn in progress writes constantly -- every assistant message and every
+ * tool result -- so a file untouched for this long is not describing anything
+ * that is still happening. Without this, a transcript left behind by a Claude
+ * that was killed mid-turn says "in-turn" forever and the queue behind it never
+ * moves: measured, on a worktree whose previous session had been killed.
+ */
+const IN_TURN_STALE_MS = 30_000
+
+export const turnState = async (cwd: string, now = Date.now()): Promise<TurnState> => {
+  const newest = await newestTranscript(transcriptDir(cwd))
+  if (newest === null) return 'unknown'
+  const text = await readTail(newest.path)
+  if (text === null) return 'unknown'
+  const stale = now - newest.at > IN_TURN_STALE_MS
+  const lines = text.split('\n')
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index]
+    if (line === undefined) continue
+    const isTurnEnd = line.includes('"turn_duration"')
+    // A prompt entry is written with an empty string at startup, before
+    // anything has been asked; that one is not a turn beginning.
+    const isPrompt = line.includes('"last-prompt"') && !line.includes('"lastPrompt":""')
+    if (!isTurnEnd && !isPrompt) continue
+    try {
+      const row = JSON.parse(line) as { type?: unknown; subtype?: unknown; lastPrompt?: unknown }
+      if (row.subtype === 'turn_duration') return 'between-turns'
+      if (row.type === 'last-prompt' && typeof row.lastPrompt === 'string' && row.lastPrompt !== '') {
+        // Nothing has written here in half a minute, so whatever this prompt
+        // started is not still going; let the screen answer instead.
+        return stale ? 'unknown' : 'in-turn'
+      }
+    } catch {
+      // A half-written last line: keep looking back.
+    }
+  }
+  // A transcript with neither kind of entry cannot answer the question.
+  return 'unknown'
 }

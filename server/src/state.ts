@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { Project, UiState } from '@ide-n-dream/shared'
+import type { Project, UiState, WorktreeTodo } from '@ide-n-dream/shared'
 import { defaultUiState } from '@ide-n-dream/shared'
 import { defaultWorktreeRoot } from './git/worktree.js'
 import { stateFile } from './config.js'
@@ -16,10 +16,55 @@ import { stateFile } from './config.js'
 export interface PersistedState {
   version: 1
   projects: Project[]
+  /**
+   * Required, not optional, and that is the whole defence for it.
+   *
+   * `load()` below builds a fresh object literal, so a key nobody copies is
+   * dropped on read and then erased from disk by the next save. Declaring this
+   * required makes forgetting the line a compile error instead of a silent loss
+   * of everything the user queued. Anything added here from now on should be
+   * required for the same reason.
+   */
+  todos: WorktreeTodo[]
   ui: UiState
 }
 
-const emptyState = (): PersistedState => ({ version: 1, projects: [], ui: defaultUiState() })
+const emptyState = (): PersistedState => ({
+  version: 1,
+  projects: [],
+  todos: [],
+  ui: defaultUiState(),
+})
+
+/**
+ * A stored todo, or nothing.
+ *
+ * Stricter than the projects beside it because of what a todo feeds: a prompt
+ * ends up typed into a terminal, so a malformed record from a hand-edited file
+ * is dropped rather than carried along and dealt with later.
+ */
+const reviveTodo = (value: unknown): WorktreeTodo | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Record<string, unknown>
+  const str = (key: string): string | undefined =>
+    typeof row[key] === 'string' && row[key] !== '' ? (row[key] as string) : undefined
+  const num = (key: string): number | undefined =>
+    typeof row[key] === 'number' && Number.isFinite(row[key]) ? (row[key] as number) : undefined
+  const id = str('id')
+  const worktreeId = str('worktreeId')
+  const prompt = typeof row.prompt === 'string' ? row.prompt : undefined
+  if (id === undefined || worktreeId === undefined || prompt === undefined) return null
+  return {
+    id,
+    worktreeId,
+    prompt,
+    createdAt: num('createdAt') ?? Date.now(),
+    ...(str('title') === undefined ? {} : { title: row.title as string }),
+    ...(num('queuedAt') === undefined ? {} : { queuedAt: num('queuedAt') }),
+    ...(num('dispatchingAt') === undefined ? {} : { dispatchingAt: num('dispatchingAt') }),
+    ...(str('lastError') === undefined ? {} : { lastError: str('lastError') }),
+  }
+}
 
 /**
  * Merge stored UI state over the defaults, keeping only keys the current shape
@@ -68,6 +113,9 @@ export class StateStore {
               worktreeRoot: defaultWorktreeRoot(project.root),
             }),
           ),
+          todos: (Array.isArray(candidate.todos) ? candidate.todos : [])
+            .map(reviveTodo)
+            .filter((todo): todo is WorktreeTodo => todo !== null),
           ui: pickKnownUiKeys(candidate.ui),
         }
       }
@@ -113,6 +161,47 @@ export class StateStore {
     this.state.ui = { ...this.state.ui, ...patch }
     this.scheduleSave()
     return this.state.ui
+  }
+
+  get todos(): WorktreeTodo[] {
+    return this.state.todos
+  }
+
+  todo(id: string): WorktreeTodo | undefined {
+    return this.state.todos.find((t) => t.id === id)
+  }
+
+  addTodo(todo: WorktreeTodo): void {
+    this.state.todos.push(todo)
+    this.scheduleSave()
+  }
+
+  /**
+   * Merge a patch into one todo. Present keys only -- a blur saving an edited
+   * prompt and a click queueing the same todo are two requests in flight at
+   * once, and whichever lands second must not undo the other.
+   */
+  patchTodo(id: string, patch: Partial<WorktreeTodo>): WorktreeTodo | undefined {
+    const todo = this.todo(id)
+    if (!todo) return undefined
+    Object.assign(todo, patch)
+    for (const key of Object.keys(patch) as (keyof WorktreeTodo)[]) {
+      if (patch[key] === undefined) delete todo[key]
+    }
+    this.scheduleSave()
+    return todo
+  }
+
+  removeTodo(id: string): void {
+    this.state.todos = this.state.todos.filter((t) => t.id !== id)
+    this.scheduleSave()
+  }
+
+  removeTodosFor(worktreeIds: Iterable<string>): void {
+    const doomed = new Set(worktreeIds)
+    const before = this.state.todos.length
+    this.state.todos = this.state.todos.filter((t) => !doomed.has(t.worktreeId))
+    if (this.state.todos.length !== before) this.scheduleSave()
   }
 
   /**
