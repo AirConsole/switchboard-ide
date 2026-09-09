@@ -341,6 +341,31 @@ const DEAD_PANE_NOTE = /^Pane is dead \(/
  * message that matters ends up above the fold. Measured on the real failure --
  * `claude --continue` refusing -- where a plain capture returned blank lines.
  */
+/**
+ * Make tmux repaint a session's screen for the client attached to it.
+ *
+ * Needed after adopting a running session: a restarted server builds an empty
+ * mirror, and tmux sends nothing until the app itself writes something. An
+ * agent sitting on a static screen -- a dialog waiting for an answer, most
+ * importantly -- therefore stayed invisible to everything that reads the
+ * mirror, and the window reported it as idle. Measured: right after a restart a
+ * session holding a plan's question dialog classified as idle, and flipped to
+ * needs-you the moment any output arrived.
+ *
+ * Addressed by client tty because that is what `refresh-client` takes. There is
+ * exactly one client per session by design, so this refreshes ours.
+ */
+export const refreshClients = async (name: string): Promise<void> => {
+  try {
+    const { stdout } = await tmux('list-clients', '-t', exactTarget(name), '-F', '#{client_tty}')
+    for (const tty of stdout.split('\n').filter((line) => line.trim() !== '')) {
+      await tmux('refresh-client', '-t', tty)
+    }
+  } catch {
+    // No client, or the session went away: there is nothing to repaint.
+  }
+}
+
 export const capturePane = async (name: string, lines: number): Promise<string[]> => {
   let stdout: string
   try {

@@ -1,5 +1,5 @@
 import type { SessionKind } from '@ide-n-dream/shared'
-import { looksLikePrompt } from './attention.js'
+import { INPUT_BOX, looksBusy, looksLikePrompt } from './attention.js'
 import type { TurnState } from './claude.js'
 
 /**
@@ -31,27 +31,6 @@ export const USER_QUIET_MS = 10_000
 
 /** After sending, before this session is considered again. */
 export const COOLDOWN_MS = 5000
-
-/**
- * The line Claude Code paints while a turn is running.
- *
- * Measured, because the obvious guess was wrong: this version paints no "esc to
- * interrupt" anywhere. It paints a spinner line that carries a live elapsed
- * timer in parentheses -- `✽ Grooving… (8s · ↓ 81 tokens · thinking)` -- and
- * when the turn ends the timer loses its parentheses: `✻ Sautéed for 14s ·
- * done 1:39 PM`. The parenthesised timer is therefore the thing that means
- * "still going", and it is what this matches.
- */
-const BUSY_PATTERNS: RegExp[] = [/\(\d+s\s*·/]
-
-/**
- * Claude Code's resting input box, as a line: a chevron and what is in it.
- *
- * The tail this is matched against must have been read with dim cells blanked
- * (see `TerminalMirror.tailText({ skipDim: true })`), because the hint Claude
- * draws inside an empty box is dim and would otherwise read as a draft.
- */
-const INPUT_BOX = /^\s*[❯>]\s?(.*)$/
 
 export type NotReady =
   | 'not-claude'
@@ -127,8 +106,8 @@ export const readiness = (input: ReadinessInput): Readiness => {
    * one passes.
    */
   if (input.turn === 'in-turn') return no('mid-turn')
-  if (input.turn === 'unknown' && BUSY_PATTERNS.some((re) => re.test(input.tail))) return no('busy')
-  if (input.turn === 'between-turns' && BUSY_PATTERNS.some((re) => re.test(input.tail))) {
+  if (input.turn === 'unknown' && looksBusy(input.tail)) return no('busy')
+  if (input.turn === 'between-turns' && looksBusy(input.tail)) {
     // The transcript says the turn ended but the screen still shows a running
     // timer: a second turn has started, or the repaint has not landed.
     return no('busy')

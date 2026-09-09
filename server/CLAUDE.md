@@ -65,13 +65,49 @@ attachments. Three rules keep several viewers of one terminal sane:
   replayed history is meaningless.
 
 Attention is inferred, not reported — no hooks, nothing written into the user's
-Claude settings. `classify()` reads when output last arrived and the rendered
-text in the mirror. Two constants matter: `WORKING_WINDOW_MS` (output newer than
-this means working) and `REPAINT_QUIET_MS` — output right after a resize *we*
-caused is a redraw, not the agent doing something. Without that second one,
-tiles flicker "working" as they appear. `PROMPT_PATTERNS` is deliberately
-narrow: the resting input box also draws `❯`, and a false "needs you" is worse
-than a missed one.
+Claude settings. `classify()` weighs three things, in this order, and the order
+is the point:
+
+1. **Is a human needed?** Decided from the screen, before anything about the
+   clock, because a dialog is up or it is not and a repainting TUI is never
+   quiet. Checked over the **whole** visible screen, not a tail: measured, a
+   plan approval's option list sat 5 rows above the bottom and a question
+   dialog's sat 11, each option carrying a paragraph, so the old 12-row window
+   caught both by a row or two and one more line of text would have lost them.
+   Strong patterns (`❯ N.`, "Would you like to proceed?", "Enter to confirm")
+   are safe anywhere on screen — Claude bullets its own output with `●` and
+   `⎿` and never prints `❯`. Weak ones live in `PROMPT_FOOTERS` and are trusted
+   only on the last three lines. `^1. Yes` was dropped outright: it is what
+   Claude writes when *explaining* options, and it made a finished worktree
+   read as waiting.
+2. **Is it working?** Recent output, `turn === 'in-turn'`, or the spinner's
+   parenthesised timer — `(3m 34s · …)`, and the minute and hour forms are not
+   decoration: the pattern was `\(\d+s` and so missed every turn longer than a
+   minute, which is most of them.
+3. **Has it said it finished?** Done is claimed, not assumed. `screenState()`
+   looks at the last line above the input box, ignoring blanks and a short
+   named list of furniture: the line a finished turn leaves behind
+   (`✻ Baked for 2s · done 3:01 PM`) means idle, and so does having printed
+   nothing at all — a session nobody has asked anything yet. Anything else
+   there happened *after* the last turn ended, so the turn record has to settle
+   it, and a screen with no input box at all is unreadable rather than
+   finished, which is what an empty mirror looks like.
+
+The order of 2 and 3 is the whole point. Idle used to be the fall-through —
+whatever was left after "no dialog and nothing printed for 900ms" — so every
+silent stretch inside a turn read as *done*: a quiet tool call, a slow hop, a
+subagent thinking. Now the fall-through is **working**, and idle has to be
+positively shown. Ambiguity costs a grey tile and a queue that waits, instead
+of a green tile and a prompt typed into a running agent.
+
+Two constants still matter: `WORKING_WINDOW_MS` (output newer than this means
+working) and `REPAINT_QUIET_MS` — output right after a repaint *we* caused is a
+redraw, not the agent doing something. `expectRepaint()` marks the ones we ask
+for, including the `refreshClients` call after adopting a session: **an adopted
+session starts with an empty mirror**, and tmux sends nothing until the app
+writes something, so an agent sitting on a static dialog was invisible to
+everything that reads the mirror and its window said idle. Measured immediately
+after a restart, before and after the fix.
 
 ## Typing into a session
 

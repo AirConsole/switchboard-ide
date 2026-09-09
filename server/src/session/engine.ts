@@ -11,6 +11,7 @@ import { encodeOutputFrame } from '@ide-n-dream/shared'
 import { config } from '../config.js'
 import { TerminalMirror } from './mirror.js'
 import { classify, REPAINT_QUIET_MS, WORKING_WINDOW_MS } from './attention.js'
+import { turnState, type TurnState } from './claude.js'
 import {
   attachArgs,
   attachCommandFor,
@@ -21,6 +22,7 @@ import {
   killSession,
   listPanes,
   listSessions,
+  refreshClients,
   readMeta,
   respawnSession,
   startServer,
@@ -38,6 +40,18 @@ const nodePty = require('node-pty') as typeof import('node-pty')
  * cannot produce either character, nor a leading `-` that tmux would read as a
  * flag.
  */
+/**
+ * Enough rows to be the whole visible screen.
+ *
+ * `classify` looks for a dialog, and a dialog is not where you would guess: the
+ * option list of a plan approval sat 5 rows above the bottom and a question
+ * dialog's sat 11, each option carrying a paragraph of its own. The old 12-row
+ * window caught both by a row or two. `tailText` strips trailing blanks and
+ * clamps to the screen, so asking for more rows than exist simply gets all of
+ * them.
+ */
+const SCREEN_ROWS = 200
+
 const newId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
 
 /**
@@ -139,6 +153,16 @@ class LiveSession {
    * and the queue typing into the session is not someone.
    */
   lastUserInputAt = 0
+  /** Where the pane is, from tmux, so its transcript can be found. */
+  cwd = ''
+  /**
+   * What Claude's transcript last said about the turn.
+   *
+   * Refreshed only when a session would otherwise be called idle -- see
+   * refreshAttention. A session that is plainly producing output never pays for
+   * the read.
+   */
+  turn: TurnState = 'unknown'
   /**
    * Output arriving before this is a repaint we provoked, not activity.
    * See the note in onOutput().
@@ -277,8 +301,30 @@ class LiveSession {
     }
 
     if (!provoked && this.attention !== 'working') {
-      this.attention = 'working'
-      this.onStateChange(this)
+      /*
+       * Output means work, except while a dialog is up.
+       *
+       * This is the fast path -- an agent that starts producing should say so
+       * before the next poll -- but a dialog redraws too, and flipping a
+       * waiting worktree to "working" for the second until the idle check
+       * catches up is exactly the wrong answer about the one state that needs
+       * you. So a session already known to be waiting is re-read from the
+       * screen instead of assumed.
+       */
+      const next =
+        this.attention === 'needs-you'
+          ? classify({
+              kind: this.record.kind,
+              lastOutputAt: this.lastOutputAt,
+              dead: this.dead,
+              tailText: () => this.mirror.tailText(SCREEN_ROWS),
+              turn: this.turn,
+            })
+          : 'working'
+      if (next !== this.attention) {
+        this.attention = next
+        this.onStateChange(this)
+      }
     }
     // Scheduled either way, so a session that was working when the resize hit
     // still gets reclassified once the repaint has gone quiet.
@@ -301,21 +347,56 @@ class LiveSession {
     if (this.idleTimer) clearTimeout(this.idleTimer)
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null
-      this.refreshAttention()
+      void this.refreshAttention()
     }, WORKING_WINDOW_MS + 50)
   }
 
-  refreshAttention(): void {
+  /**
+   * Reclassify, consulting the transcript only if it could change the answer.
+   *
+   * The screen and the clock are free; the transcript is a file read, per
+   * session, and this runs every two seconds. So the cheap classification comes
+   * first, and the disk is touched only when it says `idle` -- which is exactly
+   * the answer that was wrong when a turn was quietly still running.
+   */
+  async refreshAttention(): Promise<void> {
+    /*
+     * Read the turn record whenever the session is quiet, which is exactly when
+     * the answer can depend on it: while output is arriving the state is
+     * "working" whatever the transcript says, and the read would be wasted.
+     *
+     * It was previously fetched only when the rest of the evidence already said
+     * "idle" -- which broke the moment ambiguity started answering "working"
+     * instead, because then nothing ever asked for it and a session could sit
+     * grey for good. `turnState` keeps its own mtime cache, so a quiet agent
+     * whose transcript has not moved costs a directory listing, not a read.
+     */
+    const quiet = Date.now() - this.lastOutputAt >= WORKING_WINDOW_MS
+    if (quiet && this.record.kind === 'claude' && this.cwd !== '' && !this.dead) {
+      this.turn = await turnState(this.cwd)
+    }
     const next = classify({
       kind: this.record.kind,
       lastOutputAt: this.lastOutputAt,
       dead: this.dead,
-      tailText: () => this.mirror.tailText(),
+      tailText: () => this.mirror.tailText(SCREEN_ROWS),
+      turn: this.turn,
     })
     if (next !== this.attention) {
       this.attention = next
       this.onStateChange(this)
     }
+  }
+
+  /**
+   * Count the next moment of output as a redraw rather than as activity.
+   *
+   * For repaints we asked for: a resize, or the refresh after adopting a
+   * session. Without it, a session that has been resting for an hour flashes
+   * "working" the instant the server comes back.
+   */
+  expectRepaint(): void {
+    this.repaintQuietUntil = Date.now() + REPAINT_QUIET_MS
   }
 
   write(data: string): void {
@@ -482,6 +563,20 @@ export class SessionEngine {
       const live = new LiveSession(record, meta, (s) => this.emit(s))
       this.sessions.set(record.id, live)
       live.spawnPty()
+      /*
+       * Ask tmux to paint the screen once, so the mirror knows what is on it.
+       *
+       * An adopted session starts with an empty mirror and tmux sends nothing
+       * until the app writes something of its own. Everything that reads the
+       * mirror -- the attention label, the readiness gate, a browser's first
+       * repaint -- was therefore blind to an agent sitting on a static screen,
+       * and a dialog waiting for an answer is exactly that. It read as idle.
+       *
+       * Marked as a repaint we provoked, so the output it causes does not count
+       * as the agent doing something; see `onOutput`.
+       */
+      live.expectRepaint()
+      void refreshClients(info.name)
     }
   }
 
@@ -501,7 +596,8 @@ export class SessionEngine {
         // The label changed, so the UI needs to hear about it.
         this.emit(live)
       }
-      live.refreshAttention()
+      if (pane.cwd !== '') live.cwd = pane.cwd
+      await live.refreshAttention()
     }
   }
 
@@ -811,8 +907,10 @@ export class SessionEngine {
       hasPty: live.attached,
       lastOutputAt: live.lastOutputAt,
       lastUserInputAt: live.lastUserInputAt,
-      tail: live.mirror.tailText(),
-      brightTail: live.mirror.tailText(12, { skipDim: true }),
+      // The whole screen for the dialog and busy checks; the input box is at
+      // the bottom either way, and its own read wants dim cells blanked.
+      tail: live.mirror.tailText(SCREEN_ROWS),
+      brightTail: live.mirror.tailText(SCREEN_ROWS, { skipDim: true }),
     }
   }
 
