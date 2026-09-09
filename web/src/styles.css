@@ -383,15 +383,14 @@ button {
   overflow-y: hidden;
   scrollbar-width: none;
   scroll-behavior: smooth;
-  /* Screenfuls are exactly one window wide and no tile is split across two, so
-     coming to rest on one means every tile you can see is whole. */
+  /* Rest on a spot boundary, never part-way through one; see .grid__spot. */
   scroll-snap-type: x mandatory;
-  /* Vertical only. The leading inset is carried by the tile that starts each
-     screenful, so every screenful is laid out identically -- and matched by
-     scroll-padding, so a snap lands on the screenful rather than 12px into it.
-     Each tile carries its own trailing margin, so a tile collapsing to nothing
-     takes its gap with it. */
-  padding: 12px 0;
+  /* The leading inset once, matched by scroll-padding so a snap lands on the
+     spot rather than 12px into it. Each tile carries its own trailing margin,
+     so a tile collapsing to nothing takes its gap with it. Relative, because
+     the spot markers are positioned against it. */
+  position: relative;
+  padding: 12px 0 12px 12px;
   scroll-padding-left: 12px;
 }
 
@@ -457,9 +456,21 @@ button {
  *
  * `forwards` holds it closed for the few frames before it is dropped for real.
  */
-/* The first tile of a screenful: where a scroll settles. */
-.slot--page {
+/*
+ * A snap point, one per spot: where a scroll settles.
+ *
+ * Out of flow, so it takes no space and cannot disturb the row it measures.
+ * The tiles cannot serve as the snap points themselves -- a tile wider than the
+ * window has to be scrollable within, to reach the spots it covers, and
+ * snapping to tile starts alone would refuse to stop there.
+ */
+.grid__spot {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 1px;
   scroll-snap-align: start;
+  pointer-events: none;
 }
 
 .slot--leaving {

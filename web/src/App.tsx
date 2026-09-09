@@ -297,6 +297,7 @@ export const App = (): React.ReactElement => {
         scrollTo={scrollTo}
         onStart={startClaude}
         onSleep={setSleeping}
+        onReveal={reveal}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
         onCollapsePanels={collapsePanels}
