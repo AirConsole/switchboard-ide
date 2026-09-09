@@ -595,13 +595,21 @@ const inner = (from: EventTarget | null, stop: Element, delta: number): boolean 
 }
 
 /**
- * How much wheel makes one spot.
+ * How much wheel makes one spot: a notch, and nothing smaller.
  *
- * A mouse notch is exactly 100px in Chrome, so one notch is one spot. A
- * trackpad arrives as a stream of small deltas instead and accumulates, which
- * makes a flick travel further than a nudge -- the thing a strip you scroll
- * along should do. Firefox reports lines rather than pixels; 40 is the usual
- * line for a wheel, so its three-line notch clears the same bar.
+ * A mouse notch is exactly 100px in Chrome, so one notch is one spot. It has
+ * to be a whole notch in one event, though, rather than a total accumulated
+ * over a gesture. A trackpad -- and a Magic Mouse -- reports a scroll as a
+ * stream of small deltas with momentum after it, so accumulating meant an
+ * incidental graze while reading moved the row a spot and a flick walked it
+ * several: measured over a tile's bar, ten trackpad-sized deltas of 12px took
+ * the row 0 -> 794, and a forty-event flick 0 -> 1588. Nobody asked for that,
+ * and it read as the row moving on its own.
+ *
+ * Sideways gestures still scroll the row, natively and by the pixel, which is
+ * the axis a trackpad has for a strip like this anyway. Firefox reports lines
+ * rather than pixels; 40 is the usual line for a wheel, so its three-line
+ * notch clears the same bar.
  */
 const WHEEL_STEP = 100
 const WHEEL_LINE = 40
@@ -633,6 +641,14 @@ export interface OverviewProps {
    * worktree in the top bar, step to one, wake one, or open one of its panels.
    */
   scrollTo: { id: string; nonce: number } | null
+  /**
+   * The worktree you are in, which is where a Cmd+arrow step counts from. It
+   * follows focus, not only navigation, so clicking into a window makes the
+   * next step continue from there.
+   */
+  activeId: string | null
+  /** Anything in this worktree took focus, so this is where you are now. */
+  onActivate: (worktreeId: string) => void
   onStart: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand its Claude the keyboard. */
@@ -669,6 +685,8 @@ export const Overview = ({
   openPathByWorktree,
   addTo,
   scrollTo,
+  activeId,
+  onActivate,
   onStart,
   onSleep,
   onReveal,
@@ -840,7 +858,6 @@ export const Overview = ({
    * with panels open, is what "the next worktree" often is.
    */
   const stops = cells.filter((cell) => cell.worktree !== null)
-  const activeId = scrollTo?.id ?? null
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
@@ -925,13 +942,12 @@ export const Overview = ({
    * shorter straight back: a wheel notch is ~100px against a spot of ~780, so
    * adding pixels to `scrollLeft` would snap to where it started and read as
    * dead. Panels keep first claim through `inner`, and a gesture carries its
-   * own target so a fast flick steps on from where it is already going rather
-   * than from the tile it has not left yet.
+   * own target so a second notch steps on from where the row is already going
+   * rather than from the tile it has not left yet.
    */
   useEffect(() => {
     const grid = gridRef.current
     if (!grid || pitch <= 0) return
-    let carried = 0
     let aim: number | null = null
     let idle: ReturnType<typeof setTimeout> | undefined
     const onWheel = (event: WheelEvent): void => {
@@ -941,7 +957,6 @@ export const Overview = ({
       // Sideways is the scroller's own axis, and it can have it.
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
       if (inner(event.target, grid, event.deltaY)) return
-      event.preventDefault()
 
       const pixels =
         event.deltaMode === 1
@@ -949,17 +964,13 @@ export const Overview = ({
           : event.deltaMode === 2
             ? event.deltaY * grid.clientWidth
             : event.deltaY
-      // Turning round abandons what was carried, so a reversal answers at once
-      // rather than paying off the distance it had already built up.
-      if (carried !== 0 && carried > 0 !== pixels > 0) carried = 0
-      carried += pixels
+      // One event, one notch, or the row stays where it is. See WHEEL_STEP.
+      if (Math.abs(pixels) < WHEEL_STEP) return
+      event.preventDefault()
       clearTimeout(idle)
       idle = setTimeout(() => {
-        carried = 0
         aim = null
       }, WHEEL_IDLE_MS)
-      if (Math.abs(carried) < WHEEL_STEP) return
-      carried = 0
 
       const from = aim ?? Math.round(grid.scrollLeft / pitch)
       const to = Math.min(Math.max(from + (pixels > 0 ? 1 : -1), 0), Math.max(0, totalSpots - 1))
@@ -1036,6 +1047,14 @@ export const Overview = ({
               <div
                 key={slot.key}
                 data-tile={slot.key}
+                /*
+                 * Focus anywhere inside a window says you are in that worktree
+                 * -- its Claude, a terminal, a tab strip, a panel's button --
+                 * and the top bar marks it. React's onFocus is focusin, which
+                 * bubbles, so this one listener covers everything the tile
+                 * will ever hold rather than each pane reporting for itself.
+                 */
+                onFocus={worktree === null ? undefined : () => onActivate(worktree.id)}
                 className={slot.leaving ? 'slot slot--leaving' : 'slot'}
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a

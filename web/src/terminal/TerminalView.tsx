@@ -212,6 +212,46 @@ export const TerminalView = ({
       return true
     })
 
+    /**
+     * Does this terminal hold the keyboard?
+     *
+     * The test is the DOM's own: xterm types into a hidden textarea, so that
+     * textarea being the active element is exactly "the keyboard is in this
+     * pane". Nothing to keep in sync, and it is false when the keyboard is
+     * somewhere else entirely -- a dialog, the top bar -- which is the right
+     * answer too.
+     */
+    const mine = (): boolean =>
+      term.textarea !== undefined && term.textarea === document.activeElement
+
+    /*
+     * The mouse belongs to the window you are in. Elsewhere it belongs to the
+     * row.
+     *
+     * A row of windows breaks an assumption every terminal emulator makes:
+     * that the pointer is over the terminal you are typing into. Claude asks
+     * for `1003` -- report any mouse event -- so xterm reports every movement
+     * over its pane whether or not that pane has the keyboard, and the pointer
+     * crosses two or three windows on its way anywhere. Measured against a
+     * stand-in that logs its stdin: one sweep across a window the keyboard was
+     * not in delivered 17 SGR reports, 221 bytes, into that agent. Claude
+     * prints what it cannot parse, which is the gibberish appearing in a
+     * prompt nobody typed into.
+     *
+     * So motion is stopped before xterm sees it, in the capture phase, unless
+     * this is the window you are in. Clicking is not: `pointerdown` claims the
+     * keyboard before `mousedown` is dispatched, so by the time xterm reports
+     * the press this pane is already yours -- and dragging out a selection
+     * works for the same reason.
+     */
+    host.addEventListener(
+      'mousemove',
+      (event) => {
+        if (!mine()) event.stopPropagation()
+      },
+      true,
+    )
+
     /*
      * The wheel must never become keystrokes.
      *
@@ -227,13 +267,14 @@ export const TerminalView = ({
      *
      * Only that translation is cancelled. An app that has actually asked for
      * mouse reporting still gets its wheel events, since those are the app
-     * handling the mouse rather than input being invented for it. Returning
-     * false leaves the event unconsumed, so the wheel goes back to scrolling
-     * the row it was aimed at.
+     * handling the mouse rather than input being invented for it -- and note
+     * that this hook cannot reach those: with a tracking mode on, xterm binds
+     * its own wheel listener that reports and cancels without consulting it.
+     * Returning false leaves the event unconsumed, so the wheel goes back to
+     * scrolling the row it was aimed at.
      */
     term.attachCustomWheelEventHandler(
-      () =>
-        !(term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode === 'none'),
+      () => !(term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode === 'none'),
     )
 
     term.onData((data) => terminalSocket.input(session.id, data))
