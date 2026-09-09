@@ -175,9 +175,13 @@ line below is a mistake made in this codebase, not a hypothetical:
 
 ## Design rules
 
-- **Colour is scarce.** The interface is greyscale except a worktree whose
-  Claude is blocked on you, which is amber (`--signal`). The one exception is a
-  diff's own green and red, because a patch is content, like terminal output.
+- **Colour is scarce, and it answers two questions.** The interface is
+  greyscale except for the two states you scan a row of agents for: blocked on
+  you is amber (`--signal`), and done — Claude running and come to rest — is
+  green (`--done`). Nothing running is not done, and stays grey. The two are
+  matched in luminance so neither outshouts the other. The one exception to the
+  rule is a diff's own green and red, because a patch is content, like terminal
+  output.
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the
   interface says in its own voice. Neither names a font that may not be

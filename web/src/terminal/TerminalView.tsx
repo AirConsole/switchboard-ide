@@ -212,6 +212,30 @@ export const TerminalView = ({
       return true
     })
 
+    /*
+     * The wheel must never become keystrokes.
+     *
+     * On the alternate screen -- where Claude's TUI and vim live -- xterm.js
+     * translates a wheel notch into an Up or Down arrow and sends it as input,
+     * the way iTerm and friends do. In a terminal that fills a window that is
+     * a reasonable trade; in a row of tiles you scroll with the same wheel it
+     * is not. Measured against a stand-in agent that logs its stdin: one wheel
+     * gesture with the pointer merely resting over a tile -- never clicked,
+     * with the keyboard in a different tile -- delivered `ESC [ A` to that
+     * tile's session. In Claude that recalls the previous prompt, which is
+     * text appearing that nobody typed.
+     *
+     * Only that translation is cancelled. An app that has actually asked for
+     * mouse reporting still gets its wheel events, since those are the app
+     * handling the mouse rather than input being invented for it. Returning
+     * false leaves the event unconsumed, so the wheel goes back to scrolling
+     * the row it was aimed at.
+     */
+    term.attachCustomWheelEventHandler(
+      () =>
+        !(term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode === 'none'),
+    )
+
     term.onData((data) => terminalSocket.input(session.id, data))
     term.onBinary((data) => terminalSocket.input(session.id, data))
 

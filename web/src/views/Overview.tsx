@@ -26,6 +26,48 @@ const GAP = 12
 const ADD_KEY = '__add'
 
 /**
+ * Is the whole of a tile on screen already?
+ *
+ * A tile begins one gap into its own run of the row -- the leading inset, which
+ * `scroll-padding-left` matches -- and ends at the far edge of the last spot it
+ * covers: it swallows the gaps between the spots it spans and leaves only the
+ * trailing one outside itself, so `(spot + spots) * pitch` is its right edge.
+ *
+ * A pixel of slack at each end, because `pitch` is fractional and `scrollLeft`
+ * is not: a tile flush against an edge must not read as one pixel over it.
+ */
+const wholeOnScreen = (
+  tile: { spot: number; spots: number },
+  scrollLeft: number,
+  pitch: number,
+  width: number,
+): boolean =>
+  GAP + tile.spot * pitch >= scrollLeft - 1 &&
+  (tile.spot + tile.spots) * pitch <= scrollLeft + width + 1
+
+/**
+ * Which spot to scroll to so a tile is wholly on screen, moving as little as
+ * possible.
+ *
+ * A tile of s spots at `spot` is whole on screen for every offset from
+ * `spot + s - capacity` -- its right edge against the right edge of the window
+ * -- to `spot`, its left edge against the left. The nearest of those to where
+ * the row already sits is the answer: stepping onto the one-spot worktree just
+ * off the right edge scrolls by one spot and keeps the one you were on beside
+ * it, rather than pulling the new one to the front and taking everything else
+ * off the screen with it.
+ *
+ * The range is never empty, because a tile is never wider than the window --
+ * see `panesOf` -- so it always holds `spot` itself. Offsets are spot indices,
+ * which is what the row is allowed to come to rest on.
+ */
+const nearestOffset = (
+  tile: { spot: number; spots: number },
+  at: number,
+  capacity: number,
+): number => Math.min(Math.max(at, tile.spot + tile.spots - capacity), tile.spot)
+
+/**
  * Every panel, in the order they sit beside Claude.
  *
  * The order is fixed rather than the order they were opened, so a worktree's
@@ -242,6 +284,12 @@ const WorktreeTile = ({
   // that could not start looked like a button that did nothing.
   const running = isRunning(session)
   const exitOutput = useExitOutput(session)
+  /*
+   * `done` is a running Claude that has come to rest, and it is the only one of
+   * these that goes green. A worktree with no agent, or one that has exited,
+   * stays `idle` and stays grey: nothing is running there, so nothing has been
+   * finished -- the green is a claim about work, not about quiet.
+   */
   const state = !session
     ? 'idle'
     : session.liveness === 'dead'
@@ -253,7 +301,7 @@ const WorktreeTile = ({
         ? 'waiting'
         : session.attention === 'working'
           ? 'working'
-          : 'idle'
+          : 'done'
 
   const tileRef = useRef<HTMLDivElement | null>(null)
   /*
@@ -465,6 +513,41 @@ const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
   </button>
 )
 
+/**
+ * Whether anything between `from` and the row would rather have this wheel.
+ *
+ * Standard scroll chaining, done by hand because the row has to know when the
+ * wheel is spare. A panel with more to show scrolls itself; one already at its
+ * end passes the gesture on, which is what the browser would do if the row
+ * scrolled in the same axis as the wheel.
+ */
+const inner = (from: EventTarget | null, stop: Element, delta: number): boolean => {
+  for (let el = from as HTMLElement | null; el && el !== stop; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight) continue
+    const overflow = getComputedStyle(el).overflowY
+    if (overflow !== 'auto' && overflow !== 'scroll') continue
+    const room =
+      delta < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    if (room) return true
+  }
+  return false
+}
+
+/**
+ * How much wheel makes one spot.
+ *
+ * A mouse notch is exactly 100px in Chrome, so one notch is one spot. A
+ * trackpad arrives as a stream of small deltas instead and accumulates, which
+ * makes a flick travel further than a nudge -- the thing a strip you scroll
+ * along should do. Firefox reports lines rather than pixels; 40 is the usual
+ * line for a wheel, so its three-line notch clears the same bar.
+ */
+const WHEEL_STEP = 100
+const WHEEL_LINE = 40
+
+/** A gesture is over once the wheel has been quiet this long. */
+const WHEEL_IDLE_MS = 300
+
 export interface OverviewProps {
   /** Awake worktrees, in the order the row shows them. */
   worktrees: Worktree[]
@@ -485,11 +568,15 @@ export interface OverviewProps {
    * A request to bring a worktree's tile into view: its id, plus a counter so
    * that asking twice for the same one is two requests. Set when you click a
    * worktree in the top bar, wake one, or open one of its panels.
+   *
+   * With `ifNeeded`, a tile already wholly on screen is left where it is and
+   * only the keyboard moves; see the step handler.
    */
-  scrollTo: { id: string; nonce: number } | null
+  scrollTo: { id: string; nonce: number; ifNeeded: boolean } | null
   onStart: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
-  onReveal: (worktreeId: string) => void
+  /** `ifNeeded`: scroll only if that worktree is not wholly on screen. */
+  onReveal: (worktreeId: string, ifNeeded?: boolean) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** Close panels a screenful could not hold. */
@@ -629,12 +716,50 @@ export const Overview = ({
    * part of it, which is how you know the row continues.
    */
   const target = scrollTo === null ? undefined : cells.find((cell) => cell.key === scrollTo.id)
+  const ifNeeded = scrollTo?.ifNeeded === true
+  /*
+   * The request this has already answered.
+   *
+   * `target` is found in a list rebuilt every render, so it is a new object
+   * every render and the effect below runs every render -- and it used to
+   * scroll every render with it, which quietly forbade scrolling the row by
+   * hand: a state update, and attention brings one about once a second,
+   * dragged the row back to the last worktree that had been navigated to. The
+   * nonce is what actually says "this is a new request".
+   *
+   * Recorded only once the scroll happens, because a request can arrive before
+   * the tile it names: waking a worktree asks for it in the same breath, and
+   * the tile is a render behind.
+   */
+  const answered = useRef<number | null>(null)
   useEffect(() => {
-    if (target === undefined || width === 0) return
-    gridRef.current?.scrollTo({ left: target.spot * pitch, behavior: 'smooth' })
+    if (target === undefined || width === 0 || scrollTo === null) return
+    if (answered.current === scrollTo.nonce) return
+    const grid = gridRef.current
+    if (!grid) return
+    // Answered before deciding whether to move: a request that turns out to
+    // need no scroll has still been dealt with, and must not be reconsidered
+    // later against a row that has since been scrolled by hand.
+    answered.current = scrollTo.nonce
+    /*
+     * A conditional request leaves a tile you can already see whole alone.
+     * There is nothing more of it to show, and pulling it to the left edge
+     * would slide every other window sideways for no gain -- the terminal you
+     * were reading beside it included. When it does have to scroll, it scrolls
+     * by as little as brings the tile fully on screen, which for a one-spot
+     * worktree just off the edge is one spot.
+     *
+     * A click still says where it wants the tile: at the leftmost spot.
+     */
+    const tile = { spot: target.spot, spots: target.panes.length }
+    if (ifNeeded && wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
+    const offset = ifNeeded
+      ? nearestOffset(tile, Math.round(grid.scrollLeft / pitch), spots)
+      : target.spot
+    grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
-  }, [scrollTo, target, pitch, width])
+  }, [scrollTo, target, ifNeeded, pitch, width, spots])
 
   /*
    * Cmd+Left and Cmd+Right step through the worktrees.
@@ -648,10 +773,16 @@ export const Overview = ({
    * The browser does claim it on macOS, where it is history back and forward,
    * which is why the event is cancelled rather than merely acted on.
    *
-   * "Where you are" is the worktree holding the leftmost spot, so this is the
+   * "Where you are" is the worktree that has the keyboard, so this is the
    * keyboard version of clicking the tab beside the one you are on.
+   *
+   * A step scrolls only as far as it has to: a neighbour already wholly on
+   * screen just takes the keyboard. So the row stays put while you walk along
+   * the windows in front of you, and moves when you reach one you cannot see
+   * the whole of -- which, with panels open, is what "the next worktree" is.
    */
   const stops = cells.filter((cell) => cell.worktree !== null)
+  const activeId = scrollTo?.id ?? null
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
@@ -671,22 +802,38 @@ export const Overview = ({
 
       const grid = gridRef.current
       if (!grid || stops.length === 0 || pitch <= 0) return
-      const at = Math.round(grid.scrollLeft / pitch)
-      // The tile that holds the leftmost spot, then its neighbour.
-      let here = 0
-      for (let index = 0; index < stops.length; index++) {
-        if ((stops[index]?.spot ?? 0) <= at) here = index
+      /*
+       * Where you are is the worktree holding the keyboard -- but only while
+       * you can still see the whole of it. Since stepping no longer always
+       * scrolls, the leftmost spot is no longer the answer on its own: three
+       * windows that all fit share one leftmost tile, and every step would
+       * offer the same neighbour again. If you have scrolled the active
+       * worktree off the side, though, it is not where you are looking, and
+       * the tile at the leftmost spot is the honest answer once more.
+       */
+      const active = stops.findIndex((cell) => cell.key === activeId)
+      const seen = stops[active]
+      const tile = seen ? { spot: seen.spot, spots: seen.panes.length } : null
+      let here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? active : -1
+      if (here === -1) {
+        const at = Math.round(grid.scrollLeft / pitch)
+        // The tile that holds the leftmost spot.
+        here = 0
+        for (let index = 0; index < stops.length; index++) {
+          if ((stops[index]?.spot ?? 0) <= at) here = index
+        }
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
       event.preventDefault()
       // Through the same request the top bar makes, rather than scrolling from
       // here: arriving somewhere is one thing, and it also hands over the
-      // keyboard.
-      if (to?.worktree) onReveal(to.worktree.id)
+      // keyboard. Conditionally, though -- a step means which worktree, not
+      // where to put it.
+      if (to?.worktree) onReveal(to.worktree.id, true)
     }
     document.addEventListener('keydown', step)
     return () => document.removeEventListener('keydown', step)
-  }, [stops, pitch, onReveal])
+  }, [stops, activeId, pitch, width, onReveal])
 
   /*
    * Keep your place across a resize.
@@ -702,6 +849,66 @@ export const Overview = ({
     if (!grid || width === 0) return
     grid.scrollTo({ left: spotRef.current * pitch, behavior: 'auto' })
   }, [pitch, width])
+
+  /*
+   * The wheel moves the row.
+   *
+   * A terminal on the alternate screen has nothing of its own to scroll, and
+   * `TerminalView` stops xterm turning the wheel into arrow keys there, so
+   * without this a wheel over most of the window did nothing at all. The row
+   * is the thing that scrolls, and this is the pointer's way of saying so.
+   *
+   * By the spot, because `scroll-snap-type: x mandatory` would drag anything
+   * shorter straight back: a wheel notch is ~100px against a spot of ~780, so
+   * adding pixels to `scrollLeft` would snap to where it started and read as
+   * dead. Panels keep first claim through `inner`, and a gesture carries its
+   * own target so a fast flick steps on from where it is already going rather
+   * than from the tile it has not left yet.
+   */
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!grid || pitch <= 0) return
+    let carried = 0
+    let aim: number | null = null
+    let idle: ReturnType<typeof setTimeout> | undefined
+    const onWheel = (event: WheelEvent): void => {
+      // Whatever already acted on it -- a terminal scrolling its own scrollback
+      // -- has spent the gesture.
+      if (event.defaultPrevented) return
+      // Sideways is the scroller's own axis, and it can have it.
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      if (inner(event.target, grid, event.deltaY)) return
+      event.preventDefault()
+
+      const pixels =
+        event.deltaMode === 1
+          ? event.deltaY * WHEEL_LINE
+          : event.deltaMode === 2
+            ? event.deltaY * grid.clientWidth
+            : event.deltaY
+      // Turning round abandons what was carried, so a reversal answers at once
+      // rather than paying off the distance it had already built up.
+      if (carried !== 0 && carried > 0 !== pixels > 0) carried = 0
+      carried += pixels
+      clearTimeout(idle)
+      idle = setTimeout(() => {
+        carried = 0
+        aim = null
+      }, WHEEL_IDLE_MS)
+      if (Math.abs(carried) < WHEEL_STEP) return
+      carried = 0
+
+      const from = aim ?? Math.round(grid.scrollLeft / pitch)
+      const to = Math.min(Math.max(from + (pixels > 0 ? 1 : -1), 0), Math.max(0, totalSpots - 1))
+      aim = to
+      grid.scrollTo({ left: to * pitch })
+    }
+    grid.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      clearTimeout(idle)
+      grid.removeEventListener('wheel', onWheel)
+    }
+  }, [pitch, totalSpots])
 
   /*
    * Panels that could not be kept are closed, not left open with nothing to
