@@ -50,6 +50,9 @@ The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
   needs the server process restarted, which briefly drops every browser socket.
   Their tmux sessions survive it — that is the whole point of the design — but
   ask before restarting unless they asked for the change.
+- **`scripts/deploy.sh` is the restart**, run from the master checkout after a
+  merge lands: it builds, and only if that succeeds stops :8084 and starts it
+  again detached. It is never automatic and never run from a worktree.
 - **Never touch their project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
   `tmux kill-server` on `~/.config/ide-n-dream/tmux.sock`.
