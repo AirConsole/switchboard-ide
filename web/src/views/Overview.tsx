@@ -593,10 +593,30 @@ export const Overview = ({
    */
   const target = scrollTo === null ? undefined : cells.find((cell) => cell.key === scrollTo.id)
   const ifNeeded = scrollTo?.ifNeeded === true
+  /*
+   * The request this has already answered.
+   *
+   * `target` is found in a list rebuilt every render, so it is a new object
+   * every render and the effect below runs every render -- and it used to
+   * scroll every render with it, which quietly forbade scrolling the row by
+   * hand: a state update, and attention brings one about once a second,
+   * dragged the row back to the last worktree that had been navigated to. The
+   * nonce is what actually says "this is a new request".
+   *
+   * Recorded only once the scroll happens, because a request can arrive before
+   * the tile it names: waking a worktree asks for it in the same breath, and
+   * the tile is a render behind.
+   */
+  const answered = useRef<number | null>(null)
   useEffect(() => {
-    if (target === undefined || width === 0) return
+    if (target === undefined || width === 0 || scrollTo === null) return
+    if (answered.current === scrollTo.nonce) return
     const grid = gridRef.current
     if (!grid) return
+    // Answered before deciding whether to move: a request that turns out to
+    // need no scroll has still been dealt with, and must not be reconsidered
+    // later against a row that has since been scrolled by hand.
+    answered.current = scrollTo.nonce
     /*
      * A conditional request leaves a tile you can already see whole alone.
      * There is nothing more of it to show, and pulling it to the left edge
