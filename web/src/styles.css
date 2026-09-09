@@ -301,7 +301,13 @@ button {
   gap: 8px;
   padding: 0 14px;
   border-right: 1px solid var(--rule);
-  border-bottom: 2px solid transparent;
+  /*
+   * --tab-state is the colour of the agent's state, set by the status class
+   * below and deliberately left unset when nothing is running: there is then
+   * no line to draw, and `var()`'s fallback is what makes that state say so in
+   * both places it is read. See .chip--active for the other reader.
+   */
+  border-bottom: 2px solid var(--tab-state, transparent);
   font-family: var(--font-ui);
   font-size: 13px;
   white-space: nowrap;
@@ -314,24 +320,40 @@ button {
 }
 
 /*
- * The worktree you are in: marked at the top, and recessed into the row.
+ * The worktree you are in: bracketed in its agent's own colour.
  *
- * A third fact about a tab, after awake-or-asleep and what Claude is doing, so
- * it needs a channel of its own and it does not get colour -- amber and green
- * are spoken for. The bar's two edges divide the work: the line under a tab is
- * the agent's state, the band over it is you.
+ * Left, top and right, and the fourth side is left to the line that is already
+ * there -- the state line under the tab -- which closes the frame itself. Same
+ * colour, because the bracket borrows `--tab-state` rather than introducing
+ * one: amber when that agent is blocked on you, green when it is done, grey
+ * while it is working. So the frame says "you are here" by existing at all,
+ * and what it is made of still says what the agent is doing. No new colour is
+ * spent, which is what makes it affordable at this size.
+ *
+ * With no agent running there is no state to borrow: the fallback is grey, and
+ * the frame stays open at the bottom because there is no line down there to
+ * close it. The mark must not disappear in that case, or "where you are" would
+ * go missing in exactly the worktree whose window shows least.
+ *
+ * Inset shadows rather than borders, because a border would make the tab wider
+ * and the whole strip would shift by 2px every time you stepped to another
+ * worktree. They are clipped to the padding box, so the tab's own 1px --rule
+ * right border stays outside the bracket and the neighbour's does on the left:
+ * a hairline either side of it, which is why the frame reads as centred.
  *
  * The ground is the quieter half, and recessed rather than raised on purpose.
  * --ink is what the row of windows sits on, so the tab reads as continuous
  * with the window below it, and hover -- --slab-raised, lighter than the bar
- * -- keeps pointing the other way. Hover does win over it while the pointer is
- * there, which is why the band and not the ground is what has to carry this:
- * 2px of --graphite-dim, the same weight as the state line opposite, quiet
- * enough not to compete with it and bright enough to find at a glance.
+ * -- keeps pointing the other way. Hover does win the ground while the pointer
+ * is there, which is the other reason the frame is what carries the fact.
  */
 .chip--active {
+  --mark: var(--tab-state, var(--graphite-dim));
   background: var(--ink);
-  box-shadow: inset 0 2px 0 var(--graphite-dim);
+  box-shadow:
+    inset 2px 0 0 var(--mark),
+    inset 0 2px 0 var(--mark),
+    inset -2px 0 0 var(--mark);
 }
 
 /*
@@ -357,8 +379,8 @@ button {
 
 /* Blocked on you: the one place the chrome is allowed colour. */
 .chip--needs {
+  --tab-state: var(--signal);
   color: var(--signal);
-  border-bottom-color: var(--signal);
 }
 
 /*
@@ -373,17 +395,21 @@ button {
 }
 
 .chip--working {
-  border-bottom-color: var(--graphite);
+  --tab-state: var(--graphite);
 }
 
 /* Done, and the tab says so from across the bar. */
 .chip--idle {
-  border-bottom-color: var(--done);
+  --tab-state: var(--done);
 }
 
-/* Nothing running, so there is nothing to underline. */
+/*
+ * Nothing running, so nothing is set: no line under the tab, and the band over
+ * it -- if this is the tab you are in -- has no state to borrow and falls back
+ * to grey. A worktree with no agent is the one case where "where you are" is
+ * all the mark can say.
+ */
 .chip--off {
-  border-bottom-color: transparent;
 }
 
 .chip__zz {
