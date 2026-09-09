@@ -104,11 +104,11 @@ export interface Session {
  * A panel a worktree can open beside its Claude session.
  *
  * Each open panel takes another column of the worktree's tile, so a worktree is
- * one column wide, or two, or -- once files joins this union -- four. Panels are
+ * one column wide, or two, or -- with all three open -- four. Panels are
  * per-worktree and persistent: minimizing a worktree to the top bar and bringing
  * it back restores the width it had.
  */
-export type PanelName = 'terminals' | 'git'
+export type PanelName = 'files' | 'terminals' | 'git'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
@@ -131,12 +131,28 @@ export interface UiState {
   panels: Record<string, PanelName[]>
   /** Selected terminal per worktree, so its panel reopens where you left it. */
   activeTerminalByWorktree: Record<string, string>
+  /**
+   * Where each worktree's files panel is standing, relative to the worktree.
+   *
+   * One string carries the whole panel. A trailing slash means a directory
+   * opened with nothing chosen inside it, anything else names a file, and `''`
+   * is the worktree root -- so the browser's columns are the path's own
+   * segments, and restoring the string restores the strip and the open file
+   * together. Storing the columns as well would be a second copy of one fact,
+   * free to disagree with it.
+   *
+   * Unlike the git panel's selection, which is deliberately *not* persisted
+   * because a file may have stopped differing by the time you come back, a path
+   * is stable: a file you were reading is still a file.
+   */
+  openPathByWorktree: Record<string, string>
 }
 
 export const defaultUiState = (): UiState => ({
   awake: null,
   panels: {},
   activeTerminalByWorktree: {},
+  openPathByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
@@ -204,4 +220,117 @@ export interface WorktreeChanges {
   commitScope: 'ahead' | 'recent'
   /** Commits the base has that this branch does not. Context, not a warning. */
   behind: number
+}
+
+/**
+ * One entry in a directory of a worktree.
+ *
+ * A symlink is reported as whatever it points at, and is dropped entirely when
+ * that is outside the worktree or missing: `dirent.isDirectory()` is false for a
+ * link to a directory, so reporting the link's own kind would show a directory
+ * as a file and make clicking it an error every time.
+ */
+export interface FileEntry {
+  name: string
+  kind: 'dir' | 'file'
+  /**
+   * The worktree has changed this, or -- for a directory -- something under it.
+   *
+   * Absent rather than false, because in a clean repository that would be every
+   * entry, and this listing is sent on every click.
+   */
+  changed?: boolean
+}
+
+/**
+ * One directory of a worktree: exactly one level, for one column of the browser.
+ *
+ * One level rather than a whole tree because the browser only ever shows the
+ * path you are standing on and its siblings, and a recursive listing of a real
+ * repository is tens of thousands of entries to fill a column of eight rows.
+ */
+export interface FileListing {
+  /**
+   * Echoed back, so a client that has already clicked elsewhere can drop a late
+   * response instead of painting it into the wrong column. `''` is the worktree
+   * root.
+   */
+  path: string
+  entries: FileEntry[]
+  /**
+   * Set when the directory held more entries than the server will send.
+   *
+   * Rare once the ignore rules have run -- they are what remove `node_modules`
+   * -- but a directory of 100k files would lock the tab up, so it is capped
+   * rather than trusted.
+   */
+  truncated?: boolean
+}
+
+/**
+ * A file's identity, for the stale-write guard. Opaque to the client.
+ *
+ * Deliberately not the mtime alone. `mtimeMs` is a double that rounds away
+ * sub-millisecond precision, and two writes inside one millisecond are exactly
+ * the case a stale-write guard exists for; the inode is in it too, because a
+ * write done as write-a-temp-then-rename produces a fresh file that can
+ * plausibly land on the same timestamp. Opaque so it can be strengthened later
+ * without the client having to know.
+ */
+export type FileRev = string
+
+/** A file's contents, or the reason there are none to show. */
+export interface FileContent {
+  path: string
+  rev: FileRev
+  /** For display only. `rev` is the identity. */
+  mtimeMs: number
+  size: number
+  /** Absent when `binary` or `tooLarge`: there is nothing safe to edit. */
+  text?: string
+  /**
+   * A NUL byte in the first 8000 bytes -- git's own heuristic, so this panel
+   * and the git panel beside it agree about the same file -- or bytes that are
+   * not valid UTF-8.
+   *
+   * The second half matters as much as the first: a latin-1 file contains no
+   * NUL, decodes without complaint into U+FFFD, and saving it back would
+   * rewrite every non-ASCII byte in it. Refusing to open it is the only safe
+   * answer.
+   */
+  binary?: boolean
+  /**
+   * Over `IDN_MAX_FILE_BYTES`.
+   *
+   * Nothing is ever truncated: a partial buffer that reached the editor would be
+   * one Cmd+S away from destroying the rest of the file.
+   */
+  tooLarge?: boolean
+}
+
+/**
+ * The answer to the follow-poll when nothing moved: one stat, no read.
+ *
+ * The poll and the first read are deliberately the same request. It is not only
+ * the round trip saved -- the file vanishing, growing past the cap, or ceasing
+ * to be text all have to be answered somewhere, and a stat-only endpoint would
+ * need its own vocabulary for every one of them.
+ */
+export interface FileUnchanged {
+  unchanged: true
+  rev: FileRev
+}
+
+/**
+ * The result of a save.
+ *
+ * The new `rev` is not a nicety: without it the follow-poll two seconds later
+ * sees the client's own write as a foreign change and announces that the file
+ * moved underneath you.
+ */
+export interface FileSaved {
+  path: string
+  rev: FileRev
+  mtimeMs: number
+  size: number
 }

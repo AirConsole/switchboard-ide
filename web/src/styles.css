@@ -60,7 +60,7 @@
   --pulse: #4b9fd6;
 
   /*
-   * The one colour outside amber, and it is not chrome.
+   * Colour outside amber, and none of it chrome.
    *
    * A diff is content, the same exception the terminal already gets -- these are
    * literally its own green and red, from THEME in TerminalView.tsx. The
@@ -71,6 +71,35 @@
   --diff-add: #6bd968;
   --diff-del: #ff6b6b;
   --danger: #e5707a;
+
+  /*
+   * A source file is content in exactly the same sense as a patch, so it gets
+   * colour on exactly the same argument -- and seven of these eight are colours
+   * the interface already renders: --code-plain is THEME.foreground, keyword,
+   * literal and name are the terminal's own magenta, cyan and blue, punctuation
+   * and comment are two rungs of the grey ladder, and invalid is --diff-del.
+   * Only --code-type is new, because the terminal's yellow sits too close to
+   * --signal to spend on a token.
+   *
+   * Five colours and two greys, not a colour per token kind: the job is to
+   * separate structure from literal from name from type from comment. Every
+   * literal is therefore one colour -- a string, a number, `true` and `null`
+   * are all data written down.
+   *
+   * Nothing here is green, deliberately. --done is the only green in the
+   * interface and it means one thing; a string constant must not be able to
+   * catch the eye that is scanning a row of agents for it. Ratios are measured
+   * on --terminal-bg, and every one still clears 4.5:1 on the active line's
+   * #141821 (--code-comment, the weakest, reads 5.4).
+   */
+  --code-plain: #d7dce3;   /* 13.7 */
+  --code-punct: #9fa6b2;   /*  7.7  = --graphite */
+  --code-comment: #868f9d; /*  5.8  = --graphite-dim */
+  --code-keyword: #c792ea; /*  7.9 */
+  --code-literal: #56d4dd; /* 10.7 */
+  --code-name: #7aa2f7;    /*  7.5 */
+  --code-type: #dd93b4;    /*  8.0 */
+  --code-invalid: #ff6b6b; /*  6.8  = --diff-del */
 
   /*
    * Two faces, with one job each.
@@ -1574,4 +1603,249 @@ button {
 
 .menu__state--idle {
   color: var(--done);
+}
+
+/* -------------------------------------------------------------- the files -- */
+
+/*
+ * A worktree's files: a strip of directory columns, then the file itself.
+ *
+ * Columns rather than an indented tree, because a pane is eighty characters
+ * wide and an indented tree spends that width on depth instead of on names --
+ * at four levels deep there is nothing left to read the filename in. This is
+ * Finder's arrangement with the preview column turned ninety degrees: the strip
+ * runs sideways across the top, and the file gets everything below it.
+ */
+.files {
+  /*
+   * One column. At 12px UI text this holds about twenty-six characters, which
+   * fits `NewWorktreeDialog.tsx` with room to spare, and three and a half of
+   * them fit an eighty-column pane -- the half column at the edge being what
+   * says the strip scrolls.
+   */
+  --files-col-w: 176px;
+  --files-row-h: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* Flush to the pane's edges, so a column divider runs the full height and meets
+   the tile's own border. The 8px inset a terminal gets from the pane is given
+   by each row and by the editor's gutter instead, which is the same alignment
+   without a strip of dead ground down both sides. */
+.tile__pane--files {
+  padding: 0;
+}
+
+.files__strip {
+  flex: none;
+  /*
+   * Eight rows, written as eight rows rather than as a share of the tile: the
+   * file has to get the same height on any window, the way a terminal does. The
+   * percentage is a ceiling only, for a window too short to give both a fair
+   * reading.
+   */
+  height: min(calc(var(--files-row-h) * 8), 45%);
+  display: flex;
+  overflow-x: auto;
+  /*
+   * Said explicitly, and load-bearing. `overflow-x: auto` computes `overflow-y`
+   * to auto as well -- the same trap that once clipped a dropdown away -- and
+   * the row's scroll-chaining helper only inspects `overflowY`, so an auto here
+   * would let the strip claim vertical wheels it has nothing to do with.
+   */
+  overflow-y: hidden;
+  /* A chrome scroller, like the row itself. */
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.files__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.files__col {
+  flex: 0 0 var(--files-col-w);
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  /* A content scroller, like the git panel's list. */
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+}
+
+/* The same weight and colour that divides one pane from the next. */
+.files__col + .files__col {
+  border-left: 1px solid var(--rule);
+}
+
+.files__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: var(--files-row-h);
+  padding: 0 4px 0 8px;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--graphite);
+}
+
+.files__row:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+.files__row--on {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+/*
+ * Changed in this worktree, or a directory holding something that is. The one
+ * thing the strip is scanned for, and it is said by going bright against its
+ * siblings -- no new colour, because a changed file is not a state that has to
+ * carry across a room.
+ */
+.files__row--changed {
+  color: var(--bone);
+}
+
+/* Drawn inside: the column clips, and a ring on the outer edge of a row at the
+   top of a scroller would be half a ring. */
+.files__row:focus-visible {
+  outline-offset: -1px;
+}
+
+.files__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A directory says so, which is the only thing telling two names apart at a
+   glance once the extension is gone. */
+.files__into {
+  flex: none;
+  margin-left: auto;
+  color: var(--graphite-dim);
+}
+
+.files__note {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--graphite-dim);
+}
+
+.files__file {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.files__editor,
+.files__cm {
+  flex: 1;
+  min-height: 0;
+}
+
+/* What is in the way of saving, said above the file and never over it. Shaped
+   like the name of a file inside a patch, because it is the same kind of thing:
+   a label for the content below it. */
+.files__notice {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--rule-bright);
+  background: var(--slab);
+  color: var(--bone);
+}
+
+.files__notice-actions {
+  margin-left: auto;
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.files__act {
+  padding: 0 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.files__act:hover {
+  color: var(--bone);
+}
+
+/* The bar segment above the pane: where you are, whether it is saved, and how
+   to save it. Right-aligned and divided like the terminal tabs, for the same
+   reasons. */
+.files__bar {
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.files__bar > * + * {
+  border-left: 1px solid var(--rule-bright);
+}
+
+.files__path,
+.files__unsaved {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
+/* A path is read character by character, so it is set in the mono face. */
+.files__path {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Brightness, not colour: amber means an agent is blocked on you, and an unsaved
+   buffer is not that. */
+.files__unsaved {
+  color: var(--bone);
+}
+
+.files__save {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.files__save:hover:not(:disabled) {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+/* Present whenever a file is open, so the first keystroke does not shove the
+   path sideways to make room for it. */
+.files__save:disabled {
+  color: var(--graphite-dim);
+  cursor: default;
 }

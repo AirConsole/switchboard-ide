@@ -15,14 +15,14 @@ there is no "active" one. A project's **worktrees** are discovered from
 worktrees already there.
 
 A worktree is the unit, and it owns everything about itself: one Claude session,
-any number of terminals, its git panel, and later its files. It is **awake** or
+any number of terminals, its git panel, and its files. It is **awake** or
 **asleep**. Awake means it has a window in the row; asleep means it is behind
 the top bar and, unless you said otherwise, nothing of it is running. Waking
 continues the conversation it was having rather than starting a new one.
 
 The row of windows is a strip you scroll along, and it is laid out in **spots**:
 one pane is one spot, so Claude alone is one spot wide and Claude plus terminals
-is two. A spot is as wide as it needs to be for as many as fit to fill the
+is two, up to four with the files and git panels open as well. A spot is as wide as it needs to be for as many as fit to fill the
 window, never below 80 columns. Navigation always lands on a spot boundary.
 
 ## Commands
@@ -179,9 +179,12 @@ line below is a mistake made in this codebase, not a hypothetical:
   greyscale except for the two states you scan a row of agents for: blocked on
   you is amber (`--signal`), and done — Claude running and come to rest — is
   green (`--done`). Nothing running is not done, and stays grey. The two are
-  matched in luminance so neither outshouts the other. The one exception to the
-  rule is a diff's own green and red, because a patch is content, like terminal
-  output.
+  matched in luminance so neither outshouts the other. The exceptions are both
+  content rather than chrome, and are read the way terminal output is: a diff's
+  own green and red, and a source file's syntax colour. The rule still governs
+  the interface around them, and neither exception may reach for amber or green
+  — the files pane's palette is the terminal's own, minus its green, so that a
+  string constant cannot catch the eye that is scanning a row of agents.
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the
   interface says in its own voice. Neither names a font that may not be
@@ -209,7 +212,6 @@ where they are.
 
 ## Not built yet
 
-- The files panel (a fourth pane; CodeMirror 6 was the intended editor).
 - Remote projects: a project on another ide-n-dream server, with this server as
   the gateway. The seams are named in `server/CLAUDE.md`.
 - Registering as a Claude Code IDE (`~/.claude/ide/<port>.lock`) so agents get

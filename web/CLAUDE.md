@@ -12,6 +12,10 @@ components/TopBar    project groups, awake tabs, the zZ dropdown
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/GitPane        changes, commits, diffs
+views/FilesPane      the Miller columns, and the file below them
+editor/CodeEditor    one CodeMirror view over one file
+editor/theme         the syntax palette and the editor's chrome
+editor/language      filename -> grammar, fetched on demand
 terminal/TerminalView  one xterm bound to one session
 views/overviewLayout   MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth
 views/useNearViewport  whether a tile is close enough to mount its terminal
@@ -62,6 +66,36 @@ This is only safe because the server serialises its mirror on attach: a
 remounted terminal paints exactly what it would have shown, and with nothing
 attached the pty's geometry is left alone.
 
+## The files pane
+
+The browser is Miller columns, not an indented tree, because a pane is eighty
+characters wide and indentation spends that width on depth instead of on names.
+Three things in it are load-bearing:
+
+- **One string is the whole state.** `ui.openPathByWorktree[id]` -- a trailing
+  slash meaning a directory with nothing chosen in it. The columns are the
+  path's own segments, so there is no second copy of where the browser is
+  standing that could disagree with the open file.
+- **The draft lives in a ref, and only a boolean reaches state.** The editor is
+  uncontrolled: it is handed the file as it is on disk and reports its buffer
+  back, never the reverse. If the buffer were state, every keystroke would
+  re-render the tile -- and the tile holds two live terminals. It also makes
+  "unsaved" mean *differs from disk*, so undoing back to the file's own text
+  clears it for free.
+- **Following a file keeps your place by the line's text, not its offset.**
+  Trimming the common prefix and suffix is enough while a change is one
+  contiguous region, but an agent that adds an import at the top *and* a
+  function at the bottom produces one region spanning the whole file -- and
+  CodeMirror maps a position inside a replaced range to the end of what replaced
+  it. Measured: the cursor jumped from line 3 to line 1. So the line being read
+  is remembered by its text and looked for again near its old number.
+
+`.tile__pane--files` has no padding, deliberately, so a column divider runs the
+full height and meets the tile's border; the 8px inset comes from each row and
+from the editor's gutter instead. `PANE_CHROME_WIDTH` still describes the
+terminal panes, which are what set the minimum width -- the mismatch is not a
+bug to fix.
+
 ## The wheel is not a keyboard
 
 On the alternate screen xterm.js turns a wheel notch into an Up or Down arrow
@@ -103,8 +137,13 @@ lines, hashes, and paths — anything read character by character — and
 `--font-ui` for everything the interface says in its own voice. `--signal`
 (amber) means one thing only: Claude is blocked on you, and `--done` (green)
 one thing only: Claude is running and has come to rest. A worktree with nothing
-running has finished nothing, so it stays grey. A diff's green and red are the
-single exception to the rule, because a patch is content.
+running has finished nothing, so it stays grey. The exceptions are a diff's
+green and red and a file's syntax colour, both because they are content rather
+than chrome. The `--code-*` palette is the terminal's own with its green left
+out, so nothing in a source file can be mistaken for `--done` at a glance; the
+editor's chrome lives in `editor/theme.ts` and not in this stylesheet, because
+CodeMirror injects its own rules at a specificity a plain class rule can lose
+to.
 
 Every text colour clears 4.5:1 on every ground it lands on, including
 `--slab-raised`; the three greys are a ladder (13.4 : 7.0 : 5.2). Class names
@@ -132,7 +171,11 @@ geometry. Then:
   `getAnimations()[0].currentTime` jumped 0→117ms in 10ms of wall time. Existence,
   duration and the interpolated property are checkable; timing is not.
 - **Read `scrollLeft` late.** Reading it right after setting it returns a
-  partly-applied value.
+  partly-applied value. The files strip auto-scrolls only when a column is
+  *added*, so check that a poll does not drag it back while you read a parent.
+- **Syntax colour is in generated class names.** `HighlightStyle` emits its own
+  (`ͼ5`, `ͼ9`); there is no `.tok-keyword` to look for. Read the computed colour
+  of a span inside `.cm-line` instead.
 - **Terminal text is in a canvas.** `tmux -S <socket> capture-pane -p -t <name>`
   is how you read it, and how focus handover was confirmed. Synthetic
   `dispatchEvent` once passed while Shift+Enter was broken in the real browser.

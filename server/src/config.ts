@@ -27,6 +27,17 @@ export const config = {
   /** Scrollback the server-side mirror keeps for reconnect repaints. */
   mirrorScrollback: int(env.IDN_MIRROR_SCROLLBACK, 5000),
 
+  /**
+   * Largest file the files panel will open, and the largest it will save.
+   *
+   * Configurable rather than a constant because "the editor refuses to open my
+   * file" is exactly the limit someone needs to raise once, without a rebuild.
+   * Nothing is ever truncated to fit it -- a partial buffer in the editor is one
+   * save away from destroying the rest of the file -- so over the cap the panel
+   * says so instead of showing anything.
+   */
+  maxFileBytes: int(env.IDN_MAX_FILE_BYTES, 2 * 1024 * 1024),
+
   /** Static web build, served in production. */
   webDist: env.IDN_WEB_DIST ?? new URL('../../web/dist', import.meta.url).pathname,
 

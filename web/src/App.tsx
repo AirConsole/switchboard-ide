@@ -51,6 +51,14 @@ export const App = (): React.ReactElement => {
 
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
 
+  /*
+   * The current UI state, for callbacks that must keep one identity across
+   * renders. `openPath` is handed to every tile in the row, and rebuilding it
+   * on each render would restart the files hook's effects everywhere at once.
+   */
+  const uiRef = useRef(ui)
+  uiRef.current = ui
+
   /**
    * Which worktrees are awake.
    *
@@ -188,6 +196,21 @@ export const App = (): React.ReactElement => {
   }
 
   /**
+   * Where a worktree's files panel is standing.
+   *
+   * Stored like the selected terminal, and for the same reason: the panel
+   * should reopen where you left it. Stable between renders, because it is
+   * handed down to every tile and a fresh identity each render would make the
+   * files hook's effects re-run for every worktree in the row.
+   */
+  const openPath = useCallback(
+    (worktreeId: string, path: string): void => {
+      setUi({ openPathByWorktree: { ...uiRef.current.openPathByWorktree, [worktreeId]: path } })
+    },
+    [setUi],
+  )
+
+  /**
    * Close panels the layout could not keep.
    *
    * The layout is the only thing that knows what fits, so it says so and the
@@ -315,6 +338,7 @@ export const App = (): React.ReactElement => {
         sessions={sessions}
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
+        openPathByWorktree={ui.openPathByWorktree}
         // With one project open there is no question which project a new
         // worktree belongs to; with several there is, and the top bar's
         // per-project + is the unambiguous way to say it.
@@ -336,6 +360,7 @@ export const App = (): React.ReactElement => {
           })
         }
         onNewTerminal={newTerminal}
+        onOpenPath={openPath}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />
 

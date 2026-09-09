@@ -5,9 +5,11 @@ make one promise good: **a session survives the IDE.** The browser can close,
 this process can be restarted, and the agent keeps working.
 
 ```
-routes/api.ts   REST: projects, worktrees, sessions, changes, diffs
+routes/api.ts   REST: projects, worktrees, sessions, changes, diffs, files
 routes/ws.ts    the single socket; JSON control frames + binary output frames
 workspace.ts    the one funnel for every project/worktree operation
+files.ts        a worktree's own files: containment, listing, read, write
+http-error.ts   HttpError, so workspace.ts and files.ts can both throw it
 state.ts        state.json: projects and the opaque `ui` blob
 session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
   tmux.ts       every tmux invocation, and the metadata in @idn_meta
@@ -87,6 +89,32 @@ Anything destructive checks first and in the right order: `removeWorktree`
 refuses a dirty worktree *before* killing its sessions, so a refusal costs
 nothing.
 
+## Files
+
+`files.ts` is the one place that reads or writes inside a worktree, and three
+things in it are load-bearing:
+
+- **Containment is checked after `realpath`, not on the string.** `resolve()`
+  folds away `..`, but a symlink -- to a file, or a *directory* traversed on the
+  way in -- lands outside without the path containing a dot. The comparison then
+  uses `relative()` rather than a prefix test, because `/a/b` is a string prefix
+  of `/a/bc`. `.git` is refused by name, since in a linked worktree it is a file
+  and a kind test would miss it. Note that `Workspace.browse()` is deliberately
+  uncontained -- the project picker has to roam -- so do not "fix" it to use
+  this.
+- **`git check-ignore` exits 1 when nothing is ignored**, with empty stdout, and
+  128 outside a repository; both must be caught, the same trap `fileDiff`
+  documents for `git diff --no-index`. Directory entries are sent with a
+  trailing `/` because a `dist/` pattern matches only directories and git
+  decides by stat'ing the path. Tracked files are never reported as ignored,
+  which is what keeps a file the repo actually has from disappearing behind a
+  stale rule.
+- **A read is stat, read, stat.** If the file moved in between, the rev handed
+  back would not describe the bytes sent, and the next save would be refused as
+  stale for no reason the reader could see. The rev is nanosecond mtime, size
+  and inode -- `mtimeMs` is a double that rounds away exactly the sub-millisecond
+  precision a write guard needs, and the inode catches a temp-file-and-rename.
+
 ## Adding to the API
 
 Put the logic in `workspace.ts` — it is the single funnel, and the interface a
@@ -106,6 +134,7 @@ A kill emits no event of its own, so any route that ends a session must call
 | `IDN_CLAUDE_CMD` | `claude` | Command for agent sessions. |
 | `IDN_SHELL` | `$SHELL` | Command for terminal sessions. |
 | `IDN_MIRROR_SCROLLBACK` | `5000` | Lines each server-side mirror keeps. |
+| `IDN_MAX_FILE_BYTES` | `2097152` | Largest file the files panel opens or saves. |
 | `IDN_WEB_DIST` | `web/dist` | What `pnpm start` serves. |
 | `IDN_LOG_LEVEL` | `info` | Fastify's logger. |
 | `IDN_DEBUG_SIZE` | unset | Log every size decision and its owner. |

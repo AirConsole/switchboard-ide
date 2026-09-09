@@ -13,6 +13,11 @@ export const MIN_PANE_COLUMNS = 80
  * either side of the character grid, plus the pane's divider or the tile's
  * border. Kept a little over the true 17 so the column floor holds with margin.
  * Change `.tile__pane`'s padding and this has to move with it.
+ *
+ * It describes the terminal panes, which are the ones that set the floor. The
+ * files pane deliberately has no padding of its own -- it insets per row and
+ * inside the editor's gutter instead -- so it simply has more room than this
+ * requires. That mismatch is not a bug to fix.
  */
 export const PANE_CHROME_WIDTH = 18
 
