@@ -16,7 +16,6 @@ import { api } from '../api.js'
 import {
   claudeSession,
   isRunning,
-  stateLabel,
   terminalSessions,
   worktreeTodos,
   type TodoView,
@@ -103,6 +102,15 @@ const nearestOffset = (
  */
 export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals']
 
+/**
+ * The toggles, left to right in the bar.
+ *
+ * Its own order rather than PANELS', which now only says which names are real:
+ * one panel shows at a time, so there is no longer a row of panes for PANELS to
+ * order. This is the order they are reached in.
+ */
+const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
+
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
@@ -123,10 +131,17 @@ interface PanelCounts {
  * The toggle's label.
  *
  * Terminals count themselves rather than repeating the panel's name: the number
- * is the useful part at a glance, and with none open the toggle says what the
- * click will actually do, which is add one. The count is of the terminals the
- * panel would show, exited ones included -- a label offering to add the first
- * one over a tab strip that already has a tab in it would contradict itself.
+ * is the useful part at a glance. The count is of the terminals the panel would
+ * show, exited ones included, so the label never disagrees with the tab strip
+ * under it.
+ *
+ * With none open the label is the bare noun, not "Add Terminal". Every toggle
+ * here opens its panel, and opening the terminals panel on a worktree with no
+ * terminal makes one -- so the verb was true but it was also the only one in a
+ * row of nouns, and it made the two widest labels in the bar the two that had
+ * the least to say. The bar carries the worktree's name, its prompt, its state,
+ * three toggles, sleep and remove in one segment; four characters of "Add " on
+ * each of two of them is width the name and the prompt want more.
  *
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
@@ -136,13 +151,12 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
     case 'todo':
       // What is queued outranks what is merely written down: one is about to
       // happen to this worktree and the other is a list. With nothing queued it
-      // counts itself like the terminals do, and with nothing at all it says
-      // what the click will do.
+      // counts itself like the terminals do.
       if (counts.queued > 0) return counts.queued === 1 ? '1 Queued' : `${counts.queued} Queued`
-      if (counts.todos === 0) return 'Add Todo'
+      if (counts.todos === 0) return 'Todo'
       return counts.todos === 1 ? '1 Todo' : `${counts.todos} Todos`
     case 'terminals':
-      if (counts.terminals === 0) return 'Add Terminal'
+      if (counts.terminals === 0) return 'Terminal'
       return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
     case 'files':
       /*
@@ -465,40 +479,17 @@ const WorktreeTile = ({
     </span>
   ) : null
 
+  /*
+   * What acts on the worktree comes first, then what it can show.
+   *
+   * The state used to lead this row and is gone: the rail down the tile's edge
+   * already carries it -- amber for blocked on you, green for come to rest --
+   * and a word repeating a colour you scan for is a word spent twice. Which
+   * leaves the panel toggles as the far end of the bar, where the panel they
+   * open begins.
+   */
   const controls = (
     <div className="tile__controls">
-      <span className="tile__state">{stateLabel(session)}</span>
-      {PANELS.map((panel) => {
-        /*
-         * Lit when the panel's pane is on screen, which is the only thing the
-         * toggle ever claims. A panel with no room for its pane is collapsed
-         * outright rather than held open behind the scenes, so this cannot
-         * disagree with what the tile is showing.
-         */
-        const on = shownPanes.has(panel)
-        return (
-          <button
-            key={panel}
-            className={on ? 'tile__toggle tile__toggle--on' : 'tile__toggle'}
-            onClick={() => onTogglePanel(panel)}
-            title={
-              on
-                ? `Close ${PANEL_NOUN[panel]}`
-                : `Open ${PANEL_NOUN[panel]} beside Claude`
-            }
-          >
-            {panelLabel(panel, counts)}
-          </button>
-        )
-      })}
-      <button
-        className="tile__zz"
-        onClick={onSleep}
-        title={`Put ${worktree.name} to sleep and hide its window`}
-        aria-label={`Sleep ${worktree.name}`}
-      >
-        zZ
-      </button>
       {/* The main worktree cannot be removed, so it gets no control. */}
       {!worktree.isMain && (
         <button
@@ -510,6 +501,30 @@ const WorktreeTile = ({
           <TrashIcon />
         </button>
       )}
+      <button
+        className="tile__zz"
+        onClick={onSleep}
+        title={`Put ${worktree.name} to sleep and hide its window`}
+        aria-label={`Sleep ${worktree.name}`}
+      >
+        zZ
+      </button>
+      {TOGGLES.map((panel) => {
+        // Lit when this panel's pane is the one on screen, which is the only
+        // thing the toggle ever claims -- and with one panel at a time, the lit
+        // one is also the only one.
+        const on = shownPanes.has(panel)
+        return (
+          <button
+            key={panel}
+            className={on ? 'tile__toggle tile__toggle--on' : 'tile__toggle'}
+            onClick={() => onTogglePanel(panel)}
+            title={on ? `Close ${PANEL_NOUN[panel]}` : `Show ${PANEL_NOUN[panel]}`}
+          >
+            {panelLabel(panel, counts)}
+          </button>
+        )
+      })}
     </div>
   )
 
@@ -734,8 +749,6 @@ export interface OverviewProps {
   onReveal: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
-  /** Close panels a screenful could not hold. */
-  onCollapsePanels: (collapsed: { worktreeId: string; panel: PanelName }[]) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
@@ -776,7 +789,6 @@ export const Overview = ({
   onReveal,
   onRemoveWorktree,
   onTogglePanel,
-  onCollapsePanels,
   onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
@@ -809,8 +821,14 @@ export const Overview = ({
    * At one spot this comes out as the phone rule -- a single pane, showing the
    * panel you last opened -- without being a special case.
    */
+  /*
+   * At most one panel at a time, so a worktree is one column or two and never
+   * more. Stored state can still name several -- it did until this rule -- and
+   * the newest is the one that survives, which is exactly what a window too
+   * narrow for all of them already did.
+   */
   const openPanelsOf = (worktree: Worktree): PanelName[] =>
-    (panels[worktree.id] ?? []).filter((panel) => PANELS.includes(panel))
+    (panels[worktree.id] ?? []).filter((panel) => PANELS.includes(panel)).slice(-1)
 
   const panesOf = (worktree: Worktree, capacity: number): Pane[] => {
     const open = openPanelsOf(worktree)
@@ -1069,30 +1087,6 @@ export const Overview = ({
       grid.removeEventListener('wheel', onWheel)
     }
   }, [pitch, totalSpots])
-
-  /*
-   * Panels that could not be kept are closed, not left open with nothing to
-   * show: a toggle that claims a pane which is not on screen is a toggle that
-   * lies. Only reachable when more panels are open than a screenful can hold.
-   */
-  const collapsedKey = worktrees
-    .flatMap((worktree) => {
-      const open = openPanelsOf(worktree)
-      if (open.length <= spots) return []
-      // More panels open than the window has spots: the oldest have nowhere to
-      // be, and a panel with nowhere to be is closed, not hidden.
-      return open.slice(0, open.length - spots).map((panel) => paneKey(worktree.id, panel))
-    })
-    .join(',')
-  useEffect(() => {
-    if (width === 0 || collapsedKey === '') return
-    onCollapsePanels(
-      collapsedKey.split(',').map((key) => {
-        const cut = key.lastIndexOf(':')
-        return { worktreeId: key.slice(0, cut), panel: key.slice(cut + 1) as PanelName }
-      }),
-    )
-  }, [collapsedKey, width, onCollapsePanels])
 
   return (
     <section className="view overview">

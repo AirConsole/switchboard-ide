@@ -828,12 +828,22 @@ button {
   min-width: 0;
 }
 
-/* Acts on the tile as a whole, so it sits at the tile's right edge. */
+/*
+ * Acts on the tile as a whole, so it sits at the tile's right edge.
+ *
+ * `flex: none`, and that is load-bearing on a narrow window. With `min-width: 0`
+ * these were squeezed below their own content -- 243px of buttons into a 225px
+ * box on a 390px phone -- and what a flex row clips is its end, which is the
+ * lit panel toggle: the one control that gets Claude's pane back once a
+ * one-spot row has replaced it with a panel. The worktree's name and prompt
+ * take the squeeze instead, and they are already ellipsized to `fil…` at that
+ * width, so they lose nothing that was being read.
+ */
 .tile__controls {
   display: flex;
   align-items: stretch;
   margin-left: auto;
-  min-width: 0;
+  flex: none;
 }
 
 /*
@@ -980,25 +990,6 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tile__state {
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--graphite-dim);
-  white-space: nowrap;
-}
-
-.tile--waiting .tile__state {
-  color: var(--signal);
-}
-
-.tile--done .tile__state {
-  color: var(--done);
 }
 
 .tile__idle {
@@ -2338,26 +2329,52 @@ button {
 /* The bar segment above the pane: where you are, whether it is saved, and how
    to save it. Right-aligned and divided like the terminal tabs, for the same
    reasons. */
+/*
+ * The panel's own controls, right-aligned in its segment.
+ *
+ * `overflow: hidden` decides what survives a window too narrow for all of it,
+ * and the render order is the priority: path, then what the commits are
+ * measured against, then Unsaved, then Save, then Refresh. Clipping takes the
+ * last first, so Save -- the only one of them that can lose work -- is the last
+ * thing to go, and Refresh, which the panel's own three-second poll makes
+ * optional anyway, is the first.
+ *
+ * Without it these spilled over the worktree's own controls instead of
+ * clipping inside their box, and REFRESH sat on top of the trash icon.
+ */
 .files__bar {
   display: flex;
   align-items: stretch;
   margin-left: auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .files__bar > * + * {
   border-left: 1px solid var(--rule-bright);
 }
 
+/*
+ * What the bar says, as opposed to what it does.
+ *
+ * These give way first: on a narrow window the segment holds the worktree's
+ * name, this, and the controls, and only the last two can be acted on. Without
+ * `min-width: 0` a nowrap span refuses to shrink below its text and pushes the
+ * bar over the controls beside it -- which measured as no overflow and was
+ * plainly wrong on screen, REFRESH sitting on top of the trash icon.
+ */
 .files__path,
 .files__base,
 .files__unsaved {
   display: flex;
   align-items: center;
+  min-width: 0;
   padding: 0 10px;
   font-size: 11px;
   color: var(--graphite-dim);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* A path is read character by character, so it is set in the mono face. */
@@ -2373,9 +2390,11 @@ button {
   color: var(--bone);
 }
 
+/* The actions keep their width; the labels above give way instead. */
 .files__save,
 .files__reload {
   display: flex;
+  flex: none;
   align-items: center;
   padding: 0 12px;
   font-family: var(--font-ui);
