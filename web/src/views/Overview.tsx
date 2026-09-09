@@ -424,6 +424,41 @@ const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
   </button>
 )
 
+/**
+ * Whether anything between `from` and the row would rather have this wheel.
+ *
+ * Standard scroll chaining, done by hand because the row has to know when the
+ * wheel is spare. A panel with more to show scrolls itself; one already at its
+ * end passes the gesture on, which is what the browser would do if the row
+ * scrolled in the same axis as the wheel.
+ */
+const inner = (from: EventTarget | null, stop: Element, delta: number): boolean => {
+  for (let el = from as HTMLElement | null; el && el !== stop; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight) continue
+    const overflow = getComputedStyle(el).overflowY
+    if (overflow !== 'auto' && overflow !== 'scroll') continue
+    const room =
+      delta < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    if (room) return true
+  }
+  return false
+}
+
+/**
+ * How much wheel makes one spot.
+ *
+ * A mouse notch is exactly 100px in Chrome, so one notch is one spot. A
+ * trackpad arrives as a stream of small deltas instead and accumulates, which
+ * makes a flick travel further than a nudge -- the thing a strip you scroll
+ * along should do. Firefox reports lines rather than pixels; 40 is the usual
+ * line for a wheel, so its three-line notch clears the same bar.
+ */
+const WHEEL_STEP = 100
+const WHEEL_LINE = 40
+
+/** A gesture is over once the wheel has been quiet this long. */
+const WHEEL_IDLE_MS = 300
+
 export interface OverviewProps {
   /** Awake worktrees, in the order the row shows them. */
   worktrees: Worktree[]
@@ -719,6 +754,66 @@ export const Overview = ({
     if (!grid || width === 0) return
     grid.scrollTo({ left: spotRef.current * pitch, behavior: 'auto' })
   }, [pitch, width])
+
+  /*
+   * The wheel moves the row.
+   *
+   * A terminal on the alternate screen has nothing of its own to scroll, and
+   * `TerminalView` stops xterm turning the wheel into arrow keys there, so
+   * without this a wheel over most of the window did nothing at all. The row
+   * is the thing that scrolls, and this is the pointer's way of saying so.
+   *
+   * By the spot, because `scroll-snap-type: x mandatory` would drag anything
+   * shorter straight back: a wheel notch is ~100px against a spot of ~780, so
+   * adding pixels to `scrollLeft` would snap to where it started and read as
+   * dead. Panels keep first claim through `inner`, and a gesture carries its
+   * own target so a fast flick steps on from where it is already going rather
+   * than from the tile it has not left yet.
+   */
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!grid || pitch <= 0) return
+    let carried = 0
+    let aim: number | null = null
+    let idle: ReturnType<typeof setTimeout> | undefined
+    const onWheel = (event: WheelEvent): void => {
+      // Whatever already acted on it -- a terminal scrolling its own scrollback
+      // -- has spent the gesture.
+      if (event.defaultPrevented) return
+      // Sideways is the scroller's own axis, and it can have it.
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      if (inner(event.target, grid, event.deltaY)) return
+      event.preventDefault()
+
+      const pixels =
+        event.deltaMode === 1
+          ? event.deltaY * WHEEL_LINE
+          : event.deltaMode === 2
+            ? event.deltaY * grid.clientWidth
+            : event.deltaY
+      // Turning round abandons what was carried, so a reversal answers at once
+      // rather than paying off the distance it had already built up.
+      if (carried !== 0 && carried > 0 !== pixels > 0) carried = 0
+      carried += pixels
+      clearTimeout(idle)
+      idle = setTimeout(() => {
+        carried = 0
+        aim = null
+      }, WHEEL_IDLE_MS)
+      if (Math.abs(carried) < WHEEL_STEP) return
+      carried = 0
+
+      const from = aim ?? Math.round(grid.scrollLeft / pitch)
+      const to = Math.min(Math.max(from + (pixels > 0 ? 1 : -1), 0), Math.max(0, totalSpots - 1))
+      aim = to
+      grid.scrollTo({ left: to * pitch })
+    }
+    grid.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      clearTimeout(idle)
+      grid.removeEventListener('wheel', onWheel)
+    }
+  }, [pitch, totalSpots])
 
   /*
    * Panels that could not be kept are closed, not left open with nothing to
