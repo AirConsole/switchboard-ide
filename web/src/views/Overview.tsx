@@ -45,6 +45,28 @@ const wholeOnScreen = (
   (tile.spot + tile.spots) * pitch <= scrollLeft + width + 1
 
 /**
+ * Which spot to scroll to so a tile is wholly on screen, moving as little as
+ * possible.
+ *
+ * A tile of s spots at `spot` is whole on screen for every offset from
+ * `spot + s - capacity` -- its right edge against the right edge of the window
+ * -- to `spot`, its left edge against the left. The nearest of those to where
+ * the row already sits is the answer: stepping onto the one-spot worktree just
+ * off the right edge scrolls by one spot and keeps the one you were on beside
+ * it, rather than pulling the new one to the front and taking everything else
+ * off the screen with it.
+ *
+ * The range is never empty, because a tile is never wider than the window --
+ * see `panesOf` -- so it always holds `spot` itself. Offsets are spot indices,
+ * which is what the row is allowed to come to rest on.
+ */
+const nearestOffset = (
+  tile: { spot: number; spots: number },
+  at: number,
+  capacity: number,
+): number => Math.min(Math.max(at, tile.spot + tile.spots - capacity), tile.spot)
+
+/**
  * Every panel, in the order they sit beside Claude.
  *
  * The order is fixed rather than the order they were opened, so a worktree's
@@ -656,15 +678,21 @@ export const Overview = ({
      * A conditional request leaves a tile you can already see whole alone.
      * There is nothing more of it to show, and pulling it to the left edge
      * would slide every other window sideways for no gain -- the terminal you
-     * were reading beside it included. It still scrolls when part of the tile
-     * is off the side, which is what an expanded worktree usually means.
+     * were reading beside it included. When it does have to scroll, it scrolls
+     * by as little as brings the tile fully on screen, which for a one-spot
+     * worktree just off the edge is one spot.
+     *
+     * A click still says where it wants the tile: at the leftmost spot.
      */
     const tile = { spot: target.spot, spots: target.panes.length }
     if (ifNeeded && wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    grid.scrollTo({ left: target.spot * pitch, behavior: 'smooth' })
+    const offset = ifNeeded
+      ? nearestOffset(tile, Math.round(grid.scrollLeft / pitch), spots)
+      : target.spot
+    grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
-  }, [scrollTo, target, ifNeeded, pitch, width])
+  }, [scrollTo, target, ifNeeded, pitch, width, spots])
 
   /*
    * Cmd+Left and Cmd+Right step through the worktrees.
