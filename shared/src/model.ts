@@ -141,20 +141,22 @@ export interface UiState {
   /** Selected terminal per worktree, so its panel reopens where you left it. */
   activeTerminalByWorktree: Record<string, string>
   /**
-   * Where each worktree's files panel is standing, relative to the worktree.
-   *
-   * One string carries the whole panel. A trailing slash means a directory
-   * opened with nothing chosen inside it, anything else names a file, and `''`
-   * is the worktree root -- so the browser's columns are the path's own
-   * segments, and restoring the string restores the strip and the open file
-   * together. Storing the columns as well would be a second copy of one fact,
-   * free to disagree with it.
+   * The file each worktree has open in its files panel, `''` for none.
    *
    * Unlike the git panel's selection, which is deliberately *not* persisted
    * because a file may have stopped differing by the time you come back, a path
    * is stable: a file you were reading is still a file.
    */
   openPathByWorktree: Record<string, string>
+  /**
+   * Directories expanded in each worktree's file tree.
+   *
+   * Persisted because the shape you left the tree in is most of what makes it
+   * usable -- a tree that collapses itself on every reload is a tree you have to
+   * walk down again every time. Opening a file expands its ancestors, so a
+   * restored file is always visible without this having to be derived.
+   */
+  expandedByWorktree: Record<string, string[]>
 }
 
 export const defaultUiState = (): UiState => ({
@@ -162,6 +164,7 @@ export const defaultUiState = (): UiState => ({
   panels: {},
   activeTerminalByWorktree: {},
   openPathByWorktree: {},
+  expandedByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
@@ -252,17 +255,17 @@ export interface FileEntry {
 }
 
 /**
- * One directory of a worktree: exactly one level, for one column of the browser.
+ * One directory of a worktree: exactly one level.
  *
- * One level rather than a whole tree because the browser only ever shows the
- * path you are standing on and its siblings, and a recursive listing of a real
- * repository is tens of thousands of entries to fill a column of eight rows.
+ * One level rather than a whole tree because the tree only ever shows what you
+ * have expanded, and a recursive listing of a real repository is tens of
+ * thousands of entries to render a handful of rows.
  */
 export interface FileListing {
   /**
    * Echoed back, so a client that has already clicked elsewhere can drop a late
-   * response instead of painting it into the wrong column. `''` is the worktree
-   * root.
+   * response instead of filing it under the wrong directory. `''` is the
+   * worktree root.
    */
   path: string
   entries: FileEntry[]

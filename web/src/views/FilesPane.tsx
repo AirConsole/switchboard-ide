@@ -1,12 +1,4 @@
-import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FileEntry } from '@ide-n-dream/shared'
 import { ApiError, api } from '../api.js'
 import type { EditorFile } from '../editor/CodeEditor.js'
@@ -24,40 +16,34 @@ const CodeEditor = lazy(() => import('../editor/CodeEditor.js'))
  * The same reasoning as the git panel's own poll, which its `POLL_MS` sets out:
  * the server pushes when a worktree's dirty count or HEAD moves, and neither
  * moves when a file already counted as changed is changed again -- or when an
- * agent creates a file in a directory you happen to be looking at.
+ * agent creates a file in a directory you happen to have expanded.
  *
  * This one keeps running even while you have unsaved edits. Freezing it would
  * hide the agent adding files; only the open document freezes.
  */
 const TREE_POLL_MS = 3000
 
-/** How often the open file is checked against disk. See `FILE` below. */
+/** How often the open file is checked against disk. */
 const FILE_POLL_MS = 2000
 
-/**
- * How long a selection has to settle before anything is fetched.
- *
- * Not cosmetic: holding Down through a forty-entry column would otherwise fire
- * forty directory reads and forty file reads, and each directory read spawns a
- * `git check-ignore`. A directory already in the cache still renders instantly,
- * so this is only ever visible on one you have never opened.
- */
-const OPEN_DEBOUNCE_MS = 120
-
-/** One column of the browser: a directory, and which child is on the path. */
-export interface DirColumn {
-  /** `''` for the worktree root. */
-  dir: string
-  /** Null until this directory has been read for the first time. */
-  entries: FileEntry[] | null
-  error: string | null
-  /** The child of this directory that the open path goes through. */
-  selected: string | null
+/** One visible line of the tree: an entry, and how deep it sits. */
+export interface TreeRow {
+  /** Worktree-relative path. */
+  path: string
+  name: string
+  kind: 'dir' | 'file'
+  depth: number
+  changed: boolean
+  /** Directories only: whether this one is open. */
+  open: boolean
 }
 
 export interface FilesState {
+  /** The open file, `''` for none. */
   path: string
-  columns: DirColumn[]
+  rows: TreeRow[]
+  /** Set before the root has been read even once, so nothing is drawn yet. */
+  loading: boolean
   /** The open file as it is on disk, or null when none can be shown. */
   file: EditorFile | null
   /** Why there is no file to show: not text, too large, gone. */
@@ -68,6 +54,7 @@ export interface FilesState {
   conflict: boolean
   error: string | null
   open: (path: string) => void
+  toggleDir: (dir: string) => void
   edited: (text: string) => void
   draft: () => string | null
   save: () => void
@@ -83,46 +70,63 @@ const parentOf = (path: string): string => {
 
 const joinPath = (dir: string, name: string): string => (dir === '' ? name : `${dir}/${name}`)
 
-/**
- * The columns a path implies.
- *
- * Column *i* lists `segments.slice(0, i)` and highlights `segments[i]`, so every
- * column on the chain carries a selection -- which is what makes the path
- * readable once the strip has been scrolled away from its root. It *is* the
- * breadcrumb. A trailing slash means a directory was opened with nothing chosen
- * inside it, and gets a column of its own with no selection.
- */
-const columnsFor = (path: string): { dir: string; selected: string | null }[] => {
-  const isDir = path === '' || path.endsWith('/')
-  const trimmed = isDir ? path.slice(0, -1) : path
-  const segments = trimmed === '' ? [] : trimmed.split('/')
-  const count = isDir ? segments.length + 1 : segments.length
-  return Array.from({ length: Math.max(1, count) }, (_, index) => ({
-    dir: segments.slice(0, index).join('/'),
-    selected: segments[index] ?? null,
-  }))
+/** Every directory above a path, roots first. */
+export const ancestorsOf = (path: string): string[] => {
+  const parts = path.split('/').slice(0, -1)
+  return parts.map((_, index) => parts.slice(0, index + 1).join('/'))
 }
 
-/** The file a path names, or null when it names a directory. */
-const fileOf = (path: string): string | null =>
-  path === '' || path.endsWith('/') ? null : path
+/**
+ * The tree, flattened to the rows actually on screen.
+ *
+ * Recursive over what is expanded rather than over the filesystem: an
+ * unexpanded directory contributes one row and nothing is known about its
+ * contents until it is opened, which is what keeps a repository of any size to
+ * the handful of listings the reader has actually asked for.
+ */
+const flatten = (
+  dir: string,
+  depth: number,
+  listings: Record<string, FileEntry[]>,
+  expanded: Set<string>,
+  out: TreeRow[],
+): void => {
+  for (const entry of listings[dir] ?? []) {
+    const path = joinPath(dir, entry.name)
+    const open = entry.kind === 'dir' && expanded.has(path)
+    out.push({
+      path,
+      name: entry.name,
+      kind: entry.kind,
+      depth,
+      changed: entry.changed === true,
+      open,
+    })
+    if (open) flatten(path, depth + 1, listings, expanded, out)
+  }
+}
 
 /**
- * A worktree's files: where the browser is standing, and the file it has open.
+ * A worktree's files: the tree, and the file it has open.
  *
  * Inert while `enabled` is false, for the reason `useGitState` is: the hook is
  * called for every tile whether or not its panel is open, and without this
  * every tile on screen would read directories to fill a panel nobody asked for.
  */
-export const useFilesState = (
-  worktreeId: string,
-  revision: string,
-  enabled: boolean,
-  path: string,
-  onOpen: (path: string) => void,
-): FilesState => {
+export const useFilesState = (opts: {
+  worktreeId: string
+  revision: string
+  enabled: boolean
+  /** The open file, `''` for none. */
+  path: string
+  /** Directories the reader has expanded. */
+  expanded: string[]
+  onOpen: (path: string) => void
+  onToggleDir: (dir: string) => void
+}): FilesState => {
+  const { worktreeId, revision, enabled, path, expanded, onOpen, onToggleDir } = opts
+
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({})
-  const [dirErrors, setDirErrors] = useState<Record<string, string>>({})
   const [file, setFile] = useState<EditorFile | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -138,8 +142,7 @@ export const useFilesState = (
    * If it were state, every keystroke would re-render the whole tile -- and the
    * tile holds two live terminals beside this pane. It also makes "dirty" mean
    * *the buffer differs from disk* rather than *something was typed*, so
-   * undoing back to the file's own text clears it for nothing, and so does
-   * typing the same edit the agent just made.
+   * undoing back to the file's own text clears it for nothing.
    */
   const draftRef = useRef<string | null>(null)
   /** The rev of what `file` holds; the stale-write guard's half of the bargain. */
@@ -147,21 +150,9 @@ export const useFilesState = (
   /** The rev the server reported when it refused a save. */
   const freshRevRef = useRef<string | null>(null)
 
-  const filePath = fileOf(path)
-
-  /*
-   * Fetches follow the path at a short delay; the columns themselves do not.
-   * See OPEN_DEBOUNCE_MS.
-   */
-  const [settled, setSettled] = useState(path)
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(path), OPEN_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [path])
-
-  const settledDirs = columnsFor(settled)
-    .map((column) => column.dir)
-    .join('\n')
+  const filePath = path === '' ? null : path
+  // The root is always read; everything else only once it has been expanded.
+  const dirsKey = ['', ...expanded].join('\n')
 
   // Only while the panel is on screen; see TREE_POLL_MS.
   useEffect(() => {
@@ -171,17 +162,16 @@ export const useFilesState = (
   }, [enabled])
 
   /*
-   * Read every directory the browser is currently showing.
+   * Read the root and every expanded directory.
    *
    * Results are compared before they are stored, so a directory that has not
-   * changed re-renders nothing and cannot throw away the column's scroll
-   * position -- the same discipline the git panel keeps with its patch.
+   * changed re-renders nothing and cannot throw away the tree's scroll position
+   * -- the same discipline the git panel keeps with its patch.
    */
   useEffect(() => {
     if (!enabled) return
     let live = true
-    const dirs = settledDirs === '' ? [''] : settledDirs.split('\n')
-    for (const dir of dirs) {
+    for (const dir of dirsKey.split('\n')) {
       void api
         .tree(worktreeId, dir)
         .then((listing) => {
@@ -193,35 +183,32 @@ export const useFilesState = (
             }
             return { ...previous, [dir]: listing.entries }
           })
-          setDirErrors((previous) => {
-            if (previous[dir] === undefined) return previous
-            const next = { ...previous }
-            delete next[dir]
-            return next
-          })
         })
         .catch((err: unknown) => {
           if (!live) return
           /*
-           * A stored path can name a directory that is gone -- the agent
-           * deleted it, or this is a reload onto a different branch. Fall back
-           * to the deepest parent that does exist rather than showing an error
-           * about a path nobody chose.
+           * A stored path can name a directory that is gone -- the agent deleted
+           * it, or this is a reload onto a different branch. Forget it rather
+           * than showing an error about a path nobody chose; the root failing is
+           * a real error and does get shown.
            */
-          if (err instanceof ApiError && err.status === 404) {
-            onOpen(dir === '' ? '' : `${parentOf(dir)}/`)
+          if (err instanceof ApiError && err.status === 404 && dir !== '') {
+            setListings((previous) => {
+              if (previous[dir] === undefined) return previous
+              const next = { ...previous }
+              delete next[dir]
+              return next
+            })
+            onToggleDir(dir)
             return
           }
-          setDirErrors((previous) => ({
-            ...previous,
-            [dir]: err instanceof Error ? err.message : String(err),
-          }))
+          setError(err instanceof Error ? err.message : String(err))
         })
     }
     return () => {
       live = false
     }
-  }, [worktreeId, settledDirs, revision, treeNonce, enabled, onOpen])
+  }, [worktreeId, dirsKey, revision, treeNonce, enabled, onToggleDir])
 
   /*
    * The open file, and the poll that follows it.
@@ -270,9 +257,8 @@ export const useFilesState = (
         })
         .catch((err: unknown) => {
           if (!live) return
-          // The file is gone: drop back to the directory it was in.
           if (err instanceof ApiError && err.status === 404) {
-            onOpen(`${parentOf(filePath)}/`)
+            onOpen('')
             return
           }
           setError(err instanceof Error ? err.message : String(err))
@@ -296,9 +282,9 @@ export const useFilesState = (
   }, [filePath])
 
   /*
-   * What is on disk, read by `edited` below without being a dependency of it:
-   * a new callback identity on every poll would rebuild the editor's listener
-   * for nothing.
+   * What is on disk, read by `edited` below without being a dependency of it: a
+   * new callback identity on every poll would rebuild the editor's listener for
+   * nothing.
    */
   const lastDiskRef = useRef<string | null>(null)
   lastDiskRef.current = file?.text ?? null
@@ -367,16 +353,13 @@ export const useFilesState = (
     setFileNonce((n) => n + 1)
   }, [])
 
-  const columns: DirColumn[] = columnsFor(path).map((column) => ({
-    dir: column.dir,
-    selected: column.selected,
-    entries: listings[column.dir] ?? null,
-    error: dirErrors[column.dir] ?? null,
-  }))
+  const rows: TreeRow[] = []
+  flatten('', 0, listings, new Set(expanded), rows)
 
   return {
     path,
-    columns,
+    rows,
+    loading: listings[''] === undefined,
     file,
     refusal,
     dirty,
@@ -384,6 +367,7 @@ export const useFilesState = (
     conflict,
     error,
     open: onOpen,
+    toggleDir: onToggleDir,
     edited,
     draft,
     save,
@@ -399,17 +383,17 @@ export const useFilesState = (
  * above the pane they act on, structured like `GitBar` beside it.
  */
 export const FilesBar = ({ state }: { state: FilesState }): React.ReactElement => {
-  const file = fileOf(state.path)
-  const shortened = file === null ? null : file.split('/').slice(-2).join('/')
+  const open = state.path === '' ? null : state.path
+  const shortened = open === null ? null : open.split('/').slice(-2).join('/')
   return (
     <div className="files__bar">
       {shortened !== null && (
-        <span className="files__path" title={file ?? undefined}>
+        <span className="files__path" title={open ?? undefined}>
           {shortened}
         </span>
       )}
       {state.dirty && <span className="files__unsaved">Unsaved</span>}
-      {file !== null && (
+      {open !== null && (
         <button
           className="files__save"
           onClick={state.save}
@@ -425,72 +409,8 @@ export const FilesBar = ({ state }: { state: FilesState }): React.ReactElement =
   )
 }
 
-interface FilesColumnProps {
-  column: DirColumn
-  onPick: (entry: FileEntry) => void
-  /** Focus the selected row when this changes; set only by the keyboard. */
-  focus: number | null
-}
-
-const FilesColumn = ({ column, onPick, focus }: FilesColumnProps): React.ReactElement => {
-  const selectedRef = useRef<HTMLButtonElement | null>(null)
-
-  // Bring the selection into its own column without touching the strip's
-  // sideways offset. `nearest` makes this a no-op when it is already visible.
-  useLayoutEffect(() => {
-    selectedRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [column.selected, column.entries])
-
-  useLayoutEffect(() => {
-    if (focus !== null) selectedRef.current?.focus()
-  }, [focus])
-
-  if (column.error !== null) {
-    return (
-      <div className="files__col">
-        <p className="files__note">{column.error}</p>
-      </div>
-    )
-  }
-  return (
-    <div className="files__col">
-      {/* Nothing at all while it is being read: a local directory listing takes
-          a few milliseconds, and a word that flashes for one frame is worse
-          than empty space. */}
-      {column.entries !== null && column.entries.length === 0 && (
-        <p className="files__note">empty</p>
-      )}
-      {column.entries?.map((entry) => {
-        const on = entry.name === column.selected
-        return (
-          <button
-            key={entry.name}
-            ref={on ? selectedRef : null}
-            className={[
-              'files__row',
-              on ? 'files__row--on' : '',
-              entry.changed === true ? 'files__row--changed' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            // Roving tabindex: Tab reaches the strip once, rather than walking
-            // through two hundred files to get past it.
-            tabIndex={on ? 0 : -1}
-            onClick={() => onPick(entry)}
-            title={entry.name}
-          >
-            <span className="files__name">{entry.name}</span>
-            {entry.kind === 'dir' && (
-              <span className="files__into" aria-hidden="true">
-                ›
-              </span>
-            )}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+/** How far each level of the tree is indented, in px. */
+const INDENT = 11
 
 export interface FilesPaneProps {
   state: FilesState
@@ -499,102 +419,110 @@ export interface FilesPaneProps {
 }
 
 /**
- * A worktree's files: a strip of directory columns, then the file itself.
+ * A worktree's files: a tree down the side, and the open file beside it.
  *
- * Columns rather than an indented tree because a pane is eighty characters wide
- * and an indented tree spends that width on depth instead of on names. It is
- * Finder's arrangement with the preview column turned ninety degrees: the strip
- * runs sideways across the top, and the file gets everything below it.
+ * The tree is the whole navigation -- click a directory to expand it, a file to
+ * read it -- and it scrolls on its own, which is also what lets a wheel over it
+ * scroll the tree rather than the row of windows behind it.
  */
 export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement => {
-  const stripRef = useRef<HTMLDivElement | null>(null)
-  const shownRef = useRef(0)
-  const [keyFocus, setKeyFocus] = useState<number | null>(null)
-  const { columns, open } = state
-  /*
-   * Where the keyboard is: the deepest column carrying a selection. After a
-   * step left that is the parent, after a step right the new child column, and
-   * after a step down the same column -- one rule for all three.
-   */
-  let focused = columns.length - 1
-  while (focused > 0 && columns[focused]?.selected === null) focused--
+  const treeRef = useRef<HTMLDivElement | null>(null)
+  const selectedRef = useRef<HTMLButtonElement | null>(null)
+  const { rows, open, toggleDir } = state
+  /** The row the keyboard is on. Null until the tree is used with the keyboard. */
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [keyFocus, setKeyFocus] = useState(0)
 
-  /*
-   * Reveal a newly opened column, and only then. A poll that re-renders must
-   * not drag the strip back to its end while you are reading a parent column.
-   */
+  // The row the keyboard would act on: what it last landed on, else the open
+  // file, else the first thing in the tree.
+  const at = rows.findIndex((row) => row.path === (cursor ?? state.path))
+  const here = at === -1 ? (rows.length > 0 ? 0 : -1) : at
+
+  // Bring a restored file into view without touching anything else.
   useLayoutEffect(() => {
-    const strip = stripRef.current
-    if (!strip) return
-    if (columns.length > shownRef.current) strip.scrollLeft = strip.scrollWidth
-    shownRef.current = columns.length
-  }, [columns.length])
+    selectedRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [state.path])
 
-  const pick = (column: DirColumn, entry: FileEntry): void => {
-    const full = joinPath(column.dir, entry.name)
-    open(entry.kind === 'dir' ? `${full}/` : full)
+  useLayoutEffect(() => {
+    if (keyFocus > 0) selectedRef.current?.focus()
+  }, [keyFocus])
+
+  const pick = (row: TreeRow): void => {
+    setCursor(row.path)
+    if (row.kind === 'dir') toggleDir(row.path)
+    else open(row.path)
   }
 
   /*
-   * Finder's keys, and they mean exactly what a click means -- moving the
-   * selection *is* opening, so arrowing over a directory opens its column and
-   * arrowing over a file loads it. There is no second code path.
+   * A tree's keys, and nothing invented: up and down through what is on screen,
+   * right to open a directory, left to close it or step out to its parent.
    *
-   * On the strip rather than on the document: with a dozen tiles awake, a
+   * Moving is not opening here, unlike a click. Arrowing past twenty files
+   * would otherwise read and render twenty of them; Enter is the one that says
+   * you meant it.
+   *
+   * On the tree rather than on the document: with a dozen tiles awake, a
    * document-level arrow handler has no idea whose files it is moving.
    */
   const onKeyDown = (event: React.KeyboardEvent): void => {
     /*
      * Any modifier and it is not ours -- which is what leaves Cmd+Left and
-     * Cmd+Right to the row's worktree stepping while the keyboard is in a
-     * column. A file row is not a text field, so that handler is right to take
+     * Cmd+Right to the row's worktree stepping while the keyboard is in the
+     * tree. A file row is not a text field, so that handler is right to take
      * them there.
      */
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-    const { key } = event
-    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') {
-      return
+    const row = rows[here]
+    const step = (to: number): void => {
+      const next = rows[Math.min(Math.max(to, 0), rows.length - 1)]
+      if (next) {
+        setCursor(next.path)
+        setKeyFocus((n) => n + 1)
+      }
     }
-    // The deepest column carrying a selection is the one the keyboard is in.
-    const at = focused
-    const column = columns[at]
-    if (!column) return
-
-    if (key === 'ArrowLeft') {
-      if (at === 0) return
-      event.preventDefault()
-      setKeyFocus((n) => (n ?? 0) + 1)
-      // The parent, with the directory we came through still chosen in it.
-      open(`${column.dir}/`)
-      return
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        step(here + 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        step(here - 1)
+        return
+      case 'ArrowRight':
+        if (!row) return
+        event.preventDefault()
+        if (row.kind === 'dir' && !row.open) {
+          setKeyFocus((n) => n + 1)
+          toggleDir(row.path)
+        } else {
+          step(here + 1)
+        }
+        return
+      case 'ArrowLeft': {
+        if (!row) return
+        event.preventDefault()
+        // Close an open directory; otherwise go out to the one holding this.
+        if (row.kind === 'dir' && row.open) {
+          setKeyFocus((n) => n + 1)
+          toggleDir(row.path)
+          return
+        }
+        const parent = parentOf(row.path)
+        if (parent === '') return
+        const up = rows.findIndex((r) => r.path === parent)
+        if (up !== -1) step(up)
+        return
+      }
+      case 'Enter':
+      case ' ':
+        if (!row) return
+        event.preventDefault()
+        setKeyFocus((n) => n + 1)
+        pick(row)
+        return
+      default:
     }
-
-    const entries = column.entries
-    if (entries === null || entries.length === 0) return
-    const index = entries.findIndex((entry) => entry.name === column.selected)
-
-    if (key === 'ArrowRight') {
-      const entry = entries[index]
-      if (!entry) return
-      // Into a directory; out to the file itself when there is nowhere deeper.
-      if (entry.kind !== 'dir') return
-      event.preventDefault()
-      setKeyFocus((n) => (n ?? 0) + 1)
-      const first = state.columns[at + 1]?.entries?.[0]
-      const dir = joinPath(column.dir, entry.name)
-      open(first === undefined ? `${dir}/` : joinPath(dir, first.name) + (first.kind === 'dir' ? '/' : ''))
-      return
-    }
-
-    // Clamped rather than wrapping: wrapping in a long list loses your place.
-    const next = entries[Math.min(Math.max(index + (key === 'ArrowDown' ? 1 : -1), 0), entries.length - 1)]
-    if (!next || next.name === column.selected) {
-      event.preventDefault()
-      return
-    }
-    event.preventDefault()
-    setKeyFocus((n) => (n ?? 0) + 1)
-    pick(column, next)
   }
 
   /*
@@ -608,9 +536,9 @@ export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement =
       className="files"
       onKeyDown={(event) => {
         /*
-         * Cmd+S with the keyboard in a column would otherwise open the
-         * browser's Save Page dialog. The editor's own binding has already
-         * prevented it when the keyboard is in there.
+         * Cmd+S with the keyboard in the tree would otherwise open the browser's
+         * Save Page dialog. The editor's own binding has already prevented it
+         * when the keyboard is in there.
          */
         if (event.defaultPrevented) return
         if ((event.metaKey || event.ctrlKey) && event.key === 's') {
@@ -619,50 +547,74 @@ export const FilesPane = ({ state, near }: FilesPaneProps): React.ReactElement =
         }
       }}
     >
-      <div className="files__strip" ref={stripRef} onKeyDown={onKeyDown}>
-        {columns.map((column, index) => (
-          <FilesColumn
-            key={column.dir}
-            column={column}
-            onPick={(entry) => pick(column, entry)}
-            focus={index === focused ? keyFocus : null}
-          />
-        ))}
+      <div className="files__tree" ref={treeRef} onKeyDown={onKeyDown}>
+        {/* Nothing at all while the root is being read: a local directory
+            listing takes a few milliseconds, and a word that flashes for one
+            frame is worse than empty space. */}
+        {!state.loading && rows.length === 0 && <p className="files__note">Nothing here.</p>}
+        {rows.map((row, index) => {
+          const isOpenFile = row.kind === 'file' && row.path === state.path
+          const onCursor = index === here
+          return (
+            <button
+              key={row.path}
+              ref={onCursor ? selectedRef : null}
+              className={[
+                'files__row',
+                isOpenFile ? 'files__row--on' : '',
+                row.changed ? 'files__row--changed' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              style={{ paddingLeft: 6 + row.depth * INDENT }}
+              // Roving tabindex: Tab reaches the tree once, rather than walking
+              // through two hundred files to get past it.
+              tabIndex={onCursor ? 0 : -1}
+              onClick={() => pick(row)}
+              title={row.path}
+            >
+              {/* A file gets the same spacer, so names line up under the
+                  directories they are in rather than by a character. */}
+              <span className="files__twist" aria-hidden="true">
+                {row.kind === 'dir' ? (row.open ? '▾' : '▸') : ''}
+              </span>
+              <span className="files__name">{row.name}</span>
+            </button>
+          )
+        })}
       </div>
 
-      {state.error !== null && <div className="files__notice">{state.error}</div>}
-
-      {state.conflict && (
-        <div className="files__notice">
-          <span>This file changed on disk while you were editing it.</span>
-          <span className="files__notice-actions">
-            <button className="files__act" onClick={state.overwrite}>
-              Overwrite
-            </button>
-            <button className="files__act" onClick={state.revert}>
-              Discard my edits
-            </button>
-          </span>
-        </div>
-      )}
-
       <div className="files__file">
+        {state.error !== null && <div className="files__notice">{state.error}</div>}
+
+        {state.conflict && (
+          <div className="files__notice">
+            <span>This file changed on disk while you were editing it.</span>
+            <span className="files__notice-actions">
+              <button className="files__act" onClick={state.overwrite}>
+                Overwrite
+              </button>
+              <button className="files__act" onClick={state.revert}>
+                Discard my edits
+              </button>
+            </span>
+          </div>
+        )}
+
         {state.refusal !== null ? (
           <p className="files__note">{state.refusal}</p>
         ) : state.file === null ? (
           <p className="files__note">Pick a file to read it here.</p>
         ) : (
           mountEditor && (
-            <div className="files__editor">
-              <Suspense fallback={null}>
-                <CodeEditor
-                  file={state.file}
-                  draft={state.draft}
-                  onChange={state.edited}
-                  onSave={state.save}
-                />
-              </Suspense>
-            </div>
+            <Suspense fallback={null}>
+              <CodeEditor
+                file={state.file}
+                draft={state.draft}
+                onChange={state.edited}
+                onSave={state.save}
+              />
+            </Suspense>
           )
         )}
       </div>

@@ -26,6 +26,13 @@ const GAP = 12
 /** How the add tile is identified in the layout. */
 const ADD_KEY = '__add'
 
+/*
+ * One shared empty list for worktrees with nothing expanded. A fresh `[]` each
+ * render would be a new identity, and the files hook re-reads its directories
+ * whenever that changes.
+ */
+const EMPTY_DIRS: string[] = []
+
 /**
  * Is the whole of a tile on screen already?
  *
@@ -254,8 +261,9 @@ interface WorktreeTileProps {
   session: Session | undefined
   terminals: Session[]
   activeTerminalId: string | null
-  /** Where this worktree's files panel is standing. See `UiState`. */
+  /** The file this worktree has open, and the directories it has expanded. */
   openPath: string
+  expandedDirs: string[]
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
@@ -268,6 +276,7 @@ interface WorktreeTileProps {
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (path: string) => void
+  onToggleDir: (dir: string) => void
 }
 
 /**
@@ -289,6 +298,7 @@ const WorktreeTile = ({
   terminals,
   activeTerminalId,
   openPath,
+  expandedDirs,
   scroller,
   onStart,
   onSleep,
@@ -299,6 +309,7 @@ const WorktreeTile = ({
   onNewTerminal,
   onCloseTerminal,
   onOpenPath,
+  onToggleDir,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
   // frozen terminal -- but with what it printed on its way out, which is often
@@ -353,13 +364,15 @@ const WorktreeTile = ({
   // Only reads git while its panel is on screen; see the note on useGitState.
   const git = useGitState(worktree.id, revision, shownPanes.has('git'))
   // Likewise: inert until its own panel is open.
-  const files = useFilesState(
-    worktree.id,
+  const files = useFilesState({
+    worktreeId: worktree.id,
     revision,
-    shownPanes.has('files'),
-    openPath,
-    onOpenPath,
-  )
+    enabled: shownPanes.has('files'),
+    path: openPath,
+    expanded: expandedDirs,
+    onOpen: onOpenPath,
+    onToggleDir,
+  })
   const counts: PanelCounts = {
     terminals: terminals.length,
     changes: worktree.dirty ?? 0,
@@ -619,6 +632,8 @@ export interface OverviewProps {
   activeTerminalByWorktree: Record<string, string>
   /** Where each worktree's files panel is standing. */
   openPathByWorktree: Record<string, string>
+  /** Directories each worktree has expanded in its file tree. */
+  expandedByWorktree: Record<string, string[]>
   /**
    * The project a new worktree would go to, when there is only one open.
    *
@@ -646,6 +661,7 @@ export interface OverviewProps {
   onNewTerminal: (worktreeId: string) => void
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
+  onToggleDir: (worktreeId: string, dir: string) => void
 }
 
 /**
@@ -667,6 +683,7 @@ export const Overview = ({
   panels,
   activeTerminalByWorktree,
   openPathByWorktree,
+  expandedByWorktree,
   addTo,
   scrollTo,
   onStart,
@@ -680,6 +697,7 @@ export const Overview = ({
   onNewTerminal,
   onCloseTerminal,
   onOpenPath,
+  onToggleDir,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -1066,6 +1084,7 @@ export const Overview = ({
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                       openPath={openPathByWorktree[worktree.id] ?? ''}
+                      expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
                       onSleep={() => onSleep(worktree.id)}
@@ -1076,6 +1095,7 @@ export const Overview = ({
                       onNewTerminal={() => onNewTerminal(worktree.id)}
                       onCloseTerminal={onCloseTerminal}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
+                      onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                     />
                   )}
                 </div>

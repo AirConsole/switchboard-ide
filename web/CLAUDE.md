@@ -12,7 +12,7 @@ components/TopBar    project groups, awake tabs, the zZ dropdown
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/GitPane        changes, commits, diffs
-views/FilesPane      the Miller columns, and the file below them
+views/FilesPane      the file tree, and the file beside it
 editor/CodeEditor    one CodeMirror view over one file
 editor/theme         the syntax palette and the editor's chrome
 editor/language      filename -> grammar, fetched on demand
@@ -68,14 +68,21 @@ attached the pty's geometry is left alone.
 
 ## The files pane
 
-The browser is Miller columns, not an indented tree, because a pane is eighty
-characters wide and indentation spends that width on depth instead of on names.
-Three things in it are load-bearing:
+An indented tree down the side, and the open file beside it. It was Finder's
+Miller columns first, on the argument that a pane eighty characters wide cannot
+afford to spend width on indentation -- and that turned out to be the wrong
+trade in use, so it is a tree. Four things in it are load-bearing:
 
-- **One string is the whole state.** `ui.openPathByWorktree[id]` -- a trailing
-  slash meaning a directory with nothing chosen in it. The columns are the
-  path's own segments, so there is no second copy of where the browser is
-  standing that could disagree with the open file.
+- **`.files__file` is a flex column, and that is not cosmetic.** CodeMirror's
+  host is sized by `flex: 1; min-height: 0` from it. A block container instead
+  left the host at its *content's* height -- an 11,792px editor inside a 225px
+  pane, measured. Two symptoms, one cause: `.cm-scroller` then has nothing to
+  scroll, so the file would not scroll; and with nothing scrollable under the
+  pointer, `inner()` finds no candidate and the row takes every wheel, so
+  scrolling the file slid the whole row of windows sideways.
+- **The tree must stay a scroller** (`overflow-y: auto`) for the same second
+  reason -- it is what `inner()` looks for so a wheel over it does not reach the
+  row.
 - **The draft lives in a ref, and only a boolean reaches state.** The editor is
   uncontrolled: it is handed the file as it is on disk and reports its buffer
   back, never the reverse. If the buffer were state, every keystroke would
@@ -90,11 +97,17 @@ Three things in it are load-bearing:
   it. Measured: the cursor jumped from line 3 to line 1. So the line being read
   is remembered by its text and looked for again near its old number.
 
-`.tile__pane--files` has no padding, deliberately, so a column divider runs the
-full height and meets the tile's border; the 8px inset comes from each row and
-from the editor's gutter instead. `PANE_CHROME_WIDTH` still describes the
-terminal panes, which are what set the minimum width -- the mismatch is not a
-bug to fix.
+Moving in the tree is not opening, unlike a click: arrowing past twenty files
+would otherwise read and render twenty of them, so Enter is the key that says
+you meant it. Opening a file expands its ancestors, which is what makes a
+restored path visible without the expansion having to be derived -- and leaves
+collapsing an ancestor working normally, which a derived set would quietly undo.
+
+`.tile__pane--files` has no padding, deliberately, so the divider between tree
+and file runs the full height and meets the tile's border; the 8px inset comes
+from each row and from the editor's gutter instead. `PANE_CHROME_WIDTH` still
+describes the terminal panes, which are what set the minimum width -- the
+mismatch is not a bug to fix.
 
 ## The wheel is not a keyboard
 
@@ -171,8 +184,11 @@ geometry. Then:
   `getAnimations()[0].currentTime` jumped 0→117ms in 10ms of wall time. Existence,
   duration and the interpolated property are checkable; timing is not.
 - **Read `scrollLeft` late.** Reading it right after setting it returns a
-  partly-applied value. The files strip auto-scrolls only when a column is
-  *added*, so check that a poll does not drag it back while you read a parent.
+  partly-applied value.
+- **Prove the wheel with a real gesture**, `page.mouse.wheel` over the element,
+  not by reasoning about `inner()`. Read `.grid`'s `scrollLeft` before and
+  after: a pane whose content does not scroll hands the wheel to the row, and
+  that reads as the row drifting sideways while you scroll a file.
 - **Syntax colour is in generated class names.** `HighlightStyle` emits its own
   (`ͼ5`, `ͼ9`); there is no `.tok-keyword` to look for. Read the computed colour
   of a span inside `.cm-line` instead.
