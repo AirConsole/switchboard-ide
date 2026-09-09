@@ -274,18 +274,19 @@ button {
   color: var(--bone);
 }
 
-/* Awake: it has a tile in the row, and clicking scrolls to it. */
+/*
+ * Awake or asleep is carried by brightness; what Claude is doing is carried by
+ * the line under the tab.
+ *
+ * Two facts, two channels, so neither has to stand for the other. The line is
+ * the same vocabulary as a tile's left rail -- amber only for a worktree
+ * blocked on you, weight for the rest -- and it works the same on a collapsed
+ * tab, which shows the most urgent of the worktrees behind it.
+ */
 .chip--shown {
   color: var(--bone);
-  border-bottom-color: var(--rule-bright);
 }
 
-/*
- * Asleep: nothing of it is running and it has no tile. Quieter than an awake
- * tab and with no underline, since the underline means "there is one of these
- * in the row". It still gets to go amber, because sleeping can leave Claude
- * running and a worktree that needs you must be able to say so from here.
- */
 .chip--asleep {
   color: var(--graphite);
 }
@@ -294,13 +295,32 @@ button {
   color: var(--bone);
 }
 
+/* Blocked on you: the one place the chrome is allowed colour. */
+.chip--needs {
+  color: var(--signal);
+  border-bottom-color: var(--signal);
+}
+
+.chip--working {
+  border-bottom-color: var(--graphite);
+}
+
+.chip--idle {
+  border-bottom-color: var(--rule-bright);
+}
+
+/* Nothing running, so there is nothing to underline. */
+.chip--off {
+  border-bottom-color: transparent;
+}
+
 .chip__zz {
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--graphite-dim);
 }
 
-.chip--waiting .chip__zz {
+.chip--needs .chip__zz {
   color: inherit;
 }
 
@@ -313,18 +333,6 @@ button {
 }
 
 
-
-/* The one saturated colour in the chrome, and the reason minimizing is safe:
-   a worktree with no tile can still call for you from here. The underline is
-   left alone so it keeps meaning exactly one thing -- "this has a tile" -- and
-   the two signals stay independent. */
-.chip--waiting {
-  color: var(--signal);
-}
-
-.chip--waiting.chip--shown {
-  border-bottom-color: var(--signal);
-}
 
 .chip__branch {
   color: var(--graphite-dim);
@@ -1445,10 +1453,6 @@ button {
   background: var(--rule-bright);
 }
 
-.menu__row--waiting {
-  color: var(--signal);
-}
-
 /* ---------------------------------------------------------------- sleep --- */
 
 /*
@@ -1472,4 +1476,23 @@ button {
 .tile__zz:hover {
   color: var(--bone);
   background: var(--rule-bright);
+}
+
+/* The state of one sleeping worktree, in the dropdown that lists them. */
+.menu__state {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
+.menu__state--needs {
+  color: var(--signal);
+}
+
+.menu__state--working {
+  color: var(--graphite);
 }

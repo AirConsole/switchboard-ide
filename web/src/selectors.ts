@@ -15,13 +15,34 @@ export const terminalSessions = (sessions: Session[], worktreeId: string): Sessi
   sessions.filter((s) => s.worktreeId === worktreeId && s.kind === 'shell')
 
 /**
- * A worktree needs you when Claude in it is blocked on an answer. This is the
- * value the whole overview is built around, so it is derived in one place.
+ * What a worktree's Claude is doing, as one value.
+ *
+ * `off` covers both never started and exited: from outside, a worktree with no
+ * agent running is a worktree with no agent running, and the tile says which it
+ * is once you are looking at it.
  */
-export const worktreeNeedsYou = (sessions: Session[], worktreeId: string): boolean =>
-  sessions.some(
-    (s) => s.worktreeId === worktreeId && s.kind === 'claude' && s.attention === 'needs-you',
-  )
+export type WorktreeStatus = 'needs-you' | 'working' | 'idle' | 'off'
+
+export const worktreeStatus = (sessions: Session[], worktreeId: string): WorktreeStatus => {
+  const claude = claudeSession(sessions, worktreeId)
+  if (!claude || claude.liveness === 'dead') return 'off'
+  if (claude.attention === 'needs-you') return 'needs-you'
+  if (claude.attention === 'working') return 'working'
+  return 'idle'
+}
+
+/**
+ * The one status worth showing for a group of worktrees.
+ *
+ * In this order, because it is the order you want to be told: a worktree
+ * blocked on you outranks one that is busy, which outranks one sitting idle,
+ * which outranks one that is not running at all. A collapsed tab standing for
+ * several worktrees can only carry one, so it carries the most urgent.
+ */
+const URGENCY: WorktreeStatus[] = ['needs-you', 'working', 'idle', 'off']
+
+export const mostUrgentStatus = (statuses: WorktreeStatus[]): WorktreeStatus =>
+  URGENCY.find((status) => statuses.includes(status)) ?? 'off'
 
 /**
  * Main worktree first, then alphabetical, within one project.

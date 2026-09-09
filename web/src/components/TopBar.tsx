@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Project, Session, Worktree } from '@ide-n-dream/shared'
 import type { ProjectGroup } from '../App.js'
-import { claudeSession, stateLabel, worktreeNeedsYou } from '../selectors.js'
+import {
+  claudeSession,
+  mostUrgentStatus,
+  stateLabel,
+  worktreeStatus,
+  type WorktreeStatus,
+} from '../selectors.js'
 
 export interface TopBarProps {
   /** Every open project, in the order they were opened. */
@@ -14,6 +20,16 @@ export interface TopBarProps {
   /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
 }
+
+/** The tab class for a status: the line under it, and amber when blocked. */
+const statusClass = (status: WorktreeStatus): string =>
+  status === 'needs-you'
+    ? 'chip--needs'
+    : status === 'working'
+      ? 'chip--working'
+      : status === 'idle'
+        ? 'chip--idle'
+        : 'chip--off'
 
 /** A worktree's tab: its name, its branch when that differs, its dirty count. */
 const WorktreeLabel = ({ worktree }: { worktree: Worktree }): React.ReactElement => (
@@ -84,9 +100,13 @@ const Group = ({
     }
   }, [at])
   const allAsleep = awake.length === 0 && asleep.length > 0
-  // A sleeping worktree can still be one whose Claude was left running, so the
-  // collapsed tab has to be able to call for you the way a tab does.
-  const asleepNeedsYou = asleep.some((w) => worktreeNeedsYou(sessions, w.id))
+  /*
+   * The collapsed tab stands for several worktrees, so it shows the most
+   * urgent of them. Sleeping does not mean stopped -- Claude can be left
+   * running -- so one of them being blocked on you has to reach the top bar
+   * from behind a dropdown.
+   */
+  const asleepStatus = mostUrgentStatus(asleep.map((w) => worktreeStatus(sessions, w.id)))
 
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => (
     <button
@@ -94,10 +114,8 @@ const Group = ({
       className={[
         'chip',
         sleeping ? 'chip--asleep' : 'chip--shown',
-        worktreeNeedsYou(sessions, worktree.id) ? 'chip--waiting' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+        statusClass(worktreeStatus(sessions, worktree.id)),
+      ].join(' ')}
       onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
       title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
         sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view'
@@ -134,9 +152,7 @@ const Group = ({
         <>
           <button
             ref={anchor}
-            className={['chip', 'chip--asleep', asleepNeedsYou ? 'chip--waiting' : '']
-              .filter(Boolean)
-              .join(' ')}
+            className={['chip', 'chip--asleep', statusClass(asleepStatus)].join(' ')}
             onClick={() => {
               const box = anchor.current?.getBoundingClientRect()
               setAt((was) =>
@@ -144,6 +160,7 @@ const Group = ({
               )
             }}
             title={`${asleep.length} sleeping — click to pick one to wake`}
+            aria-label={`${asleep.length} sleeping worktrees, ${asleepStatus}`}
             aria-expanded={at !== null}
           >
             {/* The count is part of the label, so it is set at the label's size
@@ -157,21 +174,36 @@ const Group = ({
           </button>
           {at !== null && (
             <div className="menu" ref={menu} style={{ left: at.left, top: at.top }}>
-              {asleep.map((worktree) => (
-                <button
-                  key={worktree.id}
-                  className={
-                    worktreeNeedsYou(sessions, worktree.id) ? 'menu__row menu__row--waiting' : 'menu__row'
-                  }
-                  onClick={() => {
-                    setAt(null)
-                    onWake(worktree.id)
-                  }}
-                  title={worktree.path}
-                >
-                  <WorktreeLabel worktree={worktree} />
-                </button>
-              ))}
+              {asleep.map((worktree) => {
+                const status = worktreeStatus(sessions, worktree.id)
+                return (
+                  <button
+                    key={worktree.id}
+                    className="menu__row"
+                    onClick={() => {
+                      setAt(null)
+                      onWake(worktree.id)
+                    }}
+                    title={worktree.path}
+                  >
+                    <WorktreeLabel worktree={worktree} />
+                    {/* Said in words rather than a dot: there is room here, and
+                        a sleeping worktree with Claude still running is the
+                        thing you most need to be able to tell apart. */}
+                    <span
+                      className={
+                        status === 'needs-you'
+                          ? 'menu__state menu__state--needs'
+                          : status === 'working'
+                            ? 'menu__state menu__state--working'
+                            : 'menu__state'
+                      }
+                    >
+                      {stateLabel(claudeSession(sessions, worktree.id))}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </>
