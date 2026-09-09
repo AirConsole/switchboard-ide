@@ -311,6 +311,17 @@ button {
   border-bottom-color: var(--signal);
 }
 
+/*
+ * Restated under the pointer, for the reason `.tile:hover` names three sides:
+ * hover brightens a tab by setting `color`, and `.chip:hover` outweighs a
+ * single class, so reaching for the tab of the worktree that is blocked on you
+ * took the amber out of it on the way. Brightening is hover's to do; the
+ * signal is not.
+ */
+.chip--needs:hover {
+  color: var(--signal);
+}
+
 .chip--working {
   border-bottom-color: var(--graphite);
 }
@@ -539,8 +550,18 @@ button {
   min-width: 0;
 }
 
+/*
+ * Three sides, named one at a time, because the fourth is not hover's to
+ * touch: the left border is the rail, and the rail is what says whether this
+ * agent is done, blocked on you or working. The `border-color` shorthand set
+ * all four, and `.tile:hover` outweighs `.tile--done` -- one class plus a
+ * pseudo-class against one class -- so putting the pointer anywhere over a
+ * window turned its status grey until you moved away.
+ */
 .tile:hover {
-  border-color: var(--rule-bright);
+  border-top-color: var(--rule-bright);
+  border-right-color: var(--rule-bright);
+  border-bottom-color: var(--rule-bright);
 }
 
 /* State is carried by the left rail, matching the tabs. Only "waiting" is
