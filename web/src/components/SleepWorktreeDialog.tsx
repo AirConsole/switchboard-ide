@@ -24,9 +24,10 @@ export interface SleepWorktreeDialogProps {
  * nothing but the restart. A terminal's scrollback is gone for good, and so is
  * anything running in it, which is why that is the option worth pausing over.
  *
- * The copy talks about the worktree and what happens to it, not about tiles or
- * rows: those are how it happens to be drawn, and the reader is deciding
- * whether to stop an agent, not whether to rearrange a screen.
+ * The copy is about the worktree. Its window going away is worth saying, since
+ * that is the visible half of what the click does, but "tile" and "row" are
+ * names for how the interface is built rather than for anything the reader has
+ * in mind: they are deciding what happens to a worktree.
  */
 export const SleepWorktreeDialog = ({
   worktree,
@@ -48,12 +49,12 @@ export const SleepWorktreeDialog = ({
         </div>
         <div className="dialog__body">
           <p className="empty__body">
-            Stops Claude and every terminal in this worktree, giving the machine back their
-            processes and memory. Nothing on disk changes — the branch and its files stay exactly
-            as they are.
+            Puts the {worktree.name} worktree to sleep and hides its window. Claude and every
+            terminal in it are stopped, and the machine gets their processes and memory back.
           </p>
           <p className="empty__body">
-            Waking the worktree continues the same conversation rather than starting a new one.
+            Nothing on disk changes — the branch and its files stay exactly as they are, and
+            waking the worktree continues the same conversation rather than starting a new one.
           </p>
           <p className="field__hint">{worktree.path}</p>
           <label className="check">
@@ -67,7 +68,7 @@ export const SleepWorktreeDialog = ({
             {claude === undefined ? (
               <span className="field__hint"> — not running</span>
             ) : (
-              <span className="field__hint"> — it carries on working while the worktree sleeps</span>
+              <span className="field__hint"> — leaves it working on whatever it is doing</span>
             )}
           </label>
           <label className="check">
@@ -81,13 +82,10 @@ export const SleepWorktreeDialog = ({
             {terminals.length === 0 ? (
               <span className="field__hint"> — none open</span>
             ) : (
-              // Said plainly, because this is the half that does not come back.
-              <span className="field__hint">
-                {' '}
-                — otherwise {terminals.length === 1 ? 'it is' : 'they are'} stopped, ending
-                whatever {terminals.length === 1 ? 'it is' : 'they are'} running and losing{' '}
-                {terminals.length === 1 ? 'its' : 'their'} scrollback
-              </span>
+              // What keeping them gives you, in one glance. Both halves of it
+              // matter and neither survives a stop: a command still running,
+              // and everything already printed.
+              <span className="field__hint"> — leaves processes running and keeps history</span>
             )}
           </label>
         </div>

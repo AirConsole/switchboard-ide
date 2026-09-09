@@ -11,7 +11,7 @@ export interface TopBarProps {
   onCloseProject: (projectId: string) => void
   onNewWorktree: (project: Project) => void
   onWake: (worktreeId: string) => void
-  /** Scroll an awake worktree's tile into view. */
+  /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
 }
 
@@ -69,7 +69,7 @@ const Group = ({
         .join(' ')}
       onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
       title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
-        sleeping ? 'Asleep — click to wake it' : 'Click to scroll to it'
+        sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view'
       }`}
     >
       {sleeping && (
@@ -156,8 +156,8 @@ const Group = ({
  * to.
  *
  * Every open project is here at once — there is no active one — so the bar is
- * also the index of a row that can be longer than the window: clicking an awake
- * worktree scrolls to its tile. Tabs no longer toggle anything, because with
+ * also the index of more worktrees than fit on screen: clicking an awake one
+ * brings its window into view. Tabs no longer toggle anything, because with
  * nothing hidden to make room there is nothing to toggle; the only two states a
  * worktree has are awake and asleep.
  *

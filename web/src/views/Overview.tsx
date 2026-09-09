@@ -220,7 +220,7 @@ const WorktreeTile = ({
 
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
-  const revealHint = `Click to bring ${worktree.name} to the front of the row`
+  const revealHint = `Click to bring ${worktree.name}'s window into view`
 
   const identity = (
     <span className="tile__label">
@@ -261,7 +261,7 @@ const WorktreeTile = ({
       <button
         className="tile__zz"
         onClick={onSleep}
-        title={`Sleep ${worktree.name}: stop what it is running and give back its place`}
+        title={`Put ${worktree.name} to sleep and hide its window`}
         aria-label={`Sleep ${worktree.name}`}
       >
         zZ
@@ -292,7 +292,7 @@ const WorktreeTile = ({
         }
         onClick={(event) => {
           /*
-           * Clicking the bar brings the worktree to the front of the row, which
+           * Clicking the bar brings the worktree's window to the front, which
            * is how you get to one you can only see part of. Never through
            * something that already does its own job -- a panel toggle, sleep,
            * remove, or a panel's own controls in the bar.
