@@ -361,16 +361,27 @@ button {
   opacity: 0.8;
 }
 
+/* First in the bar, so the rule that separates it from the projects is on its
+   right. It is the one control here that is not about a worktree, and the
+   corner is where a thing like that belongs. */
 .topbar__open {
   display: flex;
   align-items: center;
+  gap: 7px;
   flex: none;
   padding: 0 14px;
-  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
   font-family: var(--font-ui);
   font-size: 12px;
   white-space: nowrap;
   color: var(--graphite);
+}
+
+/* Optically centred: a 14px box against 12px text sits a hair low on the
+   baseline it shares. */
+.topbar__icon {
+  flex: none;
+  margin-top: -1px;
 }
 
 .topbar__open:hover {

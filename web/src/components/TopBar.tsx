@@ -30,6 +30,33 @@ export interface TopBarProps {
   activeId: string | null
 }
 
+/**
+ * Open a project.
+ *
+ * A square with a plus in it, because a square is already what a project is
+ * here -- `.group__mark` marks each open one with the same shape -- so this
+ * reads as "another one of those" rather than as a generic add. Hairlines at
+ * the chrome's own weight and currentColor, so it inherits the
+ * quiet-until-hovered treatment of the button around it, the way TrashIcon
+ * does in the row.
+ */
+const OpenProjectIcon = (): React.ReactElement => (
+  <svg
+    className="topbar__icon"
+    viewBox="0 0 16 16"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="2.3" y="2.3" width="11.4" height="11.4" rx="1.6" />
+    <path d="M8 5.3v5.4M5.3 8h5.4" />
+  </svg>
+)
+
 /** The tab class for a status: the line under it, and amber when blocked. */
 const statusClass = (status: WorktreeStatus): string =>
   status === 'needs-you'
@@ -374,6 +401,10 @@ export const TopBar = ({
   const usage = useUsage()
   return (
   <header className="topbar">
+    <button className="topbar__open" onClick={onOpenProject} title="Open another project">
+      <OpenProjectIcon />
+      Open project
+    </button>
     <nav className="groups">
       {groups.map((group) => (
         <Group
@@ -390,9 +421,6 @@ export const TopBar = ({
       ))}
     </nav>
     {usage !== null && <UsageBars usage={usage} />}
-    <button className="topbar__open" onClick={onOpenProject} title="Open another project">
-      + Open project
-    </button>
   </header>
   )
 }
