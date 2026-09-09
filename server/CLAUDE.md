@@ -13,7 +13,7 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
   tmux.ts       every tmux invocation, and the metadata in @idn_meta
   mirror.ts     a headless xterm per session, for repaint and attention
   attention.ts  idle / working / needs-you
-  claude.ts     where transcripts live, and whether to pass --continue
+  claude.ts     where transcripts live, --continue, and the last prompt
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
 config.ts       every IDN_* env var, in one place
 ```
@@ -74,8 +74,17 @@ than a missed one.
 Worktrees are **discovered** from `git worktree list --porcelain` on every read.
 There is no registry, which is what lets the IDE be dropped onto a repo that
 already has worktrees. `head` from porcelain feeds `pollChanged()`'s signature
-(`id:branch:head:dirty:missing`), which is how the 4s poller decides whether to
-broadcast `invalidate` — and it polls only while a client is connected.
+(`id:branch:head:dirty:missing:prompt`), which is how the 4s poller decides
+whether to broadcast `invalidate` — and it polls only while a client is
+connected.
+
+`prompt` is the last thing the user asked Claude in that worktree, read from the
+tail of the newest transcript in `transcriptDir(path)`. Claude writes two
+candidates and `lastPrompt()` takes the second on purpose: `ai-title` is Claude's
+own name for the conversation but is set from its opening subject and goes stale
+within the hour, while `last-prompt` is rewritten every turn. Neither costs a
+token — both are already on disk — and only the file's tail is read, because a
+transcript is megabytes and this runs per worktree per poll.
 
 `idFor(prefix, path, host)` hashes the path. **Local ids hash the bare absolute
 path and must keep doing so**, byte for byte: those ids are recorded in

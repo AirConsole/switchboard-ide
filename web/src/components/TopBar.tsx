@@ -117,9 +117,12 @@ const Group = ({
         statusClass(worktreeStatus(sessions, worktree.id)),
       ].join(' ')}
       onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
-      title={`${worktree.path}\n${stateLabel(claudeSession(sessions, worktree.id))}\n${
-        sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view'
-      }`}
+      title={[
+        worktree.path,
+        stateLabel(claudeSession(sessions, worktree.id)),
+        ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+        sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
+      ].join('\n')}
     >
       {sleeping && (
         <span className="chip__zz" aria-hidden="true">
@@ -186,23 +189,29 @@ const Group = ({
                     }}
                     title={worktree.path}
                   >
-                    <WorktreeLabel worktree={worktree} />
-                    {/* Said in words rather than a dot: there is room here, and
-                        a sleeping worktree with Claude still running is the
-                        thing you most need to be able to tell apart. */}
-                    <span
-                      className={
-                        status === 'needs-you'
-                          ? 'menu__state menu__state--needs'
-                          : status === 'working'
-                            ? 'menu__state menu__state--working'
-                            : status === 'idle'
-                              ? 'menu__state menu__state--idle'
-                              : 'menu__state'
-                      }
-                    >
-                      {stateLabel(claudeSession(sessions, worktree.id))}
+                    <span className="menu__line">
+                      <WorktreeLabel worktree={worktree} />
+                      {/* Said in words rather than a dot: there is room here, and
+                          a sleeping worktree with Claude still running is the
+                          thing you most need to be able to tell apart. */}
+                      <span
+                        className={
+                          status === 'needs-you'
+                            ? 'menu__state menu__state--needs'
+                            : status === 'working'
+                              ? 'menu__state menu__state--working'
+                              : status === 'idle'
+                                ? 'menu__state menu__state--idle'
+                                : 'menu__state'
+                        }
+                      >
+                        {stateLabel(claudeSession(sessions, worktree.id))}
+                      </span>
                     </span>
+                    {/* What it was doing when you put it down. A sleeping
+                        worktree is the one you have least chance of recognising
+                        by name alone. */}
+                    {worktree.prompt && <span className="menu__prompt">{worktree.prompt}</span>}
                   </button>
                 )
               })}

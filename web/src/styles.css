@@ -773,6 +773,27 @@ button {
   white-space: nowrap;
 }
 
+/*
+ * The last prompt, filling whatever the bar has left between the name and the
+ * controls.
+ *
+ * One line, always: a prompt runs to paragraphs and the bar is a bar. Dim and
+ * 11px so it stays under the worktree's name -- it says what this window is
+ * about, not which window it is -- and it is the interface speaking prose, so
+ * --font-ui rather than the mono the identifiers beside it use.
+ */
+.tile__prompt {
+  flex: 1;
+  align-self: center;
+  min-width: 0;
+  padding-right: 10px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tile__state {
   display: flex;
   align-items: center;
@@ -1532,10 +1553,18 @@ button {
   font-size: 12px;
 }
 
+/*
+ * Two lines now: what the worktree is, and what it was doing.
+ *
+ * A column, so the prompt gets a line of its own -- on the name's line it would
+ * have to fight the state label for the same few characters, and the whole
+ * point of it is that it is longer than a name.
+ */
 .menu__row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   padding: 5px 8px;
   border-radius: 2px;
   font: inherit;
@@ -1575,6 +1604,24 @@ button {
 }
 
 /* The state of one sleeping worktree, in the dropdown that lists them. */
+.menu__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Longer than a name and shorter than the menu is wide, so it sets the width
+   and everything above it lines up against it. */
+.menu__prompt {
+  max-width: 380px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .menu__state {
   margin-left: auto;
   padding-left: 12px;

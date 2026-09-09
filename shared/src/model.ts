@@ -53,6 +53,15 @@ export interface Worktree {
    * nothing happened.
    */
   head?: string
+  /**
+   * The last thing the user asked Claude here, whitespace collapsed.
+   *
+   * What a worktree is *about*, which is the question a row of identical-looking
+   * windows cannot otherwise answer. Read from Claude's own transcript on disk,
+   * so it survives sleeping and costs nothing to produce; absent where Claude
+   * has never run.
+   */
+  prompt?: string
 }
 
 export type SessionKind = 'claude' | 'shell'
