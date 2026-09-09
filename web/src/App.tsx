@@ -6,6 +6,7 @@ import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { Overview } from './views/Overview.js'
+import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
 import type { PanelName, Project, Worktree } from '@ide-n-dream/shared'
@@ -51,6 +52,14 @@ export const App = (): React.ReactElement => {
   }, [refresh])
 
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
+
+  /*
+   * The current UI state, for callbacks that must keep one identity across
+   * renders. `openPath` is handed to every tile in the row, and rebuilding it
+   * on each render would restart the files hook's effects everywhere at once.
+   */
+  const uiRef = useRef(ui)
+  uiRef.current = ui
 
   /**
    * Which worktrees are awake.
@@ -189,6 +198,41 @@ export const App = (): React.ReactElement => {
   }
 
   /**
+   * Open a file in a worktree's files panel.
+   *
+   * Opening also expands the directories above it, which is what makes a
+   * restored file visible in the tree without the expansion having to be
+   * derived from the path -- and leaves collapsing an ancestor working
+   * normally, which a derived set would quietly undo.
+   *
+   * Stable between renders, because it is handed to every tile and a fresh
+   * identity each render would re-run the files hook for every worktree.
+   */
+  const openPath = useCallback(
+    (worktreeId: string, path: string): void => {
+      const ui = uiRef.current
+      const was = ui.expandedByWorktree[worktreeId] ?? []
+      const opened = new Set([...was, ...ancestorsOf(path)])
+      setUi({
+        openPathByWorktree: { ...ui.openPathByWorktree, [worktreeId]: path },
+        expandedByWorktree: { ...ui.expandedByWorktree, [worktreeId]: [...opened] },
+      })
+    },
+    [setUi],
+  )
+
+  /** Expand or collapse one directory of a worktree's file tree. */
+  const toggleDir = useCallback(
+    (worktreeId: string, dir: string): void => {
+      const ui = uiRef.current
+      const was = ui.expandedByWorktree[worktreeId] ?? []
+      const next = was.includes(dir) ? was.filter((d) => d !== dir) : [...was, dir]
+      setUi({ expandedByWorktree: { ...ui.expandedByWorktree, [worktreeId]: next } })
+    },
+    [setUi],
+  )
+
+  /**
    * Close panels the layout could not keep.
    *
    * The layout is the only thing that knows what fits, so it says so and the
@@ -319,6 +363,8 @@ export const App = (): React.ReactElement => {
         sessions={sessions}
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
+        openPathByWorktree={ui.openPathByWorktree}
+        expandedByWorktree={ui.expandedByWorktree}
         // With one project open there is no question which project a new
         // worktree belongs to; with several there is, and the top bar's
         // per-project + is the unambiguous way to say it.
@@ -340,6 +386,8 @@ export const App = (): React.ReactElement => {
           })
         }
         onNewTerminal={newTerminal}
+        onOpenPath={openPath}
+        onToggleDir={toggleDir}
         onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
       />
 

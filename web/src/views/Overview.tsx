@@ -17,6 +17,7 @@ import {
 import { TodoBar, TodoPane } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { GitBar, GitPane, useGitState } from './GitPane.js'
+import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { useNearViewport } from './useNearViewport.js'
@@ -32,6 +33,13 @@ const GAP = 12
 
 /** How the add tile is identified in the layout. */
 const ADD_KEY = '__add'
+
+/*
+ * One shared empty list for worktrees with nothing expanded. A fresh `[]` each
+ * render would be a new identity, and the files hook re-reads its directories
+ * whenever that changes.
+ */
+const EMPTY_DIRS: string[] = []
 
 /**
  * Is the whole of a tile on screen already?
@@ -79,14 +87,19 @@ const nearestOffset = (
  * Every panel, in the order they sit beside Claude.
  *
  * The order is fixed rather than the order they were opened, so a worktree's
- * panes do not shuffle underneath you: opening files would always put it in the
- * same place relative to the terminals.
+ * panes do not shuffle underneath you: opening files puts it in the same place
+ * relative to the terminals every time.
+ *
+ * Files sits first, next to Claude. Claude says it changed something, and the
+ * thing it changed is the pane immediately beside it; the terminals and the
+ * review of what was committed belong further out, at the tile's edge.
  */
-export const PANELS: readonly PanelName[] = ['todo', 'terminals', 'git']
+export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals', 'git']
 
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
+  files: 'files',
   terminals: 'terminals',
   git: 'changes',
 }
@@ -131,6 +144,14 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
       // cannot stand for both, and the panel itself says how many commits.
       if (counts.changes === 0) return 'Changes'
       return counts.changes === 1 ? '1 Change' : `${counts.changes} Changes`
+    case 'files':
+      /*
+       * Deliberately no count. The only number this panel could carry is how
+       * many files changed -- which is the number the Changes toggle two
+       * buttons along already carries, and two controls showing one figure
+       * would read as two facts.
+       */
+      return 'Files'
   }
 }
 
@@ -262,6 +283,9 @@ interface WorktreeTileProps {
   session: Session | undefined
   terminals: Session[]
   activeTerminalId: string | null
+  /** The file this worktree has open, and the directories it has expanded. */
+  openPath: string
+  expandedDirs: string[]
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
@@ -273,6 +297,8 @@ interface WorktreeTileProps {
   onSelectTerminal: (sessionId: string) => void
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
+  onOpenPath: (path: string) => void
+  onToggleDir: (dir: string) => void
 }
 
 /**
@@ -294,6 +320,8 @@ const WorktreeTile = ({
   session,
   terminals,
   activeTerminalId,
+  openPath,
+  expandedDirs,
   scroller,
   onStart,
   onSleep,
@@ -303,6 +331,8 @@ const WorktreeTile = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onOpenPath,
+  onToggleDir,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
   // frozen terminal -- but with what it printed on its way out, which is often
@@ -348,12 +378,24 @@ const WorktreeTile = ({
    * phone showing only the terminals, they fall back to the one segment there
    * is.
    */
+  /*
+   * What the server already knows has moved in this worktree, and the one
+   * string both panels re-read on. Both are needed: an edit moves the dirty
+   * count, and a commit from a clean tree moves only HEAD.
+   */
+  const revision = `${worktree.dirty ?? 0}:${worktree.head ?? ''}`
   // Only reads git while its panel is on screen; see the note on useGitState.
-  const git = useGitState(
-    worktree.id,
-    `${worktree.dirty ?? 0}:${worktree.head ?? ''}`,
-    shownPanes.has('git'),
-  )
+  const git = useGitState(worktree.id, revision, shownPanes.has('git'))
+  // Likewise: inert until its own panel is open.
+  const files = useFilesState({
+    worktreeId: worktree.id,
+    revision,
+    enabled: shownPanes.has('files'),
+    path: openPath,
+    expanded: expandedDirs,
+    onOpen: onOpenPath,
+    onToggleDir,
+  })
   const counts: PanelCounts = {
     todos: todos.length,
     queued: todos.filter((view) => view.position !== null).length,
@@ -470,8 +512,13 @@ const WorktreeTile = ({
            * something that already does its own job -- a panel toggle, sleep,
            * remove, or a panel's own controls in the bar.
            */
-          if ((event.target as HTMLElement).closest('button, .termtabs, .git__bar, .todo__bar'))
+          if (
+            (event.target as HTMLElement).closest(
+              'button, .termtabs, .git__bar, .todo__bar, .files__bar',
+            )
+          ) {
             return
+          }
           onReveal()
         }}
       >
@@ -490,6 +537,7 @@ const WorktreeTile = ({
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
             {pane.kind === 'git' && <GitBar state={git} />}
+            {pane.kind === 'files' && <FilesBar state={files} />}
             {index === controlsIndex && controls}
           </div>
         ))}
@@ -497,7 +545,16 @@ const WorktreeTile = ({
 
       <div className="tile__body" style={{ gridTemplateColumns: columns }}>
         {panes.map((pane) => (
-          <div className="tile__pane" key={pane.key} data-pane={pane.key}>
+          <div
+            /*
+             * The files pane insets per row and inside the editor's own gutter
+             * instead of through the pane's padding, so a column divider runs
+             * the whole height and meets the tile's border.
+             */
+            className={pane.kind === 'files' ? 'tile__pane tile__pane--files' : 'tile__pane'}
+            key={pane.key}
+            data-pane={pane.key}
+          >
             {pane.kind === 'claude' &&
               (running && session ? (
                 near && (
@@ -543,6 +600,7 @@ const WorktreeTile = ({
               <TodoPane worktreeId={worktree.id} todos={todos} claudeRunning={running} />
             )}
             {pane.kind === 'git' && <GitPane state={git} branch={worktree.branch} />}
+            {pane.kind === 'files' && <FilesPane state={files} near={near} />}
           </div>
         ))}
       </div>
@@ -607,6 +665,10 @@ export interface OverviewProps {
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
+  /** Where each worktree's files panel is standing. */
+  openPathByWorktree: Record<string, string>
+  /** Directories each worktree has expanded in its file tree. */
+  expandedByWorktree: Record<string, string[]>
   /**
    * The project a new worktree would go to, when there is only one open.
    *
@@ -633,6 +695,8 @@ export interface OverviewProps {
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
   onCloseTerminal: (sessionId: string) => void
+  onOpenPath: (worktreeId: string, path: string) => void
+  onToggleDir: (worktreeId: string, dir: string) => void
 }
 
 /**
@@ -654,6 +718,8 @@ export const Overview = ({
   sessions,
   panels,
   activeTerminalByWorktree,
+  openPathByWorktree,
+  expandedByWorktree,
   addTo,
   scrollTo,
   onStart,
@@ -666,6 +732,8 @@ export const Overview = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onOpenPath,
+  onToggleDir,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -841,7 +909,13 @@ export const Overview = ({
       const typing =
         target instanceof HTMLInputElement ||
         (target instanceof HTMLTextAreaElement &&
-          !target.classList.contains('xterm-helper-textarea'))
+          !target.classList.contains('xterm-helper-textarea')) ||
+        /*
+         * The editor's writing surface is a contentEditable div rather than a
+         * textarea, so the two tests above sail straight past it -- and Cmd+Left
+         * means "start of line" inside it, not "previous worktree".
+         */
+        target?.isContentEditable === true
       if (typing) return
 
       const grid = gridRef.current
@@ -1046,6 +1120,8 @@ export const Overview = ({
                       session={claudeSession(sessions, worktree.id)}
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
+                      openPath={openPathByWorktree[worktree.id] ?? ''}
+                      expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
                       onSleep={() => onSleep(worktree.id)}
@@ -1055,6 +1131,8 @@ export const Overview = ({
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
                       onCloseTerminal={onCloseTerminal}
+                      onOpenPath={(path) => onOpenPath(worktree.id, path)}
+                      onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                     />
                   )}
                 </div>

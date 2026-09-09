@@ -1,5 +1,9 @@
 import type {
   AppSnapshot,
+  FileContent,
+  FileListing,
+  FileSaved,
+  FileUnchanged,
   Project,
   Session,
   UiState,
@@ -130,6 +134,38 @@ export const api = {
   patchTodo: (id: string, patch: { title?: string | null; prompt?: string; queued?: boolean }) =>
     request<WorktreeTodo>(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTodo: (id: string) => request<{ ok: true }>(`/api/todos/${id}`, { method: 'DELETE' }),
+
+  /** One directory of a worktree's files. `''` is its root. */
+  tree: (worktreeId: string, path: string) =>
+    request<FileListing>(
+      `/api/worktrees/${worktreeId}/tree?path=${encodeURIComponent(path)}`,
+    ),
+
+  /**
+   * One file's contents.
+   *
+   * `ifNotRev` is the rev already held, and makes this the follow-poll as well
+   * as the first read: an unchanged file costs the server one stat and answers
+   * `{ unchanged: true }` rather than sending the whole thing back every two
+   * seconds.
+   */
+  readFile: (worktreeId: string, path: string, ifNotRev?: string) =>
+    request<FileContent | FileUnchanged>(
+      `/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}` +
+        (ifNotRev === undefined ? '' : `&ifNotRev=${encodeURIComponent(ifNotRev)}`),
+    ),
+
+  /**
+   * Save a file, refused with 409 `stale-file` if it moved since it was read.
+   *
+   * There is no force flag: the refusal carries the file's current rev, so
+   * overwriting deliberately is the same call again with that rev.
+   */
+  writeFile: (worktreeId: string, body: { path: string; text: string; ifRev: string }) =>
+    request<FileSaved>(`/api/worktrees/${worktreeId}/file`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
 
   createSession: (body: { worktreeId: string; kind: 'claude' | 'shell'; title?: string }) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(body) }),

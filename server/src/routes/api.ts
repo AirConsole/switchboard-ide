@@ -3,9 +3,11 @@ import type { SessionKind } from '@ide-n-dream/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
-import { HttpError, type Workspace } from '../workspace.js'
+import { HttpError } from '../http-error.js'
+import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
+import { config } from '../config.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -91,6 +93,28 @@ const patchTodoBody = z.object({
   queued: z.boolean().optional(),
 })
 
+/*
+ * A worktree-relative path. `''` is the worktree root, which is a directory the
+ * browser must be able to list, so there is no `.min(1)` here.
+ *
+ * Everything else about it -- `..`, an absolute path, a NUL, a symlink pointing
+ * out of the tree -- is decided by `containedPath` against the real filesystem,
+ * because none of those are questions a string schema can answer.
+ */
+const filePath = z.string()
+const treeQuery = z.object({ path: filePath.default('') })
+const fileQuery = z.object({
+  path: filePath.min(1),
+  /** The rev the client already holds; unchanged files then cost one stat. */
+  ifNotRev: z.string().optional(),
+})
+const saveFileBody = z.object({
+  path: filePath.min(1),
+  /** No `.min(1)`: saving a file empty is a legitimate edit. */
+  text: z.string(),
+  /** Required. A save is always to a file that was read first. */
+  ifRev: z.string().min(1),
+})
 const uiPatchBody = z.record(z.string(), z.unknown())
 const browseQuery = z.object({ path: z.string().default('') })
 
@@ -212,6 +236,50 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       patch: await fileDiff(worktree.path, query.file, query.untracked, query.from),
     }
   })
+
+  /*
+   * A worktree's files: one directory, one file, and saving one back.
+   *
+   * Unlike `/changes` next door, this half is not read-only. The agent is still
+   * the thing that writes most of the code here, but a typo you can see is not
+   * worth a round trip through a conversation.
+   */
+  app.get('/api/worktrees/:id/tree', async (request) => {
+    const { id } = request.params as { id: string }
+    const { path } = treeQuery.parse(request.query)
+    return workspace.fileTree(id, path)
+  })
+
+  app.get('/api/worktrees/:id/file', async (request) => {
+    const { id } = request.params as { id: string }
+    const { path, ifNotRev } = fileQuery.parse(request.query)
+    return workspace.readFile(id, path, ifNotRev)
+  })
+
+  /*
+   * Fastify's default body limit is 1 MiB, which would reject a save well under
+   * `maxFileBytes` before the handler ever ran. Doubled and then some, because
+   * a file of quote characters JSON-escapes to twice its size, plus room for
+   * the envelope around it.
+   */
+  app.put(
+    '/api/worktrees/:id/file',
+    { bodyLimit: config.maxFileBytes * 2 + 65536 },
+    async (request) => {
+      const { id } = request.params as { id: string }
+      const { path, text, ifRev } = saveFileBody.parse(request.body)
+      const saved = await workspace.writeFile(id, path, text, ifRev)
+      /*
+       * A save moves no part of the poller's signature when the file was
+       * already dirty -- `id:branch:head:dirty:missing` is unchanged by editing
+       * something that was modified anyway -- so the git panel beside this one
+       * would sit stale until something else happened. A kill has the same
+       * problem and the same answer.
+       */
+      broadcastInvalidate()
+      return saved
+    },
+  )
 
   /*
    * Put a worktree to sleep: stop what it is running.

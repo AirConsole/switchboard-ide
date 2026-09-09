@@ -60,7 +60,7 @@
   --pulse: #4b9fd6;
 
   /*
-   * The one colour outside amber, and it is not chrome.
+   * Colour outside amber, and none of it chrome.
    *
    * A diff is content, the same exception the terminal already gets -- these are
    * literally its own green and red, from THEME in TerminalView.tsx. The
@@ -71,6 +71,35 @@
   --diff-add: #6bd968;
   --diff-del: #ff6b6b;
   --danger: #e5707a;
+
+  /*
+   * A source file is content in exactly the same sense as a patch, so it gets
+   * colour on exactly the same argument -- and seven of these eight are colours
+   * the interface already renders: --code-plain is THEME.foreground, keyword,
+   * literal and name are the terminal's own magenta, cyan and blue, punctuation
+   * and comment are two rungs of the grey ladder, and invalid is --diff-del.
+   * Only --code-type is new, because the terminal's yellow sits too close to
+   * --signal to spend on a token.
+   *
+   * Five colours and two greys, not a colour per token kind: the job is to
+   * separate structure from literal from name from type from comment. Every
+   * literal is therefore one colour -- a string, a number, `true` and `null`
+   * are all data written down.
+   *
+   * Nothing here is green, deliberately. --done is the only green in the
+   * interface and it means one thing; a string constant must not be able to
+   * catch the eye that is scanning a row of agents for it. Ratios are measured
+   * on --terminal-bg, and every one still clears 4.5:1 on the active line's
+   * #141821 (--code-comment, the weakest, reads 5.4).
+   */
+  --code-plain: #d7dce3;   /* 13.7 */
+  --code-punct: #9fa6b2;   /*  7.7  = --graphite */
+  --code-comment: #868f9d; /*  5.8  = --graphite-dim */
+  --code-keyword: #c792ea; /*  7.9 */
+  --code-literal: #56d4dd; /* 10.7 */
+  --code-name: #7aa2f7;    /*  7.5 */
+  --code-type: #dd93b4;    /*  8.0 */
+  --code-invalid: #ff6b6b; /*  6.8  = --diff-del */
 
   /*
    * Two faces, with one job each.
@@ -272,7 +301,13 @@ button {
   gap: 8px;
   padding: 0 14px;
   border-right: 1px solid var(--rule);
-  border-bottom: 2px solid transparent;
+  /*
+   * --tab-state is the colour of the agent's state, set by the status class
+   * below and deliberately left unset when nothing is running: there is then
+   * no line to draw, and `var()`'s fallback is what makes that state say so in
+   * both places it is read. See .chip--active for the other reader.
+   */
+  border-bottom: 2px solid var(--tab-state, transparent);
   font-family: var(--font-ui);
   font-size: 13px;
   white-space: nowrap;
@@ -285,24 +320,59 @@ button {
 }
 
 /*
- * The worktree you are in: marked at the top, and recessed into the row.
+ * The worktree you are in: bracketed in its agent's own colour.
  *
- * A third fact about a tab, after awake-or-asleep and what Claude is doing, so
- * it needs a channel of its own and it does not get colour -- amber and green
- * are spoken for. The bar's two edges divide the work: the line under a tab is
- * the agent's state, the band over it is you.
+ * Three sides and open at the foot, so the tab reads as a tab -- a mouth onto
+ * the window below it rather than a box floating in the bar -- and the top
+ * corners are rounded because that is where a three-sided frame ends and it
+ * should end deliberately. The state line that used to run along the bottom is
+ * hidden here, and nothing is lost by hiding it: the bracket is drawn in that
+ * same colour, so the tab you are in still says what its agent is doing, once
+ * instead of twice.
+ *
+ * The colour is borrowed rather than invented -- `--tab-state`, amber when
+ * that agent is blocked on you, green when it is done, grey while it is
+ * working -- so the frame says "you are here" by existing at all, and what it
+ * is made of says the rest. No new colour is spent, which is what makes it
+ * affordable at this size.
+ *
+ * With no agent running there is no state to borrow and the fallback is grey.
+ * The mark must not disappear in that case, or "where you are" would go
+ * missing in exactly the worktree whose window shows least; the price is that
+ * the active tab cannot tell "working" from "nothing running", which its own
+ * window says in words a glance away.
+ *
+ * Inset shadows rather than borders, because a border would make the tab wider
+ * and the whole strip would shift by 2px every time you stepped to another
+ * worktree. They are clipped to the padding box, so the tab's own 1px --rule
+ * right border stays outside the bracket and the neighbour's does on the left:
+ * a hairline either side of it, which is why the frame reads as centred. They
+ * follow the radius too, so the corners curve with the tab.
+ *
+ * The 2px the state line would have taken becomes padding rather than being
+ * dropped: an inset shadow is clipped to the padding box, so with a border
+ * there -- even a transparent one -- the two side strokes stopped 2px short of
+ * the bar and the frame looked cut off rather than open. Trading the border for
+ * padding of the same width moves nothing: the box is stretched to the bar's
+ * height either way, so the content box keeps its size and place and the label
+ * does not shift by a pixel.
  *
  * The ground is the quieter half, and recessed rather than raised on purpose.
  * --ink is what the row of windows sits on, so the tab reads as continuous
  * with the window below it, and hover -- --slab-raised, lighter than the bar
- * -- keeps pointing the other way. Hover does win over it while the pointer is
- * there, which is why the band and not the ground is what has to carry this:
- * 2px of --graphite-dim, the same weight as the state line opposite, quiet
- * enough not to compete with it and bright enough to find at a glance.
+ * -- keeps pointing the other way. Hover does win the ground while the pointer
+ * is there, which is the other reason the frame is what carries the fact.
  */
 .chip--active {
+  --mark: var(--tab-state, var(--graphite-dim));
   background: var(--ink);
-  box-shadow: inset 0 2px 0 var(--graphite-dim);
+  border-bottom-width: 0;
+  padding-bottom: 2px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow:
+    inset 2px 0 0 var(--mark),
+    inset 0 2px 0 var(--mark),
+    inset -2px 0 0 var(--mark);
 }
 
 /*
@@ -328,8 +398,8 @@ button {
 
 /* Blocked on you: the one place the chrome is allowed colour. */
 .chip--needs {
+  --tab-state: var(--signal);
   color: var(--signal);
-  border-bottom-color: var(--signal);
 }
 
 /*
@@ -344,17 +414,21 @@ button {
 }
 
 .chip--working {
-  border-bottom-color: var(--graphite);
+  --tab-state: var(--graphite);
 }
 
 /* Done, and the tab says so from across the bar. */
 .chip--idle {
-  border-bottom-color: var(--done);
+  --tab-state: var(--done);
 }
 
-/* Nothing running, so there is nothing to underline. */
+/*
+ * Nothing running, so nothing is set: no line under the tab, and the band over
+ * it -- if this is the tab you are in -- has no state to borrow and falls back
+ * to grey. A worktree with no agent is the one case where "where you are" is
+ * all the mark can say.
+ */
 .chip--off {
-  border-bottom-color: transparent;
 }
 
 .chip__zz {
@@ -1862,4 +1936,246 @@ button {
 
 .menu__state--idle {
   color: var(--done);
+}
+
+/* -------------------------------------------------------------- the files -- */
+
+/*
+ * A worktree's files: a tree down the side, and the open file beside it.
+ *
+ * The tree carries the whole of the navigation, so the file gets the full
+ * height of the pane rather than sharing it with a strip across the top --
+ * which matters here more than in most editors, because a pane in this row is
+ * only ever a fraction of the window.
+ */
+.files {
+  /*
+   * The tree's share. Wide enough for a name at a couple of levels of indent
+   * and narrow enough to leave the file a readable column; it grows a little on
+   * a wide pane and stops, because a tree twice as wide shows nothing more.
+   */
+  --files-tree-w: clamp(140px, 26%, 240px);
+  --files-row-h: 20px;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* Flush to the pane's edges, so the divider between tree and file runs the
+   whole height and meets the tile's own border. The 8px inset a terminal gets
+   from the pane is given by each row and by the editor's gutter instead. */
+.tile__pane--files {
+  padding: 0;
+}
+
+.files__tree {
+  flex: 0 0 var(--files-tree-w);
+  min-width: 0;
+  overflow-y: auto;
+  /*
+   * Load-bearing twice over. It is what makes the tree scroll on its own, and
+   * it is what the row's scroll-chaining helper looks for -- without a
+   * scrollable ancestor under the pointer, a wheel over this falls through and
+   * slides the whole row of windows sideways instead.
+   */
+  overflow-x: hidden;
+  /* A content scroller, like the git panel's list. */
+  scrollbar-width: thin;
+  padding: 4px 0;
+  border-right: 1px solid var(--rule);
+}
+
+.files__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: var(--files-row-h);
+  /* padding-left is set per row, from its depth in the tree. */
+  padding-right: 4px;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--graphite);
+}
+
+.files__row:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+.files__row--on {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+/*
+ * Changed in this worktree, or a directory holding something that is. The one
+ * thing the tree is scanned for, and it is said by going bright against its
+ * siblings -- no new colour, because a changed file is not a state that has to
+ * carry across a room.
+ */
+.files__row--changed {
+  color: var(--bone);
+}
+
+/* Drawn inside: the tree clips, and a ring on the outer edge of a row at the
+   top of a scroller would be half a ring. */
+.files__row:focus-visible {
+  outline-offset: -1px;
+}
+
+/*
+ * The disclosure triangle, in a fixed box whether or not there is one in it, so
+ * a file's name lines up under the directory holding it instead of a character
+ * to the left.
+ *
+ * Sized the way the zZ tab's caret had to be, and for the same reason. U+25BE
+ * draws a small triangle inside its em box, so a font-size that reads as large
+ * still puts a modest glyph on screen: at 9px the ink was 4.5x4.5 -- eleven
+ * pixels, the smallest mark in the interface and smaller than the caret's own
+ * 8.5x8.5. At 15px it is 7.5x7.5, thirty pixels, and still shorter than the
+ * 12px name beside it.
+ *
+ * The glyph has no side bearings at all -- its advance is its ink, 7.53px here
+ * -- so the box has to be wider than the advance or the triangle sits against
+ * the name.
+ */
+.files__twist {
+  flex: none;
+  width: 11px;
+  font-size: 15px;
+  line-height: 1;
+  text-align: center;
+  color: var(--graphite-dim);
+}
+
+.files__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files__note {
+  margin: 0;
+  padding: 8px;
+  color: var(--graphite-dim);
+}
+
+/*
+ * The file itself.
+ *
+ * A flex column, and that is not cosmetic: CodeMirror's host is sized by
+ * `flex: 1; min-height: 0` from here, and a block container would leave it at
+ * its content's height instead -- an eleven-thousand-pixel editor inside a
+ * pane, which never scrolls and hands every wheel over it to the row behind.
+ */
+.files__file {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.files__cm {
+  flex: 1;
+  min-height: 0;
+}
+
+/* What is in the way of saving, said above the file and never over it. Shaped
+   like the name of a file inside a patch, because it is the same kind of thing:
+   a label for the content below it. */
+.files__notice {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--rule-bright);
+  background: var(--slab);
+  color: var(--bone);
+}
+
+.files__notice-actions {
+  margin-left: auto;
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.files__act {
+  padding: 0 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.files__act:hover {
+  color: var(--bone);
+}
+
+/* The bar segment above the pane: where you are, whether it is saved, and how
+   to save it. Right-aligned and divided like the terminal tabs, for the same
+   reasons. */
+.files__bar {
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.files__bar > * + * {
+  border-left: 1px solid var(--rule-bright);
+}
+
+.files__path,
+.files__unsaved {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
+/* A path is read character by character, so it is set in the mono face. */
+.files__path {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Brightness, not colour: amber means an agent is blocked on you, and an unsaved
+   buffer is not that. */
+.files__unsaved {
+  color: var(--bone);
+}
+
+.files__save {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.files__save:hover:not(:disabled) {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+/* Present whenever a file is open, so the first keystroke does not shove the
+   path sideways to make room for it. */
+.files__save:disabled {
+  color: var(--graphite-dim);
+  cursor: default;
 }

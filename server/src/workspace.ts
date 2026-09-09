@@ -2,7 +2,18 @@ import { access, mkdir, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { customAlphabet } from 'nanoid'
-import type { AppSnapshot, Project, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type {
+  AppSnapshot,
+  FileContent,
+  FileListing,
+  FileSaved,
+  FileUnchanged,
+  Project,
+  Worktree,
+  WorktreeTodo,
+} from '@ide-n-dream/shared'
+import { HttpError } from './http-error.js'
+import { listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
@@ -28,18 +39,6 @@ import { lastPrompt } from './session/claude.js'
 /** Opaque, unlike a worktree id: nothing derives a todo from its path. */
 const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
 
-export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    /** Machine-readable tag so the client can offer a specific recovery. */
-    readonly code?: string,
-    /** Extra fields merged into the error response body. */
-    readonly details?: Record<string, unknown>,
-  ) {
-    super(message)
-  }
-}
 
 /**
  * Ties the three sources of truth together: the state store (projects + UI),
@@ -399,6 +398,42 @@ export class Workspace {
       .filter((t) => t.worktreeId === worktreeId && t.queuedAt !== undefined)
       .reduce((max, t) => Math.max(max, t.queuedAt ?? 0), 0)
     return Math.max(Date.now(), last + 1)
+  }
+
+  /*
+   * A worktree's own files.
+   *
+   * They come through the funnel like everything else, because this is the
+   * interface a remote project would have to implement -- reading a file on
+   * another host is a proxy away, and the seam belongs here rather than in a
+   * route. The mechanics live in `files.ts`, the way git's live in `git/`.
+   */
+
+  /** One directory of a worktree, ignore-filtered. `''` is its root. */
+  async fileTree(worktreeId: string, path: string): Promise<FileListing> {
+    const { worktree } = await this.resolve(worktreeId)
+    return listDirectory(worktree.path, path)
+  }
+
+  /** One file's text, or word that it has not moved since `ifNotRev`. */
+  async readFile(
+    worktreeId: string,
+    path: string,
+    ifNotRev?: string,
+  ): Promise<FileContent | FileUnchanged> {
+    const { worktree } = await this.resolve(worktreeId)
+    return readTextFile(worktree.path, path, ifNotRev)
+  }
+
+  /** Save a file, refusing if it moved on disk since it was read. */
+  async writeFile(
+    worktreeId: string,
+    path: string,
+    text: string,
+    ifRev: string,
+  ): Promise<FileSaved> {
+    const { worktree } = await this.resolve(worktreeId)
+    return writeTextFile(worktree.path, path, text, ifRev)
   }
 
   /** Directory listing for the "Open project" picker. */
