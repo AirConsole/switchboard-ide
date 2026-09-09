@@ -168,6 +168,19 @@ unit in a JSON string, node-pty re-encodes it as two UTF-8 bytes, and tmux then
 consumes the wrong three bytes and passes the rest on as text — measured as a
 bare `9999...8888` arriving in a prompt.
 
+## Cmd+Left and Cmd+Right belong to the row
+
+They step through the worktrees from wherever the caret is — a terminal, a
+todo's prompt, the editor in the files panel. The only thing that keeps the key
+is a dialog, which is modal: stepping the windows behind a scrim would act on
+something nobody asked about.
+
+The handler listens in the **capture** phase and calls `stopPropagation`, which
+is what makes that true. A text field and CodeMirror both handle the key at the
+target, before a listener on the document would see it, so without capturing you
+get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
+as "start of line" is the price; Home still does it.
+
 ## The todo panel holds no state of its own
 
 `TodoPane` fetches nothing and caches nothing: todos ride `AppSnapshot`, and

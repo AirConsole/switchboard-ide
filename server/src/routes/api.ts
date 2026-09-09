@@ -84,14 +84,9 @@ const createSessionBody = z.object({
 /** A prompt is a paragraph, not an essay; the cap is a sanity bound, not a rule. */
 const PROMPT_MAX = 20_000
 
-const createTodoBody = z.object({
-  title: z.string().max(200).optional(),
-  prompt: z.string().min(1).max(PROMPT_MAX),
-})
+const createTodoBody = z.object({ prompt: z.string().min(1).max(PROMPT_MAX) })
 
 const patchTodoBody = z.object({
-  /** Null clears the title; absent leaves it alone. */
-  title: z.string().max(200).nullable().optional(),
   prompt: z.string().min(1).max(PROMPT_MAX).optional(),
   /** RUN NEXT. True appends to the end of this worktree's queue. */
   queued: z.boolean().optional(),

@@ -5,7 +5,7 @@ import type { TodoView } from '../selectors.js'
 /**
  * What a worktree is going to be asked to do next.
  *
- * A todo is a prompt with an optional title. RUN NEXT hands it to the server,
+ * A todo is a prompt. RUN NEXT hands it to the server,
  * which types it into this worktree's Claude once Claude has come to rest and
  * then deletes it -- so the queue drains whether or not this browser is open,
  * and a todo that is still here is one that has not been sent.
@@ -19,6 +19,13 @@ export interface TodoPaneProps {
   todos: TodoView[]
   /** Whether this worktree has a live Claude; a queue with none waits. */
   claudeRunning: boolean
+  /**
+   * The last queued todo has gone to Claude and nothing is waiting behind it.
+   *
+   * The panel was opened to line work up; once the queue is empty the pane is a
+   * list nobody asked to see, and it is holding a spot in the row.
+   */
+  onQueueDrained: () => void
 }
 
 export interface TodoBarProps {
@@ -73,11 +80,14 @@ const TodoRow = ({
   queuedCount,
   claudeRunning,
   onError,
+  onDeleting,
 }: {
   view: TodoView
   queuedCount: number
   claudeRunning: boolean
   onError: (message: string | null) => void
+  /** Say so before deleting, so a vanishing todo is not read as one that ran. */
+  onDeleting: (id: string) => void
 }): React.ReactElement => {
   const { todo, position } = view
   /*
@@ -87,24 +97,23 @@ const TodoRow = ({
    * straight to `todo` loses keystrokes whenever an unrelated change lands
    * mid-sentence. The draft holds until the server echoes it back.
    */
-  const [draft, setDraft] = useState<{ title: string; prompt: string } | null>(null)
-  const [sent, setSent] = useState<{ title: string; prompt: string } | null>(null)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
   // Escape has to be able to abandon an edit before the blur it causes saves it,
   // and a blur handler's closure still sees the old draft.
   const abandon = useRef(false)
 
-  const title = draft?.title ?? todo.title ?? ''
-  const prompt = draft?.prompt ?? todo.prompt
+  const prompt = draft ?? todo.prompt
   const grow = useAutoGrow(prompt)
 
   // The server agreed with what we sent: hand control back to the snapshot.
   useEffect(() => {
     if (sent === null) return
-    if ((todo.title ?? '') === sent.title && todo.prompt === sent.prompt) {
+    if (todo.prompt === sent) {
       setSent(null)
       setDraft(null)
     }
-  }, [todo.title, todo.prompt, sent])
+  }, [todo.prompt, sent])
 
   const commit = (): void => {
     if (abandon.current) {
@@ -113,50 +122,25 @@ const TodoRow = ({
       return
     }
     if (draft === null) return
-    const nextTitle = draft.title.trim()
-    const nextPrompt = draft.prompt.trim()
+    const next = draft.trim()
     // An emptied prompt is not a way to delete a todo -- that is what the
     // delete button is for -- so it reverts rather than being refused.
-    if (nextPrompt === '') {
+    if (next === '' || next === todo.prompt) {
       setDraft(null)
       return
     }
-    if (nextTitle === (todo.title ?? '') && nextPrompt === todo.prompt) {
+    setSent(next)
+    void api.patchTodo(todo.id, { prompt: next }).catch((err: unknown) => {
+      setSent(null)
       setDraft(null)
-      return
-    }
-    setSent({ title: nextTitle, prompt: nextPrompt })
-    void api
-      .patchTodo(todo.id, { title: nextTitle === '' ? null : nextTitle, prompt: nextPrompt })
-      .catch((err: unknown) => {
-        setSent(null)
-        setDraft(null)
-        onError(errorText(err))
-      })
+      onError(errorText(err))
+    })
   }
-
-  const edit = (patch: Partial<{ title: string; prompt: string }>): void =>
-    setDraft({ title, prompt, ...patch })
 
   const queued = position !== null
 
   return (
     <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'}>
-      <input
-        className="todo__title"
-        value={title}
-        placeholder="Untitled"
-        spellCheck={false}
-        onChange={(event) => edit({ title: event.target.value })}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur()
-          if (event.key === 'Escape') {
-            abandon.current = true
-            event.currentTarget.blur()
-          }
-        }}
-      />
       <div className="todo__controls">
         <button
           className={queued ? 'todo__next todo__next--on' : 'todo__next'}
@@ -181,6 +165,7 @@ const TodoRow = ({
           className="todo__remove"
           onClick={() => {
             onError(null)
+            onDeleting(todo.id)
             void api.deleteTodo(todo.id).catch((err: unknown) => {
               onError(errorText(err))
             })
@@ -197,7 +182,7 @@ const TodoRow = ({
         value={prompt}
         rows={1}
         spellCheck={false}
-        onChange={(event) => edit({ prompt: event.target.value })}
+        onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
           // Enter is a newline here: this is the text Claude will be given, and
@@ -227,7 +212,6 @@ const NewTodo = ({
   worktreeId: string
   onError: (message: string | null) => void
 }): React.ReactElement => {
-  const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const grow = useAutoGrow(prompt)
@@ -237,33 +221,20 @@ const NewTodo = ({
     setBusy(true)
     onError(null)
     void api
-      .createTodo(worktreeId, { title: title.trim() || undefined, prompt: prompt.trim() })
-      .then(() => {
-        setTitle('')
-        setPrompt('')
-      })
+      .createTodo(worktreeId, { prompt: prompt.trim() })
+      .then(() => setPrompt(''))
       .catch((err: unknown) => onError(errorText(err)))
       .finally(() => setBusy(false))
   }
 
   return (
     <div className="todo__new">
-      <input
-        className="todo__title"
-        value={title}
-        placeholder="Title (optional)"
-        spellCheck={false}
-        onChange={(event) => setTitle(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') add()
-        }}
-      />
       <textarea
         className="todo__prompt"
         ref={grow}
         value={prompt}
         rows={1}
-        placeholder="What should Claude do next here?"
+        placeholder="The prompt to give Claude next"
         spellCheck={false}
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={(event) => {
@@ -272,7 +243,10 @@ const NewTodo = ({
       />
       <div className="todo__newfoot">
         <span className="todo__hint">Enter for a new line, Cmd+Enter to add</span>
-        <button className="btn btn--quiet" onClick={add} disabled={busy || prompt.trim() === ''}>
+        {/* The form's own action, so it wears the solid button: the quiet one
+            is for dismissing things, and here it read as disabled even when it
+            was not. */}
+        <button className="btn" onClick={add} disabled={busy || prompt.trim() === ''}>
           Add todo
         </button>
       </div>
@@ -301,9 +275,34 @@ export const TodoPane = ({
   worktreeId,
   todos,
   claudeRunning,
+  onQueueDrained,
 }: TodoPaneProps): React.ReactElement => {
   const [error, setError] = useState<string | null>(null)
-  const queuedCount = todos.filter((view) => view.position !== null).length
+  const queued = todos.filter((view) => view.position !== null)
+  const queuedCount = queued.length
+
+  /*
+   * Close the panel once the queue has run itself out.
+   *
+   * "Run out" has to mean the todos were *sent*, which from here looks like a
+   * queued todo disappearing -- the server deletes one as it types it in. Two
+   * other ways to empty the queue must not close anything: taking a todo out of
+   * the queue leaves it in the list, and deleting one by hand is a click that
+   * says you are still working in here.
+   */
+  const queuedIds = queued.map((view) => view.todo.id).join(',')
+  const deletedHere = useRef(new Set<string>())
+  const previous = useRef<string[]>([])
+  useEffect(() => {
+    const before = previous.current
+    const ids = queuedIds === '' ? [] : queuedIds.split(',')
+    previous.current = ids
+    if (before.length === 0 || ids.length > 0) return
+    const gone = (id: string): boolean => !todos.some((view) => view.todo.id === id)
+    if (before.some((id) => gone(id) && !deletedHere.current.has(id))) onQueueDrained()
+    // `todos` is read for what is left, and changes with `queuedIds` anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queuedIds, onQueueDrained])
 
   return (
     <div className="todo">
@@ -320,6 +319,7 @@ export const TodoPane = ({
               queuedCount={queuedCount}
               claudeRunning={claudeRunning}
               onError={setError}
+              onDeleting={(id) => deletedHere.current.add(id)}
             />
           ))
         )}

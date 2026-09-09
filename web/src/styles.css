@@ -1647,11 +1647,28 @@ button {
   font-size: 12px;
 }
 
+/*
+ * The add form, which has to look like one.
+ *
+ * Its fields carry the same inset-and-bordered treatment the dialogs use, for
+ * the same reason: a placeholder on a transparent ground reads as a heading,
+ * not as somewhere to type. The list below is the opposite case -- those fields
+ * are text until you click into them -- so the form sits on the raised ground
+ * to say it is a different kind of thing.
+ */
 .todo__new {
   display: grid;
-  gap: 4px;
-  padding: 8px 10px 10px;
+  gap: 6px;
+  padding: 10px;
+  background: var(--slab-raised);
   border-bottom: 1px solid var(--rule-bright);
+}
+
+.todo__new .todo__prompt {
+  padding: 6px 8px;
+  border: 1px solid var(--rule-bright);
+  border-radius: var(--radius);
+  background: var(--ink);
 }
 
 .todo__newfoot {
@@ -1679,11 +1696,19 @@ button {
  * span the whole width under both -- a title long enough to wrap must not push
  * the buttons off the end.
  */
+/*
+ * One todo: its prompt, and the two things you can do to it.
+ *
+ * The prompt is the whole of a todo now -- there is no title -- so it carries
+ * the row and reads at the weight a name would have. A grid rather than a flex
+ * row because the prompt is the tall part: a paragraph must not push the
+ * controls off the end, and it wraps under them rather than beside them.
+ */
 .todo__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: 2px 8px;
+  gap: 4px 8px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--rule);
 }
@@ -1702,7 +1727,6 @@ button {
  * they have the caret. Clicking one then puts the caret where you clicked,
  * with nothing to remount and no focus to hand over.
  */
-.todo__title,
 .todo__prompt {
   font-family: var(--font-ui);
   width: 100%;
@@ -1712,11 +1736,6 @@ button {
   border-radius: 2px;
   background: none;
   color: var(--bone);
-}
-
-.todo__title {
-  font-size: 13px;
-  font-weight: 600;
 }
 
 /*
@@ -1729,15 +1748,15 @@ button {
  * one piece of text.
  */
 .todo__prompt {
-  grid-column: 1 / -1;
-  font-size: 12px;
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
   line-height: 1.45;
-  color: var(--graphite);
+  color: var(--bone);
   resize: none;
   overflow: hidden;
 }
 
-.todo__title:focus,
 .todo__prompt:focus {
   outline: none;
   border-color: var(--pulse);
@@ -1747,7 +1766,6 @@ button {
 
 /* No rule for this anywhere in the file yet, and a UA default is unreadable on
    this ground. */
-.todo__title::placeholder,
 .todo__prompt::placeholder {
   color: var(--graphite-dim);
 }
@@ -1755,27 +1773,51 @@ button {
 .todo__controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  grid-column: 2;
+  grid-row: 1;
 }
 
+/*
+ * RUN NEXT: a button that is also a switch.
+ *
+ * It had the panel toggles' treatment -- a word with a line under it when lit --
+ * which works in a bar where everything else is a word too, and disappears in a
+ * list of prose. Here it is the one control that does something to your agent,
+ * so it is a pill you can see from across the row: outlined when off, and
+ * filled in reverse when on, which no other state in the panel wears.
+ *
+ * Weight, not colour: amber still means Claude is blocked on you and green that
+ * it is at rest, and a queued todo is neither.
+ */
 .todo__next {
-  padding: 3px 8px;
-  border-bottom: 2px solid transparent;
+  padding: 4px 10px;
+  border: 1px solid var(--rule-bright);
+  border-radius: 999px;
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--graphite);
+  background: var(--slab);
   white-space: nowrap;
 }
 
 .todo__next:hover {
   color: var(--bone);
+  border-color: var(--graphite-dim);
 }
 
-/* Lit the way a panel toggle is lit -- the vocabulary the bar already teaches. */
 .todo__next--on {
-  color: var(--bone);
-  border-bottom-color: var(--rule-bright);
+  color: var(--ink);
+  background: var(--bone);
+  border-color: var(--bone);
+}
+
+.todo__next--on:hover {
+  color: var(--ink);
+  background: var(--graphite);
+  border-color: var(--graphite);
 }
 
 .todo__remove {
@@ -1791,6 +1833,7 @@ button {
 
 .todo__wait {
   grid-column: 1 / -1;
+  grid-row: 2;
   font-size: 11px;
   color: var(--graphite-dim);
 }
