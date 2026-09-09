@@ -12,8 +12,7 @@ import type { TodoView } from '../selectors.js'
  *
  * Nothing here fetches. Todos ride the snapshot, and every mutation makes the
  * server broadcast an invalidate which refetches it, so a hook like the changes
- * pane's
- * would only be a second copy of state that can disagree with the first.
+ * pane's would only be a second copy of state that can disagree with the first.
  */
 export interface TodoPaneProps {
   worktreeId: string
