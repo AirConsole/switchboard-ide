@@ -56,6 +56,18 @@ This is only safe because the server serialises its mirror on attach: a
 remounted terminal paints exactly what it would have shown, and with nothing
 attached the pty's geometry is left alone.
 
+## The wheel is not a keyboard
+
+On the alternate screen xterm.js turns a wheel notch into an Up or Down arrow
+and sends it as input — iTerm does the same, and in a terminal that owns the
+whole window it is reasonable. Here the wheel belongs to the row, and the
+pointer is over some tile whenever you scroll it, so that translation delivered
+arrow keys into whichever agent happened to be under the cursor — no click, no
+focus — and Claude reads Up as "recall the last prompt". `TerminalView`
+cancels it with a custom wheel handler, and only it: an app that has actually
+turned mouse reporting on still gets its wheel events. Measured with a stand-in
+agent that logs its stdin.
+
 ## UI state
 
 `ui` lives on the server but **belongs to the client**: it is adopted on first
