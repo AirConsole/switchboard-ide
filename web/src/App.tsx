@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
@@ -163,6 +163,26 @@ export const App = (): React.ReactElement => {
     }
   }
 
+  /**
+   * Close panels the layout could not keep.
+   *
+   * The layout is the only thing that knows what fits, so it says so and the
+   * state follows -- a panel with nowhere to go is closed rather than left open
+   * with nothing to show, which is what keeps its toggle honest.
+   */
+  const collapsePanels = useCallback(
+    (collapsed: { worktreeId: string; panel: PanelName }[]): void => {
+      const next = { ...ui.panels }
+      for (const { worktreeId, panel } of collapsed) {
+        next[worktreeId] = (next[worktreeId] ?? []).filter((name) => name !== panel)
+      }
+      setUi({ panels: next })
+    },
+    // Stable between panel changes, so the layout's report does not re-fire on
+    // every unrelated render.
+    [ui.panels, setUi],
+  )
+
   if (!loaded) {
     return (
       <div className="empty">
@@ -279,6 +299,7 @@ export const App = (): React.ReactElement => {
         onSleep={setSleeping}
         onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
+        onCollapsePanels={collapsePanels}
         onNewWorktree={() => setAddingTo(projects[0] ?? null)}
         onSelectTerminal={(worktreeId, sessionId) =>
           setUi({

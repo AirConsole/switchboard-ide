@@ -383,9 +383,16 @@ button {
   overflow-y: hidden;
   scrollbar-width: none;
   scroll-behavior: smooth;
-  /* The leading inset; each tile carries its own trailing margin, so a tile
-     collapsing to nothing takes its gap with it. */
-  padding: 12px 0 12px 12px;
+  /* Screenfuls are exactly one window wide and no tile is split across two, so
+     coming to rest on one means every tile you can see is whole. */
+  scroll-snap-type: x mandatory;
+  /* Vertical only. The leading inset is carried by the tile that starts each
+     screenful, so every screenful is laid out identically -- and matched by
+     scroll-padding, so a snap lands on the screenful rather than 12px into it.
+     Each tile carries its own trailing margin, so a tile collapsing to nothing
+     takes its gap with it. */
+  padding: 12px 0;
+  scroll-padding-left: 12px;
 }
 
 .grid::-webkit-scrollbar {
@@ -450,6 +457,11 @@ button {
  *
  * `forwards` holds it closed for the few frames before it is dropped for real.
  */
+/* The first tile of a screenful: where a scroll settles. */
+.slot--page {
+  scroll-snap-align: start;
+}
+
 .slot--leaving {
   animation: slot-close var(--motion) ease forwards;
   pointer-events: none;
@@ -459,6 +471,7 @@ button {
   to {
     width: 0;
     margin-right: 0;
+    margin-left: 0;
   }
 }
 

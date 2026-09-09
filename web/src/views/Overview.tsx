@@ -367,6 +367,8 @@ export interface OverviewProps {
   onSleep: (worktreeId: string) => void
   onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
+  /** Close panels a screenful could not hold. */
+  onCollapsePanels: (collapsed: { worktreeId: string; panel: PanelName }[]) => void
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
@@ -396,6 +398,7 @@ export const Overview = ({
   onSleep,
   onRemoveWorktree,
   onTogglePanel,
+  onCollapsePanels,
   onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
@@ -405,78 +408,95 @@ export const Overview = ({
   const { width } = useElementSize(gridRef)
 
   /*
-   * A tile's panes.
+   * A tile's panes, and what to do when it wants more than a screenful.
    *
-   * With room for more than one pane, a tile shows Claude and every open panel,
-   * in PANELS order -- fixed, so opening one does not shuffle the others.
+   * Ordinarily: Claude and every open panel, in PANELS order -- fixed, so
+   * opening one does not shuffle the others.
    *
-   * With room for only one, a tile shows one: the panel opened most recently,
-   * or Claude when none is. That is what makes a phone work. Two panes there
-   * would mean a tile twice the width of the screen and no way to see it whole,
-   * so instead the tile is one pane and opening a panel swaps to it.
+   * A tile is never allowed to be wider than the window, because a tile wider
+   * than the window is a tile you can only ever see part of. So when Claude and
+   * the open panels come to more panes than fit, Claude's pane is the one that
+   * goes: you asked for the panel, and its own toggle says it is open, whereas
+   * Claude is always a click away again by closing one. That is what makes a
+   * phone work -- one pane, and opening a panel swaps to it.
    *
-   * The stored list is in the order panels were opened, so its last entry is
-   * the newest -- no extra state is needed to know which one to show. It is
-   * filtered through PANELS either way, since it comes from a file the user
-   * could have edited and may name a panel that no longer exists.
+   * If even the panels alone will not fit, the oldest of them are closed for
+   * real rather than hidden, so a lit toggle never claims a pane that is not
+   * there. The stored list is in the order they were opened, so the newest are
+   * the ones kept.
    */
-  const panesOf = (worktree: Worktree, singlePane: boolean): Pane[] => {
-    const open = (panels[worktree.id] ?? []).filter((panel) => PANELS.includes(panel))
+  const openPanelsOf = (worktree: Worktree): PanelName[] =>
+    (panels[worktree.id] ?? []).filter((panel) => PANELS.includes(panel))
+
+  const panesOf = (worktree: Worktree, fit: number): Pane[] => {
+    const open = openPanelsOf(worktree)
     const claude: Pane = { kind: 'claude', key: paneKey(worktree.id, 'claude'), worktree }
-    if (singlePane) {
-      const newest = open[open.length - 1]
-      if (newest === undefined) return [claude]
-      return [{ kind: newest, key: paneKey(worktree.id, newest), worktree }]
-    }
-    return [
-      claude,
-      ...PANELS.filter((panel) => open.includes(panel)).map((panel) => ({
-        kind: panel,
-        key: paneKey(worktree.id, panel),
-        worktree,
-      })),
-    ]
+    const kept = open.length > fit ? new Set(open.slice(open.length - fit)) : new Set(open)
+    const panelPanes: Pane[] = PANELS.filter((panel) => kept.has(panel)).map((panel) => ({
+      kind: panel,
+      key: paneKey(worktree.id, panel),
+      worktree,
+    }))
+    return panelPanes.length + 1 <= fit ? [claude, ...panelPanes] : panelPanes
   }
 
-  /*
-   * One width for every pane in the row, chosen so the screen divides evenly.
-   *
-   * Take how many panes of the minimum width fit, then give the screen to
-   * exactly that many. So panes are never narrower than MIN_PANE_COLUMNS, and
-   * they are as much wider as it takes for a whole number of them to fill the
-   * window -- which is what stops a tile being cut off at the right edge with
-   * half of it showing.
-   *
-   * A window with room for one pane and a half gives that pane everything
-   * rather than leaving the half empty; two panes' worth divides in two. The
-   * floor is guaranteed by construction, since `fit` is the count that fits at
-   * the minimum: dividing by it can only make panes wider.
-   *
-   * The exception is a window too narrow for even one, where `fit` is forced to
-   * 1 and the pane takes the whole width and reflows to it. One cramped pane
-   * beats an empty screen, and it is why two panes on a phone come out one
-   * screenful each.
-   */
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
   // n panes occupy GAP + n * (paneWidth + GAP): the leading inset plus one
   // trailing margin each. Solved for n, then for paneWidth.
   const fit = Math.max(1, Math.floor((width - GAP) / (minPaneWidth + GAP)))
-  const paneWidth = Math.max(0, (width - GAP - fit * GAP) / fit)
 
-  const cells: { key: string; worktree: Worktree | null; panes: Pane[] }[] = worktrees.map(
-    (worktree) => ({ key: worktree.id, worktree, panes: panesOf(worktree, fit === 1) }),
-  )
+  type Cell = { key: string; worktree: Worktree | null; panes: Pane[] }
+  const cells: Cell[] = worktrees.map((worktree) => ({
+    key: worktree.id,
+    worktree,
+    panes: panesOf(worktree, fit),
+  }))
   if (addTo !== null) {
     cells.push({ key: ADD_KEY, worktree: null, panes: [{ kind: 'add', key: ADD_KEY }] })
   }
 
-  type Cell = (typeof cells)[number]
-  const slots: Slot<Cell>[] = cells.map((cell) => ({
-    key: cell.key,
-    width: paneWidth * cell.panes.length,
-    data: cell,
-  }))
+  /*
+   * Tiles are packed into screenfuls, and no tile is split across two.
+   *
+   * Dividing the window by the panes that fit is not enough on its own: a
+   * two-pane tile that happens to begin in the second half of a screen runs off
+   * the right edge, and half a worktree is showing. So a tile that will not fit
+   * in what is left of a screenful starts the next one instead.
+   *
+   * The tiles on a screenful then share it, rather than a short screenful being
+   * padded out with nothing: one tile left alone by the tile after it takes the
+   * whole width. So every screenful is exactly one window wide, which is also
+   * what keeps the arithmetic below from drifting page by page.
+   */
+  const pages: Cell[][] = []
+  let filling: Cell[] = []
+  let used = 0
+  for (const cell of cells) {
+    if (used > 0 && used + cell.panes.length > fit) {
+      pages.push(filling)
+      filling = []
+      used = 0
+    }
+    filling.push(cell)
+    used += cell.panes.length
+  }
+  if (filling.length > 0) pages.push(filling)
+
+  /** Which screenful each tile is on, so scrolling can address one. */
+  const pageOf = new Map<string, number>()
+  const slots: Slot<Cell>[] = []
+  pages.forEach((page, index) => {
+    for (const cell of page) pageOf.set(cell.key, index)
+    // Every screenful pays its own leading inset and every tile a trailing one,
+    // so a screenful spans GAP + panes + GAP-per-tile = width exactly, wherever
+    // in the row it is. Uniform, which is what lets a scroll snap to k * width.
+    const panesHere = page.reduce((n, cell) => n + cell.panes.length, 0)
+    const paneWidth = Math.max(0, (width - GAP - GAP * page.length) / panesHere)
+    for (const cell of page) {
+      slots.push({ key: cell.key, width: paneWidth * cell.panes.length, data: cell })
+    }
+  })
   const moving = useTileMotion(width > 0 ? slots : [])
 
   /*
@@ -487,44 +507,98 @@ export const Overview = ({
    * same outcome as the old rule that pushed Claude out, without discarding any
    * state to get there.
    */
+  /*
+   * Scrolling is by the screenful, not by the pixel.
+   *
+   * Every screenful is exactly one window wide and no tile is split across two,
+   * so bringing a worktree into view means going to the screenful it is on --
+   * and once there, all of it is showing. Nothing has to be aligned by hand,
+   * and there is no way to come to rest looking at half a worktree.
+   */
+  const page = scrollTo === null ? undefined : pageOf.get(scrollTo.id)
   useEffect(() => {
-    if (scrollTo === null || width === 0) return
+    if (page === undefined || width === 0) return
+    gridRef.current?.scrollTo({ left: page * width, behavior: 'smooth' })
+    // scrollTo carries a counter, so asking twice for one worktree is two
+    // requests; `page` alone would compare equal and scroll nowhere.
+  }, [scrollTo, page, width])
+
+  /*
+   * Keep the screenful you were on when the window changes size.
+   *
+   * A resize re-flows every screenful, so a scroll offset measured in the old
+   * width points somewhere arbitrary in the new one -- which is exactly how you
+   * end up looking at half a tile without having scrolled there. The remembered
+   * index is what survives the change; the offset is recomputed from it.
+   */
+  const pageRef = useRef(0)
+  useEffect(() => {
     const grid = gridRef.current
-    const tile = grid?.querySelector(`[data-tile="${CSS.escape(scrollTo.id)}"]`)
-    if (!grid || !tile) return
-    /*
-     * The whole tile, not the pane that was just opened.
-     *
-     * Panes divide the window exactly, so a tile aligned to the leading inset
-     * ends on a pane boundary -- which for a tile no wider than the window
-     * means all of it is showing rather than most of it. Opening a panel is
-     * precisely when a tile stops fitting where it stands.
-     *
-     * Aligned by hand rather than by `scrollIntoView`, which takes the least
-     * action that makes an element visible and so does nothing at all for a
-     * tile already showing by a sliver.
-     */
-    const delta = tile.getBoundingClientRect().left - grid.getBoundingClientRect().left - GAP
-    if (Math.abs(delta) > 1) grid.scrollTo({ left: grid.scrollLeft + delta, behavior: 'smooth' })
-  }, [scrollTo, width])
+    if (!grid || width === 0) return
+    grid.scrollTo({ left: pageRef.current * width, behavior: 'auto' })
+  }, [width])
+
+  /*
+   * Panels that could not be kept are closed, not left open with nothing to
+   * show: a toggle that claims a pane which is not on screen is a toggle that
+   * lies. Only reachable when more panels are open than a screenful can hold.
+   */
+  const collapsedKey = worktrees
+    .flatMap((worktree) => {
+      const open = openPanelsOf(worktree)
+      if (open.length <= fit) return []
+      return open.slice(0, open.length - fit).map((panel) => paneKey(worktree.id, panel))
+    })
+    .join(',')
+  useEffect(() => {
+    if (width === 0 || collapsedKey === '') return
+    onCollapsePanels(
+      collapsedKey.split(',').map((key) => {
+        const cut = key.lastIndexOf(':')
+        return { worktreeId: key.slice(0, cut), panel: key.slice(cut + 1) as PanelName }
+      }),
+    )
+  }, [collapsedKey, width, onCollapsePanels])
 
   return (
     <section className="view overview">
-      <div className="grid" ref={gridRef}>
+      <div
+        className="grid"
+        ref={gridRef}
+        onScroll={(event) => {
+          const el = event.currentTarget
+          if (width > 0) pageRef.current = Math.round(el.scrollLeft / width)
+        }}
+      >
         {/* Nothing renders until the row is measured, so a terminal is never
             built at a width that is about to change. */}
         {width > 0 &&
           moving.map((slot) => {
             const worktree = slot.data.worktree
+            const startsPage = pages[pageOf.get(slot.key) ?? 0]?.[0]?.key === slot.key
             return (
               <div
                 key={slot.key}
                 data-tile={slot.key}
-                className={slot.leaving ? 'slot slot--leaving' : 'slot'}
+                className={[
+                  'slot',
+                  // The first tile of a screenful is where scrolling comes to
+                  // rest, so it is the snap point.
+                  startsPage ? 'slot--page' : '',
+                  slot.leaving ? 'slot--leaving' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a
                 // node that was just re-created. See .slot--leaving.
-                style={{ width: slot.width, marginRight: GAP }}
+                // The tile that starts a screenful carries that screenful's
+                // leading inset, so every one is laid out the same way.
+                style={{
+                  width: slot.width,
+                  marginRight: GAP,
+                  marginLeft: startsPage ? GAP : 0,
+                }}
               >
                 {/*
                  * Held at the width the tile will end at, so the terminal
