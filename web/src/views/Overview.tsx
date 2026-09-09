@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import type { PanelName, Project, Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type {
+  FilesMode,
+  PanelName,
+  Project,
+  Session,
+  Worktree,
+  WorktreeTodo,
+} from '@ide-n-dream/shared'
 import {
   TerminalView,
   TERMINAL_FONT_FAMILY,
@@ -16,7 +23,7 @@ import {
 } from '../selectors.js'
 import { TodoBar, TodoPane } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
-import { GitBar, GitPane, useGitState } from './GitPane.js'
+import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
@@ -94,14 +101,13 @@ const nearestOffset = (
  * thing it changed is the pane immediately beside it; the terminals and the
  * review of what was committed belong further out, at the tile's edge.
  */
-export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals', 'git']
+export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals']
 
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
-  files: 'files',
+  files: 'files and changes',
   terminals: 'terminals',
-  git: 'changes',
 }
 
 /** The counts a panel's label can be built from. */
@@ -138,20 +144,14 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
     case 'terminals':
       if (counts.terminals === 0) return 'Add Terminal'
       return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
-    case 'git':
-      // The count is uncommitted files, the same number the bar already shows
-      // beside the branch. Committed work has no number here because one figure
-      // cannot stand for both, and the panel itself says how many commits.
-      if (counts.changes === 0) return 'Changes'
-      return counts.changes === 1 ? '1 Change' : `${counts.changes} Changes`
     case 'files':
       /*
-       * Deliberately no count. The only number this panel could carry is how
-       * many files changed -- which is the number the Changes toggle two
-       * buttons along already carries, and two controls showing one figure
-       * would read as two facts.
+       * The count is uncommitted files, and it belongs on this toggle now that
+       * the panel opens on them: a number on a control promises that clicking
+       * shows you those N things, which is exactly what Changes mode does.
        */
-      return 'Files'
+      if (counts.changes === 0) return 'Files'
+      return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
   }
 }
 
@@ -286,6 +286,8 @@ interface WorktreeTileProps {
   /** The file this worktree has open, and the directories it has expanded. */
   openPath: string
   expandedDirs: string[]
+  /** Which face its files panel is showing. */
+  filesMode: FilesMode
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
@@ -299,6 +301,7 @@ interface WorktreeTileProps {
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (path: string) => void
   onToggleDir: (dir: string) => void
+  onFilesMode: (mode: FilesMode) => void
 }
 
 /**
@@ -322,6 +325,7 @@ const WorktreeTile = ({
   activeTerminalId,
   openPath,
   expandedDirs,
+  filesMode,
   scroller,
   onStart,
   onSleep,
@@ -333,6 +337,7 @@ const WorktreeTile = ({
   onCloseTerminal,
   onOpenPath,
   onToggleDir,
+  onFilesMode,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
   // frozen terminal -- but with what it printed on its way out, which is often
@@ -384,13 +389,26 @@ const WorktreeTile = ({
    * count, and a commit from a clean tree moves only HEAD.
    */
   const revision = `${worktree.dirty ?? 0}:${worktree.head ?? ''}`
-  // Only reads git while its panel is on screen; see the note on useGitState.
-  const git = useGitState(worktree.id, revision, shownPanes.has('git'))
-  // Likewise: inert until its own panel is open.
+  /*
+   * Both hooks are called for every tile, and at most one of them works.
+   *
+   * The panel shows one face at a time and the other two need nothing: Changes
+   * builds its rows from git's own list and never reads a directory, while
+   * Files never asks what changed. So an open panel polls for what you are
+   * looking at rather than for everything it could show.
+   */
+  const filesOpen = shownPanes.has('files')
+  const changes = useChangesState({
+    worktreeId: worktree.id,
+    revision,
+    enabled: filesOpen && filesMode !== 'files',
+    path: openPath,
+    mode: filesMode,
+  })
   const files = useFilesState({
     worktreeId: worktree.id,
     revision,
-    enabled: shownPanes.has('files'),
+    enabled: filesOpen && filesMode === 'files',
     path: openPath,
     expanded: expandedDirs,
     onOpen: onOpenPath,
@@ -514,7 +532,7 @@ const WorktreeTile = ({
            */
           if (
             (event.target as HTMLElement).closest(
-              'button, .termtabs, .git__bar, .todo__bar, .files__bar',
+              'button, .termtabs, .todo__bar, .files__bar',
             )
           ) {
             return
@@ -536,8 +554,9 @@ const WorktreeTile = ({
               />
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
-            {pane.kind === 'git' && <GitBar state={git} />}
-            {pane.kind === 'files' && <FilesBar state={files} />}
+            {pane.kind === 'files' && (
+              <FilesBar mode={filesMode} files={files} changes={changes} />
+            )}
             {index === controlsIndex && controls}
           </div>
         ))}
@@ -599,8 +618,16 @@ const WorktreeTile = ({
             {pane.kind === 'todo' && (
               <TodoPane worktreeId={worktree.id} todos={todos} claudeRunning={running} />
             )}
-            {pane.kind === 'git' && <GitPane state={git} branch={worktree.branch} />}
-            {pane.kind === 'files' && <FilesPane state={files} near={near} />}
+            {pane.kind === 'files' && (
+              <FilesPane
+                mode={filesMode}
+                onMode={onFilesMode}
+                files={files}
+                changes={changes}
+                branch={worktree.branch}
+                near={near}
+              />
+            )}
           </div>
         ))}
       </div>
@@ -669,6 +696,8 @@ export interface OverviewProps {
   openPathByWorktree: Record<string, string>
   /** Directories each worktree has expanded in its file tree. */
   expandedByWorktree: Record<string, string[]>
+  /** Which face each worktree's files panel is showing. */
+  filesModeByWorktree: Record<string, FilesMode>
   /**
    * The project a new worktree would go to, when there is only one open.
    *
@@ -697,6 +726,7 @@ export interface OverviewProps {
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
   onToggleDir: (worktreeId: string, dir: string) => void
+  onFilesMode: (worktreeId: string, mode: FilesMode) => void
 }
 
 /**
@@ -720,6 +750,7 @@ export const Overview = ({
   activeTerminalByWorktree,
   openPathByWorktree,
   expandedByWorktree,
+  filesModeByWorktree,
   addTo,
   scrollTo,
   onStart,
@@ -734,6 +765,7 @@ export const Overview = ({
   onCloseTerminal,
   onOpenPath,
   onToggleDir,
+  onFilesMode,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -1122,6 +1154,7 @@ export const Overview = ({
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                       openPath={openPathByWorktree[worktree.id] ?? ''}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
+                      filesMode={filesModeByWorktree[worktree.id] ?? 'changes'}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
                       onSleep={() => onSleep(worktree.id)}
@@ -1133,6 +1166,7 @@ export const Overview = ({
                       onCloseTerminal={onCloseTerminal}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
+                      onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
                     />
                   )}
                 </div>

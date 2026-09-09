@@ -15,7 +15,7 @@ there is no "active" one. A project's **worktrees** are discovered from
 worktrees already there.
 
 A worktree is the unit, and it owns everything about itself: one Claude session,
-any number of terminals, its todos, its git panel, and its files. A todo is a
+any number of terminals, its todos, and its files and changes. A todo is a
 prompt you park against a worktree; RUN NEXT hands it to the server, which types
 it into that worktree's Claude once Claude has come to rest -- with the browser
 closed, if need be. It is **awake** or
@@ -25,7 +25,7 @@ continues the conversation it was having rather than starting a new one.
 
 The row of windows is a strip you scroll along, and it is laid out in **spots**:
 one pane is one spot, so Claude alone is one spot wide and Claude plus terminals
-is two, up to four with the files and git panels open as well. A spot is as wide as it needs to be for as many as fit to fill the
+is two, up to four with the todo and files panels open as well. A spot is as wide as it needs to be for as many as fit to fill the
 window, never below 80 columns. Navigation always lands on a spot boundary.
 
 ## Commands

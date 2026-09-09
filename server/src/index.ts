@@ -70,7 +70,7 @@ startDispatcher({
  * client asked for a snapshot, and snapshots are only asked for after a
  * mutation or on reconnect. So the dirty count was whatever it had been at page
  * load, and an agent editing or committing changed nothing on screen: the point
- * of the git panel is precisely to see that.
+ * of the files panel's Changes mode is precisely to see that.
  *
  * Polled rather than watched, because a watcher would not remove the work. The
  * only reliable answer to "what changed" comes from git itself, so a filesystem
