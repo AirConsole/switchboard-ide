@@ -4,6 +4,7 @@ import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
 import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
+import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { Overview } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
@@ -25,6 +26,7 @@ export const App = (): React.ReactElement => {
   const [showOpenProject, setShowOpenProject] = useState(false)
   const [addingTo, setAddingTo] = useState<Project | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [closingProject, setClosingProject] = useState<string | null>(null)
   const [sleeping, setSleeping] = useState<string | null>(null)
   /**
    * A request to bring a worktree's tile into view.
@@ -266,7 +268,7 @@ export const App = (): React.ReactElement => {
       sessions={sessions}
       todos={todos}
       onOpenProject={() => setShowOpenProject(true)}
-      onCloseProject={(id) => void api.closeProject(id).then(refresh).catch(fail)}
+      onCloseProject={setClosingProject}
       onNewWorktree={setAddingTo}
       onWake={wake}
       onReveal={reveal}
@@ -296,6 +298,30 @@ export const App = (): React.ReactElement => {
             setAwake([...awake, worktreeId])
             reveal(worktreeId)
             void refresh()
+          }}
+        />
+      )}
+      {closingProject && projects.some((p) => p.id === closingProject) && (
+        <CloseProjectDialog
+          project={projects.find((p) => p.id === closingProject)!}
+          worktrees={worktrees.filter((w) => w.projectId === closingProject)}
+          sessions={sessions}
+          onCancel={() => setClosingProject(null)}
+          onClose={(sleep) => {
+            /*
+             * Stopping everything means its worktrees are no longer awake, so
+             * re-opening the project starts them asleep rather than claiming
+             * agents that were killed. Leaving them running keeps the awake
+             * set, which is what makes re-opening pick them up mid-flight.
+             */
+            if (sleep) {
+              const mine = new Set(
+                worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
+              )
+              setAwake([...awake].filter((id) => !mine.has(id)))
+            }
+            setClosingProject(null)
+            void api.closeProject(closingProject, { sleep }).then(refresh).catch(fail)
           }}
         />
       )}

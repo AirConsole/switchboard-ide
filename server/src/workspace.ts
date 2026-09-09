@@ -213,10 +213,27 @@ export class Workspace {
     return { ...project, defaultBase: await resolveDefaultBase(root).catch(() => undefined) }
   }
 
-  async closeProject(id: string): Promise<void> {
+  /**
+   * Close a project: take it out of the top bar, and optionally stop what it is
+   * running.
+   *
+   * The two are separate because closing is about the registry and nothing
+   * else. A project closed with its agents left running is a deliberate thing
+   * to do -- they carry on in tmux and re-opening the project adopts them back
+   * -- but it is also how sessions end up alive with nothing on screen owning
+   * them, which is why the client asks rather than assuming.
+   *
+   * Sleeping here is all-or-nothing on purpose, unlike sleeping one worktree:
+   * that dialog can afford to offer keeping Claude or the terminals, because
+   * you are still looking at the worktree afterwards. Here the project is about
+   * to leave the interface, so a half-stopped project would be exactly the
+   * state nobody can see.
+   */
+  async closeProject(id: string, opts: { sleep?: boolean } = {}): Promise<void> {
     // Collected before the project goes, because afterwards its worktrees are
     // no longer listed and there is nothing left to match todos against.
     const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
+    if (opts.sleep === true) await this.engine.killForProject(id)
     this.store.removeProject(id)
     this.store.removeTodosFor(mine)
     this.invalidate()

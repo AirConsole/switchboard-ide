@@ -54,6 +54,10 @@ const removeWorktreeQuery = z.object({
   force: queryFlag,
   deleteBranch: queryFlag,
 })
+const closeProjectQuery = z.object({
+  /** Stop everything the project is running on the way out. */
+  sleep: queryFlag,
+})
 const sleepQuery = z.object({
   /** Leave Claude thinking; only the tile goes away. */
   keepClaude: queryFlag,
@@ -164,9 +168,16 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return project
   })
 
+  /*
+   * Closing a project takes it out of the top bar. With `sleep`, it also stops
+   * every session the project has running -- which the client asks about,
+   * because those processes outlive the browser and would otherwise be left
+   * alive with nothing on screen owning them.
+   */
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }
-    await workspace.closeProject(id)
+    const { sleep } = closeProjectQuery.parse(request.query)
+    await workspace.closeProject(id, { sleep })
     broadcastInvalidate()
     return { ok: true }
   })
