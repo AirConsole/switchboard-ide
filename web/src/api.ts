@@ -9,6 +9,7 @@ import type {
   UiState,
   Worktree,
   WorktreeChanges,
+  WorktreeTodo,
 } from '@ide-n-dream/shared'
 
 /**
@@ -70,7 +71,9 @@ export const api = {
         commitExisting: opts.commitExisting ?? true,
       }),
     }),
-  closeProject: (id: string) => request<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }),
+  /** Close a project. `sleep` stops every session it is running on the way out. */
+  closeProject: (id: string, opts: { sleep: boolean }) =>
+    request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
   createWorktree: (body: { projectId: string; branch: string; base?: string; startClaude: boolean }) =>
@@ -118,6 +121,21 @@ export const api = {
           (what.from === undefined ? '' : `&from=${encodeURIComponent(what.from)}`)
     return request<{ patch: string }>(`/api/worktrees/${worktreeId}/diff?${query}`)
   },
+
+  /*
+   * Todos are read from the snapshot, not fetched: every one of these mutations
+   * makes the server broadcast an invalidate, which refetches it. A GET here
+   * would be a second answer to a question the snapshot already answers.
+   */
+  createTodo: (worktreeId: string, body: { title?: string; prompt: string }) =>
+    request<WorktreeTodo>(`/api/worktrees/${worktreeId}/todos`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** Null clears a title; `queued` is the RUN NEXT toggle. */
+  patchTodo: (id: string, patch: { title?: string | null; prompt?: string; queued?: boolean }) =>
+    request<WorktreeTodo>(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteTodo: (id: string) => request<{ ok: true }>(`/api/todos/${id}`, { method: 'DELETE' }),
 
   /** One directory of a worktree's files. `''` is its root. */
   tree: (worktreeId: string, path: string) =>

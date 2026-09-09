@@ -463,6 +463,13 @@ button {
   color: var(--graphite-dim);
 }
 
+/* Byte-identical to the dirty count today, and named separately so the two
+   facts can part company later without one of them changing by accident. */
+.chip__queued {
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
 .chip--add {
   padding: 0 12px;
   font-size: 15px;
@@ -1618,6 +1625,195 @@ button {
   color: var(--graphite-dim);
 }
 
+/* --------------------------------------------------------------- the todo -- */
+
+/*
+ * What this worktree is going to be asked to do next.
+ *
+ * Laid out like the git panel beside it -- a form pinned at the top, a list
+ * that takes the rest -- because they answer the same shape of question about
+ * one worktree and should not need learning twice.
+ */
+.todo {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.todo__new {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.todo__newfoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.todo__hint {
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+.todo__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * One todo: its title and controls on a line, its prompt under them.
+ *
+ * A grid rather than a flex row because the prompt is the tall part and has to
+ * span the whole width under both -- a title long enough to wrap must not push
+ * the buttons off the end.
+ */
+.todo__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+/*
+ * Queued, and it says so in weight rather than colour: amber means Claude is
+ * blocked on you and green means it is done, and neither is true of a todo.
+ */
+.todo__row--queued {
+  border-left: 2px solid var(--rule-bright);
+  padding-left: 8px;
+}
+
+/*
+ * Both fields are editable at rest, so they are inputs wearing no chrome until
+ * they have the caret. Clicking one then puts the caret where you clicked,
+ * with nothing to remount and no focus to hand over.
+ */
+.todo__title,
+.todo__prompt {
+  font-family: var(--font-ui);
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: none;
+  color: var(--bone);
+}
+
+.todo__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/*
+ * The prompt is prose you wrote, so it is --font-ui like everything else the
+ * interface says in words -- it ends up in a terminal, but it is not read there
+ * character by character the way a path or a hash is.
+ *
+ * It grows to its content (see useAutoGrow) rather than scrolling: a box with
+ * its own scrollbar inside a list that already scrolls is two scrollbars for
+ * one piece of text.
+ */
+.todo__prompt {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--graphite);
+  resize: none;
+  overflow: hidden;
+}
+
+.todo__title:focus,
+.todo__prompt:focus {
+  outline: none;
+  border-color: var(--pulse);
+  background: var(--ink);
+  color: var(--bone);
+}
+
+/* No rule for this anywhere in the file yet, and a UA default is unreadable on
+   this ground. */
+.todo__title::placeholder,
+.todo__prompt::placeholder {
+  color: var(--graphite-dim);
+}
+
+.todo__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todo__next {
+  padding: 3px 8px;
+  border-bottom: 2px solid transparent;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.todo__next:hover {
+  color: var(--bone);
+}
+
+/* Lit the way a panel toggle is lit -- the vocabulary the bar already teaches. */
+.todo__next--on {
+  color: var(--bone);
+  border-bottom-color: var(--rule-bright);
+}
+
+.todo__remove {
+  padding: 0 6px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--graphite-dim);
+}
+
+.todo__remove:hover {
+  color: var(--danger);
+}
+
+.todo__wait {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+.todo__empty {
+  padding: 12px 10px;
+  color: var(--graphite-dim);
+}
+
+/* Mirrors .git__bar exactly: the panel's own controls, at the bar's right. */
+.todo__bar {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.todo__bar > * + * {
+  border-left: 1px solid var(--rule-bright);
+}
+
+.todo__count {
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------------- dropdowns -- */
 
 /*
@@ -1745,88 +1941,60 @@ button {
 /* -------------------------------------------------------------- the files -- */
 
 /*
- * A worktree's files: a strip of directory columns, then the file itself.
+ * A worktree's files: a tree down the side, and the open file beside it.
  *
- * Columns rather than an indented tree, because a pane is eighty characters
- * wide and an indented tree spends that width on depth instead of on names --
- * at four levels deep there is nothing left to read the filename in. This is
- * Finder's arrangement with the preview column turned ninety degrees: the strip
- * runs sideways across the top, and the file gets everything below it.
+ * The tree carries the whole of the navigation, so the file gets the full
+ * height of the pane rather than sharing it with a strip across the top --
+ * which matters here more than in most editors, because a pane in this row is
+ * only ever a fraction of the window.
  */
 .files {
   /*
-   * One column. At 12px UI text this holds about twenty-six characters, which
-   * fits `NewWorktreeDialog.tsx` with room to spare, and three and a half of
-   * them fit an eighty-column pane -- the half column at the edge being what
-   * says the strip scrolls.
+   * The tree's share. Wide enough for a name at a couple of levels of indent
+   * and narrow enough to leave the file a readable column; it grows a little on
+   * a wide pane and stops, because a tree twice as wide shows nothing more.
    */
-  --files-col-w: 176px;
+  --files-tree-w: clamp(140px, 26%, 240px);
   --files-row-h: 20px;
   display: flex;
-  flex-direction: column;
   height: 100%;
   min-height: 0;
   font-family: var(--font-ui);
   font-size: 12px;
 }
 
-/* Flush to the pane's edges, so a column divider runs the full height and meets
-   the tile's own border. The 8px inset a terminal gets from the pane is given
-   by each row and by the editor's gutter instead, which is the same alignment
-   without a strip of dead ground down both sides. */
+/* Flush to the pane's edges, so the divider between tree and file runs the
+   whole height and meets the tile's own border. The 8px inset a terminal gets
+   from the pane is given by each row and by the editor's gutter instead. */
 .tile__pane--files {
   padding: 0;
 }
 
-.files__strip {
-  flex: none;
-  /*
-   * Eight rows, written as eight rows rather than as a share of the tile: the
-   * file has to get the same height on any window, the way a terminal does. The
-   * percentage is a ceiling only, for a window too short to give both a fair
-   * reading.
-   */
-  height: min(calc(var(--files-row-h) * 8), 45%);
-  display: flex;
-  overflow-x: auto;
-  /*
-   * Said explicitly, and load-bearing. `overflow-x: auto` computes `overflow-y`
-   * to auto as well -- the same trap that once clipped a dropdown away -- and
-   * the row's scroll-chaining helper only inspects `overflowY`, so an auto here
-   * would let the strip claim vertical wheels it has nothing to do with.
-   */
-  overflow-y: hidden;
-  /* A chrome scroller, like the row itself. */
-  scrollbar-width: none;
-  border-bottom: 1px solid var(--rule-bright);
-}
-
-.files__strip::-webkit-scrollbar {
-  display: none;
-}
-
-.files__col {
-  flex: 0 0 var(--files-col-w);
+.files__tree {
+  flex: 0 0 var(--files-tree-w);
   min-width: 0;
-  height: 100%;
   overflow-y: auto;
+  /*
+   * Load-bearing twice over. It is what makes the tree scroll on its own, and
+   * it is what the row's scroll-chaining helper looks for -- without a
+   * scrollable ancestor under the pointer, a wheel over this falls through and
+   * slides the whole row of windows sideways instead.
+   */
+  overflow-x: hidden;
   /* A content scroller, like the git panel's list. */
   scrollbar-width: thin;
-  padding-bottom: 4px;
-}
-
-/* The same weight and colour that divides one pane from the next. */
-.files__col + .files__col {
-  border-left: 1px solid var(--rule);
+  padding: 4px 0;
+  border-right: 1px solid var(--rule);
 }
 
 .files__row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   height: var(--files-row-h);
-  padding: 0 4px 0 8px;
+  /* padding-left is set per row, from its depth in the tree. */
+  padding-right: 4px;
   font: inherit;
   text-align: left;
   white-space: nowrap;
@@ -1845,7 +2013,7 @@ button {
 
 /*
  * Changed in this worktree, or a directory holding something that is. The one
- * thing the strip is scanned for, and it is said by going bright against its
+ * thing the tree is scanned for, and it is said by going bright against its
  * siblings -- no new colour, because a changed file is not a state that has to
  * carry across a room.
  */
@@ -1853,10 +2021,35 @@ button {
   color: var(--bone);
 }
 
-/* Drawn inside: the column clips, and a ring on the outer edge of a row at the
+/* Drawn inside: the tree clips, and a ring on the outer edge of a row at the
    top of a scroller would be half a ring. */
 .files__row:focus-visible {
   outline-offset: -1px;
+}
+
+/*
+ * The disclosure triangle, in a fixed box whether or not there is one in it, so
+ * a file's name lines up under the directory holding it instead of a character
+ * to the left.
+ *
+ * Sized the way the zZ tab's caret had to be, and for the same reason. U+25BE
+ * draws a small triangle inside its em box, so a font-size that reads as large
+ * still puts a modest glyph on screen: at 9px the ink was 4.5x4.5 -- eleven
+ * pixels, the smallest mark in the interface and smaller than the caret's own
+ * 8.5x8.5. At 15px it is 7.5x7.5, thirty pixels, and still shorter than the
+ * 12px name beside it.
+ *
+ * The glyph has no side bearings at all -- its advance is its ink, 7.53px here
+ * -- so the box has to be wider than the advance or the triangle sits against
+ * the name.
+ */
+.files__twist {
+  flex: none;
+  width: 11px;
+  font-size: 15px;
+  line-height: 1;
+  text-align: center;
+  color: var(--graphite-dim);
 }
 
 .files__name {
@@ -1864,28 +2057,28 @@ button {
   text-overflow: ellipsis;
 }
 
-/* A directory says so, which is the only thing telling two names apart at a
-   glance once the extension is gone. */
-.files__into {
-  flex: none;
-  margin-left: auto;
-  color: var(--graphite-dim);
-}
-
 .files__note {
   margin: 0;
-  padding: 4px 8px;
+  padding: 8px;
   color: var(--graphite-dim);
 }
 
+/*
+ * The file itself.
+ *
+ * A flex column, and that is not cosmetic: CodeMirror's host is sized by
+ * `flex: 1; min-height: 0` from here, and a block container would leave it at
+ * its content's height instead -- an eleven-thousand-pixel editor inside a
+ * pane, which never scrolls and hands every wheel over it to the row behind.
+ */
 .files__file {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.files__editor,
 .files__cm {
   flex: 1;
   min-height: 0;

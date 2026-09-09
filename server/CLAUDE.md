@@ -15,7 +15,9 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
   tmux.ts       every tmux invocation, and the metadata in @idn_meta
   mirror.ts     a headless xterm per session, for repaint and attention
   attention.ts  idle / working / needs-you
-  claude.ts     where transcripts live, --continue, and the last prompt
+  readiness.ts  whether it is safe to TYPE into a session -- a stricter question
+  dispatch.ts   hands queued todos to Claude when it comes to rest
+  claude.ts     transcripts: --continue, the last prompt, and turn boundaries
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
 config.ts       every IDN_* env var, in one place
 ```
@@ -71,6 +73,44 @@ tiles flicker "working" as they appear. `PROMPT_PATTERNS` is deliberately
 narrow: the resting input box also draws `❯`, and a false "needs you" is worse
 than a missed one.
 
+## Typing into a session
+
+`readiness.ts` and `dispatch.ts` exist so a todo queued with RUN NEXT can be
+typed into that worktree's Claude with no browser open. Everything about them is
+shaped by one asymmetry: **sending a prompt twice is much worse than never
+sending it**, and a Return pressed on a screen we misread is not recoverable.
+
+- **It is a whitelist, not a blacklist.** `attention.ts` answers "what label goes
+  on the tile" and is deliberately narrow about `needs-you`; a modal it misses is
+  merely a wrong label. Here a missed modal means a paragraph typed into a
+  dialog and a Return that answers it — measured: a real Claude's trust-folder
+  dialog sits with **No, exit** selected. So readiness requires positive
+  recognition of the resting empty input box, and anything unrecognised waits.
+- **The screen is read three ways.** Silence (`lastOutputAt`), the rendered text,
+  and Claude's own transcript. The transcript is the precise one: Claude writes
+  `{"subtype":"turn_duration"}` when a turn ends, which is the signal
+  `attention.ts` names in its own comment and never wired up. An `in-turn`
+  reading is believed only if the transcript was written to in the last 30s —
+  otherwise a session killed mid-turn blocks its queue forever, which is a real
+  thing that happened.
+- **Two measurements that overturned assumptions.** This Claude paints no "esc
+  to interrupt"; the busy marker is a parenthesised elapsed timer
+  (`✽ Grooving… (8s · …)`), and a finished turn drops the parentheses. And the
+  hint inside an empty input box is drawn **dim**, indistinguishable in plain
+  text from a draft you typed — hence `TerminalMirror.tailText({ skipDim: true })`,
+  without which the queue would stall on Claude's own ghost text.
+- **xterm.js answers the app's terminal queries through the same socket as your
+  keystrokes**, so `lastUserInputAt` counts only input that survives having its
+  escape sequences stripped. Without that, a browser tab merely being open reads
+  as "the human is typing" and holds the queue off indefinitely.
+- **Delivery is claim-then-write.** `dispatchingAt` is set and `store.flush()`ed
+  before a byte goes out, the paste and the Return are separate writes, and the
+  Return is withheld unless the paste is visibly in the box. A todo found with
+  `dispatchingAt` on startup is handed back to the human, never re-sent.
+
+`IDN_DEBUG_DISPATCH=1` logs every verdict change, which is how the predicate was
+checked against a real Claude before it was allowed to type anything.
+
 ## Worktrees and ids
 
 Worktrees are **discovered** from `git worktree list --porcelain` on every read.
@@ -81,7 +121,13 @@ whether to broadcast `invalidate` — and it polls only while a client is
 connected.
 
 `prompt` is the last thing the user asked Claude in that worktree, read from the
-tail of the newest transcript in `transcriptDir(path)`. Claude writes two
+tail of the newest transcript in `transcriptDir(path)`. **A slash command is not
+written as a `last-prompt` entry at all** -- it arrives as a `user` message
+holding `<command-name>/plan</command-name>` and its args -- so one backward
+scan classifies both kinds of line, and both `lastPrompt()` and `turnState()`
+read it. Before that, a `/plan` left the window showing the *previous*
+instruction for the whole turn, and left `turnState` reading the previous turn's
+end, which said "idle" while Claude was working. Claude writes two
 candidates and `lastPrompt()` takes the second on purpose: `ai-title` is Claude's
 own name for the conversation but is set from its opening subject and goes stale
 within the hour, while `last-prompt` is rewritten every turn. Neither costs a
@@ -147,6 +193,7 @@ A kill emits no event of its own, so any route that ends a session must call
 | `IDN_WEB_DIST` | `web/dist` | What `pnpm start` serves. |
 | `IDN_LOG_LEVEL` | `info` | Fastify's logger. |
 | `IDN_DEBUG_SIZE` | unset | Log every size decision and its owner. |
+| `IDN_DEBUG_DISPATCH` | unset | Log why a queued todo did or did not go. |
 
 All of it is in `config.ts`. `IDN_STATE_DIR` is the one that matters for
 testing: it moves both `state.json` and the tmux socket, which is what makes

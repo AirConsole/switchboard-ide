@@ -7,6 +7,7 @@ import { SessionEngine } from './session/engine.js'
 import { StateStore } from './state.js'
 import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
+import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
 
 const app = Fastify({
@@ -37,6 +38,30 @@ registerApi(app, { store, engine, workspace, broadcastInvalidate })
 // Session changes alter the snapshot (a session dying, for instance), so drop
 // the worktree cache when they happen.
 engine.onSessionChange(() => workspace.invalidate())
+
+/*
+ * Hand queued todos to Claude as it comes to rest.
+ *
+ * Started unconditionally, and on its own clock: unlike the worktree poll
+ * below, this must keep working with every browser closed -- a queue that only
+ * drains while someone is watching it is a queue you have to watch.
+ */
+startDispatcher({
+  store,
+  engine,
+  onChange: () => {
+    workspace.invalidate()
+    broadcastInvalidate()
+  },
+  pathFor: async (worktreeId) => {
+    try {
+      return (await workspace.resolve(worktreeId)).worktree.path
+    } catch {
+      // The worktree is gone or its project is unreadable; its queue waits.
+      return undefined
+    }
+  },
+})
 
 /**
  * Notice when an agent changes the repository.

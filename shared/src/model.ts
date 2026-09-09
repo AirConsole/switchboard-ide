@@ -64,6 +64,45 @@ export interface Worktree {
   prompt?: string
 }
 
+/**
+ * A piece of work parked against a worktree, and optionally queued to be typed
+ * into that worktree's Claude.
+ *
+ * Persisted by the server rather than kept in `UiState`, because the server
+ * mutates them: dispatching one deletes it, and that has to happen with no
+ * browser connected. `UiState` is the client's own blob and is merged key by
+ * key without validation, so a server-owned collection there would race the
+ * client's next write.
+ */
+export interface WorktreeTodo {
+  id: string
+  worktreeId: string
+  /** Optional label. The prompt is what actually gets sent. */
+  title?: string
+  /** Free text, possibly several lines. Typed into Claude verbatim. */
+  prompt: string
+  createdAt: number
+  /**
+   * When RUN NEXT was pressed; absent when it is not queued.
+   *
+   * This *is* the queue: a worktree's queued todos in ascending `queuedAt`
+   * order, so the first one pressed is (1). A separate list of ids was the
+   * obvious alternative and was rejected -- it can disagree with the todos it
+   * points at, and a delete then has to touch two structures.
+   */
+  queuedAt?: number
+  /**
+   * Set and written to disk immediately *before* the first byte is typed.
+   *
+   * A todo found with this on startup was in flight when the process died. It
+   * is never sent again: typing the same prompt twice is far worse than not
+   * typing it, so the only safe reading of "we may have sent it" is "we did".
+   */
+  dispatchingAt?: number
+  /** Why the last attempt did not finish. Shown to the human, never retried. */
+  lastError?: string
+}
+
 export type SessionKind = 'claude' | 'shell'
 
 /**
@@ -117,7 +156,7 @@ export interface Session {
  * per-worktree and persistent: minimizing a worktree to the top bar and bringing
  * it back restores the width it had.
  */
-export type PanelName = 'files' | 'terminals' | 'git'
+export type PanelName = 'todo' | 'files' | 'terminals' | 'git'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
@@ -141,20 +180,22 @@ export interface UiState {
   /** Selected terminal per worktree, so its panel reopens where you left it. */
   activeTerminalByWorktree: Record<string, string>
   /**
-   * Where each worktree's files panel is standing, relative to the worktree.
-   *
-   * One string carries the whole panel. A trailing slash means a directory
-   * opened with nothing chosen inside it, anything else names a file, and `''`
-   * is the worktree root -- so the browser's columns are the path's own
-   * segments, and restoring the string restores the strip and the open file
-   * together. Storing the columns as well would be a second copy of one fact,
-   * free to disagree with it.
+   * The file each worktree has open in its files panel, `''` for none.
    *
    * Unlike the git panel's selection, which is deliberately *not* persisted
    * because a file may have stopped differing by the time you come back, a path
    * is stable: a file you were reading is still a file.
    */
   openPathByWorktree: Record<string, string>
+  /**
+   * Directories expanded in each worktree's file tree.
+   *
+   * Persisted because the shape you left the tree in is most of what makes it
+   * usable -- a tree that collapses itself on every reload is a tree you have to
+   * walk down again every time. Opening a file expands its ancestors, so a
+   * restored file is always visible without this having to be derived.
+   */
+  expandedByWorktree: Record<string, string[]>
 }
 
 export const defaultUiState = (): UiState => ({
@@ -162,6 +203,7 @@ export const defaultUiState = (): UiState => ({
   panels: {},
   activeTerminalByWorktree: {},
   openPathByWorktree: {},
+  expandedByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
@@ -169,6 +211,7 @@ export interface AppSnapshot {
   projects: Project[]
   worktrees: Worktree[]
   sessions: Session[]
+  todos: WorktreeTodo[]
   ui: UiState
 }
 
@@ -252,17 +295,17 @@ export interface FileEntry {
 }
 
 /**
- * One directory of a worktree: exactly one level, for one column of the browser.
+ * One directory of a worktree: exactly one level.
  *
- * One level rather than a whole tree because the browser only ever shows the
- * path you are standing on and its siblings, and a recursive listing of a real
- * repository is tens of thousands of entries to fill a column of eight rows.
+ * One level rather than a whole tree because the tree only ever shows what you
+ * have expanded, and a recursive listing of a real repository is tens of
+ * thousands of entries to render a handful of rows.
  */
 export interface FileListing {
   /**
    * Echoed back, so a client that has already clicked elsewhere can drop a late
-   * response instead of painting it into the wrong column. `''` is the worktree
-   * root.
+   * response instead of filing it under the wrong directory. `''` is the
+   * worktree root.
    */
   path: string
   entries: FileEntry[]
