@@ -627,7 +627,6 @@ const WorktreeTile = ({
                 terminals={terminals}
                 activeTerminalId={activeTerminalId}
                 fontSize={TERMINAL_FONT_SIZE}
-                onNew={onNewTerminal}
               />
             )}
             {pane.kind === 'todo' && (
@@ -752,7 +751,8 @@ export interface OverviewProps {
   onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
-  onCloseTerminal: (sessionId: string) => void
+  /** Closing the last one closes the panel too, so it needs the worktree. */
+  onCloseTerminal: (worktreeId: string, sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
   onToggleDir: (worktreeId: string, dir: string) => void
   onFilesMode: (worktreeId: string, mode: FilesMode) => void
@@ -1176,7 +1176,7 @@ export const Overview = ({
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
-                      onCloseTerminal={onCloseTerminal}
+                      onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                       onFilesMode={(mode) => onFilesMode(worktree.id, mode)}

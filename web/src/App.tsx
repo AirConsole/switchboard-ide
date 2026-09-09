@@ -186,6 +186,31 @@ export const App = (): React.ReactElement => {
   }
 
   /**
+   * Close a terminal, and the panel with it when that was the last one.
+   *
+   * The panel is the terminals, not a container for them: with none left there
+   * is nothing for it to show, and a pane saying so is a pane you then have to
+   * close by hand. So the tile narrows on the same click, and the keyboard goes
+   * back to that worktree's Claude -- the terminal that had it is gone, and
+   * `reveal` is what hands it over.
+   *
+   * Checked before the kill, while the session is still in the snapshot: one
+   * left means this is it.
+   */
+  const closeTerminal = (worktreeId: string, sessionId: string): void => {
+    if (terminalSessions(sessions, worktreeId).length <= 1) {
+      setUi({
+        panels: {
+          ...ui.panels,
+          [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'terminals'),
+        },
+      })
+      reveal(worktreeId)
+    }
+    void api.killSession(sessionId).then(refresh).catch(fail)
+  }
+
+  /**
    * A panel is another column of its worktree's tile, remembered per worktree.
    *
    * Nothing is displaced to make room any more: the tile simply gets wider and
@@ -425,7 +450,7 @@ export const App = (): React.ReactElement => {
         onOpenPath={openPath}
         onToggleDir={toggleDir}
         onFilesMode={filesMode}
-        onCloseTerminal={(sessionId) => void api.killSession(sessionId).then(refresh).catch(fail)}
+        onCloseTerminal={closeTerminal}
       />
 
       {dialogs}

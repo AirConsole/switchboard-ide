@@ -73,7 +73,6 @@ export interface TerminalsScreenProps {
   terminals: Session[]
   activeTerminalId: string | null
   fontSize: number
-  onNew: () => void
 }
 
 /** The terminals panel's pane: whichever terminal the tabs have selected. */
@@ -81,18 +80,15 @@ export const TerminalsScreen = ({
   terminals,
   activeTerminalId,
   fontSize,
-  onNew,
-}: TerminalsScreenProps): React.ReactElement => {
+}: TerminalsScreenProps): React.ReactElement | null => {
   const active = selected(terminals, activeTerminalId)
-  if (!active) {
-    return (
-      <div className="tile__idle">
-        <p className="tile__idle-text">No terminals open in this worktree.</p>
-        <button className="btn" onClick={onNew}>
-          New terminal
-        </button>
-      </div>
-    )
-  }
+  /*
+   * No empty state. Closing the last terminal closes the panel with it -- see
+   * `closeTerminal` in App -- so "no terminals here" is not a thing this pane
+   * has to say. If one is killed from somewhere else the pane goes blank for a
+   * moment with the tab strip's `+` still above it, which is the whole of the
+   * recovery.
+   */
+  if (!active) return null
   return <TerminalView session={active} primary={true} fontSize={fontSize} />
 }
