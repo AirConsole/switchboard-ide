@@ -2490,10 +2490,14 @@ button {
 /*
  * The search box: what the sidebar is showing, narrowed.
  *
- * A sibling above the tree rather than a row inside it. `.files__tree` being
+ * A sibling below the tree rather than a row inside it. `.files__tree` being
  * the sidebar's one scroller is load-bearing -- the row's wheel chaining looks
  * for a scrollable ancestor -- and a box inside it would also scroll away as
  * you arrow through the results.
+ *
+ * At the foot, under what it filters, for the reason the todo form is: the
+ * sidebar reads top to bottom as a list of files, and the box you type into is
+ * the line under it rather than a lid on top of it.
  *
  * Mono, because what it filters is paths and a path is read character by
  * character. Not `.field__input`, which is a dialog's control at 14px and
@@ -2501,7 +2505,7 @@ button {
  */
 .files__find {
   flex: none;
-  border-bottom: 1px solid var(--rule-bright);
+  border-top: 1px solid var(--rule-bright);
 }
 
 .files__search {
