@@ -528,7 +528,7 @@ button {
    */
   flex: 0 1 auto;
   width: max-content;
-  min-width: 56px;
+  min-width: 62px;
   max-width: var(--tab-max, 200px);
   /*
    * The ground is the wrapper's, not the body's: the × is the body's sibling,
@@ -670,8 +670,8 @@ button {
  * left -- so "nothing running" is a hollow dot rather than a colour of its own.
  */
 .tab__dot {
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   flex: none;
   border-radius: 50%;
   background: var(--tab-state, transparent);
@@ -738,6 +738,14 @@ button {
   justify-content: center;
   flex: none;
   align-self: center;
+  /*
+   * Inset from the tab's own edge, like Chrome's. The × used to end exactly
+   * where the tab does, so it read as belonging to the gap between two tabs
+   * rather than to either of them, and on the active tab it sat on the curve of
+   * its right foot. A margin rather than padding on the wrapper, so the zZ tab
+   * -- which has no × -- keeps its own symmetrical inset.
+   */
+  margin-right: 6px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
