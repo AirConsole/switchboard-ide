@@ -135,6 +135,7 @@ const uiShape = z
     openPathByWorktree: z.record(z.string(), z.string()),
     expandedByWorktree: z.record(z.string(), z.array(z.string())),
     filesModeByWorktree: z.record(z.string(), z.enum(['files', 'changes', 'commits'])),
+    openFilesByWorktree: z.record(z.string(), z.array(z.string())),
   })
   .partial()
 

@@ -437,20 +437,48 @@ export const FilesBar = ({
   mode,
   files,
   changes,
+  openFiles,
+  onCloseFile,
+  onCollapse,
 }: {
   mode: FilesMode
   files: FilesState
   changes: ChangesState
+  /** The tabs, in the order they were opened. Files mode only. */
+  openFiles: string[]
+  onCloseFile: (path: string) => void
+  /** Put the content pane away in Changes and Commits, where there are no tabs. */
+  onCollapse: () => void
 }): React.ReactElement => {
   const open = files.path === '' ? null : files.path
-  const shortened = open === null ? null : open.split('/').slice(-2).join('/')
   const base = changes.changes?.base ?? null
+  const labels = fileTabLabels(openFiles)
+  // In Changes it is a file, in Commits a commit, but the button does the one
+  // thing either way, so there is one of it.
+  const collapsible = mode === 'commits' ? changes.commit !== null : open !== null
   return (
     <div className="files__bar">
-      {mode === 'files' && shortened !== null && (
-        <span className="files__path" title={open ?? undefined}>
-          {shortened}
-        </span>
+      {mode === 'files' && openFiles.length > 0 && (
+        <div className="files__tabs">
+          {openFiles.map((path, index) => (
+            <span
+              key={path}
+              className={path === open ? 'termtab termtab--active' : 'termtab'}
+            >
+              <button className="termtab__pick" onClick={() => files.open(path)} title={path}>
+                {labels[index]}
+              </button>
+              <button
+                className="termtab__close"
+                onClick={() => onCloseFile(path)}
+                title={`Close ${labels[index]}`}
+                aria-label={`Close ${path}`}
+              >
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
       )}
       {mode !== 'files' && base !== null && (
         <span className="files__base" title={`Commits are measured against ${base}`}>
@@ -481,7 +509,34 @@ export const FilesBar = ({
           Refresh
         </button>
       )}
+      {mode !== 'files' && collapsible && (
+        <button
+          className="files__collapse"
+          onClick={onCollapse}
+          title="Collapse"
+          aria-label="Collapse the patch"
+        >
+          &raquo;
+        </button>
+      )}
     </div>
+  )
+}
+
+/**
+ * What each open file's tab says.
+ *
+ * The basename, and the directory above it only when two open files share one:
+ * a strip of `index.ts` twice tells you nothing, and a full path costs more of
+ * the bar than the panel can spare. The same rule the terminal tabs use, for
+ * the same reason.
+ */
+export const fileTabLabels = (paths: string[]): string[] => {
+  const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+  const seen = new Map<string, number>()
+  for (const path of paths) seen.set(base(path), (seen.get(base(path)) ?? 0) + 1)
+  return paths.map((path) =>
+    (seen.get(base(path)) ?? 0) > 1 ? path.split('/').slice(-2).join('/') : base(path),
   )
 }
 
@@ -502,6 +557,8 @@ export interface FilesPaneProps {
   focus?: number | null
   files: FilesState
   changes: ChangesState
+  /** The open files, which in Files mode are what the content pane is for. */
+  openFiles: string[]
   /** Named in the commits heading, so it says what the commits are on. */
   branch: string | null
   /** Whether the tile is close enough to the scrollport to build an editor. */
@@ -521,6 +578,7 @@ export const FilesPane = ({
   onMode,
   files,
   changes,
+  openFiles,
   branch,
   near,
   focus = null,
@@ -584,6 +642,26 @@ export const FilesPane = ({
     }
   }, [files.worktreeId, mode, query, searching])
 
+  /**
+   * Whether there is a content pane at all.
+   *
+   * The panel is the tree by itself until you pick something, and that is a
+   * layout fact as much as a rendering one -- the row reads the same three
+   * answers to decide whether this tile is one pane wide or two. Keep the two
+   * in step: a pane rendered here that the row did not budget for is a squeezed
+   * editor, and the reverse is a column of empty ground.
+   *
+   * Files counts its tabs, because closing the last one is how you put the
+   * editor away; the other two count their one selection, which is what
+   * clicking it again or the collapse button clears.
+   */
+  const contentOpen =
+    mode === 'files'
+      ? openFiles.length > 0
+      : mode === 'commits'
+        ? changes.commit !== null
+        : files.path !== ''
+
   /*
    * Arriving from the row: the file you are reading, or the box you would type
    * into when there is no file to put a cursor in.
@@ -599,7 +677,7 @@ export const FilesPane = ({
    * next Cmd+arrow still steps.
    */
   const wantsEditorRef = useRef(false)
-  wantsEditorRef.current = mode === 'files' && files.path !== '' && !searching
+  wantsEditorRef.current = mode === 'files' && contentOpen && files.path !== '' && !searching
   useEffect(() => {
     if (focus === null) return
     const bump = (n: number | null): number => (n ?? 0) + 1
@@ -771,7 +849,7 @@ export const FilesPane = ({
               commits={matchingCommits(list.commits, query)}
               scope={list.commitScope}
               selected={changes.commit}
-              onSelect={changes.selectCommit}
+              onSelect={(hash) => changes.selectCommit(hash === changes.commit ? null : hash)}
             />
           )}
         </div>
@@ -786,7 +864,11 @@ export const FilesPane = ({
           <p className="files__note">No change matches.</p>
         )}
         {/* Filtered before the fold, so the rows re-fold to a shorter tree. */}
-        <ChangesList rows={changeRows(matchingChanges(changed, query))} path={files.path} onOpen={open} />
+        <ChangesList
+          rows={changeRows(matchingChanges(changed, query))}
+          path={files.path}
+          onOpen={(path) => open(path === files.path ? '' : path)}
+        />
       </div>
     )
   }
@@ -794,7 +876,7 @@ export const FilesPane = ({
   const content = (): React.ReactElement => {
     if (mode === 'files') {
       if (files.refusal !== null) return <p className="files__note">{files.refusal}</p>
-      if (files.file === null) return <p className="files__note">Pick a file to read it here.</p>
+      if (files.file === null) return <></>
       return mountEditor ? (
         <Suspense fallback={null}>
           <CodeEditor
@@ -809,16 +891,13 @@ export const FilesPane = ({
         <></>
       )
     }
-    if (mode === 'changes' && files.path !== '' && selectedChange === undefined) {
+    if (mode === 'changes' && selectedChange === undefined) {
       /*
        * The path is the panel's, not this mode's, so it can name a file that is
        * not in the list -- one opened clean in Files mode, or one the agent
        * committed while you were reading it. Say so, and ask git nothing.
        */
       return <p className="files__note">No uncommitted changes to this file.</p>
-    }
-    if (mode === 'changes' && files.path === '') {
-      return <p className="files__note">Pick a changed file to read its diff.</p>
     }
     if (changes.patch === null) return <></>
     // A commit touches any number of files and the hunks never say which.
@@ -853,6 +932,16 @@ export const FilesPane = ({
             </button>
           ))}
         </div>
+        {(files.error ?? changes.error) !== null && (
+          /*
+           * In the column that is always here, not in the content pane, which
+           * now comes and goes: a tree that failed to read has no content pane
+           * to say so in. Above the list rather than below, so it does not
+           * shift the find box at the sidebar's foot. The conflict notice stays
+           * beside the file, since it can only happen while one is open.
+           */
+          <div className="files__notice">{files.error ?? changes.error}</div>
+        )}
         {sidebar()}
         <div className="files__find">
           <input
@@ -894,27 +983,25 @@ export const FilesPane = ({
         </div>
       </div>
 
-      <div className="files__file">
-        {(files.error ?? changes.error) !== null && (
-          <div className="files__notice">{files.error ?? changes.error}</div>
-        )}
+      {contentOpen && (
+        <div className="files__file">
+          {files.conflict && (
+            <div className="files__notice">
+              <span>This file changed on disk while you were editing it.</span>
+              <span className="files__notice-actions">
+                <button className="files__act" onClick={files.overwrite}>
+                  Overwrite
+                </button>
+                <button className="files__act" onClick={files.revert}>
+                  Discard my edits
+                </button>
+              </span>
+            </div>
+          )}
 
-        {files.conflict && (
-          <div className="files__notice">
-            <span>This file changed on disk while you were editing it.</span>
-            <span className="files__notice-actions">
-              <button className="files__act" onClick={files.overwrite}>
-                Overwrite
-              </button>
-              <button className="files__act" onClick={files.revert}>
-                Discard my edits
-              </button>
-            </span>
-          </div>
-        )}
-
-        {content()}
-      </div>
+          {content()}
+        </div>
+      )}
     </div>
   )
 }

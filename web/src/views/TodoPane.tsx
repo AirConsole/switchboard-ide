@@ -20,9 +20,9 @@ export interface TodoPaneProps {
   /** Whether this worktree has a live Claude; a queue with none waits. */
   claudeRunning: boolean
   /**
-   * The last queued todo has gone to Claude and nothing is waiting behind it.
+   * The worktree's last todo has gone to Claude and the list is empty.
    *
-   * The panel was opened to line work up; once the queue is empty the pane is a
+   * The panel was opened to line work up; with nothing left in it the pane is a
    * list nobody asked to see, and it is holding a spot in the row.
    */
   onQueueDrained: () => void
@@ -300,13 +300,18 @@ export const TodoPane = ({
   const queuedCount = queued.length
 
   /*
-   * Close the panel once the queue has run itself out.
+   * Close the panel once the last todo has gone.
    *
-   * "Run out" has to mean the todos were *sent*, which from here looks like a
-   * queued todo disappearing -- the server deletes one as it types it in. Two
-   * other ways to empty the queue must not close anything: taking a todo out of
-   * the queue leaves it in the list, and deleting one by hand is a click that
-   * says you are still working in here.
+   * "Gone" has to mean *sent*, which from here looks like a queued todo
+   * disappearing -- the server deletes one as it types it in. Two other ways to
+   * empty the queue must not close anything: taking a todo out of the queue
+   * leaves it in the list, and deleting one by hand is a click that says you
+   * are still working in here.
+   *
+   * And an empty *queue* is not enough either: RUN NEXT on one of five todos
+   * emptied the queue and took the panel away with four still written down, in
+   * the middle of lining them up. So the list has to be empty too -- the panel
+   * goes when there is nothing left in it to look at.
    */
   const queuedIds = queued.map((view) => view.todo.id).join(',')
   const deletedHere = useRef(new Set<string>())
@@ -315,7 +320,7 @@ export const TodoPane = ({
     const before = previous.current
     const ids = queuedIds === '' ? [] : queuedIds.split(',')
     previous.current = ids
-    if (before.length === 0 || ids.length > 0) return
+    if (before.length === 0 || ids.length > 0 || todos.length > 0) return
     const gone = (id: string): boolean => !todos.some((view) => view.todo.id === id)
     if (before.some((id) => gone(id) && !deletedHere.current.has(id))) onQueueDrained()
     // `todos` is read for what is left, and changes with `queuedIds` anyway.

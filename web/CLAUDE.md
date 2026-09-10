@@ -38,9 +38,11 @@ Identity is not what colour is for in this interface.
 
 The pieces, and why each is the way it is:
 
-- **A project is a tab group** — a `--slab-raised` sleeve, flush with the bar's
-  foot and inset 3px at the top, with the project's name in a filled pill. The
-  pill *is* the project's mark, so there is no separate square any more.
+- **A project is a tab group** — a `--rule` sleeve, flush with the bar's foot
+  and inset 3px at the top, with the project's name in a pill. The pill *is* the
+  project's mark, so there is no separate square any more, and it is `--ink`:
+  dark on the light sleeve, since the light-on-light version stopped reading as
+  an object.
 - **The tab you are in is `--ink`**, the ground the row of windows sits on, with
   two masked pseudo-elements as feet. The bar's bottom rule is a background
   rather than a border precisely so the active tab can paint over it: a
@@ -55,12 +57,15 @@ The pieces, and why each is the way it is:
 - **Inactive tabs have no shape** until hovered, when they get a rounded panel
   in `--rule`. Separators sit between two inactive tabs only and vanish either
   side of the active tab and the hovered one.
-- **The × opens the sleep dialog**, which is also where deleting lives — so the
-  worktree's own toolbar has no trashcan. A tab is therefore a `<span>` wrapper
-  with two buttons inside it: a `<button>` inside a `<button>` is not HTML.
+- **The × opens the sleep dialog**, which is also where deleting lives — so a
+  worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
+  asked here, on the tab, and asking them twice in two places only made the
+  window's bar longer. A tab is therefore a `<span>` wrapper with two buttons
+  inside it: a `<button>` inside a `<button>` is not HTML.
 - **A tab says whether work is left in the worktree**, in one slot: the dirty
-  count when there is one, otherwise a fork glyph when the branch has commits
-  the default branch does not. Committed and uncommitted work answer the same
+  count when there is one, otherwise a fork glyph — GitHub's `repo-forked` way
+  up, two heads over a shared trunk — when the branch has commits the default
+  branch does not. Committed and uncommitted work answer the same
   question, and the count is the more urgent answer, so it wins the slot. The
   **Files toggle in a window's own bar carries the same slot** — `ForkIcon` is
   shared for exactly that reason — because it is the control you click to look
@@ -79,10 +84,20 @@ The pieces, and why each is the way it is:
   sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
   `min-width: 0`: it then shrinks past its own tabs and one project's tabs
   overprint the next project's.
+- **The grounds are a ladder, and it was too shallow.** Every ground in the bar
+  is within a few percent of black, so the steps are small numbers and they have
+  to be spent where they say something. The sleeve went up a rung to `--rule`,
+  which takes it from 1.08:1 to 1.18:1 against the bar around it and — the one
+  that matters — takes the tab you are in from 1.17:1 to 1.28:1 against its
+  neighbours, since the active tab's `--ink` is the only fill on the strip. Hover
+  follows to `--rule-bright`.
 - **Contrast pins two rules.** `--graphite-dim` measures 4.42:1 on `--rule` and
-  3.62:1 on `--rule-bright`, both under the floor, so everything quiet steps up
-  to `--graphite` while a hover ground is under it, and the pill's × is
-  `--graphite` with `--danger` only on a hover that brings its own `--ink`.
+  3.62:1 on `--rule-bright`, both under the floor, so everything quiet on a tab
+  is `--graphite` — one value that clears it on all three of a tab's grounds
+  (5.89 sleeve, 4.83 hovered, 7.54 on the active tab), which removed a rule
+  rather than adding one. And the pill's × turns `--danger` with no ground under
+  it: 6.10:1 on the pill's own `--ink`, against 3.90 if the hover lit a
+  `--rule-bright` ring behind it.
 
 ## The row is a grid of units
 
@@ -102,8 +117,20 @@ quarter of its width on the tree beside the editor and at one spot its editor
 came to 56–63 columns, under the 80 the layout exists to guarantee. Measured,
 and worse the wider the monitor: 57 columns at 3440px, because more spots fit
 and a two-pane tile is always two of them. At three units it is 90–107 columns
-from 1687px up. Nothing may ask for one unit: that is half a pane, and the
-80-column floor is a promise about panes.
+from 1687px up, and 82 once the editor asks for exactly 80.
+
+**The files panel is one unit while it is only its tree**, and that is the single
+exception to "nothing may ask for one unit". The floor of two exists to keep the
+80-column promise, and that promise is about panes you read *code* in — a
+terminal, a diff, the editor. A tree is chrome: names at a few levels of indent,
+its own floor 158px, against a unit that measures 336px at 2400px and 403px on a
+phone. So `panesOf` asks `filesContentOpen` before it asks `PANE_UNITS`, and a
+worktree browsing its files is three units where one reading a file is five —
+measured, 1011px and 1694px at 2400px. Two things fall out of that and must stay
+true: a panel that asks for *less* than the floor cannot settle for less still
+(`least` is `min(wants, 2, capacity)`, not `min(2, capacity)`), and a panel alone
+on the window takes `capacity` rather than what it asked for, or a phone would
+show a tree down one half of the screen and nothing down the other.
 
 A panel asks and settles. Files wants three units but takes two rather than
 cost you Claude's pane on a window with only four — a narrower editor beats no
@@ -167,6 +194,35 @@ is hidden. While a query is present the sidebar is a flat list of hits, and
 opening one expands its ancestors -- so clearing the box leaves the tree already
 opened onto the file you found.
 
+**The content pane comes and goes.** The panel opens as its list alone and grows
+a second column only once you pick something, which is where the one-unit width
+above comes from. Each mode says "something is open" differently, and
+`contentOpen` in the pane and `filesContentOpen` in the row must give the same
+answer or the tile is laid out for a column it does not render:
+
+- **Files keeps tabs**, `ui.openFilesByWorktree`, in the worktree's bar above the
+  editor and wearing the terminal strip's own classes — it is the same object, a
+  row of things one pane can show with one of them lit, and a second look would
+  say it was a different one. Opening a file adds one; closing the last takes the
+  editor with it. Closing the showing tab moves to the one on its right, falling
+  back to the left, which is what every tab strip does.
+- **Changes and Commits keep no list.** You open one thing and click it again to
+  put it away, or use the `»` at the right of the bar, which is the same action
+  with a name. A diff is not something you collect the way you collect the files
+  you are working in.
+
+Nothing auto-selects any more. The commit list used to choose its newest for you,
+which was free when the pane was always there and is not now: it would open the
+second column on arrival and the narrow panel could never be seen. The other half
+of that is `useChangesState`'s stale check — an amend or a rebase leaves the
+selection naming nothing, and it closes the pane rather than showing an empty
+one. Verified by rewriting a commit under an open panel in a scratch repo: the
+selection cleared and the tile went 1776px back to 1061px.
+
+The commit selection therefore lives in `Overview`, not in `useChangesState`: it
+decides how wide the tile is, and only the row lays out the row. It is still not
+persisted, for the reason it never was.
+
 One panel with three faces -- **Changes**, **Commits**, **Files** -- switched
 from the top of its own sidebar. It was two panels, files and a git panel beside
 it; they answered questions about the same objects, kept two selections that
@@ -206,7 +262,11 @@ Six things in it are load-bearing:
   scrolling the file slid the whole row of windows sideways.
 - **The tree must stay a scroller** (`overflow-y: auto`) for the same second
   reason -- it is what `inner()` looks for so a wheel over it does not reach the
-  row.
+  row. Still true with the file column gone, and checked with a real wheel over
+  a tree-only panel: the tree moved 61px and `.grid`'s `scrollLeft` stayed at 0.
+- **The error notice is in the sidebar, not in the content pane.** A tree that
+  failed to read has no content pane to say so in. The *conflict* notice stays
+  beside the file, because it can only happen while one is open.
 - **The draft lives in a ref, and only a boolean reaches state.** The editor is
   uncontrolled: it is handed the file as it is on disk and reports its buffer
   back, never the reverse. If the buffer were state, every keystroke would
@@ -320,10 +380,16 @@ echoes back exactly what was sent. Verified by typing into a prompt while a
 
 The **form is at the foot of the panel**, under the queue: the list reads top to
 bottom in the order it will go and the box you type into is the next line of it,
-rather than sitting above its own output. And when the last queued todo has gone
-to Claude the panel closes and **Claude takes the keyboard** — the queue was
-typed into that agent, so that is where you are about to be looking, and the
-alternative is a closing panel dropping focus on the document.
+rather than sitting above its own output.
+
+And when the **last todo** has gone to Claude the panel closes and **Claude
+takes the keyboard** — the queue was typed into that agent, so that is where you
+are about to be looking, and the alternative is a closing panel dropping focus
+on the document. The last *todo*, not merely the last one queued: an empty queue
+closed the panel with four todos still written down, in the middle of lining
+them up. Two other ways of emptying it still close nothing — taking a todo out
+of the queue leaves it in the list, and deleting one by hand is a click that
+says you are still working in here.
 
 ## UI state
 

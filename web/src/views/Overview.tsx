@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type {
   FilesMode,
   PanelName,
@@ -47,6 +47,9 @@ const ADD_KEY = '__add'
  * whenever that changes.
  */
 const EMPTY_DIRS: string[] = []
+
+/** Likewise for a worktree with no file open; see EMPTY_DIRS. */
+const EMPTY_FILES: string[] = []
 
 /**
  * Is the whole of a tile on screen already?
@@ -210,6 +213,21 @@ const PANE_UNITS: Record<'claude' | 'add' | PanelName, number> = {
   terminals: 2,
   files: 3,
 }
+
+/**
+ * The files panel with nothing open: the tree by itself.
+ *
+ * The one pane that may ask for a single unit, and the exception is deliberate.
+ * The floor of two exists to keep the 80-column promise, and that promise is
+ * about panes you read code in -- a terminal, a diff, the editor. A tree is
+ * chrome: it holds names at a few levels of indent, its own floor is 158px, and
+ * a unit is more than twice that at every width this row has. Giving it a whole
+ * pane to list files in is the space this panel was spending for nothing.
+ *
+ * So a worktree browsing its files is three units and one reading a file is
+ * five, and opening the editor is what buys the second pane.
+ */
+const FILES_TREE_UNITS = 1
 
 /** How a pane is identified in the layout. */
 /**
@@ -379,13 +397,16 @@ interface WorktreeTileProps {
   activeTerminalId: string | null
   /** The file this worktree has open, and the directories it has expanded. */
   openPath: string
+  /** Its open files, as tabs above the editor. Files mode only. */
+  openFiles: string[]
   expandedDirs: string[]
   /** Which face its files panel is showing. */
   filesMode: FilesMode
+  /** The commit whose patch is showing, in Commits mode. Null for none. */
+  commit: string | null
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
-  onSleep: () => void
   /** Bring this worktree wholly into view. */
   onReveal: () => void
   onTogglePanel: (panel: PanelName) => void
@@ -395,6 +416,9 @@ interface WorktreeTileProps {
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
   onOpenPath: (path: string) => void
+  onCloseFile: (path: string) => void
+  /** Null closes the pane; the hook calls it that way when a hash goes stale. */
+  onSelectCommit: (hash: string | null) => void
   onToggleDir: (dir: string) => void
   onFilesMode: (mode: FilesMode) => void
 }
@@ -420,11 +444,12 @@ const WorktreeTile = ({
   terminals,
   activeTerminalId,
   openPath,
+  openFiles,
   expandedDirs,
   filesMode,
+  commit,
   scroller,
   onStart,
-  onSleep,
   onReveal,
   onTogglePanel,
   onQueueDrained,
@@ -432,6 +457,8 @@ const WorktreeTile = ({
   onNewTerminal,
   onCloseTerminal,
   onOpenPath,
+  onCloseFile,
+  onSelectCommit,
   onToggleDir,
   onFilesMode,
 }: WorktreeTileProps): React.ReactElement => {
@@ -506,6 +533,8 @@ const WorktreeTile = ({
     enabled: filesOpen && filesMode !== 'files',
     path: openPath,
     mode: filesMode,
+    commit,
+    onSelectCommit,
   })
   const files = useFilesState({
     worktreeId: worktree.id,
@@ -569,24 +598,18 @@ const WorktreeTile = ({
   ) : null
 
   /*
-   * What acts on the worktree comes first, then what it can show.
+   * What the worktree can show, and nothing else.
    *
-   * The state used to lead this row and is gone: the rail down the tile's edge
-   * already carries it -- amber for blocked on you, green for come to rest --
-   * and a word repeating a colour you scan for is a word spent twice. Which
-   * leaves the panel toggles as the far end of the bar, where the panel they
+   * Two controls left this row and neither is missed: the state, because the
+   * rail down the tile's edge already carries it -- amber for blocked on you,
+   * green for come to rest -- and a word repeating a colour you scan for is a
+   * word spent twice; and sleep, which is what the × on the worktree's tab in
+   * the top bar asks, the same place the delete lives. That was the trashcan's
+   * road too. So the bar is the panel toggles, at the end where the panel they
    * open begins.
    */
   const controls = (
     <div className="tile__controls">
-      <button
-        className="tile__zz"
-        onClick={onSleep}
-        title={`Put ${worktree.name} to sleep and hide its window`}
-        aria-label={`Sleep ${worktree.name}`}
-      >
-        zZ
-      </button>
       {TOGGLES.map((panel) => {
         // Lit when this panel's pane is the one on screen, which is the only
         // thing the toggle ever claims -- and with one panel at a time, the lit
@@ -650,7 +673,16 @@ const WorktreeTile = ({
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
             {pane.kind === 'files' && (
-              <FilesBar mode={filesMode} files={files} changes={changes} />
+              <FilesBar
+                mode={filesMode}
+                files={files}
+                changes={changes}
+                openFiles={openFiles}
+                onCloseFile={onCloseFile}
+                onCollapse={() =>
+                  filesMode === 'commits' ? onSelectCommit(null) : onOpenPath('')
+                }
+              />
             )}
             {index === controlsIndex && controls}
           </div>
@@ -716,6 +748,7 @@ const WorktreeTile = ({
                 onMode={onFilesMode}
                 files={files}
                 changes={changes}
+                openFiles={openFiles}
                 branch={worktree.branch}
                 near={near}
                 focus={focusPane === 'files' ? focus : null}
@@ -797,6 +830,13 @@ export interface OverviewProps {
   openPathByWorktree: Record<string, string>
   /** Directories each worktree has expanded in its file tree. */
   expandedByWorktree: Record<string, string[]>
+  /**
+   * The files each worktree has open as tabs in Files mode.
+   *
+   * The row needs this and not only the panel: an empty list means the panel is
+   * the tree alone, which is half a spot narrower.
+   */
+  openFilesByWorktree: Record<string, string[]>
   /** Which face each worktree's files panel is showing. */
   filesModeByWorktree: Record<string, FilesMode>
   /**
@@ -825,7 +865,6 @@ export interface OverviewProps {
   /** Anything in this pane took focus, so this is where you are now. */
   onActivate: (worktreeId: string, pane: PaneKind) => void
   onStart: (worktreeId: string) => void
-  onSleep: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
@@ -837,6 +876,8 @@ export interface OverviewProps {
   /** Closing the last one closes the panel too, so it needs the worktree. */
   onCloseTerminal: (worktreeId: string, sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
+  /** Drop one of a worktree's open files; the last one takes the editor with it. */
+  onCloseFile: (worktreeId: string, path: string) => void
   onToggleDir: (worktreeId: string, dir: string) => void
   onFilesMode: (worktreeId: string, mode: FilesMode) => void
 }
@@ -861,6 +902,7 @@ export const Overview = ({
   panels,
   activeTerminalByWorktree,
   openPathByWorktree,
+  openFilesByWorktree,
   expandedByWorktree,
   filesModeByWorktree,
   addTo,
@@ -868,7 +910,6 @@ export const Overview = ({
   active,
   onActivate,
   onStart,
-  onSleep,
   onReveal,
   onTogglePanel,
   onQueueDrained,
@@ -877,12 +918,38 @@ export const Overview = ({
   onNewTerminal,
   onCloseTerminal,
   onOpenPath,
+  onCloseFile,
   onToggleDir,
   onFilesMode,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
   const projectById = new Map(projects.map((project) => [project.id, project]))
+  /**
+   * The commit each worktree has open, by id. Absent means none.
+   *
+   * Here rather than in `UiState`, and deliberately not persisted: a rebase, an
+   * amend or a squash -- all routine in these worktrees -- makes a stored hash
+   * name nothing at all, and a restored one would open an empty pane on load.
+   * It is out of `useChangesState`, where it used to live, because the row
+   * measures its tiles against it: a worktree with a commit open is two panes
+   * wide, and only this component lays out the row.
+   */
+  const [commitByWorktree, setCommitByWorktree] = useState<Record<string, string>>({})
+  /*
+   * Stable, because it is handed to every tile and reaches the changes hook's
+   * dependency arrays.
+   */
+  const selectCommit = useCallback((worktreeId: string, hash: string | null): void => {
+    setCommitByWorktree((was) => {
+      if (hash === null) {
+        if (was[worktreeId] === undefined) return was
+        const { [worktreeId]: _gone, ...rest } = was
+        return rest
+      }
+      return was[worktreeId] === hash ? was : { ...was, [worktreeId]: hash }
+    })
+  }, [])
 
   /*
    * A tile's panes, and how much of the row each takes.
@@ -914,6 +981,29 @@ export const Overview = ({
     (panels[worktree.id] ?? []).filter((panel) => PANELS.includes(panel)).slice(-1)
 
   /**
+   * Whether a worktree's files panel has anything open beside its tree.
+   *
+   * This is a layout fact -- it is what decides whether the panel is one unit
+   * or three -- so it is answered here, from the same state the panel reads,
+   * rather than reported upwards by the pane once it has rendered. A tile whose
+   * width depended on what its own contents decided would settle a frame late,
+   * and the row would jump after the click rather than with it.
+   *
+   * Each mode has its own answer because each opens a different thing: Files
+   * keeps a list of tabs, Changes and Commits open one and close it again.
+   */
+  const filesContentOpen = (worktree: Worktree): boolean => {
+    switch (filesModeByWorktree[worktree.id] ?? 'files') {
+      case 'files':
+        return (openFilesByWorktree[worktree.id] ?? []).length > 0
+      case 'commits':
+        return commitByWorktree[worktree.id] !== undefined
+      default:
+        return (openPathByWorktree[worktree.id] ?? '') !== ''
+    }
+  }
+
+  /**
    * Claude's pane and the open panel, each sized in units.
    *
    * A panel asks for what it wants and settles for what there is. Files wants
@@ -927,7 +1017,9 @@ export const Overview = ({
    * always have an answer.
    */
   const panesOf = (worktree: Worktree, capacity: number): Pane[] => {
-    const fits = (kind: 'claude' | PanelName): number => Math.min(PANE_UNITS[kind], capacity)
+    const asks = (kind: 'claude' | PanelName): number =>
+      kind === 'files' && !filesContentOpen(worktree) ? FILES_TREE_UNITS : PANE_UNITS[kind]
+    const fits = (kind: 'claude' | PanelName): number => Math.min(asks(kind), capacity)
     const claude: Pane = {
       kind: 'claude',
       key: paneKey(worktree.id, 'claude'),
@@ -944,12 +1036,14 @@ export const Overview = ({
       units,
     })
     const wants = fits(panel)
+    // Two units is every pane's floor, and a panel that asks for less than that
+    // is already at its own: a collapsed files panel cannot give anything back.
+    const least = Math.min(wants, 2, capacity)
     if (claude.units + wants <= capacity) return [claude, pane(wants)]
-    // Two units is every pane's floor: one is half a pane, and the 80-column
-    // guarantee is about panes.
-    const least = Math.min(2, capacity)
     if (claude.units + least <= capacity) return [claude, pane(least)]
-    return [pane(wants)]
+    // Alone on the window, so it takes the whole of it rather than what it
+    // asked for -- there is nothing left to share the row with.
+    return [pane(capacity)]
   }
 
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
@@ -1357,11 +1451,12 @@ export const Overview = ({
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                       openPath={openPathByWorktree[worktree.id] ?? ''}
+                      openFiles={openFilesByWorktree[worktree.id] ?? EMPTY_FILES}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
                       filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
+                      commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
-                      onSleep={() => onSleep(worktree.id)}
                       onReveal={() => onReveal(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onQueueDrained={() => onQueueDrained(worktree.id)}
@@ -1369,6 +1464,8 @@ export const Overview = ({
                       onNewTerminal={() => onNewTerminal(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
+                      onCloseFile={(path) => onCloseFile(worktree.id, path)}
+                      onSelectCommit={(hash) => selectCommit(worktree.id, hash)}
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                       onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
                     />
