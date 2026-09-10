@@ -18,6 +18,8 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
   readiness.ts  whether it is safe to TYPE into a session -- a stricter question
   dispatch.ts   hands queued todos to Claude when it comes to rest
   claude.ts     transcripts: --continue, the last prompt, and turn boundaries
+                (the prompt reader is incremental -- see "What a worktree is
+                working on")
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
 usage.ts        Claude's own limits, read from `claude -p /usage` and cached
 config.ts       every IDN_* env var, in one place
@@ -206,6 +208,32 @@ things in it are load-bearing:
   stale for no reason the reader could see. The rev is nanosecond mtime, size
   and inode -- `mtimeMs` is a double that rounds away exactly the sub-millisecond
   precision a write guard needs, and the inode catches a temp-file-and-rename.
+
+## What a worktree is working on
+
+`lastPrompt(cwd)` is the line a window's bar shows, and reading it is not the
+one-liner it looks like. Two measurements shaped it, both from the same live
+worktree:
+
+- **`last-prompt` is bookkeeping, not the newest prompt.** Claude re-stamps that
+  record every turn with the same prose -- five copies of "merge and deploy"
+  inside one 256KB tail -- and writes none at all for a slash command. So the
+  `/plan ...` the person had actually typed was invisible and a two-turn-old
+  instruction sat in the bar. A real user record now wins wherever there is one;
+  the bookkeeping is the fallback for a session with none in reach.
+- **Plan feedback is a tool result.** What someone types into a plan dialog comes
+  back as `ExitPlanMode`'s own result, phrased for Claude ("... the user said:
+  <words>"), so a reader that only looks at user records cannot see the newest
+  thing a person said during planning. `PLAN_FEEDBACK` digs it out, behind a
+  substring test because a tool result can be hundreds of kilobytes.
+
+And the reason it is incremental: the real record was **857KB** past the end of
+that transcript, well outside any tail worth reading on every poll. So the
+reader remembers what it has already scanned per working directory and reads
+only the bytes added since, with a 64KB overlap so a record straddling the
+boundary is not lost. A file it has never seen gets one backward walk, doubling
+out from 256KB to a cap of 8MB, which stops at the first real prompt. Measured:
+10ms for the first look at a 9.8MB transcript, 0-1ms after.
 
 ## Claude's usage limits
 

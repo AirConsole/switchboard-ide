@@ -59,9 +59,11 @@ const TAIL_BYTES = 256 * 1024
 /** Longer than any tile can show, short enough that the wire stays small. */
 const PROMPT_MAX = 300
 
-/** The newest transcript in a directory, with its mtime, or null. */
-const newestTranscript = async (dir: string): Promise<{ path: string; at: number } | null> => {
-  let newest: { path: string; at: number } | null = null
+/** The newest transcript in a directory, with its mtime and size, or null. */
+const newestTranscript = async (
+  dir: string,
+): Promise<{ path: string; at: number; size: number } | null> => {
+  let newest: { path: string; at: number; size: number } | null = null
   let entries: string[]
   try {
     entries = await readdir(dir)
@@ -73,7 +75,9 @@ const newestTranscript = async (dir: string): Promise<{ path: string; at: number
     const path = join(dir, entry)
     try {
       const info = await stat(path)
-      if (newest === null || info.mtimeMs > newest.at) newest = { path, at: info.mtimeMs }
+      if (newest === null || info.mtimeMs > newest.at) {
+        newest = { path, at: info.mtimeMs, size: info.size }
+      }
     } catch {
       // Vanished between the listing and the stat; there is nothing to compare.
     }
@@ -99,6 +103,29 @@ const newestTranscript = async (dir: string): Promise<{ path: string; at: number
  * Whitespace is collapsed because this lands on one line of a window's bar, and
  * a prompt is often several paragraphs.
  */
+/**
+ * A byte range of a file as text, whole lines only, or null.
+ *
+ * A range that does not start at the beginning starts mid-line, and half a line
+ * is not JSON, so the first partial line is dropped.
+ */
+const readRange = async (path: string, from: number, to: number): Promise<string | null> => {
+  if (to <= from) return ''
+  try {
+    const handle = await open(path, 'r')
+    try {
+      const buffer = Buffer.alloc(to - from)
+      await handle.read(buffer, 0, buffer.length, from)
+      const text = buffer.toString('utf8')
+      return from > 0 ? text.slice(text.indexOf('\n') + 1) : text
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return null
+  }
+}
+
 /** The last TAIL_BYTES of a file as text, whole lines only, or null. */
 const readTail = async (path: string): Promise<string | null> => {
   try {
@@ -161,6 +188,18 @@ const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
 /** Wrappers that are machinery around a turn rather than something asked. */
 const NOT_A_PROMPT = ['<local-command-stdout>', '<system-reminder>', '<attachment>']
 
+/**
+ * The words a person types into a plan-mode dialog.
+ *
+ * They do not arrive as a user record at all: plan feedback comes back as the
+ * `ExitPlanMode` tool's own result, phrased for Claude -- "The user doesn't want
+ * to proceed ... To tell you how to proceed, the user said: <words>". So the
+ * newest thing a person said during a planning session is invisible to anything
+ * that reads user records only, which is half of why a window showed an
+ * instruction two turns old.
+ */
+const PLAN_FEEDBACK = /the user said:\s*([\s\S]+)$/i
+
 const readCommand = (content: string): string | null => {
   const name = COMMAND.exec(content)
   if (!name) return null
@@ -208,7 +247,22 @@ const markOf = (line: string): Mark => {
   // A subagent's own transcript, or something the harness injected.
   if (record.isMeta === true || record.isSidechain === true) return null
   const content = record.message?.content
-  // An array is tool results; only a string is something a person sent.
+  /*
+   * An array is tool results -- with one exception worth digging out, which is
+   * a person's answer to a plan. The substring test comes first because a tool
+   * result can be hundreds of kilobytes and this runs over every line of a
+   * megabyte-scale scan.
+   */
+  if (Array.isArray(content)) {
+    if (!line.includes('the user said')) return null
+    for (const part of content) {
+      const said = (part as { content?: unknown } | null)?.content
+      if (typeof said !== 'string') continue
+      const words = PLAN_FEEDBACK.exec(said)?.[1]?.trim()
+      if (words !== undefined && words !== '') return { kind: 'prompt', text: words }
+    }
+    return null
+  }
   if (typeof content !== 'string' || content.trim() === '') return null
   const command = readCommand(content)
   if (command !== null) return { kind: 'prompt', text: command }
@@ -235,24 +289,122 @@ const newestMark = (text: string): { kind: 'prompt' | 'turn-end' } | null => {
   return null
 }
 
-export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
-  const newest = await newestTranscript(transcriptDir(cwd))
-  if (newest === null) return undefined
-  const text = await readTail(newest.path)
-  if (text === null) return undefined
+/**
+ * How much of a transcript a first look reads at a time, and how far back it is
+ * willing to go before giving up.
+ *
+ * Both are about one measured session: a worktree 857KB of tool output past the
+ * last thing its human had said. The window doubles out from the end until a
+ * real prompt turns up, so an ordinary session pays one 256KB read and a busy
+ * one pays a few, once.
+ */
+const SEED_CHUNK_BYTES = 256 * 1024
+const SEED_MAX_BYTES = 8 * 1024 * 1024
+
+/**
+ * Enough overlap that a record straddling the last read is not lost.
+ *
+ * The incremental read starts where the previous one stopped, and a range that
+ * starts mid-line drops that line -- so without an overlap a prompt written
+ * across the boundary would be skipped once and then never looked at again.
+ */
+const OVERLAP_BYTES = 64 * 1024
+
+/**
+ * What has already been read, per working directory.
+ *
+ * The prompt is remembered rather than re-derived because a transcript only
+ * grows: everything before `size` has been looked at, so the next look reads
+ * the new bytes and nothing else. That is what makes this affordable at one
+ * poll every couple of seconds per worktree, and it is also what makes it
+ * correct -- a prompt is picked up when it is written and kept until a newer
+ * one arrives, rather than having to still be inside a window by the time
+ * anybody asks.
+ */
+const prompts = new Map<string, { path: string; size: number; prompt: string | undefined }>()
+
+/** A prompt tidied for the one line of a window's bar that shows it. */
+const tidy = (text: string): string => {
+  const prompt = text.replace(/\s+/g, ' ').trim()
+  if (prompt === '') return ''
+  return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
+}
+
+/**
+ * The newest prompt in a block of transcript, and separately the newest
+ * `last-prompt` record in it.
+ *
+ * They are kept apart because the second is not to be trusted over the first.
+ * `last-prompt` is Claude's own bookkeeping and it is re-stamped every turn with
+ * the same prose: measured on one worktree, five copies of "merge and deploy"
+ * inside the last 256KB, written long after the `/plan ...` the person had
+ * actually typed -- which Claude records as a user message and never writes a
+ * `last-prompt` for. So a real record wins whenever there is one, and the
+ * bookkeeping is the fallback for a session that has none in reach.
+ */
+const promptsIn = (text: string): { real?: string; recorded?: string } => {
   const lines = text.split('\n')
+  const found: { real?: string; recorded?: string } = {}
   for (let index = lines.length - 1; index >= 0; index--) {
     const line = lines[index]
     if (line === undefined) continue
     const mark = markOf(line)
-    // Either kind carries the text; `last-prompt` is the record written for
-    // exactly this purpose.
     if (mark === null || mark.kind === 'turn-end') continue
-    const prompt = mark.text.replace(/\s+/g, ' ').trim()
+    const prompt = tidy(mark.text)
     if (prompt === '') continue
-    return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
+    if (mark.kind === 'prompt') return { ...found, real: prompt }
+    found.recorded ??= prompt
   }
-  return undefined
+  return found
+}
+
+/**
+ * The last thing the user asked Claude in this worktree.
+ *
+ * Not `ai-title`, which is Claude's own name for the conversation: it is written
+ * from the opening subject and does not track where the work went -- measured
+ * across six live transcripts, including one titled "Worktree topbar project
+ * name" whose last prompt was about mouse-wheel phantom typing an hour later. A
+ * title quietly an hour out of date is worse than none in a dispatcher.
+ *
+ * Nothing here costs a token: it is all already on disk.
+ */
+export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
+  const newest = await newestTranscript(transcriptDir(cwd))
+  if (newest === null) return undefined
+  const seen = prompts.get(cwd)
+
+  // The same file, longer than last time: read only what has been added.
+  if (seen !== undefined && seen.path === newest.path && newest.size >= seen.size) {
+    const from = Math.max(0, seen.size - OVERLAP_BYTES)
+    const text = await readRange(newest.path, from, newest.size)
+    const found = text === null ? {} : promptsIn(text)
+    const prompt = found.real ?? seen.prompt ?? found.recorded
+    prompts.set(cwd, { path: newest.path, size: newest.size, prompt })
+    return prompt
+  }
+
+  /*
+   * A file this has not seen before -- a fresh server, a new conversation, or
+   * one that was truncated. Walk backwards until a real prompt turns up.
+   */
+  let real: string | undefined
+  let recorded: string | undefined
+  for (let window = SEED_CHUNK_BYTES; ; window *= 4) {
+    const from = Math.max(0, newest.size - window)
+    const text = await readRange(newest.path, from, newest.size)
+    if (text === null) break
+    const found = promptsIn(text)
+    recorded ??= found.recorded
+    if (found.real !== undefined) {
+      real = found.real
+      break
+    }
+    if (from === 0 || window >= SEED_MAX_BYTES) break
+  }
+  const prompt = real ?? recorded
+  prompts.set(cwd, { path: newest.path, size: newest.size, prompt })
+  return prompt
 }
 
 
