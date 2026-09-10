@@ -57,9 +57,11 @@ The pieces, and why each is the way it is:
 - **Inactive tabs have no shape** until hovered, when they get a rounded panel
   in `--rule`. Separators sit between two inactive tabs only and vanish either
   side of the active tab and the hovered one.
-- **The × opens the sleep dialog**, which is also where deleting lives — so the
-  worktree's own toolbar has no trashcan. A tab is therefore a `<span>` wrapper
-  with two buttons inside it: a `<button>` inside a `<button>` is not HTML.
+- **The × opens the sleep dialog**, which is also where deleting lives — so a
+  worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
+  asked here, on the tab, and asking them twice in two places only made the
+  window's bar longer. A tab is therefore a `<span>` wrapper with two buttons
+  inside it: a `<button>` inside a `<button>` is not HTML.
 - **A tab says whether work is left in the worktree**, in one slot: the dirty
   count when there is one, otherwise a fork glyph — GitHub's `repo-forked` way
   up, two heads over a shared trunk — when the branch has commits the default
