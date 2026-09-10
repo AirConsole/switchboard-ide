@@ -30,17 +30,20 @@
    * -- the tab is a hole cut in the frame onto the surface below. Measured from
    * Chrome itself, frame #202124 against toolbar #35363a is 1.58:1.
    *
-   * So --page is that surface: the ground the row of windows sits on, and the
-   * fill of the tab you are in, which is what makes the two read as one thing
-   * with no line between them. --sleeve is the trough the tabs sit in, a rung
-   * off the bar, and the bar is --ink, the darkest ground there is.
+   * Chrome gets there by continuity: its active tab has feet, and is the same
+   * colour as the toolbar it runs into. These tabs are pills -- round at the
+   * bottom as well as the top -- so there is nothing to run into and nothing to
+   * match: the tab you are in is simply the lit one, floating in a dark trough
+   * over a black page. What is kept from Chrome is the direction, which is the
+   * part that makes a strip legible: dark frame, dark unselected tabs, and the
+   * one you are in the lightest thing there.
    *
-   * --page stops here because --graphite, which everything quiet on a tab is
-   * written in and which lands on this ground on the active tab, measures
+   * --tab-on stops here because --graphite, which everything quiet on a tab is
+   * written in and which lands on this ground on the tab you are in, measures
    * 4.54:1 against it. One more rung is under the 4.5 floor.
    */
   --sleeve: #171c24;
-  --page: #333c4b;
+  --tab-on: #333c4b;
 
   /*
    * Three steps of text, and every one of them readable.
@@ -199,9 +202,9 @@ body {
 }
 
 body {
-  /* The ground the row of windows sits on, and the tab you are in is a hole
-     cut in the strip onto it -- see --page. */
-  background: var(--page);
+  /* The ground the row of windows sits on: black, so the windows and the strip
+     are the only lit things on it. */
+  background: var(--ink);
   color: var(--bone);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -322,12 +325,18 @@ button {
    */
   flex: 0 1 auto;
   margin-top: 3px;
-  padding: 0 4px;
+  /*
+   * 3px under the tabs as well as over them, since they are pills now and a
+   * round bottom flush with the sleeve's floor is a flat one. The sleeve itself
+   * still stands on that floor: it is the band that says which tabs are one
+   * project's, and it has no reason to float.
+   */
+  padding: 0 4px 3px;
   border-radius: 8px 8px 0 0;
   /*
    * The trough the tabs sit in: a rung above the bar's --ink, and the ground an
    * unselected tab is read against. The step that does the work is not this one
-   * -- it is the tab you are in, --page, at 1.54:1 above it.
+   * -- it is the tab you are in, --tab-on, at 1.54:1 above it.
    */
   background: var(--sleeve);
 }
@@ -428,7 +437,7 @@ button {
 }
 
 .tabgroup__add:hover {
-  /* With the pointer on it, the same step a tab takes: up toward --page. */
+  /* With the pointer on it, the same step a tab takes: up toward --tab-on. */
   background: var(--rule);
   color: var(--bone);
 }
@@ -588,6 +597,16 @@ button {
   min-width: 62px;
   max-width: var(--tab-max, 200px);
   /*
+   * Round at the bottom as well as the top: a pill, not a tab with feet.
+   *
+   * Chrome's shape exists to carry the tab's wall away into the toolbar it runs
+   * into -- the two masked pseudo-elements that used to hang either side of the
+   * active tab were exactly that curve. Nothing runs into anything here now, so
+   * the shape has nothing to say and the feet were a 12px trap over each
+   * neighbour's click target that needed `pointer-events: none` to be safe.
+   */
+  border-radius: 9px;
+  /*
    * The ground is the wrapper's, not the body's: the × is the body's sibling,
    * so a fill on the body stopped short of it and the active tab's ink ended
    * before its own close button. One property, read by the fill and by both
@@ -595,7 +614,6 @@ button {
    */
   --tab-fill: transparent;
   background: var(--tab-fill);
-  border-radius: 9px 9px 0 0;
 }
 
 /* The zZ tab stands for a count, not for a name, so it takes what it needs. */
@@ -663,7 +681,7 @@ button {
  *
  * Lighter than the sleeve, because the tab you are in is the lightest thing on
  * the strip and a hover is on the way to it: --rule is 1.30:1 above the sleeve
- * and still 1.42:1 below --page, so it reads as a step and never as the tab you
+ * and still 1.42:1 below --tab-on, so it reads as a step and never as the tab you
  * are already in. --graphite is 5.89:1 on it.
  */
 .tab:not(.tab--active):hover {
@@ -676,19 +694,6 @@ button {
 }
 
 /*
- * Paint order, not decoration: every tab is positioned (it carries its own
- * feet), and among positioned siblings the later one in the DOM paints on top
- * -- so the tab to the right of the active one covered its right foot.
- */
-.tab:hover {
-  z-index: 1;
-}
-
-.tab--active {
-  z-index: 2;
-}
-
-/*
  * The tab you are in.
  *
  * --ink is what the row of windows sits on, so this is a hole through the bar
@@ -697,44 +702,11 @@ button {
  * which is exactly what Chrome's active tab does against its toolbar.
  */
 .tab--active {
-  --tab-fill: var(--page);
+  --tab-fill: var(--tab-on);
 }
 
 .tab--active > .tab__body {
   color: var(--bone);
-}
-
-/*
- * The feet.
- *
- * A 12px square of the tab's own colour with a circle of nothing punched out of
- * it, one either side, drawn outside the tab: what is left is the curve that
- * carries the tab's wall away into the sleeve. Transparent rather than
- * sleeve-coloured, so it works on whatever ground it lands on, and the stop is
- * at 11.5 of the 12 so the arc has a pixel to antialias in.
- */
-.tab--active::before,
-.tab--active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  width: 12px;
-  height: 12px;
-  /*
-   * A foot hangs 12px over the tab beside it, so without this it would swallow
-   * the first 12px of that tab's click target -- `elementFromPoint` says so.
-   */
-  pointer-events: none;
-}
-
-.tab--active::before {
-  left: -12px;
-  background: radial-gradient(circle 12px at top left, #0000 11.5px, var(--tab-fill) 12px);
-}
-
-.tab--active::after {
-  right: -12px;
-  background: radial-gradient(circle 12px at top right, #0000 11.5px, var(--tab-fill) 12px);
 }
 
 /*
@@ -1115,27 +1087,11 @@ button {
 }
 
 /*
- * The window you are in, at its edge.
- *
- * Darker than the page, not lighter: the windows are dark objects on a lit
- * ground now, so the edge that reads as *this one's* is the one cut into the
- * ground rather than a ring drawn on top of it -- the way a window on a bright
- * desktop is bounded by its own shadow. --ink is 1.66:1 against the page, where
- * the resting --rule is 1.30, and it is the same colour as the bar the strip
- * sits in, so nothing new enters the palette to say this.
- *
- * Three sides only: the left is the state rail, and painting all four here
- * would outrank the single-class rules below that colour it. Restated under the
- * pointer, because `.tile:hover` is a class plus a pseudo-class and would
- * otherwise win and put the resting border back on the one window that should
- * keep it.
+ * No border of its own on the window you are in: the page is black again, so a
+ * darker edge has nothing to be darker than and a lighter one reads as a focus
+ * ring drawn over the ground. Its lit bar is what says where you are, and the
+ * strip says it again at the other end.
  */
-.tile--current,
-.tile--current:hover {
-  border-top-color: var(--ink);
-  border-right-color: var(--ink);
-  border-bottom-color: var(--ink);
-}
 
 .tile--working {
   border-left-color: var(--graphite);
@@ -1177,9 +1133,9 @@ button {
  *
  * The strip already says which worktree you are in by making its tab the light
  * one; this is the same sentence finished at the other end. --rule-bright is
- * 1.45:1 above every other window's bar and sits one rung under --page, so the
- * bar belongs to the same lit surface as the tab and the ground around the
- * windows without pretending to be it.
+ * 1.45:1 above every other window's bar and sits one rung under --tab-on, so
+ * the bar and the tab read as the same lit surface at the two ends of the same
+ * sentence.
  *
  * Everything quiet in the bar goes up a rung with it. --graphite-dim measures
  * 3.62:1 here, under the floor, so the project, the branch and the prompt --
@@ -1191,7 +1147,7 @@ button {
 }
 
 .tile--current .tile__bar:hover {
-  background: var(--page);
+  background: var(--tab-on);
 }
 
 .tile--current .tile__project,
@@ -2456,9 +2412,9 @@ button {
   width: max-content;
   max-width: 420px;
   background: var(--sleeve);
-  /* The menu floats over the page, which is the light ground now, so its edge
-     has to read against that: --rule-bright is 1.45:1 below --page and 1.22:1
-     above the sleeve inside it. */
+  /* The menu floats over whatever is under the strip -- the page, or a window's
+     own dark ground -- so its edge is a rung above its own fill rather than
+     tuned to one ground: --rule-bright is 1.22:1 above the sleeve inside it. */
   border-color: var(--rule-bright);
 }
 
