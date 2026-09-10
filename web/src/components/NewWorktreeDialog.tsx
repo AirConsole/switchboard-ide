@@ -20,6 +20,10 @@ export const NewWorktreeDialog = ({
   const [busy, setBusy] = useState(false)
 
   const submit = (): void => {
+    // The button is disabled while a request is in flight; key repeat has to
+    // respect the same rule, or holding Enter fires several creates whose
+    // failures are swallowed when the dialog unmounts.
+    if (busy) return
     if (branch.trim() === '') return
     setBusy(true)
     void api

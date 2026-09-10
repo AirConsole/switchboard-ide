@@ -2,6 +2,7 @@ import type { WorktreeTodo } from '@ide-n-dream/shared'
 import type { StateStore } from '../state.js'
 import type { SessionEngine } from './engine.js'
 import { turnState } from './claude.js'
+import { looksLikePrompt } from './attention.js'
 import { COOLDOWN_MS, inputBox, readiness, type NotReady } from './readiness.js'
 
 /**
@@ -89,7 +90,16 @@ export const startDispatcher = (opts: {
       )
       .sort((a, b) => (a.queuedAt ?? 0) - (b.queuedAt ?? 0))[0]
 
+  /** The first line of the prompt, which is what the box should be showing. */
+  const opening = (prompt: string): string =>
+    (prompt.split('\n')[0] ?? '').trim().slice(0, 24)
+
   const send = async (todo: WorktreeTodo, sessionId: string): Promise<void> => {
+    // Its own place in the queue, read before the claim below deletes it: the
+    // store hands out the live object, so `todo.queuedAt` is gone by the time
+    // the restore path wants to put it back.
+    const wasQueuedAt = todo.queuedAt
+    const prompt = todo.prompt
     /*
      * Claimed and written to disk BEFORE a single byte goes out, and that
      * ordering is the at-most-once decision. A crash between the flush and the
@@ -98,11 +108,25 @@ export const startDispatcher = (opts: {
      * it, so the loss is the side to err on.
      */
     store.patchTodo(todo.id, { dispatchingAt: Date.now(), queuedAt: undefined })
-    await store.flush()
+    /*
+     * A failed flush means the claim is not on disk, so nothing may be sent:
+     * the whole at-most-once argument rests on the claim outliving a crash.
+     */
+    try {
+      await store.flush()
+    } catch {
+      store.patchTodo(todo.id, { dispatchingAt: undefined, queuedAt: wasQueuedAt })
+      return
+    }
 
-    if (!engine.typeInto(sessionId, `${PASTE_START}${todo.prompt}${PASTE_END}`)) {
+    // The human may have deleted it while that write was in flight -- the
+    // route is served on this same event loop.
+    if (store.todo(todo.id) === undefined) return
+
+    if (!engine.typeInto(sessionId, `${PASTE_START}${prompt}${PASTE_END}`)) {
       // Nothing was written, so nothing was sent: put it back where it was.
-      store.patchTodo(todo.id, { dispatchingAt: undefined, queuedAt: todo.queuedAt })
+      store.patchTodo(todo.id, { dispatchingAt: undefined, queuedAt: wasQueuedAt })
+      onChange()
       return
     }
 
@@ -114,9 +138,31 @@ export const startDispatcher = (opts: {
      * Verified as "the box is no longer empty" rather than by matching the text,
      * because Claude Code collapses a long paste to `[Pasted text +N lines]`.
      */
+    /*
+     * Look again before pressing Return, and look harder than "is something
+     * there".
+     *
+     * The check used to be "the box is not empty", which a dialog's selected
+     * row satisfies exactly as well as a filled input box does: `❯ 1. Yes`
+     * reads as a box containing "1. Yes". So if a permission or trust dialog
+     * arrived inside SUBMIT_DELAY_MS -- the paste going into it and vanishing
+     * -- the Return answered the dialog, with whatever was preselected. The
+     * trust dialog preselects **No, exit**.
+     *
+     * Now: no dialog on screen, and the box is showing the beginning of this
+     * prompt. Anything else and the Return is withheld, which leaves a paste
+     * sitting in a box for a human to deal with -- recoverable, unlike a
+     * Return.
+     */
     const after = await engine.inspect(sessionId)
     const box = after === undefined ? null : inputBox(after.brightTail)
-    if (box === null || box === '') {
+    const start = opening(prompt)
+    const landed =
+      after !== undefined &&
+      !looksLikePrompt(after.tail) &&
+      box !== null &&
+      (start === '' ? box !== '' : box.includes(start))
+    if (!landed) {
       store.patchTodo(todo.id, {
         dispatchingAt: undefined,
         lastError: 'The prompt did not appear in Claude, so it was not submitted. Queue it again?',
@@ -125,7 +171,21 @@ export const startDispatcher = (opts: {
       return
     }
 
-    engine.typeInto(sessionId, SUBMIT)
+    /*
+     * If the Return went nowhere the prompt is sitting unsubmitted in the box,
+     * and deleting the todo would hide that: the next Return a human presses,
+     * possibly hours later and after typing something else in front of it,
+     * would send it.
+     */
+    if (!engine.typeInto(sessionId, SUBMIT)) {
+      store.patchTodo(todo.id, {
+        dispatchingAt: undefined,
+        lastError:
+          'The prompt reached Claude but the Return did not. Check its input box before queueing it again.',
+      })
+      onChange()
+      return
+    }
     store.removeTodo(todo.id)
     notBefore.set(todo.worktreeId, Date.now() + COOLDOWN_MS)
     onChange()
@@ -140,7 +200,12 @@ export const startDispatcher = (opts: {
       const todo = head(worktreeId)
       if (!todo) continue
 
-      const session = engine.listForWorktree(worktreeId).find((s) => s.kind === 'claude')
+      // Live, not merely first: a session that died on its own stays in the
+      // engine's list, and picking it by map order pinned the queue on
+      // `why: 'dead'` while a working Claude sat beside it.
+      const session = engine
+        .listForWorktree(worktreeId)
+        .find((s) => s.kind === 'claude' && s.liveness !== 'dead')
       if (!session) {
         if (reasons.get(worktreeId) !== 'no-session') debug(worktreeId, 'no-session')
         reasons.set(worktreeId, 'no-session')
@@ -152,18 +217,22 @@ export const startDispatcher = (opts: {
         continue
       }
       const path = await pathFor(worktreeId)
+      const turn = path === undefined ? 'unknown' : await turnState(path)
       const verdict = readiness({
         ...state,
-        turn: path === undefined ? 'unknown' : await turnState(path),
+        turn,
         notBefore: notBefore.get(worktreeId) ?? 0,
       })
       if (!verdict.ready) {
         if (reasons.get(worktreeId) !== verdict.why) {
+          // The turn is read from the verdict's own inputs rather than fetched
+          // again: as an argument to debug() it was a transcript read on every
+          // verdict change, whether or not IDN_DEBUG_DISPATCH was set.
           debug(
             worktreeId,
             `${verdict.why} (quiet ${Date.now() - state.lastOutputAt}ms, human ${
               Date.now() - state.lastUserInputAt
-            }ms, turn ${path === undefined ? 'no-path' : await turnState(path)})`,
+            }ms, turn ${turn})`,
           )
         }
         reasons.set(worktreeId, verdict.why)

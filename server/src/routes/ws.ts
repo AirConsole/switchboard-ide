@@ -13,6 +13,53 @@ import type { SessionEngine, Sink } from '../session/engine.js'
  * stream id (see the shared protocol). A single socket keeps ordering
  * predictable and avoids one connection per tile in the overview.
  */
+/**
+ * A frame, or null.
+ *
+ * The shape is checked rather than asserted with `as`. Nothing here is
+ * defensive programming for its own sake: `JSON.parse` was guarded and the cast
+ * was not, so a frame of the literal `null` reached `msg.t` and threw inside
+ * ws's receive loop, which has no try/catch of its own -- and with no
+ * `uncaughtException` handler that took the whole server down. Measured:
+ * `ws.send('null')` and the next health check got nothing at all. `{"t":"input",
+ * "data":123}` reached `data.replace`, and a resize with `cols:"x"` reached
+ * `pty.resize(NaN)`, since the guard there is `cols < 2` and NaN fails every
+ * comparison.
+ *
+ * Deliberately hand-written rather than zod: this is the one hot path in the
+ * process -- every keystroke of every terminal comes through it -- and these
+ * are five flat shapes.
+ */
+const parseClientMsg = (raw: string): ClientMsg | null => {
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof value !== 'object' || value === null) return null
+  const msg = value as Record<string, unknown>
+  const id = (): boolean => typeof msg.sessionId === 'string' && msg.sessionId !== ''
+  const size = (): boolean =>
+    typeof msg.cols === 'number' &&
+    Number.isFinite(msg.cols) &&
+    typeof msg.rows === 'number' &&
+    Number.isFinite(msg.rows)
+  switch (msg.t) {
+    case 'attach':
+      return id() && size() && typeof msg.primary === 'boolean' ? (msg as unknown as ClientMsg) : null
+    case 'input':
+      return id() && typeof msg.data === 'string' ? (msg as unknown as ClientMsg) : null
+    case 'resize':
+      return id() && size() ? (msg as unknown as ClientMsg) : null
+    case 'detach':
+    case 'focus':
+      return id() ? (msg as unknown as ClientMsg) : null
+    default:
+      return null
+  }
+}
+
 class SocketSink implements Sink {
   constructor(private readonly socket: WebSocket) {}
 
@@ -57,10 +104,8 @@ export const registerWs = (
     sinks.add(sink)
 
     socket.on('message', (raw: Buffer | string) => {
-      let msg: ClientMsg
-      try {
-        msg = JSON.parse(raw.toString()) as ClientMsg
-      } catch {
+      const msg = parseClientMsg(raw.toString())
+      if (msg === null) {
         sink.sendJson({ t: 'error', message: 'malformed message' })
         return
       }

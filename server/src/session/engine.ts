@@ -80,6 +80,10 @@ const looksTyped = (data: string): boolean =>
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
     .replace(/\x1bO[A-Za-z]/g, '')
+    // DCS, which is how xterm answers a DECRQSS: the reply rides the same
+    // socket as a keystroke, and counted as one it holds the queue off for as
+    // long as a tab is open -- the very thing this function exists to prevent.
+    .replace(/\x1bP[\s\S]*?(?:\x1b\\|\x07)/g, '')
     .replace(/\x1b/g, '') !== ''
 
 /** How far back a tail looks for something worth showing. */
@@ -131,7 +135,8 @@ let nextStreamId = 1
  * mirror of its screen, and everyone currently watching.
  */
 class LiveSession {
-  readonly mirror: TerminalMirror
+  /** Not readonly: `revive()` replaces it, because `markDead` disposes it. */
+  mirror: TerminalMirror
   readonly attachments = new Map<Sink, Attachment>()
 
   pty: import('node-pty').IPty | null = null
@@ -153,6 +158,8 @@ class LiveSession {
    * and the queue typing into the session is not someone.
    */
   lastUserInputAt = 0
+  /** Set once the mirror has been disposed with the session; see markDead. */
+  private mirrorGone = false
   /** Where the pane is, from tmux, so its transcript can be found. */
   cwd = ''
   /**
@@ -274,7 +281,39 @@ class LiveSession {
     this.dead = true
     this.deadStatus = status
     this.attention = 'idle'
+    /*
+     * The screen goes with it.
+     *
+     * A dead session keeps its record -- the tile says "exited (1)" and offers
+     * to start it again, which is the whole point of tmux's remain-on-exit --
+     * but nothing reads its mirror: the pane renders the placeholder instead of
+     * a terminal, so no browser ever attaches. Left alone, every session that
+     * died on its own held 5000 lines of scrollback for the life of the
+     * process.
+     */
+    this.mirror.dispose()
+    this.mirrorGone = true
     this.onStateChange(this)
+  }
+
+  /**
+   * Undo `markDead` for a session that is being started again in place.
+   *
+   * Everything markDead tore down has to come back, or the record outlives the
+   * process it described: a disposed mirror answers the empty string to every
+   * reader of the screen, and the 'idle' it set is what the todo queue types
+   * into. The clocks are reset rather than kept -- the new process has said
+   * nothing yet, and the old one's last word is not its.
+   */
+  revive(): void {
+    if (this.mirrorGone) {
+      this.mirror = new TerminalMirror(this.record.cols, this.record.rows)
+      this.mirrorGone = false
+    }
+    this.attention = 'working'
+    this.lastOutputAt = 0
+    this.turn = 'unknown'
+    this.reattachAttempts = 0
   }
 
   private onOutput(chunk: string): void {
@@ -290,7 +329,7 @@ class LiveSession {
      */
     const provoked = Date.now() < this.repaintQuietUntil
     if (!provoked) this.lastOutputAt = Date.now()
-    this.mirror.write(chunk)
+    if (!this.mirrorGone) this.mirror.write(chunk)
 
     const bytes = Buffer.from(chunk, 'utf8')
     this.pendingOut.push(bytes)
@@ -475,7 +514,9 @@ class LiveSession {
   }
 
   async snapshot(): Promise<string> {
-    return this.mirror.snapshot()
+    // A dead session has no screen to repaint: the tile shows the placeholder
+    // and offers to start it again, so nothing attaches here.
+    return this.mirrorGone ? '' : this.mirror.snapshot()
   }
 
   toRecord(): Session {
@@ -555,8 +596,15 @@ export class SessionEngine {
         cols: info.cols || DEFAULT_COLS,
         rows: info.rows || DEFAULT_ROWS,
         liveness: 'live',
+        /*
+         * These two are shape, not fact: `toRecord()` reports the instance's
+         * own `attention` and `lastOutputAt`, so whatever is written here is
+         * replaced before anyone sees it. They match the instance's defaults so
+         * reading this does not suggest otherwise -- and zero is right for an
+         * adopted session, which has no idea when it last spoke.
+         */
         attention: 'idle',
-        lastOutputAt: Date.now(),
+        lastOutputAt: 0,
         createdAt: meta.createdAt,
         attachCommand: attachCommandFor(info.name),
       }
@@ -575,14 +623,39 @@ export class SessionEngine {
        * Marked as a repaint we provoked, so the output it causes does not count
        * as the agent doing something; see `onOutput`.
        */
-      live.expectRepaint()
-      void refreshClients(info.name)
+      /*
+       * The quiet window starts when the repaint is actually asked for, not
+       * before two process spawns and a tmux round trip: REPAINT_QUIET_MS is
+       * 500ms, and a repaint that lands after it expires is counted as the
+       * agent doing something -- a session resting for an hour flashing
+       * "working" the instant the server comes back.
+       */
+      void refreshClients(info.name).then((asked) => {
+        if (asked) live.expectRepaint()
+      })
     }
   }
 
   /** One tmux call refreshes liveness for every session. */
+  /** One poll at a time; a slow tmux must not have two of these interleaving. */
+  private polling = false
+
   private async pollPanes(): Promise<void> {
+    if (this.polling) return
+    this.polling = true
+    try {
+      await this.pollPanesOnce()
+    } finally {
+      this.polling = false
+    }
+  }
+
+  private async pollPanesOnce(): Promise<void> {
     const panes = await listPanes()
+    // tmux could not be asked. Saying nothing is right: the alternative is to
+    // read a failed call as "every pane is gone" and kill the model of four
+    // healthy agents over one EAGAIN.
+    if (panes === null) return
     const byName = new Map(panes.map((p) => [p.sessionName, p]))
     for (const live of this.sessions.values()) {
       const pane = byName.get(live.name)
@@ -661,6 +734,15 @@ export class SessionEngine {
       attachCommand: attachCommandFor(tmuxName),
     }
     const live = new LiveSession(record, meta, (s) => this.emit(s))
+    /*
+     * A session that has just been started is working: something is painting
+     * its first screen. This has to be said on the instance, because
+     * `toRecord()` reports the instance and not the literal above -- set only
+     * there, a brand-new Claude window read as idle until its first byte
+     * arrived, and idle is what the todo queue types into.
+     */
+    live.attention = 'working'
+    live.lastOutputAt = Date.now()
     this.sessions.set(id, live)
     live.spawnPty()
     return live.toRecord()
@@ -683,6 +765,16 @@ export class SessionEngine {
     live.liveness = 'live'
     live.dead = false
     live.deadStatus = null
+    /*
+     * A respawn is a new process on a screen we have never seen: the mirror was
+     * disposed when the session died (markDead), so without a new one every
+     * reader of the screen -- the attention label, the readiness gate, a
+     * browser's repaint -- sees the empty string forever, and `attention` is
+     * still the 'idle' markDead left behind. The backoff counter is reset too,
+     * or a session that died after exhausting its reattach attempts can never
+     * pick up its pty again.
+     */
+    live.revive()
     live.spawnPty()
     this.emit(live)
     return live.toRecord()
@@ -706,7 +798,11 @@ export class SessionEngine {
       const live = this.sessions.get(sessionId)
       // Killed while we waited -- sleeping a worktree does exactly this.
       if (!live) return false
-      const pane = (await listPanes()).find((p) => p.sessionName === live.name)
+      const panes = await listPanes()
+      // tmux unreachable: no evidence either way, so keep waiting rather than
+      // report a failure that would restart something the user did not lose.
+      if (panes === null) continue
+      const pane = panes.find((p) => p.sessionName === live.name)
       if (!pane) return false
       if (pane.dead) return (pane.deadStatus ?? 0) !== 0
     }
@@ -900,6 +996,7 @@ export class SessionEngine {
     if (!live) return undefined
     // The emulator parses asynchronously, so a synchronous read can miss the
     // repaint that would have changed the answer.
+    if (live.dead) return undefined
     await live.mirror.flush()
     return {
       kind: live.record.kind,

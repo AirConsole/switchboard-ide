@@ -88,8 +88,9 @@ export const App = (): React.ReactElement => {
   }
 
   useEffect(() => {
-    bindSocketToStore()
+    const unbind = bindSocketToStore()
     void refresh()
+    return unbind
   }, [refresh])
 
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
@@ -136,6 +137,42 @@ export const App = (): React.ReactElement => {
       }),
     [projects, worktrees, awake],
   )
+
+  /*
+   * Forget the per-worktree UI of worktrees that are gone.
+   *
+   * `onRemoved` clears `panels` for the one you removed, and nothing clears
+   * anything for a worktree removed outside the IDE -- so the open file, the
+   * expanded directories, the chosen terminal and the files mode accumulated
+   * for every worktree that ever existed, and all of it is persisted to the
+   * server and to localStorage on every change.
+   *
+   * Only once the snapshot has actually loaded: before that `worktrees` is
+   * empty, and pruning against it would wipe the lot.
+   */
+  useEffect(() => {
+    if (!loaded || worktrees.length === 0) return
+    const known = new Set(worktrees.map((worktree) => worktree.id))
+    const prune = <T,>(map: Record<string, T>): Record<string, T> | null => {
+      const kept = Object.fromEntries(Object.entries(map).filter(([id]) => known.has(id)))
+      return Object.keys(kept).length === Object.keys(map).length ? null : (kept as Record<string, T>)
+    }
+    const panels = prune(ui.panels)
+    const active = prune(ui.activeTerminalByWorktree)
+    const open = prune(ui.openPathByWorktree)
+    const expanded = prune(ui.expandedByWorktree)
+    const modes = prune(ui.filesModeByWorktree)
+    const files = prune(ui.openFilesByWorktree)
+    if (!panels && !active && !open && !expanded && !modes && !files) return
+    setUi({
+      ...(panels ? { panels } : {}),
+      ...(active ? { activeTerminalByWorktree: active } : {}),
+      ...(open ? { openPathByWorktree: open } : {}),
+      ...(expanded ? { expandedByWorktree: expanded } : {}),
+      ...(modes ? { filesModeByWorktree: modes } : {}),
+      ...(files ? { openFilesByWorktree: files } : {}),
+    })
+  }, [loaded, worktrees, ui, setUi])
 
   /** Every awake worktree, in the order the row shows them. */
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
@@ -201,9 +238,12 @@ export const App = (): React.ReactElement => {
     void api
       .createSession({ worktreeId, kind: 'shell' })
       .then((session) => {
+        // Read at write time, not from the render that started the request:
+        // spawning a terminal takes a tmux round trip, and a selection made in
+        // another window while it was in flight came back undone.
         setUi({
           activeTerminalByWorktree: {
-            ...ui.activeTerminalByWorktree,
+            ...useStore.getState().ui.activeTerminalByWorktree,
             [worktreeId]: session.id,
           },
         })

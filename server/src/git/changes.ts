@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process'
+import { relative } from 'node:path'
 import { promisify } from 'node:util'
 import type { Commit, FileChange, WorktreeChanges } from '@ide-n-dream/shared'
 import { LOCAL_HEAD_BASE, currentBranch, resolveDefaultBase } from './worktree.js'
+import { containedPath } from '../files.js'
+import { HttpError } from '../http-error.js'
 
 const exec = promisify(execFile)
 
@@ -195,10 +198,23 @@ export const fileDiff = async (
   from?: string,
 ): Promise<string> => {
   if (untracked) {
+    /*
+     * `--no-index` is designed to work outside a repository, which is exactly
+     * what makes it dangerous here: `?file=/etc/passwd&untracked=true` came
+     * back as an all-additions patch of that file, and `?file=~/.claude.json`
+     * returned 104KB of it. Every containment guarantee in files.ts was
+     * bypassed by this one argument, so the path goes through the same gate.
+     * The tracked branch below is safe only because git itself rejects a path
+     * outside the repo after `--`.
+     */
+    // Validated as an absolute path, then handed to git as a relative one: the
+    // patch header is the file's name in the worktree, and `a/tmp/idn-.../x`
+    // is not what the panel means to show.
+    const target = relative(cwd, await containedPath(cwd, file))
     try {
       return await git(
         cwd,
-        ['diff', '--no-index', '--no-color', '--', '/dev/null', file],
+        ['diff', '--no-index', '--no-color', '--', '/dev/null', target],
         MAX_DIFF_BYTES,
       )
     } catch (err) {
@@ -222,5 +238,23 @@ export const fileDiff = async (
  * it says what the merge brought in, which is the question being asked. For an
  * ordinary commit with one parent it changes nothing.
  */
-export const commitDiff = async (cwd: string, hash: string): Promise<string> =>
-  git(cwd, ['show', '--no-color', '--format=', '--patch', '--first-parent', hash], MAX_DIFF_BYTES)
+export const commitDiff = async (cwd: string, hash: string): Promise<string> => {
+  /*
+   * `--` and a shape check, because a commit-ish arrives from a query string.
+   *
+   * Without them git reads a leading dash as an option, and `git show` has
+   * `--output=<file>`: `?commit=--output=/home/you/.bashrc` truncated that file
+   * and wrote a patch into it, on a GET with no auth. Verified before the fix.
+   * The `--` alone is not enough -- it separates paths from revisions, not
+   * options from revisions -- so the value is also checked against the
+   * characters a revision can actually contain.
+   */
+  if (!/^[0-9a-zA-Z._/^~@{}-]+$/.test(hash) || hash.startsWith('-')) {
+    throw new HttpError(400, 'not a commit')
+  }
+  return git(
+    cwd,
+    ['show', '--no-color', '--format=', '--patch', '--first-parent', hash, '--'],
+    MAX_DIFF_BYTES,
+  )
+}

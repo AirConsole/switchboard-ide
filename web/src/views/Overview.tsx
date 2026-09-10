@@ -24,6 +24,7 @@ import { TodoBar, TodoPane } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
+import { ForkIcon } from '../components/ForkIcon.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { useNearViewport } from './useNearViewport.js'
@@ -128,6 +129,8 @@ interface PanelCounts {
   queued: number
   terminals: number
   changes: number
+  /** Commits the default branch does not have, for the fork glyph. */
+  unmerged: number
 }
 
 /**
@@ -149,7 +152,7 @@ interface PanelCounts {
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
  */
-const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
+const panelLabel = (panel: PanelName, counts: PanelCounts): React.ReactNode => {
   switch (panel) {
     case 'todo':
       // What is queued outranks what is merely written down: one is about to
@@ -167,8 +170,23 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
        * the panel opens on them: a number on a control promises that clicking
        * shows you those N things, which is exactly what Changes mode does.
        */
-      if (counts.changes === 0) return 'Files'
-      return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
+      if (counts.changes > 0) return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
+      /*
+       * With nothing uncommitted, the same glyph the worktree's tab shows: this
+       * branch has commits the default branch has not. One slot, the count when
+       * there is one and the fork otherwise, in both places -- the toggle and
+       * the tab answer the same question and clicking the toggle is where you
+       * go to look at the answer.
+       */
+      if (counts.unmerged > 0) {
+        return (
+          <>
+            Files
+            <ForkIcon className="tile__fork" size={12} />
+          </>
+        )
+      }
+      return 'Files'
   }
 }
 
@@ -534,6 +552,7 @@ const WorktreeTile = ({
     queued: todos.filter((view) => view.position !== null).length,
     terminals: terminals.length,
     changes: worktree.dirty ?? 0,
+    unmerged: worktree.unmerged ?? 0,
   }
 
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
@@ -1049,9 +1068,12 @@ export const Overview = ({
    * between the units it covers, so tiles of any width occupy exactly the same
    * run of the row as the units they span.
    *
-   * Two units minimum, which is one pane: a window narrower than that has
-   * nowhere to put anything, and the tile overflows it rather than shrinking
-   * below the floor.
+   * Two units minimum, which is one pane -- and below that it is the pitch that
+   * gives, not the row: `units` cannot go under two, so a window narrower than
+   * a pane's own floor divides into two units smaller than half of one and the
+   * pane shrinks past MIN_PANE_COLUMNS with it. The floor is a promise about
+   * how a row is divided among the windows in it, not one a window smaller than
+   * a single pane can keep.
    */
   const unitPitch = (minPaneWidth + GAP) / 2
   const units = Math.max(2, Math.floor((width - GAP) / unitPitch))
@@ -1323,7 +1345,14 @@ export const Overview = ({
        * carries you along a row that has not got any shorter.
        */
       const step = (pixels > 0 ? 1 : -1) * 2
-      const to = Math.min(Math.max(from + step, 0), Math.max(0, totalUnits - 1))
+      /*
+       * The last offset the row can rest at, not the last unit that exists.
+       * Content is `totalUnits * pitch` wide and the window shows `units` of
+       * them, so clamping at `totalUnits - 1` let `aim` climb past the end and
+       * the first notch back read as a dead one.
+       */
+      const last = Math.max(0, totalUnits - units)
+      const to = Math.min(Math.max(from + step, 0), last)
       aim = to
       grid.scrollTo({ left: to * pitch })
     }

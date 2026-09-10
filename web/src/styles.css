@@ -528,7 +528,7 @@ button {
    */
   flex: 0 1 auto;
   width: max-content;
-  min-width: 56px;
+  min-width: 62px;
   max-width: var(--tab-max, 200px);
   /*
    * The ground is the wrapper's, not the body's: the × is the body's sibling,
@@ -670,8 +670,8 @@ button {
  * left -- so "nothing running" is a hollow dot rather than a colour of its own.
  */
 .tab__dot {
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   flex: none;
   border-radius: 50%;
   background: var(--tab-state, transparent);
@@ -738,6 +738,14 @@ button {
   justify-content: center;
   flex: none;
   align-self: center;
+  /*
+   * Inset from the tab's own edge, like Chrome's. The × used to end exactly
+   * where the tab does, so it read as belonging to the gap between two tabs
+   * rather than to either of them, and on the active tab it sat on the curve of
+   * its right foot. A margin rather than padding on the wrapper, so the zZ tab
+   * -- which has no × -- keeps its own symmetrical inset.
+   */
+  margin-right: 6px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -1378,6 +1386,9 @@ button {
   display: flex;
   align-items: center;
   flex: none;
+  /* Between a label and the glyph after it. The label's own letter-spacing
+     already leaves a hair of it, so this is 4 rather than 6. */
+  gap: 4px;
   padding: 0 12px;
   /* Transparent until it is on, so switching it on does not move the label. */
   border-bottom: 2px solid transparent;
@@ -1406,6 +1417,20 @@ button {
 .tile__toggle--on {
   color: var(--bone);
   border-bottom-color: var(--rule-bright);
+}
+
+/*
+ * The fork on the Files toggle: unmerged commits, where the dirty count goes.
+ *
+ * currentColor, unlike the tab's copy -- there the fork sits in the dim channel
+ * with the counts, here it is part of the toggle's own label and has to follow
+ * it into --bone on hover and while the panel is open. Nudged up for the same
+ * reason: a 12px box against 11px uppercase text sits a hair low on a shared
+ * baseline.
+ */
+.tile__fork {
+  flex: none;
+  margin-top: -1px;
 }
 
 /*

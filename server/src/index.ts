@@ -32,6 +32,24 @@ await app.register(fastifyWebsocket, {
   },
 })
 
+/*
+ * The IDE outliving a bug in itself.
+ *
+ * Everything valuable here lives in tmux, not in this process, so a crash costs
+ * only the fan-out -- but it costs it for every open browser at once, and the
+ * sessions it was watching keep running unattended until someone notices. A
+ * malformed WebSocket frame used to do exactly that (see parseClientMsg), and
+ * the frame is validated now; this is the floor under whatever the next one
+ * turns out to be. Logged loudly rather than swallowed: a server that hides its
+ * own faults is worse than one that falls over.
+ */
+process.on('uncaughtException', (err) => {
+  app.log.error({ err }, 'uncaught exception; the server is staying up')
+})
+process.on('unhandledRejection', (reason) => {
+  app.log.error({ err: reason }, 'unhandled rejection; the server is staying up')
+})
+
 const { broadcastInvalidate, clientCount } = registerWs(app, engine)
 registerApi(app, { store, engine, workspace, broadcastInvalidate })
 

@@ -73,16 +73,20 @@ is the point:
 
 1. **Is a human needed?** Decided from the screen, before anything about the
    clock, because a dialog is up or it is not and a repainting TUI is never
-   quiet. Checked over the **whole** visible screen, not a tail: measured, a
-   plan approval's option list sat 5 rows above the bottom and a question
+   quiet. Checked over the **whole of the current turn**, not a tail: measured,
+   a plan approval's option list sat 5 rows above the bottom and a question
    dialog's sat 11, each option carrying a paragraph, so the old 12-row window
    caught both by a row or two and one more line of text would have lost them.
-   Strong patterns (`❯ N.`, "Would you like to proceed?", "Enter to confirm")
-   are safe anywhere on screen — Claude bullets its own output with `●` and
-   `⎿` and never prints `❯`. Weak ones live in `PROMPT_FOOTERS` and are trusted
-   only on the last three lines. `^1. Yes` was dropped outright: it is what
-   Claude writes when *explaining* options, and it made a finished worktree
-   read as waiting.
+   The turn is everything below the last `· done HH:MM`, because the screen is
+   a scrollback and the patterns are not all safe on the turns above it: two of
+   them are ordinary English, and a live worktree's `Which way do you want to
+   go?` matched the permission dialog's "Do you want to …" and held a tile amber
+   through a turn the spinner was visibly running. A dialog Claude is showing
+   now is always below the marker — measured on a real permission dialog whose
+   question sat on line 28 of 34 with the previous turn's done line on 12. Weak
+   patterns live in `PROMPT_FOOTERS` and are trusted only on the last three
+   lines. `^1. Yes` was dropped outright: it is what Claude writes when
+   *explaining* options, and it made a finished worktree read as waiting.
 2. **Is it working?** Recent output, `turn === 'in-turn'`, or the spinner's
    parenthesised timer — `(3m 34s · …)`, and the minute and hour forms are not
    decoration: the pattern was `\(\d+s` and so missed every turn longer than a
@@ -152,7 +156,13 @@ checked against a real Claude before it was allowed to type anything.
 
 ## Worktrees and ids
 
-Worktrees are **discovered** from `git worktree list --porcelain` on every read.
+Worktrees are **discovered** from `git worktree list --porcelain -z` on every
+read. `-z` because the porcelain form prints a worktree's path raw and
+unquoted: a path containing a newline splits into two attributes, and the
+line-oriented parse then reports the path truncated at the newline (measured --
+`.../worktrees/od\nd` came back as `.../worktrees/od`, with the wrong id, since
+an id is a hash of the path).
+
 There is no registry, which is what lets the IDE be dropped onto a repo that
 already has worktrees. `head` from porcelain feeds `pollChanged()`'s signature
 (`id:branch:head:dirty:missing:prompt`), which is how the 4s poller decides

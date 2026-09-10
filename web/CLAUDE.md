@@ -61,7 +61,10 @@ The pieces, and why each is the way it is:
 - **A tab says whether work is left in the worktree**, in one slot: the dirty
   count when there is one, otherwise a fork glyph when the branch has commits
   the default branch does not. Committed and uncommitted work answer the same
-  question, and the count is the more urgent answer, so it wins the slot.
+  question, and the count is the more urgent answer, so it wins the slot. The
+  **Files toggle in a window's own bar carries the same slot** — `ForkIcon` is
+  shared for exactly that reason — because it is the control you click to look
+  at the answer, and two glyphs for one fact would be two things to learn.
 - **A tab does not name the branch.** A worktree is nearly always on the branch
   it is named after, so it was a second copy of the name most of the time and
   every tab paid width for it. The dropdown still names it, where a sleeping
