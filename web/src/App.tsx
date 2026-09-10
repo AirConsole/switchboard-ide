@@ -593,7 +593,6 @@ export const App = (): React.ReactElement => {
         active={active}
         onActivate={activate}
         onStart={startClaude}
-        onSleep={setSleeping}
         onReveal={reveal}
         onTogglePanel={togglePanel}
         onQueueDrained={queueDrained}

@@ -407,7 +407,6 @@ interface WorktreeTileProps {
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
-  onSleep: () => void
   /** Bring this worktree wholly into view. */
   onReveal: () => void
   onTogglePanel: (panel: PanelName) => void
@@ -451,7 +450,6 @@ const WorktreeTile = ({
   commit,
   scroller,
   onStart,
-  onSleep,
   onReveal,
   onTogglePanel,
   onQueueDrained,
@@ -600,24 +598,18 @@ const WorktreeTile = ({
   ) : null
 
   /*
-   * What acts on the worktree comes first, then what it can show.
+   * What the worktree can show, and nothing else.
    *
-   * The state used to lead this row and is gone: the rail down the tile's edge
-   * already carries it -- amber for blocked on you, green for come to rest --
-   * and a word repeating a colour you scan for is a word spent twice. Which
-   * leaves the panel toggles as the far end of the bar, where the panel they
+   * Two controls left this row and neither is missed: the state, because the
+   * rail down the tile's edge already carries it -- amber for blocked on you,
+   * green for come to rest -- and a word repeating a colour you scan for is a
+   * word spent twice; and sleep, which is what the × on the worktree's tab in
+   * the top bar asks, the same place the delete lives. That was the trashcan's
+   * road too. So the bar is the panel toggles, at the end where the panel they
    * open begins.
    */
   const controls = (
     <div className="tile__controls">
-      <button
-        className="tile__zz"
-        onClick={onSleep}
-        title={`Put ${worktree.name} to sleep and hide its window`}
-        aria-label={`Sleep ${worktree.name}`}
-      >
-        zZ
-      </button>
       {TOGGLES.map((panel) => {
         // Lit when this panel's pane is the one on screen, which is the only
         // thing the toggle ever claims -- and with one panel at a time, the lit
@@ -873,7 +865,6 @@ export interface OverviewProps {
   /** Anything in this pane took focus, so this is where you are now. */
   onActivate: (worktreeId: string, pane: PaneKind) => void
   onStart: (worktreeId: string) => void
-  onSleep: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
@@ -919,7 +910,6 @@ export const Overview = ({
   active,
   onActivate,
   onStart,
-  onSleep,
   onReveal,
   onTogglePanel,
   onQueueDrained,
@@ -1467,7 +1457,6 @@ export const Overview = ({
                       commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
-                      onSleep={() => onSleep(worktree.id)}
                       onReveal={() => onReveal(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onQueueDrained={() => onQueueDrained(worktree.id)}
