@@ -25,15 +25,19 @@ export const REPAINT_QUIET_MS = 500
  * one. These match numbered choice menus and explicit questions only.
  */
 /**
- * Patterns that can be looked for across the whole visible screen.
+ * Patterns that can be looked for anywhere in the turn now under way.
  *
- * Safe there because none of them appear in what Claude *prints*: it bullets
- * its own output with `●` and `⎿`, and the `❯` glyph belongs to the input box
- * and to a dialog's selected row. That matters because a dialog is not
- * bottom-anchored the way it looks -- measured, the option list of a plan
- * approval sat 5 rows up, and a question dialog's sat 11, each option carrying
- * a paragraph. A window of the last 12 rows caught both by luck, and one more
- * line of option text loses them.
+ * Read over the turn's whole height, because a dialog is not bottom-anchored
+ * the way it looks -- measured, the option list of a plan approval sat 5 rows
+ * up, and a question dialog's sat 11, each option carrying a paragraph. A
+ * window of the last 12 rows caught both by luck, and one more line of option
+ * text loses them.
+ *
+ * They are *not* safe over the whole screen, which is where they used to be
+ * read. Two of them are ordinary English -- `thisTurn` below has the measured
+ * case -- and a screen is a scrollback, so every turn Claude has finished is
+ * still on it. The `❯` glyph is the exception either way: it belongs to the
+ * input box and to a dialog's selected row, and Claude never prints it.
  */
 const PROMPT_PATTERNS: RegExp[] = [
   // Claude Code's modal dialogs (tool permission, trust folder, /login, ...)
@@ -65,18 +69,6 @@ const PROMPT_FOOTERS: RegExp[] = [/to navigate\b/i, /Esc to cancel\b/i]
 
 /** How many lines from the bottom count as the footer. */
 const FOOTER_ROWS = 3
-
-/**
- * Whether Claude is showing something a person has to answer.
- *
- * Give it the whole visible screen: the strong patterns are safe anywhere on
- * it, and the weak ones are only consulted near the bottom.
- */
-export const looksLikePrompt = (screen: string): boolean => {
-  if (PROMPT_PATTERNS.some((re) => re.test(screen))) return true
-  const footer = screen.split('\n').slice(-FOOTER_ROWS).join('\n')
-  return PROMPT_FOOTERS.some((re) => re.test(footer))
-}
 
 /**
  * The spinner's live timer, which is what a running turn looks like.
@@ -115,6 +107,45 @@ export const looksBusy = (text: string): boolean => {
   const busy = lastIndexOf(text, BUSY_TIMER)
   if (busy === -1) return false
   return busy > lastIndexOf(text, DONE_MARKER_G)
+}
+
+/**
+ * The part of the screen belonging to the turn now under way.
+ *
+ * Everything above the last `· done HH:MM` is a turn that has already ended,
+ * and the screen is a scrollback: every turn Claude has ever finished is still
+ * up there. That matters because Claude writes prose about what it is doing,
+ * and prose collides with the dialogs' wording -- measured on a live worktree,
+ * `Which way do you want to go?` matched the tool-permission dialog's
+ * `Do you want to ...` and left the tile amber while the agent was visibly
+ * working two rows from the bottom, twenty rows below that line.
+ *
+ * A dialog Claude is showing *now* is always under the marker, so nothing has
+ * to be given up to exclude the text above it -- in particular not the breadth
+ * within the turn, which a plan approval's option list needs: measured 11 rows
+ * up, with each option carrying a paragraph.
+ */
+const thisTurn = (screen: string): string => {
+  const at = lastIndexOf(screen, DONE_MARKER_G)
+  if (at === -1) return screen
+  const lineEnd = screen.indexOf('\n', at)
+  // A marker with nothing under it: the turn ended and nothing has happened
+  // since, so there is nothing here for a person to answer.
+  return lineEnd === -1 ? '' : screen.slice(lineEnd + 1)
+}
+
+/**
+ * Whether Claude is showing something a person has to answer.
+ *
+ * Give it the whole visible screen: it reads the current turn's whole height,
+ * where the strong patterns are safe, and consults the weak ones only near the
+ * bottom.
+ */
+export const looksLikePrompt = (screen: string): boolean => {
+  const turn = thisTurn(screen)
+  if (PROMPT_PATTERNS.some((re) => re.test(turn))) return true
+  const footer = turn.split('\n').slice(-FOOTER_ROWS).join('\n')
+  return PROMPT_FOOTERS.some((re) => re.test(footer))
 }
 
 /**
