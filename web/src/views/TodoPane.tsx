@@ -66,7 +66,10 @@ const useAutoGrow = (value: string): React.RefObject<HTMLTextAreaElement | null>
     const observer = new ResizeObserver(fit)
     observer.observe(el)
     return () => observer.disconnect()
-  })
+    // Once per mount. Without the array this tore down and rebuilt an observer
+    // on every render of every row, which is every keystroke in any of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   return ref
 }
 

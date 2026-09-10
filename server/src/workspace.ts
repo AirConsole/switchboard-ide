@@ -62,8 +62,21 @@ export class Workspace {
     private readonly engine: SessionEngine,
   ) {}
 
+  /**
+   * Bumped by every invalidate, so a read that started before one cannot cache
+   * its stale answer afterwards.
+   *
+   * The 4s poll takes a git status and a transcript tail per worktree; a
+   * mutation landing mid-flight used to be overwritten by that older listing,
+   * timestamped with the `now` the poll captured before it began -- so the
+   * invalidate that followed sent every client to refetch a snapshot that still
+   * had the old worktrees in it, until the TTL lapsed.
+   */
+  private generation = 0
+
   invalidate(): void {
     this.cache = null
+    this.generation += 1
   }
 
   /** Signature of everything a client would notice about the worktrees. */
@@ -110,6 +123,7 @@ export class Workspace {
   async worktrees(): Promise<Worktree[]> {
     const now = Date.now()
     if (this.cache && now - this.cache.at < this.cacheTtlMs) return this.cache.worktrees
+    const generation = this.generation
 
     const all: Worktree[] = []
     for (const project of this.store.projects) {
@@ -121,7 +135,10 @@ export class Workspace {
         for (const worktree of list) {
           all.push({
             ...worktree,
-            dirty: await dirtyCount(worktree.path),
+            // `undefined` rather than a number when git could not say: the
+            // dirty guard in removeWorktree refuses on "unknown", and a zero
+            // here would tell it the worktree is clean.
+            dirty: (await dirtyCount(worktree.path)) ?? undefined,
             unmerged: await unmergedCount(worktree.path, defaultRef),
             prompt: await lastPrompt(worktree.path),
           })
@@ -131,7 +148,7 @@ export class Workspace {
         // whole snapshot; it simply contributes no worktrees.
       }
     }
-    this.cache = { at: now, worktrees: all }
+    if (generation === this.generation) this.cache = { at: now, worktrees: all }
     return all
   }
 
@@ -275,6 +292,9 @@ export class Workspace {
     // With no base named, branch from origin/<default-branch> so the worktree
     // starts clean -- Claude Code's own default for `worktree.baseRef`.
     const base = opts.base?.trim() || (await resolveDefaultBase(project.root))
+    // The same trap as the diff route: `base` lands where git parses options,
+    // so `--lock` made a worktree the UI could no longer remove.
+    if (base.startsWith('-')) throw new HttpError(400, 'that base ref is not a ref')
 
     try {
       await addWorktree({ root: project.root, path, branch, base })
@@ -308,6 +328,16 @@ export class Workspace {
     // refuses would leave the worktree intact and its work in progress gone.
     if (!opts.force) {
       const dirty = await dirtyCount(worktree.path)
+      // Unknown is not clean. Git failing to answer is exactly when killing the
+      // sessions first would be worst.
+      if (dirty === null) {
+        throw new HttpError(
+          400,
+          `git could not say whether ${worktree.path} has uncommitted changes. ` +
+            'Check it by hand, or remove it with force.',
+          'worktree-unknown',
+        )
+      }
       if (dirty > 0) {
         throw new HttpError(
           400,

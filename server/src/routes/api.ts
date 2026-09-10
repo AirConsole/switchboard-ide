@@ -119,7 +119,26 @@ const saveFileBody = z.object({
   /** Required. A save is always to a file that was read first. */
   ifRev: z.string().min(1),
 })
-const uiPatchBody = z.record(z.string(), z.unknown())
+/*
+ * The UI blob is the client's, but it is also persisted and served to every
+ * other client, so its *shape* is the server's business: `PATCH /api/ui
+ * {"awake":"everything"}` used to stick, and no later call could undo it
+ * because a patch can only overwrite a key with another unchecked value.
+ */
+const uiShape = z
+  .object({
+    awake: z.array(z.string()).nullable(),
+    // The panel and mode names are the shared unions; anything else in the
+    // list would be filtered by the client anyway, and storing it helps nobody.
+    panels: z.record(z.string(), z.array(z.enum(['todo', 'files', 'terminals']))),
+    activeTerminalByWorktree: z.record(z.string(), z.string()),
+    openPathByWorktree: z.record(z.string(), z.string()),
+    expandedByWorktree: z.record(z.string(), z.array(z.string())),
+    filesModeByWorktree: z.record(z.string(), z.enum(['files', 'changes', 'commits'])),
+  })
+  .partial()
+
+const uiPatchBody = uiShape
 const browseQuery = z.object({ path: z.string().default('') })
 
 export interface ApiDeps {

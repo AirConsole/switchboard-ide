@@ -108,7 +108,14 @@ export const containedPath = async (root: string, rel: string): Promise<string> 
    * a directory, so a kind test would miss it too. Letting an editor write
    * .git/config has no upside worth the footgun.
    */
-  if (relative(base, target).split(sep)[0] === '.git') throw outside(rel)
+  /*
+   * At any depth, not just the first segment. This repo's own convention puts
+   * worktrees at `<repo>/.claude/worktrees/<branch>`, so `.claude/worktrees/x/
+   * .git` is a real file inside this tree -- rewriting it breaks another
+   * agent's worktree -- and a vendored clone or submodule has the same door one
+   * level down.
+   */
+  if (relative(base, target).split(sep).includes('.git')) throw outside(rel)
 
   try {
     const real = await realpath(target)
@@ -159,7 +166,15 @@ const checkIgnore = async (cwd: string, paths: string[]): Promise<Set<string>> =
          * failure. The same trap `fileDiff` documents for `git diff
          * --no-index`, which exits 1 whenever the files differ.
          */
-        if (err !== null && (err as { code?: unknown }).code !== 1) fail(err)
+        /*
+         * 128 is "not a git repository", which happens for a worktree whose
+         * registration has been pruned while its directory survives. The
+         * module's own docs say both 1 and 128 must be tolerated; only 1 was,
+         * so that worktree answered a 500 with a git fatal in the body instead
+         * of the 404 the rest of this file speaks.
+         */
+        const code = (err as { code?: unknown }).code
+        if (err !== null && code !== 1 && code !== 128) fail(err)
         else done(out)
       },
     )

@@ -287,7 +287,7 @@ export interface PaneInfo {
   activity: number
 }
 
-export const listPanes = async (): Promise<PaneInfo[]> => {
+export const listPanes = async (): Promise<PaneInfo[] | null> => {
   let stdout: string
   try {
     ;({ stdout } = await tmux(
@@ -305,8 +305,24 @@ export const listPanes = async (): Promise<PaneInfo[]> => {
         '#{session_activity}',
       ].join('\x1f'),
     ))
-  } catch {
-    return []
+  } catch (err) {
+    /*
+     * Null, not an empty list, and the difference is a live agent's life.
+     *
+     * "No panes" and "tmux could not be asked" are opposite facts, and the
+     * caller acts on the first by marking every session dead -- irreversibly,
+     * since nothing but an explicit respawn ever sets a session live again. One
+     * failed fork under load was enough: every worktree reported dead while
+     * running perfectly, the todo queue stalled on `why: 'dead'`, and the
+     * obvious human response -- press restart -- reaches `respawn-pane -k`,
+     * which SIGKILLs the agent mid-turn.
+     *
+     * A genuinely empty server answers with an empty list and exit 0, and
+     * `no server running` is the one failure that really does mean "nothing".
+     */
+    const text = `${(err as { stderr?: string }).stderr ?? ''}${(err as Error).message ?? ''}`
+    if (/no server running|no such file or directory/i.test(text)) return []
+    return null
   }
   return stdout
     .split('\n')
@@ -355,14 +371,31 @@ const DEAD_PANE_NOTE = /^Pane is dead \(/
  * Addressed by client tty because that is what `refresh-client` takes. There is
  * exactly one client per session by design, so this refreshes ours.
  */
-export const refreshClients = async (name: string): Promise<void> => {
-  try {
-    const { stdout } = await tmux('list-clients', '-t', exactTarget(name), '-F', '#{client_tty}')
-    for (const tty of stdout.split('\n').filter((line) => line.trim() !== '')) {
-      await tmux('refresh-client', '-t', tty)
+export const refreshClients = async (name: string, waitMs = 3000): Promise<boolean> => {
+  /*
+   * Waits for the client, because the caller has only just spawned it.
+   *
+   * `spawnPty()` starts a `tmux attach-session` *process*; asking tmux for its
+   * clients in the very next statement is a race with that process registering,
+   * and losing it meant the catch read "no clients" as "nothing to repaint" --
+   * leaving exactly the empty mirror this call exists to fill, which is a dialog
+   * waiting for an answer that reads as idle.
+   */
+  const deadline = Date.now() + waitMs
+  for (;;) {
+    try {
+      const { stdout } = await tmux('list-clients', '-t', exactTarget(name), '-F', '#{client_tty}')
+      const ttys = stdout.split('\n').filter((line) => line.trim() !== '')
+      if (ttys.length > 0) {
+        for (const tty of ttys) await tmux('refresh-client', '-t', tty)
+        return true
+      }
+    } catch {
+      // The session went away while we waited; nothing to repaint.
+      return false
     }
-  } catch {
-    // No client, or the session went away: there is nothing to repaint.
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }
 
