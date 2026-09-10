@@ -1680,6 +1680,20 @@ button {
   border-top: 1px solid var(--rule);
 }
 
+/*
+ * The way out that cannot be undone, alone in the far corner.
+ *
+ * For a footer that offers a second outcome beside its main one: "Delete
+ * worktree…" sat 8px from "Sleep", which is the button pressed every time the
+ * dialog opens. It stays last, where danger goes here, and the free space is
+ * what keeps it out of reach of the pointer heading for the safe one. Only for
+ * a footer that asks for it -- a confirm dialog whose danger button *is* the
+ * confirm has nothing to be separated from.
+ */
+.dialog__foot--split .btn--danger {
+  margin-left: auto;
+}
+
 .field {
   display: grid;
   gap: 6px;

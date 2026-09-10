@@ -1,4 +1,5 @@
 import type { Project, Session, Worktree } from '@ide-n-dream/shared'
+import { useEscape } from './useEscape.js'
 
 export interface CloseProjectDialogProps {
   project: Project
@@ -36,6 +37,7 @@ export const CloseProjectDialog = ({
   onCancel,
   onClose,
 }: CloseProjectDialogProps): React.ReactElement => {
+  useEscape(onCancel)
   const mine = new Set(worktrees.map((w) => w.id))
   const running = sessions.filter((s) => mine.has(s.worktreeId) && s.liveness !== 'dead')
   const claudes = running.filter((s) => s.kind === 'claude').length

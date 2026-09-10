@@ -9,7 +9,13 @@ import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { Overview, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
-import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
+import {
+  claudeSession,
+  orderWorktrees,
+  removalAsks,
+  removalQuestions,
+  terminalSessions,
+} from './selectors.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@ide-n-dream/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -85,6 +91,24 @@ export const App = (): React.ReactElement => {
   const reveal = (id: string, pane: PaneKind = 'claude'): void => {
     setActive({ id, pane })
     setScrollTo((previous) => ({ id, pane, nonce: (previous?.nonce ?? 0) + 1 }))
+  }
+
+  /**
+   * A dialog closed: put the keyboard back where you were.
+   *
+   * Back to the *pane*, not to the element that had focus when the dialog
+   * opened -- that element is the control you clicked to open it, since a click
+   * focuses a button, and restoring it would leave the caret in the top bar
+   * with nothing to type into. `active` is the honest answer to "what was
+   * focused before": it is maintained from focus moves inside the row, and the
+   * top bar is not part of the row, so opening a dialog does not disturb it.
+   *
+   * Through `reveal`, so a worktree scrolled off the side comes back with the
+   * keyboard -- and `reveal` moves the row by the fewest units it needs, which
+   * is none when the window is already in front of you.
+   */
+  const refocus = (): void => {
+    if (active !== null) reveal(active.id, active.pane)
   }
 
   useEffect(() => {
@@ -209,6 +233,22 @@ export const App = (): React.ReactElement => {
     setAwake([...awake, worktreeId])
     reveal(worktreeId)
     void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
+  }
+
+  /**
+   * A worktree is gone: drop everything this client remembered about it.
+   *
+   * "Where you are" included -- it would otherwise point at a window that is
+   * not there, which is what a Cmd+arrow step counts from. Shared by the two
+   * ways of removing one, the dialog and the straight-through delete, because
+   * what has to be forgotten does not depend on how many questions were asked.
+   */
+  const forgetWorktree = (worktreeId: string): void => {
+    const panels = { ...ui.panels }
+    delete panels[worktreeId]
+    setUi({ awake: [...awake].filter((id) => id !== worktreeId), panels })
+    if (active?.id === worktreeId) setActive(null)
+    void refresh()
   }
 
   /**
@@ -465,7 +505,10 @@ export const App = (): React.ReactElement => {
     <>
       {showOpenProject && (
         <OpenProjectDialog
-          onClose={() => setShowOpenProject(false)}
+          onClose={() => {
+            setShowOpenProject(false)
+            refocus()
+          }}
           onOpened={() => {
             setShowOpenProject(false)
             void refresh()
@@ -475,7 +518,10 @@ export const App = (): React.ReactElement => {
       {addingTo && (
         <NewWorktreeDialog
           project={addingTo}
-          onClose={() => setAddingTo(null)}
+          onClose={() => {
+            setAddingTo(null)
+            refocus()
+          }}
           onCreated={(worktreeId) => {
             setAddingTo(null)
             // A worktree you just made is one you want to work in, so it starts
@@ -491,7 +537,10 @@ export const App = (): React.ReactElement => {
           project={projects.find((p) => p.id === closingProject)!}
           worktrees={worktrees.filter((w) => w.projectId === closingProject)}
           sessions={sessions}
-          onCancel={() => setClosingProject(null)}
+          onCancel={() => {
+            setClosingProject(null)
+            refocus()
+          }}
           onClose={(sleep) => {
             /*
              * Stopping everything means its worktrees are no longer awake, so
@@ -514,34 +563,49 @@ export const App = (): React.ReactElement => {
         <SleepWorktreeDialog
           worktree={worktrees.find((w) => w.id === sleeping)!}
           sessions={sessions}
-          onClose={() => setSleeping(null)}
+          onClose={() => {
+            setSleeping(null)
+            refocus()
+          }}
           onSleep={(keep) => sleep(sleeping, keep)}
           /*
            * Putting a worktree away and getting rid of it are the same
            * question asked with different force, so they are asked in the same
            * place: the trashcan that used to live in the window's own bar is
-           * gone, and this hands over to the dialog that does the deleting.
+           * gone, and this hands over to the dialog that does the deleting --
+           * when that dialog has anything to ask. A worktree with nothing
+           * uncommitted and nothing unmerged loses nothing by going, so the
+           * second dialog would be two clicks to answer no questions, and this
+           * one has already asked.
            */
           onDelete={() => {
+            const worktree = worktrees.find((w) => w.id === sleeping)
             setSleeping(null)
-            setRemoving(sleeping)
+            if (worktree === undefined) return
+            if (removalAsks(worktree)) {
+              setRemoving(worktree.id)
+              return
+            }
+            void api
+              .removeWorktree(worktree.id, {
+                force: false,
+                deleteBranch: removalQuestions(worktree).branchGoesAnyway,
+              })
+              .then(() => forgetWorktree(worktree.id))
+              .catch(fail)
           }}
         />
       )}
       {removing && worktrees.some((w) => w.id === removing) && (
         <RemoveWorktreeDialog
           worktree={worktrees.find((w) => w.id === removing)!}
-          onClose={() => setRemoving(null)}
-          onRemoved={() => {
-            // A removed worktree leaves nothing of itself behind, "where you
-            // are" included -- it would otherwise point at a window that is
-            // not there, which is what a Cmd+arrow step would count from.
-            const panels = { ...ui.panels }
-            delete panels[removing]
-            setUi({ awake: [...awake].filter((id) => id !== removing), panels })
-            if (active?.id === removing) setActive(null)
+          onClose={() => {
             setRemoving(null)
-            void refresh()
+            refocus()
+          }}
+          onRemoved={() => {
+            forgetWorktree(removing)
+            setRemoving(null)
           }}
         />
       )}

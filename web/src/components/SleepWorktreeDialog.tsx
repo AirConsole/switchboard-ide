@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
-import { claudeSession, terminalSessions } from '../selectors.js'
+import { claudeSession, removalAsks, terminalSessions } from '../selectors.js'
+import { useEscape } from './useEscape.js'
 
 /** What to leave running when a worktree goes to sleep. */
 export interface SleepOptions {
@@ -14,11 +15,13 @@ export interface SleepWorktreeDialogProps {
   onClose: () => void
   onSleep: (keep: SleepOptions) => void
   /**
-   * Hand over to removal, when this worktree can be removed at all.
+   * Remove this worktree, when it can be removed at all.
    *
    * Sleeping and deleting are the same question asked with different force --
    * "put this away" and "put this away for good" -- so they are asked in one
-   * place rather than from two controls in two parts of the interface.
+   * place rather than from two controls in two parts of the interface. Whether
+   * this opens another dialog or does the removal outright is the caller's
+   * business; the label says which, and `removalAsks` is what decides.
    */
   onDelete?: () => void
 }
@@ -44,6 +47,7 @@ export const SleepWorktreeDialog = ({
   onSleep,
   onDelete,
 }: SleepWorktreeDialogProps): React.ReactElement => {
+  useEscape(onClose)
   const [keepClaude, setKeepClaude] = useState(false)
   const [keepTerminals, setKeepTerminals] = useState(false)
 
@@ -98,7 +102,8 @@ export const SleepWorktreeDialog = ({
             )}
           </label>
         </div>
-        <div className="dialog__foot">
+        {/* `--split` because one of these is not undoable: see the stylesheet. */}
+        <div className="dialog__foot dialog__foot--split">
           <button className="btn btn--quiet" onClick={onClose}>
             Leave it awake
           </button>
@@ -114,7 +119,11 @@ export const SleepWorktreeDialog = ({
               sit on the window's trashcan moved with the action. */}
           {onDelete !== undefined && !worktree.isMain && (
             <button className="btn btn--danger" onClick={onDelete}>
-              Delete worktree…
+              {/* The ellipsis means "and then it will ask you something", so it
+                  is dropped when there is nothing left to ask: a worktree with
+                  nothing uncommitted and nothing unmerged is removed by this
+                  click, and the label should not promise another one. */}
+              Delete worktree{removalAsks(worktree) ? '…' : ''}
             </button>
           )}
         </div>

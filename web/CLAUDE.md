@@ -57,6 +57,13 @@ The pieces, and why each is the way it is:
 - **Inactive tabs have no shape** until hovered, when they get a rounded panel
   in `--rule`. Separators sit between two inactive tabs only and vanish either
   side of the active tab and the hovered one.
+- **Removal only asks what it has to.** `removalQuestions` reads the same two
+  counts the tab shows: uncommitted work is what makes git refuse without
+  `--force`, and unmerged commits are what make deleting the branch a decision.
+  A clean worktree is not offered a "discard changes" box to rule out, a branch
+  the default branch already has goes with the worktree rather than being put to
+  a vote, and when neither is left to ask the removal dialog does not open at
+  all — the sleep dialog's button drops its ellipsis and does it.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -364,6 +371,25 @@ is what makes that true. A text field and CodeMirror both handle the key at the
 target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
+
+## Every dialog cancels on Escape, and gives the keyboard back
+
+`useEscape` is one hook per dialog, on the **window** in the capture phase with
+`stopPropagation` — the same reason the stepper capture: a text field and
+CodeMirror both handle Escape at the target, and the row's listeners are on the
+document, so cancelling a dialog must not also abandon an edit in the pane
+behind it. It only exists while a dialog is mounted, so Escape means whatever it
+meant before everywhere else.
+
+Closing one returns focus **to the pane you were in**, not to the element that
+had focus when it opened: a click focuses the button it lands on, so that
+element is the tab's × or the project's +, and restoring it would leave the
+caret in the top bar with nothing to type into. `active` is the honest record —
+it is written from focus moves inside the row, and the top bar is not part of
+the row — so `App`'s `refocus()` reveals that pane again, which also brings a
+window that had scrolled off the side back with the keyboard. There is one case
+with no answer: a removal leaves the pane you were in gone, and focus is on the
+document until you click or step.
 
 ## The todo panel holds no state of its own
 

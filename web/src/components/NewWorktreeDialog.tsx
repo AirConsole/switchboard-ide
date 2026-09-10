@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Project } from '@ide-n-dream/shared'
 import { api } from '../api.js'
+import { useEscape } from './useEscape.js'
 
 export interface NewWorktreeDialogProps {
   project: Project
@@ -13,6 +14,7 @@ export const NewWorktreeDialog = ({
   onClose,
   onCreated,
 }: NewWorktreeDialogProps): React.ReactElement => {
+  useEscape(onClose)
   const [branch, setBranch] = useState('')
   const [base, setBase] = useState('')
   const [startClaude, setStartClaude] = useState(true)
