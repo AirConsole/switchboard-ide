@@ -547,7 +547,14 @@ light one; `.tile--current` gives that window's own bar `--rule-bright`, 1.45:1
 above every other bar and one rung under `--page`, so the tab, the bar and the
 ground around the windows read as one lit surface. Everything quiet in that bar
 goes up a rung with it — `--graphite-dim` is 3.62:1 on it, under the floor, so
-the project, the branch and the prompt are `--graphite` there (4.83:1). It is
+the project, the branch and the prompt are `--graphite` there (4.83:1). Its outline goes up with
+it: `--graphite-dim` on three sides, 3.40:1 against the page it sits on and
+5.24:1 against the window's own ground, where the resting `--rule` is 1.30 and
+1.18 — a hairline you had to look for. Three sides only, because the left border
+is the state rail and a rule painting all four would outrank the single-class
+rules that colour it, and restated under `:hover` so `.tile:hover` — a class
+plus a pseudo-class — does not put the quiet border back on the one window that
+should keep the loud one. It is
 driven by `active`, not by `scrollTo`: where you *are*, which clicking into a
 window sets without the row moving, rather than where you last navigated.
 
