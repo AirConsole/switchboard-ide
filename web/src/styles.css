@@ -296,7 +296,16 @@ button {
   margin-top: 3px;
   padding: 0 4px;
   border-radius: 8px 8px 0 0;
-  background: var(--slab-raised);
+  /*
+   * --rule, a rung above the --slab-raised it used to be, because the sleeve is
+   * the ground every tab is read against and the whole strip was nearly flat.
+   * Measured in the browser: the sleeve against the bar around it goes 1.08:1
+   * to 1.18:1, and the tab you are in -- --ink, and the only tab carrying a
+   * fill -- against its neighbours goes 1.17:1 to 1.28:1. Small numbers by
+   * nature, since every ground here is within a few percent of black, and the
+   * second one is the whole of what says which tab you are in.
+   */
+  background: var(--rule);
 }
 
 /*
@@ -321,7 +330,14 @@ button {
   margin-right: 14px;
   padding: 0 3px 0 9px;
   border-radius: 11px;
-  background: var(--rule-bright);
+  /*
+   * Dark on the lighter sleeve. It was --rule-bright, a rung above the sleeve,
+   * which against the new --rule measures 1.22:1 -- less of a step than it had
+   * before, and the pill stopped reading as an object. Going the other way is
+   * 1.28:1, and the shape keeps it from being mistaken for the tab you are in:
+   * 22px and fully round against a 31px tab with square shoulders.
+   */
+  background: var(--ink);
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--bone);
@@ -336,8 +352,10 @@ button {
 }
 
 /*
- * --graphite, not --graphite-dim: on the pill's --rule-bright the dim grey
- * measures 3.58:1, under the 4.5 floor, and --graphite measures 4.77.
+ * --graphite, not --graphite-dim: the dim grey measured 3.58:1 on the pill's
+ * old --rule-bright, under the 4.5 floor. On the --ink pill it would clear it,
+ * but the ladder is the point -- the name is --bone and the × is the quiet
+ * thing beside it -- and --graphite measures 7.54 there.
  */
 .tabgroup__close {
   display: flex;
@@ -353,12 +371,12 @@ button {
 }
 
 /*
- * Still red, but on a darker ground than the pill: --danger measures 3.88:1 on
- * --rule-bright and 6.15 on --ink, so the hover brings its own ground with it
- * rather than the warning colour being the thing that fails to be readable.
+ * Colour alone on hover, and no ground with it: --danger measures 6.10:1 on the
+ * pill's own --ink and only 3.90 on --rule-bright, so the ring the × used to
+ * light up would be the thing that made the warning unreadable. It was a darker
+ * ground on a lighter pill; the pill is the dark one now.
  */
 .tabgroup__close:hover {
-  background: var(--ink);
   color: var(--danger);
 }
 
@@ -382,11 +400,12 @@ button {
   border-radius: 6px;
   font-size: 15px;
   line-height: 1;
-  color: var(--graphite-dim);
+  /* --graphite-dim measures 4.42:1 on the sleeve's --rule, under the floor. */
+  color: var(--graphite);
 }
 
 .tabgroup__add:hover {
-  background: var(--rule);
+  background: var(--rule-bright);
   color: var(--bone);
 }
 
@@ -592,7 +611,7 @@ button {
 /* Nothing at all until the pointer arrives, then a rounded panel: Chrome's
    inactive tab, which has no shape of its own until you go for it. */
 .tab:not(.tab--active):hover {
-  --tab-fill: var(--rule);
+  --tab-fill: var(--rule-bright);
   border-radius: 9px;
 }
 
@@ -675,7 +694,10 @@ button {
   flex: none;
   border-radius: 50%;
   background: var(--tab-state, transparent);
-  box-shadow: inset 0 0 0 1px var(--tab-state, var(--graphite-dim));
+  /* The ring the "nothing running" state falls back to is --graphite like the
+     rest of a tab's quiet channel: 5.89:1 on the sleeve against the dim grey's
+     4.42, and filled-versus-hollow is what tells the states apart anyway. */
+  box-shadow: inset 0 0 0 1px var(--tab-state, var(--graphite));
 }
 
 .tab__label {
@@ -699,11 +721,20 @@ button {
   color: var(--graphite-dim);
 }
 
+/*
+ * The quiet channel on a tab: --graphite, not --graphite-dim.
+ *
+ * One value for every ground a tab has now, which is what took a rule out
+ * rather than adding one. The dim grey measures 4.42:1 on the sleeve's --rule
+ * and 3.62 on the --rule-bright of a hover -- both under the floor -- while
+ * --graphite clears it on all three: 5.89 on the sleeve, 4.83 hovered, 7.54 on
+ * the active tab's --ink.
+ */
 .tab__dirty,
 .tab__queued {
   flex: none;
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
 }
 
 /* Where the dirty count would be, in the same quiet grey, and optically
@@ -711,14 +742,14 @@ button {
 .tab__fork {
   flex: none;
   margin-top: -1px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
 }
 
 .tab__zz {
   flex: none;
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: var(--graphite-dim);
+  color: var(--graphite);
 }
 
 /* Bigger than the label it follows: it is the only thing on the tab saying
@@ -751,26 +782,12 @@ button {
   border-radius: 50%;
   font-size: 15px;
   line-height: 1;
-  color: var(--graphite-dim);
+  color: var(--graphite);
 }
 
 .tab__close:hover {
   background: var(--rule-bright);
   color: var(--bone);
-}
-
-/*
- * --graphite-dim measures 4.42:1 on --rule, under the 4.5 floor this interface
- * keeps, so everything quiet steps up a rung for as long as the hover ground is
- * under it -- the × included. On the sleeve (4.83) and on the active tab's
- * --ink (5.65) the dim grey is legal and stays.
- */
-.tab:not(.tab--active):hover .tab__dirty,
-.tab:not(.tab--active):hover .tab__queued,
-.tab:not(.tab--active):hover .tab__zz,
-.tab:not(.tab--active):hover .tab__close,
-.tab:not(.tab--active):hover .tab__fork {
-  color: var(--graphite);
 }
 
 /*
