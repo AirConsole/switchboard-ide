@@ -26,6 +26,8 @@ export interface TodoPaneProps {
    * list nobody asked to see, and it is holding a spot in the row.
    */
   onQueueDrained: () => void
+  /** Focus the new-todo box when this changes; the row stepped into here. */
+  focus?: number | null
 }
 
 export interface TodoBarProps {
@@ -211,13 +213,25 @@ const TodoRow = ({
 const NewTodo = ({
   worktreeId,
   onError,
+  focus,
 }: {
   worktreeId: string
   onError: (message: string | null) => void
+  /** Take the keyboard when this changes; the row stepped into this pane. */
+  focus: number | null
 }): React.ReactElement => {
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
+  /*
+   * The same ref the auto-grow uses: it already points at this textarea, so a
+   * second one only for focus would be two names for one thing.
+   */
   const grow = useAutoGrow(prompt)
+
+  useEffect(() => {
+    if (focus === null) return
+    grow.current?.focus()
+  }, [focus, grow])
 
   const add = (): void => {
     if (prompt.trim() === '' || busy) return
@@ -279,6 +293,7 @@ export const TodoPane = ({
   todos,
   claudeRunning,
   onQueueDrained,
+  focus,
 }: TodoPaneProps): React.ReactElement => {
   const [error, setError] = useState<string | null>(null)
   const queued = todos.filter((view) => view.position !== null)
@@ -309,8 +324,12 @@ export const TodoPane = ({
 
   return (
     <div className="todo">
-      <NewTodo worktreeId={worktreeId} onError={setError} />
-      {error !== null && <p className="todo__empty">{error}</p>}
+      {/*
+       * The list first and the form under it, the way anything you add to a
+       * running list is written: what is already queued reads top to bottom in
+       * the order it will go, and the box you type into is the last thing in
+       * that order rather than sitting above its own output.
+       */}
       <div className="todo__list">
         {todos.length === 0 ? (
           <p className="todo__empty">Nothing queued for this worktree.</p>
@@ -327,6 +346,8 @@ export const TodoPane = ({
           ))
         )}
       </div>
+      {error !== null && <p className="todo__empty">{error}</p>}
+      <NewTodo worktreeId={worktreeId} onError={setError} focus={focus ?? null} />
     </div>
   )
 }

@@ -6,6 +6,8 @@ import {
   Diff,
   INDENT,
   changeRows,
+  matchingChanges,
+  matchingCommits,
   type ChangesState,
 } from './ChangesPane.js'
 import { ApiError, api } from '../api.js'
@@ -48,6 +50,8 @@ export interface TreeRow {
 }
 
 export interface FilesState {
+  /** Whose files these are, so the pane can search them. */
+  worktreeId: string
   /** The open file, `''` for none. */
   path: string
   rows: TreeRow[]
@@ -400,6 +404,7 @@ export const useFilesState = (opts: {
   flatten('', 0, listings, new Set(expanded), rows)
 
   return {
+    worktreeId,
     path,
     rows,
     loading: listings[''] === undefined,
@@ -490,6 +495,11 @@ const MODES: readonly { mode: FilesMode; label: string }[] = [
 export interface FilesPaneProps {
   mode: FilesMode
   onMode: (mode: FilesMode) => void
+  /**
+   * The row stepped into this pane. Focus the open file's editor, or the
+   * search box when there is no file to put a cursor in.
+   */
+  focus?: number | null
   files: FilesState
   changes: ChangesState
   /** Named in the commits heading, so it says what the commits are on. */
@@ -513,9 +523,27 @@ export const FilesPane = ({
   changes,
   branch,
   near,
+  focus = null,
 }: FilesPaneProps): React.ReactElement => {
   const treeRef = useRef<HTMLDivElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const selectedRef = useRef<HTMLButtonElement | null>(null)
+  /*
+   * The query is the panel's, not the worktree's: it is not persisted, for the
+   * reason the diff selection was not -- a stale one restored on load would
+   * hide the whole tree behind a search nobody remembers making. It survives a
+   * mode switch, though, because it is one box whose meaning follows the mode.
+   */
+  const [query, setQuery] = useState('')
+  const [found, setFound] = useState<string[]>([])
+  const searching = query.trim() !== ''
+  /*
+   * One nonce per thing the row can hand the keyboard to. Both are separate
+   * from the tree's own `keyFocus`, which says "you moved within the list"
+   * rather than "the row sent you here".
+   */
+  const [editorFocus, setEditorFocus] = useState<number | null>(null)
+  const [searchFocus, setSearchFocus] = useState<number | null>(null)
   const { rows, open, toggleDir } = files
   const [cursor, setCursor] = useState<string | null>(null)
   const [keyFocus, setKeyFocus] = useState(0)
@@ -530,6 +558,62 @@ export const FilesPane = ({
   useLayoutEffect(() => {
     if (keyFocus > 0) selectedRef.current?.focus()
   }, [keyFocus])
+
+  /*
+   * Files mode searches the worktree, not the rows on screen: the tree only
+   * holds what you have expanded, so filtering it could never find the file you
+   * have not walked to -- which is the only kind worth searching for. The other
+   * two modes already hold their whole list, so they filter in place.
+   */
+  useEffect(() => {
+    if (mode !== 'files' || !searching) {
+      setFound([])
+      return
+    }
+    let live = true
+    void api
+      .find(files.worktreeId, query)
+      .then((res) => {
+        if (live) setFound(res.paths)
+      })
+      .catch(() => {
+        if (live) setFound([])
+      })
+    return () => {
+      live = false
+    }
+  }, [files.worktreeId, mode, query, searching])
+
+  /*
+   * Arriving from the row: the file you are reading, or the box you would type
+   * into when there is no file to put a cursor in.
+   *
+   * Decided from `files.path`, which is UI state and true this instant, rather
+   * than from `files.file`, which is the answer to a fetch. Keying it on the
+   * fetch would let the search box take the keyboard, you start typing, and the
+   * editor mount a beat later and take it back mid-word.
+   *
+   * If the target refuses -- a binary file, or one too large to open -- focus
+   * stays where it was. That is survivable because the stepper listens on the
+   * document: a pane that fails to take the keyboard never traps you, and the
+   * next Cmd+arrow still steps.
+   */
+  const wantsEditorRef = useRef(false)
+  wantsEditorRef.current = mode === 'files' && files.path !== '' && !searching
+  useEffect(() => {
+    if (focus === null) return
+    const bump = (n: number | null): number => (n ?? 0) + 1
+    if (wantsEditorRef.current) setEditorFocus(bump)
+    else setSearchFocus(bump)
+  }, [focus])
+
+  useEffect(() => {
+    if (searchFocus === null) return
+    searchRef.current?.focus()
+    // Selected, so stepping back into a pane you already searched lets you
+    // retype rather than clear first.
+    searchRef.current?.select()
+  }, [searchFocus])
 
   const pick = (row: TreeRow): void => {
     setCursor(row.path)
@@ -611,6 +695,31 @@ export const FilesPane = ({
   const selectedChange = changed.find((c) => c.path === files.path)
 
   const sidebar = (): React.ReactElement => {
+    if (mode === 'files' && searching) {
+      /*
+       * A flat list of paths, not a tree: these come from all over the worktree
+       * and the directories between them are not what you asked about.
+       */
+      return (
+        <div className="files__tree" ref={treeRef}>
+          {found.length === 0 && <p className="files__note">No file matches.</p>}
+          {found.map((path) => {
+            const cut = path.lastIndexOf('/')
+            return (
+              <button
+                key={path}
+                className={path === files.path ? 'files__hit files__hit--on' : 'files__hit'}
+                onClick={() => open(path)}
+                title={path}
+              >
+                <span className="files__hit-name">{path.slice(cut + 1)}</span>
+                {cut !== -1 && <span className="files__hit-dir">{path.slice(0, cut)}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )
+    }
     if (mode === 'files') {
       return (
         <div className="files__tree" ref={treeRef} onKeyDown={onKeyDown}>
@@ -647,7 +756,7 @@ export const FilesPane = ({
     if (mode === 'commits') {
       const list = changes.changes
       return (
-        <div className="files__tree">
+        <div className="files__tree" ref={treeRef}>
           {list !== null && (
             <div className="files__heading">
               {list.commitScope === 'ahead'
@@ -659,7 +768,7 @@ export const FilesPane = ({
           )}
           {list !== null && (
             <CommitsList
-              commits={list.commits}
+              commits={matchingCommits(list.commits, query)}
               scope={list.commitScope}
               selected={changes.commit}
               onSelect={changes.selectCommit}
@@ -669,11 +778,15 @@ export const FilesPane = ({
       )
     }
     return (
-      <div className="files__tree">
+      <div className="files__tree" ref={treeRef}>
         {changed.length === 0 && changes.changes !== null && (
           <p className="files__note">Nothing changed in this worktree.</p>
         )}
-        <ChangesList rows={changeRows(changed)} path={files.path} onOpen={open} />
+        {changed.length > 0 && matchingChanges(changed, query).length === 0 && (
+          <p className="files__note">No change matches.</p>
+        )}
+        {/* Filtered before the fold, so the rows re-fold to a shorter tree. */}
+        <ChangesList rows={changeRows(matchingChanges(changed, query))} path={files.path} onOpen={open} />
       </div>
     )
   }
@@ -689,6 +802,7 @@ export const FilesPane = ({
             draft={files.draft}
             onChange={files.edited}
             onSave={files.save}
+            focus={editorFocus}
           />
         </Suspense>
       ) : (
@@ -738,6 +852,44 @@ export const FilesPane = ({
               {label}
             </button>
           ))}
+        </div>
+        <div className="files__find">
+          <input
+            ref={searchRef}
+            className="files__search"
+            value={query}
+            spellCheck={false}
+            placeholder={mode === 'commits' ? 'Find a commit' : 'Find a file'}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              /*
+               * Plain keys only. Cmd+arrow belongs to the row and is taken in
+               * the capture phase before this ever sees it.
+               */
+              if (event.metaKey || event.ctrlKey || event.altKey) return
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                // Clear first; a second press gives the pane back its keyboard.
+                if (query !== '') setQuery('')
+                else searchRef.current?.blur()
+                return
+              }
+              // A single-line box has no use for a down-caret, so it is free to
+              // mean "into the results".
+              /*
+               * Into the results. A single-line box has no use for a down
+               * caret, so the key is free to mean this; Enter is the one that
+               * says you meant the first hit, the same rule the tree keeps.
+               */
+              if (event.key === 'ArrowDown' || event.key === 'Enter') {
+                const first = treeRef.current?.querySelector<HTMLButtonElement>('button')
+                if (!first) return
+                event.preventDefault()
+                if (event.key === 'Enter') first.click()
+                else first.focus()
+              }
+            }}
+          />
         </div>
         {sidebar()}
       </div>

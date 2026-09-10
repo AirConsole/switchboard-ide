@@ -216,6 +216,70 @@ export const currentBranch = async (path: string): Promise<string | null> => {
   }
 }
 
+/**
+ * The branch a worktree's commits are measured against, per repository.
+ *
+ * `origin/HEAD` first, because that is what the remote itself says its default
+ * is and it survives a repository whose default is neither `main` nor `master`.
+ * It is a local symbolic ref, so reading it costs no network -- but it is also
+ * only written when the remote was cloned or `set-head` was run, which is why
+ * there are fallbacks: the remote's own `main`/`master` if one exists, then the
+ * local branch of that name.
+ *
+ * Cached for the life of the process. A repository's default branch changes
+ * about never, and the alternative is three `git` calls per worktree per poll.
+ */
+const defaults = new Map<string, string | null>()
+
+export const defaultBranchRef = async (root: string): Promise<string | null> => {
+  const known = defaults.get(root)
+  if (known !== undefined) return known
+  const ref = await (async (): Promise<string | null> => {
+    try {
+      const head = (
+        await git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+      ).trim()
+      if (head !== '') return head
+    } catch {
+      // No origin, or a remote that was never given a HEAD.
+    }
+    for (const candidate of ['refs/remotes/origin/main', 'refs/remotes/origin/master']) {
+      try {
+        await git(root, 'show-ref', '--verify', '--quiet', candidate)
+        return candidate.replace('refs/remotes/', '')
+      } catch {
+        // Try the next one.
+      }
+    }
+    for (const candidate of ['main', 'master']) {
+      if (await branchExists(root, candidate)) return candidate
+    }
+    return null
+  })()
+  defaults.set(root, ref)
+  return ref
+}
+
+/**
+ * How many commits this worktree has that the default branch has not.
+ *
+ * `rev-list --count <default>..HEAD`, which is the same question as "would
+ * merging this branch bring anything". Zero for the default branch itself, and
+ * zero when there is nothing to compare against -- a repository with no default
+ * branch cannot have anything unmerged from it.
+ */
+export const unmergedCount = async (path: string, defaultRef: string | null): Promise<number> => {
+  if (defaultRef === null) return 0
+  try {
+    const out = await git(path, 'rev-list', '--count', `${defaultRef}..HEAD`)
+    const count = Number(out.trim())
+    return Number.isFinite(count) ? count : 0
+  } catch {
+    // A detached HEAD, an unborn branch, or a default ref that has gone.
+    return 0
+  }
+}
+
 /** Count of changed tracked+untracked entries, for the tab's dirty indicator. */
 /**
  * Changed tracked+untracked entries, or null when git could not say.

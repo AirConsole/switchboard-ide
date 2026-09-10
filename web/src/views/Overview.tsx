@@ -194,8 +194,16 @@ const PANE_UNITS: Record<'claude' | 'add' | PanelName, number> = {
 }
 
 /** How a pane is identified in the layout. */
-export const paneKey = (worktreeId: string, pane: 'claude' | PanelName): string =>
-  `${worktreeId}:${pane}`
+/**
+ * A pane of a worktree's tile: Claude, or whichever panel is open beside it.
+ *
+ * These are the stops a Cmd+arrow step walks -- the row runs through panes, not
+ * only worktrees, so that stepping right can take you into the thing you were
+ * about to type in rather than past it.
+ */
+export type PaneKind = 'claude' | PanelName
+
+export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktreeId}:${pane}`
 
 type Pane =
   | { kind: 'claude'; key: string; worktree: Worktree; units: number }
@@ -268,6 +276,59 @@ const idleReason = (session: Session | undefined): string => {
   return `Claude exited with status ${session.exitStatus}.`
 }
 
+/**
+ * Claude's pane when it is not running: why it stopped, and how to start it.
+ *
+ * Its own component so the Start button can take the keyboard. A step that
+ * lands here has to land *somewhere*: the walk now reads which pane holds the
+ * keyboard rather than trusting React state, so a pane that quietly refuses
+ * focus is a pane the walk can never leave -- press Cmd+Left again and it is
+ * still asking for the same one. Measured before this existed: stepping out of
+ * a panel into a stopped Claude left the keyboard in the panel, and the next
+ * press skipped the worktree entirely.
+ */
+const IdleClaude = ({
+  session,
+  output,
+  onStart,
+  focus,
+}: {
+  session: Session | undefined
+  output: string[]
+  onStart: () => void
+  focus: number | null
+}): React.ReactElement => {
+  const startRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (focus === null) return
+    startRef.current?.focus()
+  }, [focus])
+
+  return (
+    <div className="tile__idle">
+      <p className="tile__idle-text">{idleReason(session)}</p>
+      {output.length > 0 && (
+        <pre
+          className="tile__idle-output"
+          /*
+           * Opened at the bottom, like a terminal: the last thing a failing
+           * command says is the part that says why, and a long one starts
+           * scrolled past it otherwise.
+           */
+          ref={(element) => {
+            if (element) element.scrollTop = element.scrollHeight
+          }}
+        >
+          {output.join('\n')}
+        </pre>
+      )}
+      <button className="btn" ref={startRef} onClick={onStart}>
+        Start Claude
+      </button>
+    </div>
+  )
+}
+
 interface WorktreeTileProps {
   worktree: Worktree
   /**
@@ -293,6 +354,8 @@ interface WorktreeTileProps {
    * exist, so nothing takes it.
    */
   focus: number | null
+  /** Which pane that focus request is for. */
+  focusPane: PaneKind | null
   session: Session | undefined
   terminals: Session[]
   activeTerminalId: string | null
@@ -334,6 +397,7 @@ const WorktreeTile = ({
   todos,
   panes,
   focus,
+  focusPane,
   session,
   terminals,
   activeTerminalId,
@@ -551,7 +615,9 @@ const WorktreeTile = ({
         }}
       >
         {panes.map((pane, index) => (
-          <div className="tile__seg" key={pane.key}>
+          // `data-pane` so focus landing on a panel's own controls -- a terminal
+          // tab, Save -- reports that panel rather than the tile at large.
+          <div className="tile__seg" key={pane.key} data-pane={pane.key}>
             {index === 0 && identity}
             {index === 0 && prompt}
             {pane.kind === 'terminals' && (
@@ -591,37 +657,23 @@ const WorktreeTile = ({
                     session={session}
                     primary={true}
                     fontSize={TERMINAL_FONT_SIZE}
-                    focus={focus}
+                    focus={focusPane === 'claude' ? focus : null}
                   />
                 )
               ) : (
-                <div className="tile__idle">
-                  <p className="tile__idle-text">{idleReason(session)}</p>
-                  {exitOutput.length > 0 && (
-                    <pre
-                      className="tile__idle-output"
-                      /*
-                       * Opened at the bottom, like a terminal: the last thing a
-                       * failing command says is the part that says why, and a
-                       * long one starts scrolled past it otherwise.
-                       */
-                      ref={(element) => {
-                        if (element) element.scrollTop = element.scrollHeight
-                      }}
-                    >
-                      {exitOutput.join('\n')}
-                    </pre>
-                  )}
-                  <button className="btn" onClick={onStart}>
-                    Start Claude
-                  </button>
-                </div>
+                <IdleClaude
+                  session={session}
+                  output={exitOutput}
+                  onStart={onStart}
+                  focus={focusPane === 'claude' ? focus : null}
+                />
               ))}
             {pane.kind === 'terminals' && near && (
               <TerminalsScreen
                 terminals={terminals}
                 activeTerminalId={activeTerminalId}
                 fontSize={TERMINAL_FONT_SIZE}
+                focus={focusPane === 'terminals' ? focus : null}
               />
             )}
             {pane.kind === 'todo' && (
@@ -629,6 +681,7 @@ const WorktreeTile = ({
                 worktreeId={worktree.id}
                 todos={todos}
                 claudeRunning={running}
+                focus={focusPane === 'todo' ? focus : null}
                 /*
                  * Closed the way the layout closes a panel it could not keep,
                  * rather than through the toggle: the toggle also scrolls to
@@ -646,6 +699,7 @@ const WorktreeTile = ({
                 changes={changes}
                 branch={worktree.branch}
                 near={near}
+                focus={focusPane === 'files' ? focus : null}
               />
             )}
           </div>
@@ -739,19 +793,22 @@ export interface OverviewProps {
    * that asking twice for the same one is two requests. Set when you click a
    * worktree in the top bar, step to one, wake one, or open one of its panels.
    */
-  scrollTo: { id: string; nonce: number } | null
+  scrollTo: { id: string; pane: PaneKind; nonce: number } | null
   /**
-   * The worktree you are in, which is where a Cmd+arrow step counts from. It
+   * The pane you are in, which is where a Cmd+arrow step counts from. It
    * follows focus, not only navigation, so clicking into a window makes the
    * next step continue from there.
+   *
+   * To the pane rather than the worktree, because the walk now runs through
+   * panes: knowing which window you are in no longer says what is next.
    */
-  activeId: string | null
-  /** Anything in this worktree took focus, so this is where you are now. */
-  onActivate: (worktreeId: string) => void
+  active: { id: string; pane: PaneKind } | null
+  /** Anything in this pane took focus, so this is where you are now. */
+  onActivate: (worktreeId: string, pane: PaneKind) => void
   onStart: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
-  /** Bring that worktree wholly into view, and hand its Claude the keyboard. */
-  onReveal: (worktreeId: string) => void
+  /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
+  onReveal: (worktreeId: string, pane?: PaneKind) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** A worktree's queue emptied itself into Claude; close its todo panel. */
   onQueueDrained: (worktreeId: string) => void
@@ -789,7 +846,7 @@ export const Overview = ({
   filesModeByWorktree,
   addTo,
   scrollTo,
-  activeId,
+  active,
   onActivate,
   onStart,
   onSleep,
@@ -998,7 +1055,25 @@ export const Overview = ({
    * you, and moves when you reach one you cannot see the whole of -- which,
    * with panels open, is what "the next worktree" often is.
    */
-  const stops = cells.filter((cell) => cell.worktree !== null)
+  /*
+   * The stops a step lands on: every pane of every worktree, in row order.
+   *
+   * Panes rather than worktrees, so stepping right out of Claude reaches the
+   * panel beside it instead of skipping over it to the next window -- the
+   * panel is where you were going most of the time. It falls out of `panesOf`
+   * with no special case: a worktree with nothing open contributes one stop,
+   * one with a panel two, and a window too narrow to hold Claude one again.
+   */
+  const stops = cells.flatMap((cell) =>
+    cell.worktree === null
+      ? []
+      : cell.panes.map((pane) => ({
+          worktree: cell.worktree as Worktree,
+          kind: pane.kind as PaneKind,
+          at: cell.at,
+          units: cell.units,
+        })),
+  )
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
@@ -1021,25 +1096,49 @@ export const Overview = ({
       const grid = gridRef.current
       if (!grid || stops.length === 0 || pitch <= 0) return
       /*
-       * Where you are is the worktree holding the keyboard -- but only while
-       * you can still see the whole of it. Since stepping no longer always
-       * scrolls, the leftmost spot is no longer the answer on its own: three
-       * windows that all fit share one leftmost tile, and every step would
-       * offer the same neighbour again. If you have scrolled the active
-       * worktree off the side, though, it is not where you are looking, and
-       * the tile at the leftmost spot is the honest answer once more.
+       * Where you are, most authoritative first.
+       *
+       * What actually holds the keyboard comes before what React last recorded,
+       * and that ordering is the fix for two real bugs. `active` is state, so a
+       * step taken before it commits is measured from the previous one; and the
+       * row scrolls *smoothly*, so a second press while that animation runs
+       * found the tile not wholly on screen and fell through to the leftmost
+       * unit -- which threw the walk back to a tile you had already left.
+       * Measured: Right, Right, Left netted nothing at all instead of one stop.
+       * The DOM cannot be stale and does not care that the row is moving.
+       *
+       * The `wholeOnScreen` test survives for the case it was written for: no
+       * pane holds the keyboard, you have scrolled by hand, and the honest
+       * answer is the tile you are looking at rather than the one you left.
        */
-      const active = stops.findIndex((cell) => cell.key === activeId)
-      const seen = stops[active]
-      const tile = seen ? { at: seen.at, units: seen.units } : null
-      let here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? active : -1
+      const held = (document.activeElement as HTMLElement | null)
+        ?.closest('[data-pane]')
+        ?.getAttribute('data-pane')
+      let here =
+        held === undefined || held === null
+          ? -1
+          : stops.findIndex((stop) => paneKey(stop.worktree.id, stop.kind) === held)
+
       if (here === -1) {
-        const at = Math.round(grid.scrollLeft / pitch)
-        // The tile that holds the leftmost unit.
-        here = 0
-        for (let index = 0; index < stops.length; index++) {
-          if ((stops[index]?.at ?? 0) <= at) here = index
-        }
+        const at = stops.findIndex(
+          (stop) => stop.worktree.id === active?.id && stop.kind === active.pane,
+        )
+        const seen = stops[at]
+        const tile = seen ? { at: seen.at, units: seen.units } : null
+        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? at : -1
+      }
+      if (here === -1) {
+        /*
+         * Back to the leftmost unit, and to that tile's *first* pane: landing
+         * mid-tile would make the next step continue from a pane you are not
+         * looking at.
+         */
+        const unit = Math.round(grid.scrollLeft / pitch)
+        const owner = stops.filter((stop) => stop.at <= unit).at(-1)
+        here =
+          owner === undefined
+            ? 0
+            : stops.findIndex((stop) => stop.worktree.id === owner.worktree.id)
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
       /*
@@ -1053,11 +1152,11 @@ export const Overview = ({
       // Through the same request the top bar makes, rather than scrolling from
       // here: arriving somewhere is one thing, and it also hands over the
       // keyboard.
-      if (to?.worktree) onReveal(to.worktree.id)
+      if (to) onReveal(to.worktree.id, to.kind)
     }
     document.addEventListener('keydown', step, true)
     return () => document.removeEventListener('keydown', step, true)
-  }, [stops, activeId, pitch, width, onReveal])
+  }, [stops, active, pitch, width, onReveal])
 
   /*
    * Keep your place across a resize.
@@ -1187,8 +1286,26 @@ export const Overview = ({
                  * and the top bar marks it. React's onFocus is focusin, which
                  * bubbles, so this one listener covers everything the tile
                  * will ever hold rather than each pane reporting for itself.
+                 *
+                 * To the pane now, not just the worktree: a Cmd+arrow step
+                 * counts from where you are, and that is a pane. It is read off
+                 * the nearest `data-pane`, which both the bar segments and the
+                 * pane bodies carry.
                  */
-                onFocus={worktree === null ? undefined : () => onActivate(worktree.id)}
+                onFocus={
+                  worktree === null
+                    ? undefined
+                    : (event) => {
+                        const key = (event.target as HTMLElement)
+                          .closest('[data-pane]')
+                          ?.getAttribute('data-pane')
+                        const pane = slot.data.panes.find((one) => one.key === key)
+                        onActivate(
+                          worktree.id,
+                          pane === undefined || pane.kind === 'add' ? 'claude' : pane.kind,
+                        )
+                      }
+                }
                 className={slot.leaving ? 'slot slot--leaving' : 'slot'}
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a
@@ -1216,6 +1333,7 @@ export const Overview = ({
                        * to one you were on hands the keyboard over again.
                        */
                       focus={scrollTo?.id === worktree.id ? scrollTo.nonce : null}
+                      focusPane={scrollTo?.id === worktree.id ? scrollTo.pane : null}
                       session={claudeSession(sessions, worktree.id)}
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}

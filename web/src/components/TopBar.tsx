@@ -59,6 +59,41 @@ const OpenProjectIcon = (): React.ReactElement => (
   </svg>
 )
 
+/**
+ * Commits here that the default branch has not.
+ *
+ * The fork glyph, because that is what it means: this branch has gone its own
+ * way and nothing has brought it back yet. It stands where the dirty count
+ * stands and only when there is none -- committed work and uncommitted work are
+ * the same question, "is there anything of yours still in here", and the count
+ * is the more urgent of the two answers.
+ *
+ * Hairlines at the chrome's own weight in currentColor, so it sits in the quiet
+ * channel with the branch name and the counts rather than shouting from it.
+ */
+const ForkIcon = (): React.ReactElement => (
+  <svg
+    className="tab__fork"
+    viewBox="0 0 16 16"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.3"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="3.6" r="1.7" />
+    <circle cx="4.4" cy="12.4" r="1.7" />
+    <circle cx="11.6" cy="12.4" r="1.7" />
+    {/* One commit going two ways, GitHub's way up: the trunk drops and splits,
+        rather than two branches coming together -- this says diverged, not
+        merged. */}
+    <path d="M8 5.3v1.4" />
+    <path d="M4.4 10.7V9.4a2.7 2.7 0 0 1 2.7-2.7h1.8a2.7 2.7 0 0 1 2.7 2.7v1.3" />
+  </svg>
+)
+
 /** The tab class for a status: what colour its bullet is, if any. */
 const statusClass = (status: WorktreeStatus): string =>
   status === 'needs-you'
@@ -78,16 +113,31 @@ const statusClass = (status: WorktreeStatus): string =>
 const WorktreeLabel = ({
   worktree,
   queued,
+  branch = false,
 }: {
   worktree: Worktree
   queued: number
+  /**
+   * Whether to name the branch beside the worktree.
+   *
+   * Off on a tab: a worktree is nearly always on the branch it is named after,
+   * so the branch was a second copy of the name most of the time and the tab
+   * paid width for it every time. It stays on in the dropdown, where a sleeping
+   * worktree is the one you have least chance of recognising and there is room
+   * to say more, and the window's own bar names it too.
+   */
+  branch?: boolean
 }): React.ReactElement => (
   <>
     <span className="tab__name">{worktree.name}</span>
-    {worktree.branch && worktree.branch !== worktree.name && (
+    {branch && worktree.branch && worktree.branch !== worktree.name && (
       <span className="tab__branch">{worktree.branch}</span>
     )}
-    {worktree.dirty ? <span className="tab__dirty">{worktree.dirty}&plusmn;</span> : null}
+    {worktree.dirty ? (
+      <span className="tab__dirty">{worktree.dirty}&plusmn;</span>
+    ) : worktree.unmerged ? (
+      <ForkIcon />
+    ) : null}
     {/* Said in the same quiet channel as the dirty count, because it is the same
         kind of fact: how much work is parked here. Not in colour and not on the
         bullet -- those already mean "blocked on you" and "done", and a third
@@ -202,8 +252,19 @@ const Group = ({
           onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
           title={[
             worktree.path,
+            ...(worktree.branch && worktree.branch !== worktree.name
+              ? [`on ${worktree.branch}`]
+              : []),
             stateLabel(claudeSession(sessions, worktree.id)),
             ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+            ...(worktree.dirty
+              ? [`${worktree.dirty} uncommitted change${worktree.dirty === 1 ? '' : 's'}`]
+              : []),
+            ...(worktree.unmerged
+              ? [
+                  `${worktree.unmerged} commit${worktree.unmerged === 1 ? '' : 's'} not on the default branch`,
+                ]
+              : []),
             ...(queued > 0 ? [`${queued} queued to run next here`] : []),
             sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
           ].join('\n')}
@@ -299,7 +360,11 @@ const Group = ({
                     title={worktree.path}
                   >
                     <span className="menu__line">
-                      <WorktreeLabel worktree={worktree} queued={queuedTodoCount(todos, worktree.id)} />
+                      <WorktreeLabel
+                        worktree={worktree}
+                        queued={queuedTodoCount(todos, worktree.id)}
+                        branch
+                      />
                       {/* Said in words rather than a dot: there is room here, and
                           a sleeping worktree with Claude still running is the
                           thing you most need to be able to tell apart. */}

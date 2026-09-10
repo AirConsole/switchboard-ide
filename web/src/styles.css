@@ -690,6 +690,9 @@ button {
   text-overflow: ellipsis;
 }
 
+/* Only in the dropdown now -- a tab does not name the branch, see
+   WorktreeLabel -- so it never lands on a hover ground and --graphite-dim is
+   legal here at 4.83:1 on the menu's own --slab-raised. */
 .tab__branch {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -700,6 +703,14 @@ button {
 .tab__queued {
   flex: none;
   font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+/* Where the dirty count would be, in the same quiet grey, and optically
+   centred: a 12px box against 13px text sits a hair low on a shared baseline. */
+.tab__fork {
+  flex: none;
+  margin-top: -1px;
   color: var(--graphite-dim);
 }
 
@@ -746,11 +757,11 @@ button {
  * under it -- the × included. On the sleeve (4.83) and on the active tab's
  * --ink (5.65) the dim grey is legal and stays.
  */
-.tab:not(.tab--active):hover .tab__branch,
 .tab:not(.tab--active):hover .tab__dirty,
 .tab:not(.tab--active):hover .tab__queued,
 .tab:not(.tab--active):hover .tab__zz,
-.tab:not(.tab--active):hover .tab__close {
+.tab:not(.tab--active):hover .tab__close,
+.tab:not(.tab--active):hover .tab__fork {
   color: var(--graphite);
 }
 
@@ -819,8 +830,7 @@ button {
 .tabstrip[data-tight='2'] .tab__queued,
 .tabstrip[data-tight='2'] .tab__dirty,
 .tabstrip[data-tight='3'] .tab__queued,
-.tabstrip[data-tight='3'] .tab__dirty,
-.tabstrip[data-tight='3'] .tab__branch {
+.tabstrip[data-tight='3'] .tab__dirty {
   display: none;
 }
 
@@ -2015,9 +2025,12 @@ button {
 .todo__new {
   display: grid;
   gap: 6px;
+  flex: none;
   padding: 10px;
   background: var(--slab-raised);
-  border-bottom: 1px solid var(--rule-bright);
+  /* At the foot of the panel, so the rule that separates it from the queue is
+     above it. */
+  border-top: 1px solid var(--rule-bright);
 }
 
 .todo__new .todo__prompt {
@@ -2357,7 +2370,18 @@ button {
    * and narrow enough to leave the file a readable column; it grows a little on
    * a wide pane and stops, because a tree twice as wide shows nothing more.
    */
-  --files-tree-w: clamp(158px, 26%, 240px);
+  /*
+   * The narrowest the tree may be, which is what the mode switch needs: three
+   * sentence-case labels measured 157px. Below this the switch clips, so on a
+   * pane too narrow for both it is the editor that gives up its 80 columns.
+   */
+  --files-tree-min: 158px;
+  /*
+   * What the editor spends on itself before any code: the line-number gutter
+   * (3ch plus 12px of padding, ~36px) and the 14px inset on each line. Asked
+   * for on top of the 80 columns rather than out of them.
+   */
+  --files-editor-chrome: 50px;
   --files-row-h: 20px;
   display: flex;
   height: 100%;
@@ -2373,9 +2397,18 @@ button {
   padding: 0;
 }
 
+/*
+ * The tree takes what the editor does not.
+ *
+ * The other way round until now -- the tree took a share of the pane and the
+ * editor got the remainder -- which meant the code column changed with the
+ * window and, on a wide monitor, came out narrower than on a small one. The
+ * editor asks for exactly 80 columns and the tree has the rest, which is about
+ * half a spot at every width.
+ */
 .files__side {
-  flex: 0 0 var(--files-tree-w);
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: var(--files-tree-min);
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--rule);
@@ -2420,6 +2453,88 @@ button {
 .files__mode--on {
   color: var(--bone);
   border-bottom-color: var(--rule-bright);
+}
+
+/*
+ * The search box: what the sidebar is showing, narrowed.
+ *
+ * A sibling above the tree rather than a row inside it. `.files__tree` being
+ * the sidebar's one scroller is load-bearing -- the row's wheel chaining looks
+ * for a scrollable ancestor -- and a box inside it would also scroll away as
+ * you arrow through the results.
+ *
+ * Mono, because what it filters is paths and a path is read character by
+ * character. Not `.field__input`, which is a dialog's control at 14px and
+ * would tower over 11px sidebar chrome.
+ */
+.files__find {
+  flex: none;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.files__search {
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--bone);
+}
+
+.files__search::placeholder {
+  color: var(--graphite-dim);
+}
+
+/* The interface's own focus blue, which is neither signal nor done. */
+.files__search:focus {
+  outline: none;
+  border-bottom-color: var(--pulse);
+}
+
+/*
+ * A search hit: two lines, because a full path does not fit a 171px sidebar on
+ * one and the name alone is what a finder is for. Shaped like a commit row,
+ * which is this panel's existing answer to the same problem.
+ */
+.files__hit {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--graphite);
+}
+
+.files__hit:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+.files__hit--on {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+.files__hit--changed {
+  color: var(--bone);
+}
+
+.files__hit-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files__hit-dir {
+  display: block;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .files__tree {
@@ -2596,6 +2711,10 @@ button {
 .files__note {
   margin: 0;
   padding: 8px;
+  /* Restated: `.files__file` is set in the mono face so `ch` means a code
+     column there, and this is the interface talking, not a file. */
+  font-family: var(--font-ui);
+  font-size: 12px;
   color: var(--graphite-dim);
 }
 
@@ -2607,12 +2726,27 @@ button {
  * its content's height instead -- an eleven-thousand-pixel editor inside a
  * pane, which never scrolls and hands every wheel over it to the row behind.
  */
+/*
+ * Exactly 80 columns of code, at every window width.
+ *
+ * In `ch` because that is the browser measuring the real font: the editor is
+ * 13px Menlo where the terminal is 14px, and hardcoding a ratio is the mistake
+ * `measureMonoCharWidth` exists to avoid -- a face that is not installed
+ * renders at a different width on every machine.
+ *
+ * The mono font here is what makes `ch` mean a code column; the two children
+ * that speak in the interface's own voice restate `--font-ui` for themselves.
+ * `0 1` rather than `0 0`, so a pane too narrow for 80 columns plus a usable
+ * tree shrinks the code rather than overflowing the pane.
+ */
 .files__file {
-  flex: 1;
+  flex: 0 1 calc(80ch + var(--files-editor-chrome));
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: 13px;
 }
 
 .files__cm {
@@ -2625,6 +2759,8 @@ button {
    a label for the content below it. */
 .files__notice {
   flex: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
   display: flex;
   align-items: baseline;
   gap: 10px;

@@ -46,20 +46,21 @@ const migrateUi = (ui: UiState): UiState => {
     const renamed = list.map((panel) => (panel === 'git' ? 'files' : panel))
     if (renamed.some((panel, index) => panel !== list[index])) moved = true
     /*
-     * Anyone who already had this panel open keeps Changes, whether or not the
-     * rename touched them.
+     * Only what the rename actually touched keeps Changes.
      *
-     * Keyed on the panel rather than on the rename, because a worktree whose
-     * panel was toggled between the git -> files rename and the default
-     * flipping to Files stores `['files']` and no mode at all. Under the old
-     * default it showed Changes; gated on the rename it would silently come
-     * back as the file tree -- the very surprise this migration exists to
-     * avoid, on the set the rename does not cover.
+     * This was briefly keyed on the panel instead -- any `files` panel with no
+     * stored mode -- to cover worktrees toggled in the window between the
+     * git -> files rename and the default flipping to Files. That window was
+     * three quarters of an hour of development, and the cost of covering it is
+     * permanent: this runs on every first load and writes nothing, so keying it
+     * on the panel forces *every* files panel that has never had its mode
+     * touched into Changes, and the Files default can never be seen. A panel
+     * stored as `files` from before the two panels merged showed a tree and an
+     * editor, which is what Files mode is, so it is also the honest answer for
+     * that set.
      */
-    if (renamed.includes('files') && modes[worktreeId] === undefined) {
-      // Only where the reader has not since chosen a mode for themselves.
+    if (renamed.some((panel, index) => panel !== list[index]) && modes[worktreeId] === undefined) {
       modes[worktreeId] = 'changes'
-      moved = true
     }
     // Last occurrence wins, so the survivor inherits the newer position.
     const seen = renamed.filter((panel, index) => renamed.lastIndexOf(panel) === index)

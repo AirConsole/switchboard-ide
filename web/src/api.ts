@@ -148,6 +148,17 @@ export const api = {
     ),
 
   /**
+   * Files whose path matches a fragment, anywhere in the worktree.
+   *
+   * The other half of `tree`, which only ever shows one directory: this is how
+   * you reach a file whose directory you have never opened.
+   */
+  find: (worktreeId: string, q: string) =>
+    request<{ paths: string[]; truncated?: boolean }>(
+      `/api/worktrees/${worktreeId}/find?q=${encodeURIComponent(q)}`,
+    ),
+
+  /**
    * One file's contents.
    *
    * `ifNotRev` is the rev already held, and makes this the follow-poll as well

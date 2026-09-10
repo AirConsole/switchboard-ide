@@ -6,7 +6,7 @@ import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview } from './views/Overview.js'
+import { Overview, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
@@ -44,7 +44,12 @@ export const App = (): React.ReactElement => {
    * of asking -- a tab, a step, waking, opening a panel -- means the same
    * thing by it.
    */
-  const [scrollTo, setScrollTo] = useState<{ id: string; nonce: number } | null>(null)
+  const [scrollTo, setScrollTo] = useState<{
+    id: string
+    /** Which pane of it to hand the keyboard to. */
+    pane: PaneKind
+    nonce: number
+  } | null>(null)
   /**
    * The worktree you are in.
    *
@@ -54,10 +59,32 @@ export const App = (): React.ReactElement => {
    * It is also what a Cmd+arrow step counts from, so stepping continues from
    * the window you clicked into rather than from the one you last navigated to.
    */
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const reveal = (id: string): void => {
-    setActiveId(id)
-    setScrollTo((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
+  /**
+   * Where you are, to the pane.
+   *
+   * A Cmd+arrow step counts from here, and the walk now runs through panes as
+   * well as worktrees -- so knowing the worktree is no longer enough to say
+   * what the next stop is.
+   */
+  const [active, setActive] = useState<{ id: string; pane: PaneKind } | null>(null)
+  /**
+   * Focus moved; remember where, unless it is where we already were.
+   *
+   * The identity check is not a nicety. `activeId` was a string, so writing the
+   * same one back was free -- an object is not, and this fires on every focus
+   * move *within* a pane, of which there are many: clicking from a search box
+   * to a result, tabbing along a tab strip. Without the guard each one
+   * re-renders the whole row, and the row holds live terminals.
+   */
+  const activate = useCallback((id: string, pane: PaneKind): void => {
+    setActive((previous) =>
+      previous?.id === id && previous.pane === pane ? previous : { id, pane },
+    )
+  }, [])
+
+  const reveal = (id: string, pane: PaneKind = 'claude'): void => {
+    setActive({ id, pane })
+    setScrollTo((previous) => ({ id, pane, nonce: (previous?.nonce ?? 0) + 1 }))
   }
 
   useEffect(() => {
@@ -286,6 +313,19 @@ export const App = (): React.ReactElement => {
           [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'todo'),
         },
       })
+      /*
+       * The panel is going, so the keyboard goes to that worktree's Claude --
+       * which is exactly who the queue was just typed into, and where you would
+       * be looking to see what it does with it. Written out rather than calling
+       * `reveal`, whose identity changes every render and would defeat the
+       * memoisation the drain effect depends on; both setters are stable.
+       */
+      setActive({ id: worktreeId, pane: 'claude' })
+      setScrollTo((previous) => ({
+        id: worktreeId,
+        pane: 'claude',
+        nonce: (previous?.nonce ?? 0) + 1,
+      }))
     },
     [ui.panels, setUi],
   )
@@ -359,7 +399,7 @@ export const App = (): React.ReactElement => {
       onWake={wake}
       onReveal={reveal}
       onSleep={setSleeping}
-      activeId={activeId}
+      activeId={active?.id ?? null}
     />
   )
 
@@ -441,7 +481,7 @@ export const App = (): React.ReactElement => {
             const panels = { ...ui.panels }
             delete panels[removing]
             setUi({ awake: [...awake].filter((id) => id !== removing), panels })
-            if (activeId === removing) setActiveId(null)
+            if (active?.id === removing) setActive(null)
             setRemoving(null)
             void refresh()
           }}
@@ -497,8 +537,8 @@ export const App = (): React.ReactElement => {
         // per-project + is the unambiguous way to say it.
         addTo={projects.length === 1 ? (projects[0] ?? null) : null}
         scrollTo={scrollTo}
-        activeId={activeId}
-        onActivate={setActiveId}
+        active={active}
+        onActivate={activate}
         onStart={startClaude}
         onSleep={setSleeping}
         onReveal={reveal}

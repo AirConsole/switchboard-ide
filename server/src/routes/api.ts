@@ -103,6 +103,10 @@ const patchTodoBody = z.object({
  */
 const filePath = z.string()
 const treeQuery = z.object({ path: filePath.default('') })
+const findQuery = z.object({
+  /** What to look for. Empty finds nothing rather than everything. */
+  q: z.string().default(''),
+})
 const fileQuery = z.object({
   path: filePath.min(1),
   /** The rev the client already holds; unchanged files then cost one stat. */
@@ -253,7 +257,6 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       worktreeId: worktree.id,
       root: project.root,
       path: worktree.path,
-      isMain: worktree.isMain,
     })
   })
 
@@ -283,6 +286,20 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const { path } = treeQuery.parse(request.query)
     return workspace.fileTree(id, path)
+  })
+
+  /*
+   * Files matching a fragment, anywhere in the worktree.
+   *
+   * Separate from `/tree` because it answers a different question: the tree
+   * says what is beside what, and this says where something is. Nothing from
+   * the client is used as a path -- every result comes out of git -- so there
+   * is no containment question here, only in the read that follows.
+   */
+  app.get('/api/worktrees/:id/find', async (request) => {
+    const { id } = request.params as { id: string }
+    const { q } = findQuery.parse(request.query)
+    return workspace.findFiles(id, q)
   })
 
   app.get('/api/worktrees/:id/file', async (request) => {

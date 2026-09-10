@@ -13,14 +13,16 @@ import type {
   WorktreeTodo,
 } from '@ide-n-dream/shared'
 import { HttpError } from './http-error.js'
-import { listDirectory, readTextFile, writeTextFile } from './files.js'
+import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
   addWorktree,
   defaultWorktreeRoot,
   deleteBranch,
+  defaultBranchRef,
   dirtyCount,
+  unmergedCount,
   enclosingRepoRoot,
   ensureWorktreesIgnored,
   initRepository,
@@ -81,7 +83,8 @@ export class Workspace {
     return worktrees
       .map(
         (w) =>
-          `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.missing === true}:${w.prompt ?? ''}`,
+          `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.unmerged ?? 0}:` +
+          `${w.missing === true}:${w.prompt ?? ''}`,
       )
       .join('|')
   }
@@ -125,10 +128,17 @@ export class Workspace {
     for (const project of this.store.projects) {
       try {
         const list = await listWorktrees(project.id, project.root)
+        // Once per project, not once per worktree: they share a repository and
+        // therefore a default branch.
+        const defaultRef = await defaultBranchRef(project.root)
         for (const worktree of list) {
           all.push({
             ...worktree,
+            // `undefined` rather than a number when git could not say: the
+            // dirty guard in removeWorktree refuses on "unknown", and a zero
+            // here would tell it the worktree is clean.
             dirty: (await dirtyCount(worktree.path)) ?? undefined,
+            unmerged: await unmergedCount(worktree.path, defaultRef),
             prompt: await lastPrompt(worktree.path),
           })
         }
@@ -445,6 +455,21 @@ export class Workspace {
   async fileTree(worktreeId: string, path: string): Promise<FileListing> {
     const { worktree } = await this.resolve(worktreeId)
     return listDirectory(worktree.path, path)
+  }
+
+  /**
+   * Files whose path matches, anywhere in the worktree.
+   *
+   * The tree lists one directory at a time on purpose, so it can only show what
+   * you have walked to. This is the other half: a way to reach a file whose
+   * directory you have never opened.
+   */
+  async findFiles(
+    worktreeId: string,
+    query: string,
+  ): Promise<{ paths: string[]; truncated?: boolean }> {
+    const { worktree } = await this.resolve(worktreeId)
+    return findFiles(worktree.path, query)
   }
 
   /** One file's text, or word that it has not moved since `ifNotRev`. */
