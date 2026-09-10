@@ -22,22 +22,25 @@
   --rule: #232a35;
   --rule-bright: #2f3846;
   /*
-   * The tab strip's own ground, off the ladder above on purpose.
+   * The two grounds the tab strip is built from, and the direction is Chrome's.
    *
-   * Everything else in this interface is within a few percent of black, which
-   * is right for a surface you read *through* -- and wrong for the one surface
-   * whose whole job is to separate: the strip has to say, at a glance across a
-   * room, which project a tab belongs to and which tab you are in. It is the
-   * lightest ground here, so that the two steps that matter are the biggest
-   * ones in the palette: the sleeve against the bar (1.54:1) and the tab you
-   * are in -- --ink, the row's own ground -- against its neighbours (1.66:1).
-   * They were 1.18 and 1.28.
+   * Chrome's dark strip runs the other way from the rest of a dark interface:
+   * the frame is the darkest thing on screen, an unselected tab *is* the frame,
+   * and the tab you are in is a light grey continuous with the toolbar under it
+   * -- the tab is a hole cut in the frame onto the surface below. Measured from
+   * Chrome itself, frame #202124 against toolbar #35363a is 1.58:1.
    *
-   * It does not go further because --graphite, which everything quiet on a tab
-   * is written in, measures 4.54:1 here. One more rung puts it under the 4.5
-   * floor, and a strip you can see is not worth a strip you cannot read.
+   * So --page is that surface: the ground the row of windows sits on, and the
+   * fill of the tab you are in, which is what makes the two read as one thing
+   * with no line between them. --sleeve is the trough the tabs sit in, a rung
+   * off the bar, and the bar is --ink, the darkest ground there is.
+   *
+   * --page stops here because --graphite, which everything quiet on a tab is
+   * written in and which lands on this ground on the active tab, measures
+   * 4.54:1 against it. One more rung is under the 4.5 floor.
    */
-  --sleeve: #333c4b;
+  --sleeve: #171c24;
+  --page: #333c4b;
 
   /*
    * Three steps of text, and every one of them readable.
@@ -196,7 +199,9 @@ body {
 }
 
 body {
-  background: var(--ink);
+  /* The ground the row of windows sits on, and the tab you are in is a hole
+     cut in the strip onto it -- see --page. */
+  background: var(--page);
   color: var(--bone);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -251,9 +256,15 @@ button {
 .topbar {
   display: flex;
   align-items: stretch;
+  /*
+   * The frame, and the darkest thing on screen: everything in the strip is read
+   * against it, and the page below it is now the light one. The bottom rule is
+   * still a background rather than a border, so the tab you are in can paint
+   * over it and run into the page.
+   */
   background:
     linear-gradient(var(--rule), var(--rule)) bottom left / 100% 1px no-repeat,
-    var(--slab);
+    var(--ink);
   min-width: 0;
 }
 
@@ -314,10 +325,9 @@ button {
   padding: 0 4px;
   border-radius: 8px 8px 0 0;
   /*
-   * The strip's own ground, and the lightest in the interface -- see --sleeve.
-   * This is what every tab is read against, and the tab you are in is the
-   * darkest thing on it, so the strip now runs from the sleeve down to --ink
-   * rather than sitting flat a few percent off the bar.
+   * The trough the tabs sit in: a rung above the bar's --ink, and the ground an
+   * unselected tab is read against. The step that does the work is not this one
+   * -- it is the tab you are in, --page, at 1.54:1 above it.
    */
   background: var(--sleeve);
 }
@@ -345,13 +355,13 @@ button {
   padding: 0 3px 0 9px;
   border-radius: 11px;
   /*
-   * Dark on the lighter sleeve, and it gains from the sleeve going lighter
-   * still: 1.28:1 against the old ground, 1.66:1 against --sleeve. The shape is
-   * what keeps it from being mistaken for the tab you are in -- 22px and fully
-   * round against a 31px tab with square shoulders -- and it shares that tab's
-   * fill on purpose, since both are things sitting *in* the sleeve.
+   * Up from the sleeve, not down: with the strip the Chrome way round the
+   * sleeve is dark and a darker pill on it is 1.15:1, which is no pill at all.
+   * --rule is 1.30:1 above it and 1.42:1 below the tab you are in, so it reads
+   * as an object in the trough without reading as the tab -- and the shape says
+   * the rest, 22px and fully round against a 31px tab with square shoulders.
    */
-  background: var(--ink);
+  background: var(--rule);
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--bone);
@@ -366,10 +376,9 @@ button {
 }
 
 /*
- * --graphite, not --graphite-dim: the dim grey measured 3.58:1 on the pill's
- * old --rule-bright, under the 4.5 floor. On the --ink pill it would clear it,
- * but the ladder is the point -- the name is --bone and the × is the quiet
- * thing beside it -- and --graphite measures 7.54 there.
+ * --graphite, not --graphite-dim: the dim grey measures 4.42:1 on the pill's
+ * --rule, under the 4.5 floor. The ladder is the point either way -- the name
+ * is --bone at 11.31:1 and the × is the quiet thing beside it, at 5.89.
  */
 .tabgroup__close {
   display: flex;
@@ -385,10 +394,10 @@ button {
 }
 
 /*
- * Colour alone on hover, and no ground with it: --danger measures 6.10:1 on the
- * pill's own --ink and only 3.90 on --rule-bright, so the ring the × used to
- * light up would be the thing that made the warning unreadable. It was a darker
- * ground on a lighter pill; the pill is the dark one now.
+ * Colour alone on hover, and no ground with it: --danger measures 4.77:1 on the
+ * pill's own --rule and only 3.90 on the --rule-bright a hover ring would put
+ * behind it -- so lighting that ring would be the thing that made the warning
+ * unreadable.
  */
 .tabgroup__close:hover {
   color: var(--danger);
@@ -419,7 +428,7 @@ button {
 }
 
 .tabgroup__add:hover {
-  /* With the pointer on it, the same step the tabs take: down toward --ink. */
+  /* With the pointer on it, the same step a tab takes: up toward --page. */
   background: var(--rule);
   color: var(--bone);
 }
@@ -636,9 +645,9 @@ button {
   width: 1px;
   height: 16px;
   margin-top: -8px;
-  /* Darker than the sleeve now, for the reason the hover panel is: --rule-bright
-     on --sleeve is 1.06:1, which is no line at all. */
-  background: var(--rule);
+  /* Lighter than the sleeve it sits on, which is the only direction that reads
+     on a ground this dark. */
+  background: var(--rule-bright);
 }
 
 .tab--active > .tab__body::before,
@@ -652,11 +661,10 @@ button {
  * Nothing at all until the pointer arrives, then a rounded panel: Chrome's
  * inactive tab, which has no shape of its own until you go for it.
  *
- * Darker than the sleeve, where it used to be lighter. On a sleeve this light
- * the old --rule-bright measures 1.06:1 and is simply not there, and going down
- * is the better direction anyway: the tab you are in is the darkest thing on
- * the strip, so a hover that steps toward --ink reads as being on the way to
- * it. 1.30:1 against the sleeve, and --graphite is 5.89:1 on it.
+ * Lighter than the sleeve, because the tab you are in is the lightest thing on
+ * the strip and a hover is on the way to it: --rule is 1.30:1 above the sleeve
+ * and still 1.42:1 below --page, so it reads as a step and never as the tab you
+ * are already in. --graphite is 5.89:1 on it.
  */
 .tab:not(.tab--active):hover {
   --tab-fill: var(--rule);
@@ -689,7 +697,7 @@ button {
  * which is exactly what Chrome's active tab does against its toolbar.
  */
 .tab--active {
-  --tab-fill: var(--ink);
+  --tab-fill: var(--page);
 }
 
 .tab--active > .tab__body {
@@ -2396,9 +2404,10 @@ button {
   width: max-content;
   max-width: 420px;
   background: var(--sleeve);
-  /* --rule-bright is 1.06:1 on this ground and would be no edge at all; --rule
-     reads on both sides of it, against the sleeve and against the row's ink. */
-  border-color: var(--rule);
+  /* The menu floats over the page, which is the light ground now, so its edge
+     has to read against that: --rule-bright is 1.45:1 below --page and 1.22:1
+     above the sleeve inside it. */
+  border-color: var(--rule-bright);
 }
 
 /* A tab in the strip stands on the strip's floor, which is where its square
