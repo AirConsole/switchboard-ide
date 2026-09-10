@@ -71,34 +71,26 @@ const statusClass = (status: WorktreeStatus): string =>
         : 'tab--off'
 
 /**
- * What a tab says: its name, its branch when that differs, its dirty count.
+ * What a tab says: its name and its dirty count.
  *
- * Rendered both on a tab and in the sleeping-worktrees dropdown, which is why
- * it is a fragment of spans rather than a box of its own.
+ * A fragment of spans rather than a box of its own, because a tab's body is
+ * already the box.
+ *
+ * It does not name the branch. A worktree is nearly always on the branch it is
+ * named after, so it was a second copy of the name most of the time and every
+ * tab paid width for it; the dropdown used to make an exception, and does not
+ * any more now that its rows are tabs. The window's own bar names the branch,
+ * and so does a tab's title.
  */
 const WorktreeLabel = ({
   worktree,
   queued,
-  branch = false,
 }: {
   worktree: Worktree
   queued: number
-  /**
-   * Whether to name the branch beside the worktree.
-   *
-   * Off on a tab: a worktree is nearly always on the branch it is named after,
-   * so the branch was a second copy of the name most of the time and the tab
-   * paid width for it every time. It stays on in the dropdown, where a sleeping
-   * worktree is the one you have least chance of recognising and there is room
-   * to say more, and the window's own bar names it too.
-   */
-  branch?: boolean
 }): React.ReactElement => (
   <>
     <span className="tab__name">{worktree.name}</span>
-    {branch && worktree.branch && worktree.branch !== worktree.name && (
-      <span className="tab__branch">{worktree.branch}</span>
-    )}
     {worktree.dirty ? (
       <span className="tab__dirty">{worktree.dirty}&plusmn;</span>
     ) : worktree.unmerged ? (
@@ -312,49 +304,29 @@ const Group = ({
             </button>
           </span>
           {at !== null && (
-            <div className="menu" ref={menu} style={{ left: at.left, top: at.top }}>
-              {asleep.map((worktree) => {
-                const status = worktreeStatus(sessions, worktree.id)
-                return (
-                  <button
-                    key={worktree.id}
-                    className="menu__row"
-                    onClick={() => {
-                      setAt(null)
-                      onWake(worktree.id)
-                    }}
-                    title={worktree.path}
-                  >
-                    <span className="menu__line">
-                      <WorktreeLabel
-                        worktree={worktree}
-                        queued={queuedTodoCount(todos, worktree.id)}
-                        branch
-                      />
-                      {/* Said in words rather than a dot: there is room here, and
-                          a sleeping worktree with Claude still running is the
-                          thing you most need to be able to tell apart. */}
-                      <span
-                        className={
-                          status === 'needs-you'
-                            ? 'menu__state menu__state--needs'
-                            : status === 'working'
-                              ? 'menu__state menu__state--working'
-                              : status === 'idle'
-                                ? 'menu__state menu__state--idle'
-                                : 'menu__state'
-                        }
-                      >
-                        {stateLabel(claudeSession(sessions, worktree.id))}
-                      </span>
-                    </span>
-                    {/* What it was doing when you put it down. A sleeping
-                        worktree is the one you have least chance of recognising
-                        by name alone. */}
-                    {worktree.prompt && <span className="menu__prompt">{worktree.prompt}</span>}
-                  </button>
-                )
-              })}
+            /*
+             * The same tabs, stacked.
+             *
+             * A sleeping worktree is one of these tabs that happens not to be
+             * in the row, so it is drawn by the same `tab()` -- the sleeve
+             * under it, the bullet, the zZ, the name and its marks, the hover
+             * panel. The list used to invent a row of its own, with the state
+             * spelled out in words and the prompt on a second line, and that
+             * made the same worktree look like two different objects depending
+             * on where you met it. Both facts are still on the tab: the bullet
+             * carries the state and the title carries the prompt, exactly as
+             * they do in the bar.
+             *
+             * The click that wakes one is the tab's own; this closes the menu
+             * behind it, and does it on the way out so `onWake` has already run.
+             */
+            <div
+              className="menu menu--tabs"
+              ref={menu}
+              style={{ left: at.left, top: at.top }}
+              onClick={() => setAt(null)}
+            >
+              {asleep.map((worktree) => tab(worktree, true))}
             </div>
           )}
         </>

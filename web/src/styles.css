@@ -21,6 +21,23 @@
   --slab-raised: #1d232d;
   --rule: #232a35;
   --rule-bright: #2f3846;
+  /*
+   * The tab strip's own ground, off the ladder above on purpose.
+   *
+   * Everything else in this interface is within a few percent of black, which
+   * is right for a surface you read *through* -- and wrong for the one surface
+   * whose whole job is to separate: the strip has to say, at a glance across a
+   * room, which project a tab belongs to and which tab you are in. It is the
+   * lightest ground here, so that the two steps that matter are the biggest
+   * ones in the palette: the sleeve against the bar (1.54:1) and the tab you
+   * are in -- --ink, the row's own ground -- against its neighbours (1.66:1).
+   * They were 1.18 and 1.28.
+   *
+   * It does not go further because --graphite, which everything quiet on a tab
+   * is written in, measures 4.54:1 here. One more rung puts it under the 4.5
+   * floor, and a strip you can see is not worth a strip you cannot read.
+   */
+  --sleeve: #333c4b;
 
   /*
    * Three steps of text, and every one of them readable.
@@ -297,15 +314,12 @@ button {
   padding: 0 4px;
   border-radius: 8px 8px 0 0;
   /*
-   * --rule, a rung above the --slab-raised it used to be, because the sleeve is
-   * the ground every tab is read against and the whole strip was nearly flat.
-   * Measured in the browser: the sleeve against the bar around it goes 1.08:1
-   * to 1.18:1, and the tab you are in -- --ink, and the only tab carrying a
-   * fill -- against its neighbours goes 1.17:1 to 1.28:1. Small numbers by
-   * nature, since every ground here is within a few percent of black, and the
-   * second one is the whole of what says which tab you are in.
+   * The strip's own ground, and the lightest in the interface -- see --sleeve.
+   * This is what every tab is read against, and the tab you are in is the
+   * darkest thing on it, so the strip now runs from the sleeve down to --ink
+   * rather than sitting flat a few percent off the bar.
    */
-  background: var(--rule);
+  background: var(--sleeve);
 }
 
 /*
@@ -331,11 +345,11 @@ button {
   padding: 0 3px 0 9px;
   border-radius: 11px;
   /*
-   * Dark on the lighter sleeve. It was --rule-bright, a rung above the sleeve,
-   * which against the new --rule measures 1.22:1 -- less of a step than it had
-   * before, and the pill stopped reading as an object. Going the other way is
-   * 1.28:1, and the shape keeps it from being mistaken for the tab you are in:
-   * 22px and fully round against a 31px tab with square shoulders.
+   * Dark on the lighter sleeve, and it gains from the sleeve going lighter
+   * still: 1.28:1 against the old ground, 1.66:1 against --sleeve. The shape is
+   * what keeps it from being mistaken for the tab you are in -- 22px and fully
+   * round against a 31px tab with square shoulders -- and it shares that tab's
+   * fill on purpose, since both are things sitting *in* the sleeve.
    */
   background: var(--ink);
   font-size: 11px;
@@ -400,12 +414,13 @@ button {
   border-radius: 6px;
   font-size: 15px;
   line-height: 1;
-  /* --graphite-dim measures 4.42:1 on the sleeve's --rule, under the floor. */
+  /* --graphite-dim measures 3.40:1 on --sleeve, well under the floor. */
   color: var(--graphite);
 }
 
 .tabgroup__add:hover {
-  background: var(--rule-bright);
+  /* With the pointer on it, the same step the tabs take: down toward --ink. */
+  background: var(--rule);
   color: var(--bone);
 }
 
@@ -588,6 +603,15 @@ button {
   flex: 1;
   min-width: 0;
   padding: 0 5px 0 9px;
+  /*
+   * Chrome's other half of "which tab am I in": its unselected titles are dim
+   * (#9aa0a6) and its selected one is bright (#e8eaed), and that difference is
+   * doing at least as much work as the tab's shape. Every tab here was --bone,
+   * so the only thing saying which one you were in was a 1.28:1 fill.
+   * --graphite measures 4.54:1 on the sleeve, over the floor, and the tab you
+   * are in stays --bone at 14.46:1 on its own ink.
+   */
+  color: var(--graphite);
   font-family: var(--font-ui);
   font-size: 13px;
   white-space: nowrap;
@@ -612,7 +636,9 @@ button {
   width: 1px;
   height: 16px;
   margin-top: -8px;
-  background: var(--rule-bright);
+  /* Darker than the sleeve now, for the reason the hover panel is: --rule-bright
+     on --sleeve is 1.06:1, which is no line at all. */
+  background: var(--rule);
 }
 
 .tab--active > .tab__body::before,
@@ -622,10 +648,18 @@ button {
   display: none;
 }
 
-/* Nothing at all until the pointer arrives, then a rounded panel: Chrome's
-   inactive tab, which has no shape of its own until you go for it. */
+/*
+ * Nothing at all until the pointer arrives, then a rounded panel: Chrome's
+ * inactive tab, which has no shape of its own until you go for it.
+ *
+ * Darker than the sleeve, where it used to be lighter. On a sleeve this light
+ * the old --rule-bright measures 1.06:1 and is simply not there, and going down
+ * is the better direction anyway: the tab you are in is the darkest thing on
+ * the strip, so a hover that steps toward --ink reads as being on the way to
+ * it. 1.30:1 against the sleeve, and --graphite is 5.89:1 on it.
+ */
 .tab:not(.tab--active):hover {
-  --tab-fill: var(--rule-bright);
+  --tab-fill: var(--rule);
   border-radius: 9px;
 }
 
@@ -726,15 +760,6 @@ button {
   text-overflow: ellipsis;
 }
 
-/* Only in the dropdown now -- a tab does not name the branch, see
-   WorktreeLabel -- so it never lands on a hover ground and --graphite-dim is
-   legal here at 4.83:1 on the menu's own --slab-raised. */
-.tab__branch {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--graphite-dim);
-}
-
 /*
  * The quiet channel on a tab: --graphite, not --graphite-dim.
  *
@@ -805,20 +830,19 @@ button {
 }
 
 /*
- * Awake or asleep is brightness; what Claude is doing is the bullet.
+ * Brightness is which tab you are in; what Claude is doing is the bullet.
  *
- * Two facts, two channels, so neither stands for the other. Source order is
- * load-bearing from here down: these are all single-class rules, and the amber
- * one has to come after the two that set `color` for brightness.
+ * It used to be awake-or-asleep, which cost nothing to give up: every tab in
+ * the strip is awake except the one standing for the sleepers, and that one
+ * says "zZ 3" in words. Chrome spends the same channel on selection -- dim
+ * titles on the tabs you are not in, a bright one on the tab you are -- and it
+ * is doing at least as much of the work there as the tab's shape is.
+ *
+ * So the resting colour is on `.tab__body` itself, and the rules that brighten
+ * it are the active tab's and the hovered tab's. Source order is still
+ * load-bearing for the amber below: it has to come after everything that sets
+ * `color`, because blocked-on-you outranks both.
  */
-.tab--awake > .tab__body {
-  color: var(--bone);
-}
-
-.tab--asleep > .tab__body {
-  color: var(--graphite);
-}
-
 .tab--asleep:hover > .tab__body {
   color: var(--bone);
 }
@@ -2352,71 +2376,45 @@ button {
 }
 
 /*
- * Two lines now: what the worktree is, and what it was doing.
+ * The sleeping-worktrees dropdown: the same tabs, stacked.
  *
- * A column, so the prompt gets a line of its own -- on the name's line it would
- * have to fight the state label for the same few characters, and the whole
- * point of it is that it is longer than a name.
+ * It used to invent a row of its own -- the state spelled out in words, the
+ * prompt on a second line -- which made one worktree look like two different
+ * objects depending on where you met it. The rows are `.tab`s now, so the
+ * sleeve goes under them and everything a tab knows how to say it says here
+ * too.
  */
-.menu__row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+.menu--tabs {
   gap: 2px;
-  padding: 5px 8px;
-  border-radius: 2px;
-  font: inherit;
-  text-align: left;
-  white-space: nowrap;
-  color: var(--graphite);
+  padding: 4px;
+  /*
+   * As wide as its widest row, up to a cap. A tab in the strip is capped at
+   * 200px because the strip has to hold every awake worktree; this is a list
+   * with one job, and a sleeping worktree is the one you have least chance of
+   * recognising, so it gets the width to say its whole name.
+   */
+  width: max-content;
+  max-width: 420px;
+  background: var(--sleeve);
+  /* --rule-bright is 1.06:1 on this ground and would be no edge at all; --rule
+     reads on both sides of it, against the sleeve and against the row's ink. */
+  border-color: var(--rule);
 }
 
-.menu__row:hover {
-  color: var(--bone);
-  background: var(--rule-bright);
+/* A tab in the strip stands on the strip's floor, which is where its square
+   shoulders and its feet come from. Nothing here stands on anything: these are
+   loose tabs in a list, so they take the fully round shape a hovered tab has,
+   and they fill the menu rather than sharing a row. */
+.menu--tabs .tab {
+  width: auto;
+  max-width: none;
+  border-radius: 9px;
 }
 
-/* ---------------------------------------------------------------- sleep --- */
-
-/* The state of one sleeping worktree, in the dropdown that lists them. */
-.menu__line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-/* Longer than a name and shorter than the menu is wide, so it sets the width
-   and everything above it lines up against it. */
-.menu__prompt {
-  max-width: 380px;
-  font-size: 11px;
-  color: var(--graphite-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu__state {
-  margin-left: auto;
-  padding-left: 12px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--graphite-dim);
-  white-space: nowrap;
-}
-
-.menu__state--needs {
-  color: var(--signal);
-}
-
-.menu__state--working {
-  color: var(--graphite);
-}
-
-.menu__state--idle {
-  color: var(--done);
+/* Chrome's separator divides tabs side by side. In a column it is a mark
+   hanging off the left edge of every row but the first. */
+.menu--tabs .tab + .tab > .tab__body::before {
+  display: none;
 }
 
 /* -------------------------------------------------------------- the files -- */
