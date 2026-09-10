@@ -98,7 +98,8 @@ export const SleepWorktreeDialog = ({
             )}
           </label>
         </div>
-        <div className="dialog__foot">
+        {/* `--split` because one of these is not undoable: see the stylesheet. */}
+        <div className="dialog__foot dialog__foot--split">
           <button className="btn btn--quiet" onClick={onClose}>
             Leave it awake
           </button>
