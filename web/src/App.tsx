@@ -93,6 +93,24 @@ export const App = (): React.ReactElement => {
     setScrollTo((previous) => ({ id, pane, nonce: (previous?.nonce ?? 0) + 1 }))
   }
 
+  /**
+   * A dialog closed: put the keyboard back where you were.
+   *
+   * Back to the *pane*, not to the element that had focus when the dialog
+   * opened -- that element is the control you clicked to open it, since a click
+   * focuses a button, and restoring it would leave the caret in the top bar
+   * with nothing to type into. `active` is the honest answer to "what was
+   * focused before": it is maintained from focus moves inside the row, and the
+   * top bar is not part of the row, so opening a dialog does not disturb it.
+   *
+   * Through `reveal`, so a worktree scrolled off the side comes back with the
+   * keyboard -- and `reveal` moves the row by the fewest units it needs, which
+   * is none when the window is already in front of you.
+   */
+  const refocus = (): void => {
+    if (active !== null) reveal(active.id, active.pane)
+  }
+
   useEffect(() => {
     const unbind = bindSocketToStore()
     void refresh()
@@ -481,7 +499,10 @@ export const App = (): React.ReactElement => {
     <>
       {showOpenProject && (
         <OpenProjectDialog
-          onClose={() => setShowOpenProject(false)}
+          onClose={() => {
+            setShowOpenProject(false)
+            refocus()
+          }}
           onOpened={() => {
             setShowOpenProject(false)
             void refresh()
@@ -491,7 +512,10 @@ export const App = (): React.ReactElement => {
       {addingTo && (
         <NewWorktreeDialog
           project={addingTo}
-          onClose={() => setAddingTo(null)}
+          onClose={() => {
+            setAddingTo(null)
+            refocus()
+          }}
           onCreated={(worktreeId) => {
             setAddingTo(null)
             // A worktree you just made is one you want to work in, so it starts
@@ -507,7 +531,10 @@ export const App = (): React.ReactElement => {
           project={projects.find((p) => p.id === closingProject)!}
           worktrees={worktrees.filter((w) => w.projectId === closingProject)}
           sessions={sessions}
-          onCancel={() => setClosingProject(null)}
+          onCancel={() => {
+            setClosingProject(null)
+            refocus()
+          }}
           onClose={(sleep) => {
             /*
              * Stopping everything means its worktrees are no longer awake, so
@@ -530,7 +557,10 @@ export const App = (): React.ReactElement => {
         <SleepWorktreeDialog
           worktree={worktrees.find((w) => w.id === sleeping)!}
           sessions={sessions}
-          onClose={() => setSleeping(null)}
+          onClose={() => {
+            setSleeping(null)
+            refocus()
+          }}
           onSleep={(keep) => sleep(sleeping, keep)}
           /*
            * Putting a worktree away and getting rid of it are the same
@@ -563,7 +593,10 @@ export const App = (): React.ReactElement => {
       {removing && worktrees.some((w) => w.id === removing) && (
         <RemoveWorktreeDialog
           worktree={worktrees.find((w) => w.id === removing)!}
-          onClose={() => setRemoving(null)}
+          onClose={() => {
+            setRemoving(null)
+            refocus()
+          }}
           onRemoved={() => {
             forgetWorktree(removing)
             setRemoving(null)

@@ -372,6 +372,25 @@ target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
 
+## Every dialog cancels on Escape, and gives the keyboard back
+
+`useEscape` is one hook per dialog, on the **window** in the capture phase with
+`stopPropagation` — the same reason the stepper capture: a text field and
+CodeMirror both handle Escape at the target, and the row's listeners are on the
+document, so cancelling a dialog must not also abandon an edit in the pane
+behind it. It only exists while a dialog is mounted, so Escape means whatever it
+meant before everywhere else.
+
+Closing one returns focus **to the pane you were in**, not to the element that
+had focus when it opened: a click focuses the button it lands on, so that
+element is the tab's × or the project's +, and restoring it would leave the
+caret in the top bar with nothing to type into. `active` is the honest record —
+it is written from focus moves inside the row, and the top bar is not part of
+the row — so `App`'s `refocus()` reveals that pane again, which also brings a
+window that had scrolled off the side back with the keyboard. There is one case
+with no answer: a removal leaves the pane you were in gone, and focus is on the
+document until you click or step.
+
 ## The todo panel holds no state of its own
 
 `TodoPane` fetches nothing and caches nothing: todos ride `AppSnapshot`, and

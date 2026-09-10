@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { RecentProject } from '@ide-n-dream/shared'
 import { ApiError, api, type BrowseResult } from '../api.js'
+import { useEscape } from './useEscape.js'
 
 export interface OpenProjectDialogProps {
   onClose: () => void
@@ -57,6 +58,7 @@ export const OpenProjectDialog = ({
   onClose,
   onOpened,
 }: OpenProjectDialogProps): React.ReactElement => {
+  useEscape(onClose)
   const [listing, setListing] = useState<BrowseResult | null>(null)
   const [recents, setRecents] = useState<RecentProject[]>([])
   const [path, setPath] = useState('')

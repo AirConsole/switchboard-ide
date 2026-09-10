@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Session, Worktree } from '@ide-n-dream/shared'
 import { claudeSession, removalAsks, terminalSessions } from '../selectors.js'
+import { useEscape } from './useEscape.js'
 
 /** What to leave running when a worktree goes to sleep. */
 export interface SleepOptions {
@@ -46,6 +47,7 @@ export const SleepWorktreeDialog = ({
   onSleep,
   onDelete,
 }: SleepWorktreeDialogProps): React.ReactElement => {
+  useEscape(onClose)
   const [keepClaude, setKeepClaude] = useState(false)
   const [keepTerminals, setKeepTerminals] = useState(false)
 

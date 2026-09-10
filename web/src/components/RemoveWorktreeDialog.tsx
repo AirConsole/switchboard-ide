@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Worktree } from '@ide-n-dream/shared'
 import { api } from '../api.js'
 import { removalQuestions } from '../selectors.js'
+import { useEscape } from './useEscape.js'
 
 export interface RemoveWorktreeDialogProps {
   worktree: Worktree
@@ -26,6 +27,7 @@ export const RemoveWorktreeDialog = ({
   onClose,
   onRemoved,
 }: RemoveWorktreeDialogProps): React.ReactElement => {
+  useEscape(onClose)
   const asks = removalQuestions(worktree)
   const [force, setForce] = useState(false)
   const [deleteBranch, setDeleteBranch] = useState(false)
