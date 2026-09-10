@@ -23,13 +23,15 @@ closed, if need be. It is **awake** or
 the top bar and, unless you said otherwise, nothing of it is running. Waking
 continues the conversation it was having rather than starting a new one.
 
-The row of windows is a strip you scroll along, and it is laid out in **spots**:
-one pane is one spot, so Claude alone is one spot wide and Claude with a panel
-beside it is two. A worktree shows **one panel at a time** -- its todos, its
-files and changes, or its terminals -- so two spots is as wide as a window ever
-gets, and the whole of one always fits a screen that can hold two. A spot is as
-wide as it needs to be for as many as fit to fill the window, never below 80
-columns. Navigation always lands on a spot boundary.
+The row of windows is a strip you scroll along, and it is laid out in **units**
+of half a pane. Claude is two units, and so is a terminal or the todo list; the
+files panel is three, since it spends a quarter of its width on the tree beside
+the editor and would otherwise be the one pane that cannot keep the 80-column
+promise. A worktree shows **one panel at a time** -- its todos, its files and
+changes, or its terminals -- so a window is two units, four, or five: one pane,
+two, or two and a half. A unit is as wide as it needs to be for as many as fit
+to fill the screen, and two of them never fall below 80 columns. Navigation
+always lands on a unit boundary, so no window is ever shown half-cut.
 
 ## Commands
 

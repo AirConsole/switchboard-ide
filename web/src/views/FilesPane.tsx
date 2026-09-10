@@ -448,9 +448,9 @@ export const FilesBar = ({
 
 /** The switch, and what each face is called. Sentence case: see the CSS. */
 const MODES: readonly { mode: FilesMode; label: string }[] = [
+  { mode: 'files', label: 'Files' },
   { mode: 'changes', label: 'Changes' },
   { mode: 'commits', label: 'Commits' },
-  { mode: 'files', label: 'Files' },
 ]
 
 export interface FilesPaneProps {

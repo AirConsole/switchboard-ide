@@ -211,13 +211,6 @@ export const App = (): React.ReactElement => {
   }
 
   /**
-   * A panel is another column of its worktree's tile, remembered per worktree.
-   *
-   * Nothing is displaced to make room any more: the tile simply gets wider and
-   * the row gets longer. Opening one scrolls to it, which is what makes it
-   * visible on a window too narrow to hold the tile whole.
-   */
-  /**
    * Show one of a worktree's panels, or close the one that is showing.
    *
    * One at a time: a worktree is Claude and at most one panel, so a tile is one
