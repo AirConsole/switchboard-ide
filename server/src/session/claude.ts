@@ -126,7 +126,23 @@ const readTail = async (path: string): Promise<string | null> => {
  * everything else -- assistant messages, tool results, attachments, mode
  * records -- is neither.
  */
-type Mark = { kind: 'prompt'; text: string } | { kind: 'turn-end' } | null
+/**
+ * Something in a transcript that says where a turn stands, or what was asked.
+ *
+ * `recorded-prompt` is the `{"type":"last-prompt"}` bookkeeping record, and it
+ * is a separate kind from `prompt` because it does not mean what it looks like:
+ * it carries the text of the last prompt, which is exactly what the tile's bar
+ * wants, but it is *not* evidence that a turn is running. Measured on the files
+ * worktree: coming back after being away wrote one seven records after that
+ * turn's `turn_duration`, so a detector that took it for a submission had the
+ * agent mid-turn forever. Only a real `user` record means someone asked
+ * something.
+ */
+type Mark =
+  | { kind: 'prompt'; text: string }
+  | { kind: 'recorded-prompt'; text: string }
+  | { kind: 'turn-end' }
+  | null
 
 /**
  * A slash command, written back the way it was typed.
@@ -186,7 +202,7 @@ const markOf = (line: string): Mark => {
   if (record.subtype === 'turn_duration') return { kind: 'turn-end' }
   if (record.type === 'last-prompt') {
     if (typeof record.lastPrompt !== 'string' || record.lastPrompt === '') return null
-    return { kind: 'prompt', text: record.lastPrompt }
+    return { kind: 'recorded-prompt', text: record.lastPrompt }
   }
   if (record.type !== 'user') return null
   // A subagent's own transcript, or something the harness injected.
@@ -200,14 +216,21 @@ const markOf = (line: string): Mark => {
   return { kind: 'prompt', text: content }
 }
 
-/** The newest thing in a transcript tail that says what the turn is doing. */
-const newestMark = (text: string): Exclude<Mark, null> | null => {
+/**
+ * The newest thing in a transcript tail that says what the turn is doing.
+ *
+ * `recorded-prompt` is skipped: see `Mark`. It is written when a prompt is
+ * submitted *and* on other occasions -- returning from away, at least -- so as
+ * a turn marker it is only ever a chance to be wrong.
+ */
+const newestMark = (text: string): { kind: 'prompt' | 'turn-end' } | null => {
   const lines = text.split('\n')
   for (let index = lines.length - 1; index >= 0; index--) {
     const line = lines[index]
     if (line === undefined) continue
     const mark = markOf(line)
-    if (mark !== null) return mark
+    if (mark === null || mark.kind === 'recorded-prompt') continue
+    return mark
   }
   return null
 }
@@ -222,7 +245,9 @@ export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
     const line = lines[index]
     if (line === undefined) continue
     const mark = markOf(line)
-    if (mark === null || mark.kind !== 'prompt') continue
+    // Either kind carries the text; `last-prompt` is the record written for
+    // exactly this purpose.
+    if (mark === null || mark.kind === 'turn-end') continue
     const prompt = mark.text.replace(/\s+/g, ' ').trim()
     if (prompt === '') continue
     return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
@@ -235,10 +260,11 @@ export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
  * Where a worktree's conversation stands: has the last thing asked been
  * answered?
  *
- * Claude Code writes `{"type":"last-prompt",...}` when a prompt is submitted and
- * `{"type":"system","subtype":"turn_duration",...}` when the turn it started
- * ends. Whichever of the two is nearer the end of the transcript says which
- * side of a turn the agent is on -- a precise "it has finished" rather than the
+ * A `user` record with prose in it is someone asking something, and
+ * `{"type":"system","subtype":"turn_duration",...}` is the turn it started
+ * ending. Whichever is nearer the end of the transcript says which side of a
+ * turn the agent is on. `last-prompt` is deliberately not consulted here -- see
+ * `Mark` for the measurement that took it out -- a precise "it has finished" rather than the
  * silence-based guess `attention.ts` makes for the tile's label, and exactly the
  * refinement that file's own comment names.
  *

@@ -51,43 +51,43 @@ const EMPTY_DIRS: string[] = []
  * Is the whole of a tile on screen already?
  *
  * A tile begins one gap into its own run of the row -- the leading inset, which
- * `scroll-padding-left` matches -- and ends at the far edge of the last spot it
- * covers: it swallows the gaps between the spots it spans and leaves only the
- * trailing one outside itself, so `(spot + spots) * pitch` is its right edge.
+ * `scroll-padding-left` matches -- and ends at the far edge of the last unit it
+ * covers: it swallows the gaps between the units it spans and leaves only the
+ * trailing one outside itself, so `(at + units) * pitch` is its right edge.
  *
  * A pixel of slack at each end, because `pitch` is fractional and `scrollLeft`
  * is not: a tile flush against an edge must not read as one pixel over it.
  */
 const wholeOnScreen = (
-  tile: { spot: number; spots: number },
+  tile: { at: number; units: number },
   scrollLeft: number,
   pitch: number,
   width: number,
 ): boolean =>
-  GAP + tile.spot * pitch >= scrollLeft - 1 &&
-  (tile.spot + tile.spots) * pitch <= scrollLeft + width + 1
+  GAP + tile.at * pitch >= scrollLeft - 1 &&
+  (tile.at + tile.units) * pitch <= scrollLeft + width + 1
 
 /**
- * Which spot to scroll to so a tile is wholly on screen, moving as little as
+ * Which unit to scroll to so a tile is wholly on screen, moving as little as
  * possible.
  *
- * A tile of s spots at `spot` is whole on screen for every offset from
- * `spot + s - capacity` -- its right edge against the right edge of the window
- * -- to `spot`, its left edge against the left. The nearest of those to where
- * the row already sits is the answer: going to the one-spot worktree just off
- * the right edge scrolls by one spot and keeps the one you were on beside it,
- * rather than pulling the new one to the front and taking everything else off
- * the screen with it.
+ * A tile of u units at `at` is whole on screen for every offset from
+ * `at + u - capacity` -- its right edge against the right edge of the window --
+ * to `at`, its left edge against the left. The nearest of those to where the
+ * row already sits is the answer: going to the worktree just off the right edge
+ * moves as little as it can and keeps the one you were on beside it, rather
+ * than pulling the new one to the front and taking everything else off the
+ * screen with it.
  *
  * The range is never empty, because a tile is never wider than the window --
- * see `panesOf` -- so it always holds `spot` itself. Offsets are spot indices,
+ * see `panesOf` -- so it always holds `at` itself. Offsets are unit indices,
  * which is what the row is allowed to come to rest on.
  */
 const nearestOffset = (
-  tile: { spot: number; spots: number },
-  at: number,
+  tile: { at: number; units: number },
+  from: number,
   capacity: number,
-): number => Math.min(Math.max(at, tile.spot + tile.spots - capacity), tile.spot)
+): number => Math.min(Math.max(from, tile.at + tile.units - capacity), tile.at)
 
 /**
  * Every panel, in the order they sit beside Claude.
@@ -169,14 +169,38 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
   }
 }
 
+/**
+ * How much of the row each pane asks for, in units of half a spot.
+ *
+ * The row used to be laid out in whole spots, one per pane, and that suited a
+ * pane that is nothing but a terminal: 80 columns and no chrome. The files
+ * panel is not that -- it spends a quarter of its width on the tree beside the
+ * editor -- so at one spot its editor came to 56 to 63 columns, under the 80
+ * the whole layout exists to guarantee. Measured, and worse the wider the
+ * monitor: at 3440px it was 57.
+ *
+ * Halving the atom fixes it without changing any of the arithmetic. Everything
+ * below still counts whole units; there are simply twice as many, so a pane can
+ * ask for three of them -- a spot and a half -- and a worktree can be two and a
+ * half spots wide. Nothing may ask for one: a single unit is half a pane, and
+ * the 80-column floor is a promise about panes.
+ */
+const PANE_UNITS: Record<'claude' | 'add' | PanelName, number> = {
+  claude: 2,
+  add: 2,
+  todo: 2,
+  terminals: 2,
+  files: 3,
+}
+
 /** How a pane is identified in the layout. */
 export const paneKey = (worktreeId: string, pane: 'claude' | PanelName): string =>
   `${worktreeId}:${pane}`
 
 type Pane =
-  | { kind: 'claude'; key: string; worktree: Worktree }
-  | { kind: PanelName; key: string; worktree: Worktree }
-  | { kind: 'add'; key: string }
+  | { kind: 'claude'; key: string; worktree: Worktree; units: number }
+  | { kind: PanelName; key: string; worktree: Worktree; units: number }
+  | { kind: 'add'; key: string; units: number }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -391,7 +415,13 @@ const WorktreeTile = ({
   const near = useNearViewport(tileRef, scroller)
 
   const shownPanes = new Set(panes.map((pane) => pane.kind))
-  const columns = `repeat(${panes.length}, minmax(0, 1fr))`
+  /*
+   * The bar and the body are grids over these same columns, so each panel's
+   * controls sit exactly above the pane they drive. Weighted by units rather
+   * than equal, which is what lets the files panel be half a spot wider than
+   * Claude beside it.
+   */
+  const columns = panes.map((pane) => `minmax(0, ${pane.units}fr)`).join(' ')
   /*
    * The worktree's controls stay with its Claude pane rather than moving to the
    * last one, so opening a panel does not slide the button you just pressed out
@@ -696,13 +726,13 @@ const inner = (from: EventTarget | null, stop: Element, delta: number): boolean 
 }
 
 /**
- * How much wheel makes one spot: a notch, and nothing smaller.
+ * How much wheel makes one pane: a notch, and nothing smaller.
  *
- * A mouse notch is exactly 100px in Chrome, so one notch is one spot. It has
+ * A mouse notch is exactly 100px in Chrome, so one notch is one pane. It has
  * to be a whole notch in one event, though, rather than a total accumulated
  * over a gesture. A trackpad -- and a Magic Mouse -- reports a scroll as a
  * stream of small deltas with momentum after it, so accumulating meant an
- * incidental graze while reading moved the row a spot and a flick walked it
+ * incidental graze while reading moved the row a pane and a flick walked it
  * several: measured over a tile's bar, ten trackpad-sized deltas of 12px took
  * the row 0 -> 794, and a forty-event flick 0 -> 1588. Nobody asked for that,
  * and it read as the row moving on its own.
@@ -819,7 +849,7 @@ export const Overview = ({
   const projectById = new Map(projects.map((project) => [project.id, project]))
 
   /*
-   * A tile's panes. Each one takes a spot in the row.
+   * A tile's panes, and how much of the row each takes.
    *
    * Claude and every open panel, in PANELS order -- fixed, so opening one does
    * not shuffle the others. A tile is as many spots wide as it has panes, and
@@ -847,55 +877,82 @@ export const Overview = ({
   const openPanelsOf = (worktree: Worktree): PanelName[] =>
     (panels[worktree.id] ?? []).filter((panel) => PANELS.includes(panel)).slice(-1)
 
+  /**
+   * Claude's pane and the open panel, each sized in units.
+   *
+   * A panel asks for what it wants and settles for what there is. Files wants
+   * three units, but a window with only four cannot hold that beside Claude --
+   * so it takes two rather than costing you the agent, because a narrower
+   * editor beats no Claude at all. Only when even the minimum will not fit is
+   * Claude's pane dropped, which is the phone rule and is what leaves a single
+   * pane showing the panel you opened.
+   *
+   * Nothing is ever wider than the window, which is what lets `nearestOffset`
+   * always have an answer.
+   */
   const panesOf = (worktree: Worktree, capacity: number): Pane[] => {
-    const open = openPanelsOf(worktree)
-    const claude: Pane = { kind: 'claude', key: paneKey(worktree.id, 'claude'), worktree }
-    // The newest `capacity` panels, in the order they were opened.
-    const kept = new Set(open.length > capacity ? open.slice(open.length - capacity) : open)
-    const panelPanes: Pane[] = PANELS.filter((panel) => kept.has(panel)).map((panel) => ({
+    const fits = (kind: 'claude' | PanelName): number => Math.min(PANE_UNITS[kind], capacity)
+    const claude: Pane = {
+      kind: 'claude',
+      key: paneKey(worktree.id, 'claude'),
+      worktree,
+      units: fits('claude'),
+    }
+    const panel = openPanelsOf(worktree)[0]
+    if (panel === undefined) return [claude]
+
+    const pane = (units: number): Pane => ({
       kind: panel,
       key: paneKey(worktree.id, panel),
       worktree,
-    }))
-    return panelPanes.length + 1 <= capacity ? [claude, ...panelPanes] : panelPanes
+      units,
+    })
+    const wants = fits(panel)
+    if (claude.units + wants <= capacity) return [claude, pane(wants)]
+    // Two units is every pane's floor: one is half a pane, and the 80-column
+    // guarantee is about panes.
+    const least = Math.min(2, capacity)
+    if (claude.units + least <= capacity) return [claude, pane(least)]
+    return [pane(wants)]
   }
 
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
-  // n panes occupy GAP + n * (paneWidth + GAP): the leading inset plus one
-  // trailing margin each. Solved for n, then for paneWidth.
   /*
-   * The row is a grid of spots, and every tile is a whole number of them.
+   * The row is a grid of units, and every tile is a whole number of them.
    *
-   * A spot is as wide as it has to be for `spots` of them to fill the window
-   * exactly, and never narrower than MIN_PANE_COLUMNS -- so the window divides
-   * evenly and a single worktree on a wide screen gets the whole of it.
+   * A unit is half a pane. `pitch` is one unit plus the gap that follows it,
+   * and the floor is half of a pane's own -- so two units still clear
+   * MIN_PANE_COLUMNS, which is the promise, while a pane may now be three of
+   * them. A tile of u units is `u * pitch - GAP` wide: it swallows the gaps
+   * between the units it covers, so tiles of any width occupy exactly the same
+   * run of the row as the units they span.
    *
-   * `pitch` is a spot plus the gap that follows it, which is the unit
-   * everything else is expressed in. A tile of s spots is `s * pitch - GAP`
-   * wide: it swallows the gaps between the spots it covers, so two one-spot
-   * tiles and one two-spot tile occupy exactly the same run of the row.
+   * Two units minimum, which is one pane: a window narrower than that has
+   * nowhere to put anything, and the tile overflows it rather than shrinking
+   * below the floor.
    */
-  const spots = Math.max(1, Math.floor((width - GAP) / (minPaneWidth + GAP)))
-  const pitch = (width - GAP) / spots
+  const unitPitch = (minPaneWidth + GAP) / 2
+  const units = Math.max(2, Math.floor((width - GAP) / unitPitch))
+  const pitch = (width - GAP) / units
 
-  type Cell = { key: string; worktree: Worktree | null; panes: Pane[]; spot: number }
+  type Cell = { key: string; worktree: Worktree | null; panes: Pane[]; at: number; units: number }
   const cells: Cell[] = []
   let next = 0
-  for (const worktree of worktrees) {
-    const panes = panesOf(worktree, spots)
-    cells.push({ key: worktree.id, worktree, panes, spot: next })
-    next += panes.length
+  const push = (key: string, worktree: Worktree | null, panes: Pane[]): void => {
+    const span = panes.reduce((n, pane) => n + pane.units, 0)
+    cells.push({ key, worktree, panes, at: next, units: span })
+    next += span
   }
+  for (const worktree of worktrees) push(worktree.id, worktree, panesOf(worktree, units))
   if (addTo !== null) {
-    cells.push({ key: ADD_KEY, worktree: null, panes: [{ kind: 'add', key: ADD_KEY }], spot: next })
-    next += 1
+    push(ADD_KEY, null, [{ kind: 'add', key: ADD_KEY, units: Math.min(PANE_UNITS.add, units) }])
   }
-  const totalSpots = next
+  const totalUnits = next
 
   const slots: Slot<Cell>[] = cells.map((cell) => ({
     key: cell.key,
-    width: Math.max(0, cell.panes.length * pitch - GAP),
+    width: Math.max(0, cell.units * pitch - GAP),
     data: cell,
   }))
   const moving = useTileMotion(width > 0 ? slots : [])
@@ -949,13 +1006,13 @@ export const Overview = ({
      * every other window sideways for no gain -- the terminal you were reading
      * beside it included.
      */
-    const tile = { spot: target.spot, spots: target.panes.length }
+    const tile = { at: target.at, units: target.units }
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), spots)
+    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), units)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
-  }, [scrollTo, target, pitch, width, spots])
+  }, [scrollTo, target, pitch, width, units])
 
   /*
    * Cmd+Left and Cmd+Right step through the worktrees.
@@ -1011,14 +1068,14 @@ export const Overview = ({
        */
       const active = stops.findIndex((cell) => cell.key === activeId)
       const seen = stops[active]
-      const tile = seen ? { spot: seen.spot, spots: seen.panes.length } : null
+      const tile = seen ? { at: seen.at, units: seen.units } : null
       let here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? active : -1
       if (here === -1) {
         const at = Math.round(grid.scrollLeft / pitch)
-        // The tile that holds the leftmost spot.
+        // The tile that holds the leftmost unit.
         here = 0
         for (let index = 0; index < stops.length; index++) {
-          if ((stops[index]?.spot ?? 0) <= at) here = index
+          if ((stops[index]?.at ?? 0) <= at) here = index
         }
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
@@ -1047,11 +1104,11 @@ export const Overview = ({
    * tile without having scrolled there. The spot index is what survives; the
    * offset is recomputed from it.
    */
-  const spotRef = useRef(0)
+  const unitRef = useRef(0)
   useEffect(() => {
     const grid = gridRef.current
     if (!grid || width === 0) return
-    grid.scrollTo({ left: spotRef.current * pitch, behavior: 'auto' })
+    grid.scrollTo({ left: unitRef.current * pitch, behavior: 'auto' })
   }, [pitch, width])
 
   /*
@@ -1097,7 +1154,13 @@ export const Overview = ({
       }, WHEEL_IDLE_MS)
 
       const from = aim ?? Math.round(grid.scrollLeft / pitch)
-      const to = Math.min(Math.max(from + (pixels > 0 ? 1 : -1), 0), Math.max(0, totalSpots - 1))
+      /*
+       * A notch still travels one pane, which is two units now that a unit is
+       * half of one. Stepping a single unit would have halved how far a flick
+       * carries you along a row that has not got any shorter.
+       */
+      const step = (pixels > 0 ? 1 : -1) * 2
+      const to = Math.min(Math.max(from + step, 0), Math.max(0, totalUnits - 1))
       aim = to
       grid.scrollTo({ left: to * pitch })
     }
@@ -1106,7 +1169,7 @@ export const Overview = ({
       clearTimeout(idle)
       grid.removeEventListener('wheel', onWheel)
     }
-  }, [pitch, totalSpots])
+  }, [pitch, totalUnits])
 
   return (
     <section className="view overview">
@@ -1115,22 +1178,23 @@ export const Overview = ({
         ref={gridRef}
         onScroll={(event) => {
           const el = event.currentTarget
-          if (pitch > 0) spotRef.current = Math.round(el.scrollLeft / pitch)
+          if (pitch > 0) unitRef.current = Math.round(el.scrollLeft / pitch)
         }}
       >
         {/*
-          * One marker per spot, so a scroll comes to rest on a spot boundary
-          * rather than part-way through one.
+          * One marker per unit, so a scroll comes to rest on a unit boundary
+          * rather than part-way through one. Every tile begins on one, so no
+          * tile is ever shown half-cut.
           *
           * Markers rather than the tiles themselves: a tile wider than the
-          * window has to be scrollable *within*, to reach the spots it covers,
+          * window has to be scrollable *within*, to reach the units it covers,
           * and snapping to tile starts alone would refuse to stop there. They
           * are out of flow and take no space, and the panes cannot be used for
-          * this -- a multi-pane tile divides its own width evenly, which is
-          * half a gap out from the spot grid.
+          * this -- a pane is a share of its tile's width, which is half a gap
+          * out from the unit grid.
           */}
         {width > 0 &&
-          Array.from({ length: totalSpots }, (_, index) => (
+          Array.from({ length: totalUnits }, (_, index) => (
             <i
               key={index}
               className="grid__spot"
