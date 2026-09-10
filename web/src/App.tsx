@@ -289,8 +289,14 @@ export const App = (): React.ReactElement => {
     const open = ui.panels[worktreeId] ?? []
     const wasOpen = open.includes(panel)
     setUi({ panels: { ...ui.panels, [worktreeId]: wasOpen ? [] : [panel] } })
-    // The tile just changed width, so bring the whole of it back into view.
-    reveal(worktreeId)
+    /*
+     * The tile just changed width, so bring the whole of it back into view --
+     * and hand the keyboard to what was just opened, which is the pane you
+     * asked for and the one you are about to type into: the new-todo box, the
+     * files panel's editor or its finder, the terminal. Closing gives it back
+     * to Claude, because the pane that had it no longer exists.
+     */
+    reveal(worktreeId, wasOpen ? 'claude' : panel)
     // The panel is only useful with something in it.
     if (panel === 'terminals' && !wasOpen && terminalSessions(sessions, worktreeId).length === 0) {
       newTerminal(worktreeId)

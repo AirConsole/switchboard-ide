@@ -443,7 +443,11 @@ bringing the tile on screen brings the pane with it, and `wholeOnScreen` /
 
 Arriving focuses what you would type into, through the same `number | null`
 nonce `TerminalView` has always taken — Claude's terminal, the active terminal,
-the new-todo box, or the files panel's editor. `FilesPane` decides between the
+the new-todo box, or the files panel's editor. **Opening a panel is arriving**,
+and at that panel rather than at the worktree: a click on Todo is a click on the
+box you were about to type a prompt into, and it would be a strange one that
+handed the keyboard to Claude instead. Closing gives it back to Claude, because
+the pane that had it no longer exists. `FilesPane` decides between the
 editor and its search box from **`files.path`**, which is UI state and true this
 instant, not from `files.file`, which is a fetch result: keying it on the fetch
 lets the search box take the keyboard, you start typing, and the editor mount a

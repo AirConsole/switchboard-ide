@@ -467,7 +467,16 @@ export interface UsageLimit {
   /** Short label for the bar: `session`, `week`, or a model's name. */
   label: string
   percent: number
+  /** Exactly as `/usage` phrased it, e.g. `Sep 10, 5:29pm (UTC)`. */
   resets: string | null
+  /**
+   * The same moment as an epoch, or null when the prose did not parse.
+   *
+   * Kept beside the prose rather than replacing it: this is Claude's own
+   * wording and it is the first thing that will change, so a reading whose
+   * shape we no longer recognise still shows the sentence it came with.
+   */
+  resetsAt: number | null
 }
 
 /**
