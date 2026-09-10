@@ -327,6 +327,7 @@ export const App = (): React.ReactElement => {
       onNewWorktree={setAddingTo}
       onWake={wake}
       onReveal={reveal}
+      onSleep={setSleeping}
       activeId={activeId}
     />
   )
@@ -386,6 +387,16 @@ export const App = (): React.ReactElement => {
           sessions={sessions}
           onClose={() => setSleeping(null)}
           onSleep={(keep) => sleep(sleeping, keep)}
+          /*
+           * Putting a worktree away and getting rid of it are the same
+           * question asked with different force, so they are asked in the same
+           * place: the trashcan that used to live in the window's own bar is
+           * gone, and this hands over to the dialog that does the deleting.
+           */
+          onDelete={() => {
+            setSleeping(null)
+            setRemoving(sleeping)
+          }}
         />
       )}
       {removing && worktrees.some((w) => w.id === removing) && (
@@ -393,10 +404,13 @@ export const App = (): React.ReactElement => {
           worktree={worktrees.find((w) => w.id === removing)!}
           onClose={() => setRemoving(null)}
           onRemoved={() => {
-            // A removed worktree leaves nothing of itself behind.
+            // A removed worktree leaves nothing of itself behind, "where you
+            // are" included -- it would otherwise point at a window that is
+            // not there, which is what a Cmd+arrow step would count from.
             const panels = { ...ui.panels }
             delete panels[removing]
             setUi({ awake: [...awake].filter((id) => id !== removing), panels })
+            if (activeId === removing) setActiveId(null)
             setRemoving(null)
             void refresh()
           }}
@@ -457,7 +471,6 @@ export const App = (): React.ReactElement => {
         onStart={startClaude}
         onSleep={setSleeping}
         onReveal={reveal}
-        onRemoveWorktree={setRemoving}
         onTogglePanel={togglePanel}
         onQueueDrained={queueDrained}
         onNewWorktree={() => setAddingTo(projects[0] ?? null)}
