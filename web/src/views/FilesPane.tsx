@@ -853,6 +853,7 @@ export const FilesPane = ({
             </button>
           ))}
         </div>
+        {sidebar()}
         <div className="files__find">
           <input
             ref={searchRef}
@@ -874,14 +875,14 @@ export const FilesPane = ({
                 else searchRef.current?.blur()
                 return
               }
-              // A single-line box has no use for a down-caret, so it is free to
-              // mean "into the results".
               /*
-               * Into the results. A single-line box has no use for a down
-               * caret, so the key is free to mean this; Enter is the one that
-               * says you meant the first hit, the same rule the tree keeps.
+               * Into the results, which are above the box: a single-line field
+               * has no use for a vertical caret, so the key that points at the
+               * list is free to mean this. Enter is the one that says you meant
+               * the first hit -- the best match, not the nearest row -- which is
+               * the same rule the tree keeps.
                */
-              if (event.key === 'ArrowDown' || event.key === 'Enter') {
+              if (event.key === 'ArrowUp' || event.key === 'Enter') {
                 const first = treeRef.current?.querySelector<HTMLButtonElement>('button')
                 if (!first) return
                 event.preventDefault()
@@ -891,7 +892,6 @@ export const FilesPane = ({
             }}
           />
         </div>
-        {sidebar()}
       </div>
 
       <div className="files__file">
