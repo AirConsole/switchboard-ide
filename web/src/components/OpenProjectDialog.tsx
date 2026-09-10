@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { RecentProject } from '@ide-n-dream/shared'
 import { ApiError, api, type BrowseResult } from '../api.js'
 
 export interface OpenProjectDialogProps {
@@ -47,12 +48,17 @@ const readStrings = (value: unknown): string[] =>
  * A path that does not exist, or a directory that is not a repository yet, is
  * treated as intent to start a project there rather than as a mistake, so the
  * dialog offers to set it up instead of dead-ending on an error.
+ *
+ * Above all of it sit the projects you have closed, because closing one costs
+ * nothing but the path, and walking the tree back down to it is the whole of
+ * that cost.
  */
 export const OpenProjectDialog = ({
   onClose,
   onOpened,
 }: OpenProjectDialogProps): React.ReactElement => {
   const [listing, setListing] = useState<BrowseResult | null>(null)
+  const [recents, setRecents] = useState<RecentProject[]>([])
   const [path, setPath] = useState('')
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [commitExisting, setCommitExisting] = useState(true)
@@ -71,6 +77,13 @@ export const OpenProjectDialog = ({
   }
 
   useEffect(() => browse(''), [])
+  // Not fatal if it fails: the picker below opens any project this can.
+  useEffect(() => {
+    void api
+      .recents()
+      .then(setRecents)
+      .catch(() => {})
+  }, [])
 
   const open = (target: string, create = false): void => {
     // The buttons are disabled while a request is in flight; Enter has to
@@ -192,6 +205,26 @@ export const OpenProjectDialog = ({
           <h2 className="dialog__title">Open project</h2>
         </div>
         <div className="dialog__body">
+          {recents.length > 0 && (
+            <div className="field">
+              <span className="field__label">Recently closed</span>
+              <div className="picker">
+                {recents.map((recent) => (
+                  <button
+                    key={recent.root}
+                    className="picker__row picker__row--repo"
+                    onClick={() => open(recent.root)}
+                    disabled={busy}
+                    title={recent.root}
+                  >
+                    {recent.root}
+                    <span className="picker__tag">open</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="field">
             <label className="field__label" htmlFor="project-path">
               Repository path

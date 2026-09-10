@@ -190,6 +190,13 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return workspace.browse(path)
   })
 
+  /*
+   * Projects that were closed, for the picker to offer back. Its own endpoint
+   * rather than a field on the snapshot: the snapshot is polled, and answering
+   * this stats every remembered path.
+   */
+  app.get('/api/recents', async () => workspace.recentProjects())
+
   app.post('/api/projects', async (request) => {
     const { path, create, commitExisting } = openProjectBody.parse(request.body)
     const project = await workspace.openProject(path, { create, commitExisting })

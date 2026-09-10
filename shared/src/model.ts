@@ -28,6 +28,25 @@ export interface Project {
   addedAt: number
 }
 
+/**
+ * A project that was open and is not any more.
+ *
+ * Closing a project is not destructive -- nothing on disk changes, and opening
+ * it again picks its worktrees and their sleeping agents back up -- so the only
+ * cost of closing one is having to find the path again. This is that path,
+ * remembered so the picker can offer it back.
+ *
+ * Only local projects have one: it is keyed by root path, which is what
+ * `openProject` takes. A remote project will arrive by base URL instead.
+ */
+export interface RecentProject {
+  /** Absolute path to the repository root, as it was registered. */
+  root: string
+  name: string
+  /** Epoch ms it was last closed; the list is newest first. */
+  closedAt: number
+}
+
 /** A git worktree of a project. The main worktree is included, with `isMain`. */
 export interface Worktree {
   id: string
