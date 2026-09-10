@@ -13,6 +13,14 @@ export interface SleepWorktreeDialogProps {
   sessions: Session[]
   onClose: () => void
   onSleep: (keep: SleepOptions) => void
+  /**
+   * Hand over to removal, when this worktree can be removed at all.
+   *
+   * Sleeping and deleting are the same question asked with different force --
+   * "put this away" and "put this away for good" -- so they are asked in one
+   * place rather than from two controls in two parts of the interface.
+   */
+  onDelete?: () => void
 }
 
 /**
@@ -34,6 +42,7 @@ export const SleepWorktreeDialog = ({
   sessions,
   onClose,
   onSleep,
+  onDelete,
 }: SleepWorktreeDialogProps): React.ReactElement => {
   const [keepClaude, setKeepClaude] = useState(false)
   const [keepTerminals, setKeepTerminals] = useState(false)
@@ -99,6 +108,15 @@ export const SleepWorktreeDialog = ({
           >
             Sleep
           </button>
+          {/* Danger last, as everywhere else here, and it opens the dialog that
+              asks properly rather than doing anything itself. The main worktree
+              cannot be removed, so it is not offered -- the gate that used to
+              sit on the window's trashcan moved with the action. */}
+          {onDelete !== undefined && !worktree.isMain && (
+            <button className="btn btn--danger" onClick={onDelete}>
+              Delete worktree…
+            </button>
+          )}
         </div>
       </div>
     </div>

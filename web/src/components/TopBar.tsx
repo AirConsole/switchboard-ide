@@ -24,6 +24,11 @@ export interface TopBarProps {
   /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
   /**
+   * Put a worktree away: the tab's × asks this, and the dialog behind it is
+   * where sleeping and deleting are told apart.
+   */
+  onSleep: (worktreeId: string) => void
+  /**
    * The worktree you are in: the one the row last brought into view, and whose
    * Claude has the keyboard. Null before anything has been navigated to.
    */
@@ -33,12 +38,9 @@ export interface TopBarProps {
 /**
  * Open a project.
  *
- * A square with a plus in it, because a square is already what a project is
- * here -- `.group__mark` marks each open one with the same shape -- so this
- * reads as "another one of those" rather than as a generic add. Hairlines at
- * the chrome's own weight and currentColor, so it inherits the
- * quiet-until-hovered treatment of the button around it, the way TrashIcon
- * does in the row.
+ * A square with a plus in it: the shape of a thing you add, at the chrome's
+ * own hairline weight, in currentColor so it inherits the quiet-until-hovered
+ * treatment of the button around it.
  */
 const OpenProjectIcon = (): React.ReactElement => (
   <svg
@@ -57,17 +59,22 @@ const OpenProjectIcon = (): React.ReactElement => (
   </svg>
 )
 
-/** The tab class for a status: the line under it, and amber when blocked. */
+/** The tab class for a status: what colour its bullet is, if any. */
 const statusClass = (status: WorktreeStatus): string =>
   status === 'needs-you'
-    ? 'chip--needs'
+    ? 'tab--needs'
     : status === 'working'
-      ? 'chip--working'
+      ? 'tab--working'
       : status === 'idle'
-        ? 'chip--idle'
-        : 'chip--off'
+        ? 'tab--idle'
+        : 'tab--off'
 
-/** A worktree's tab: its name, its branch when that differs, its dirty count. */
+/**
+ * What a tab says: its name, its branch when that differs, its dirty count.
+ *
+ * Rendered both on a tab and in the sleeping-worktrees dropdown, which is why
+ * it is a fragment of spans rather than a box of its own.
+ */
 const WorktreeLabel = ({
   worktree,
   queued,
@@ -76,16 +83,16 @@ const WorktreeLabel = ({
   queued: number
 }): React.ReactElement => (
   <>
-    {worktree.name}
+    <span className="tab__name">{worktree.name}</span>
     {worktree.branch && worktree.branch !== worktree.name && (
-      <span className="chip__branch">{worktree.branch}</span>
+      <span className="tab__branch">{worktree.branch}</span>
     )}
-    {worktree.dirty ? <span className="chip__dirty">{worktree.dirty}&plusmn;</span> : null}
+    {worktree.dirty ? <span className="tab__dirty">{worktree.dirty}&plusmn;</span> : null}
     {/* Said in the same quiet channel as the dirty count, because it is the same
-        kind of fact: how much work is parked here. Not in colour and not in the
-        underline -- those two already mean "blocked on you" and "done", and a
-        third meaning on either would make them argue. */}
-    {queued > 0 ? <span className="chip__queued">{queued} queued</span> : null}
+        kind of fact: how much work is parked here. Not in colour and not on the
+        bullet -- those already mean "blocked on you" and "done", and a third
+        meaning on either would make them argue. */}
+    {queued > 0 ? <span className="tab__queued">{queued} queued</span> : null}
   </>
 )
 
@@ -108,13 +115,14 @@ const Group = ({
   onNewWorktree,
   onWake,
   onReveal,
+  onSleep,
 }: {
   group: ProjectGroup
   sessions: Session[]
   todos: WorktreeTodo[]
 } & Pick<
   TopBarProps,
-  'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal'
+  'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal' | 'onSleep'
 >): React.ReactElement => {
   /*
    * Where to draw the dropdown, or null when it is closed.
@@ -158,46 +166,69 @@ const Group = ({
    */
   const asleepStatus = mostUrgentStatus(asleep.map((w) => worktreeStatus(sessions, w.id)))
 
-  const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => (
-    <button
-      key={worktree.id}
-      className={[
-        'chip',
-        sleeping ? 'chip--asleep' : 'chip--shown',
-        statusClass(worktreeStatus(sessions, worktree.id)),
-        // Where you are. A sleeping worktree is nowhere, whatever the row was
-        // last asked for -- it has no window to be in.
-        !sleeping && worktree.id === activeId ? 'chip--active' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
-      title={[
-        worktree.path,
-        stateLabel(claudeSession(sessions, worktree.id)),
-        ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
-        ...(queuedTodoCount(todos, worktree.id) > 0
-          ? [`${queuedTodoCount(todos, worktree.id)} queued to run next here`]
-          : []),
-        sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
-      ].join('\n')}
-    >
-      {sleeping && (
-        <span className="chip__zz" aria-hidden="true">
-          zZ
-        </span>
-      )}
-      <WorktreeLabel worktree={worktree} queued={queuedTodoCount(todos, worktree.id)} />
-    </button>
-  )
+  const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
+    const queued = queuedTodoCount(todos, worktree.id)
+    return (
+      <span
+        key={worktree.id}
+        className={[
+          'tab',
+          sleeping ? 'tab--asleep' : 'tab--awake',
+          statusClass(worktreeStatus(sessions, worktree.id)),
+          // Where you are. A sleeping worktree is nowhere, whatever the row was
+          // last asked for -- it has no window to be in.
+          !sleeping && worktree.id === activeId ? 'tab--active' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <button
+          className="tab__body"
+          onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
+          title={[
+            worktree.path,
+            stateLabel(claudeSession(sessions, worktree.id)),
+            ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+            ...(queued > 0 ? [`${queued} queued to run next here`] : []),
+            sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
+          ].join('\n')}
+        >
+          {/* The bullet is on every tab, asleep or not: sleeping does not mean
+              stopped -- Claude can be left running -- so a sleeper blocked on
+              you has to be able to say so from the bar. The zZ beside it is
+              the other fact. */}
+          <span className="tab__dot" aria-hidden="true" />
+          {sleeping && (
+            <span className="tab__zz" aria-hidden="true">
+              zZ
+            </span>
+          )}
+          <span className="tab__label">
+            <WorktreeLabel worktree={worktree} queued={queued} />
+          </span>
+        </button>
+        {/* Already asleep, so there is nothing to put away and no × to do it
+            with. Waking it is what its body is for. */}
+        {!sleeping && (
+          <button
+            className="tab__close"
+            onClick={() => onSleep(worktree.id)}
+            title={`Put ${worktree.name} away`}
+            aria-label={`Put ${worktree.name} away`}
+          >
+            &times;
+          </button>
+        )}
+      </span>
+    )
+  }
 
   return (
-    <div className="group">
-      <span className="group__name" title={project.root}>
-        <span className="group__mark" aria-hidden="true" />
-        {project.name}
+    <div className="tabgroup">
+      <span className="tabgroup__pill" title={project.root}>
+        <span className="tabgroup__name">{project.name}</span>
         <button
-          className="group__close"
+          className="tabgroup__close"
           onClick={() => onCloseProject(project.id)}
           title={`Close ${project.name}, and choose what happens to what it is running`}
           aria-label={`Close project ${project.name}`}
@@ -211,28 +242,33 @@ const Group = ({
 
       {!allAsleep && asleep.length > 0 && (
         <>
-          <button
-            ref={anchor}
-            className={['chip', 'chip--asleep', statusClass(asleepStatus)].join(' ')}
-            onClick={() => {
-              const box = anchor.current?.getBoundingClientRect()
-              setAt((was) =>
-                was !== null || box === undefined ? null : { left: box.left, top: box.bottom },
-              )
-            }}
-            title={`${asleep.length} sleeping — click to pick one to wake`}
-            aria-label={`${asleep.length} sleeping worktrees, ${asleepStatus}`}
-            aria-expanded={at !== null}
-          >
-            {/* The count is part of the label, so it is set at the label's size
-                rather than the tab's. */}
-            <span className="chip__zz" aria-hidden="true">
-              zZ {asleep.length}
-            </span>
-            <span className="chip__caret" aria-hidden="true">
-              {'▾'}
-            </span>
-          </button>
+          <span className={['tab', 'tab--zz', 'tab--asleep', statusClass(asleepStatus)].join(' ')}>
+            <button
+              ref={anchor}
+              className="tab__body"
+              onClick={() => {
+                const box = anchor.current?.getBoundingClientRect()
+                setAt((was) =>
+                  was !== null || box === undefined ? null : { left: box.left, top: box.bottom },
+                )
+              }}
+              title={`${asleep.length} sleeping — click to pick one to wake`}
+              aria-label={`${asleep.length} sleeping worktrees, ${asleepStatus}`}
+              aria-expanded={at !== null}
+            >
+              {/* The most urgent of the worktrees behind it, on the same
+                  bullet every other tab uses. */}
+              <span className="tab__dot" aria-hidden="true" />
+              {/* The count is part of the label, so it is set at the label's
+                  size rather than the tab's. */}
+              <span className="tab__zz" aria-hidden="true">
+                zZ {asleep.length}
+              </span>
+              <span className="tab__caret" aria-hidden="true">
+                {'▾'}
+              </span>
+            </button>
+          </span>
           {at !== null && (
             <div className="menu" ref={menu} style={{ left: at.left, top: at.top }}>
               {asleep.map((worktree) => {
@@ -279,7 +315,7 @@ const Group = ({
       )}
 
       <button
-        className="chip chip--add"
+        className="tabgroup__add"
         onClick={() => onNewWorktree(project)}
         title={`New worktree in ${project.name}`}
         aria-label={`New worktree in ${project.name}`}
@@ -397,15 +433,28 @@ export const TopBar = ({
   onNewWorktree,
   onWake,
   onReveal,
+  onSleep,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
+  /*
+   * How much a tab may say, from how many there are.
+   *
+   * Chrome shrinks its tabs and drops what stops fitting; the widths here come
+   * from the names, so what a tab can afford to say comes from the count. Four
+   * steps, and the last one still keeps the name, the bullet and the ×.
+   */
+  const tabCount = groups.reduce(
+    (total, group) => total + group.awake.length + (group.asleep.length > 0 ? 1 : 0),
+    0,
+  )
+  const tight = tabCount > 12 ? 3 : tabCount > 9 ? 2 : tabCount > 6 ? 1 : 0
   return (
   <header className="topbar">
     <button className="topbar__open" onClick={onOpenProject} title="Open another project">
       <OpenProjectIcon />
       Open project
     </button>
-    <nav className="groups">
+    <nav className="tabstrip" data-tight={tight}>
       {groups.map((group) => (
         <Group
           key={group.project.id}
@@ -417,6 +466,7 @@ export const TopBar = ({
           onNewWorktree={onNewWorktree}
           onWake={onWake}
           onReveal={onReveal}
+          onSleep={onSleep}
         />
       ))}
     </nav>
