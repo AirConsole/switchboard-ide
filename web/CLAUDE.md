@@ -152,8 +152,12 @@ attached the pty's geometry is left alone.
 
 ## The files pane
 
-A search box sits under the switch in all three modes, filtering whichever list
-is showing. Changes and Commits filter in place, because they already hold their
+A search box sits at the foot of the sidebar in all three modes, filtering
+whichever list is showing. It is under what it filters, for the reason the todo
+form is: the sidebar reads top to bottom as the list you are looking for, and
+the box is the line under it rather than a lid on top of it -- so the key into
+the results is ArrowUp, while Enter still means the first hit, which is the best
+match rather than the nearest row. Changes and Commits filter in place, because they already hold their
 whole list. **Files asks the server**, because the tree only holds what you
 expanded and the file worth searching for is the one you have not walked to:
 `GET /api/worktrees/:id/find` runs `git ls-files --cached --others
