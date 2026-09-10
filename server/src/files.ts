@@ -173,9 +173,23 @@ const checkIgnore = async (cwd: string, paths: string[]): Promise<Set<string>> =
          * so that worktree answered a 500 with a git fatal in the body instead
          * of the 404 the rest of this file speaks.
          */
+        /*
+         * `err` first, and nothing read off it before that check.
+         *
+         * `execFile` reports success as a null error, and reading `.code` off
+         * it threw a TypeError -- inside the callback, so it escaped this
+         * promise rather than rejecting it, and the listing hung forever with
+         * the request still open. It only bit where something is actually
+         * ignored, since that is the only case git exits 0: every scratch
+         * repository here has an empty .gitignore, and every real one does not.
+         */
+        if (err === null) {
+          done(out)
+          return
+        }
         const code = (err as { code?: unknown }).code
-        if (err !== null && code !== 1 && code !== 128) fail(err)
-        else done(out)
+        if (code === 1 || code === 128) done(out)
+        else fail(err)
       },
     )
     // git may exit before we have finished writing; EPIPE is not interesting.
