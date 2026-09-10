@@ -40,10 +40,10 @@ The pieces, and why each is the way it is:
 
 - **A project is a tab group** — a `--sleeve` sleeve, flush with the bar's foot
   and inset 3px at the top, with the project's name in a pill. The pill *is* the
-  project's mark, so there is no separate square any more, and it is `--ink`:
-  dark on the light sleeve, since the light-on-light version stopped reading as
-  an object.
-- **The tab you are in is `--ink`**, the ground the row of windows sits on, with
+  project's mark, so there is no separate square any more, and it is `--rule`:
+  a rung up from the trough it sits in, since a darker pill on a ground this
+  dark is 1.15:1 and no pill at all.
+- **The tab you are in is `--page`**, the ground the row of windows sits on, with
   two masked pseudo-elements as feet. The bar's bottom rule is a background
   rather than a border precisely so the active tab can paint over it: a
   descendant paints above its parent's background and below its border, and the
@@ -110,34 +110,39 @@ The pieces, and why each is the way it is:
   sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
   `min-width: 0`: it then shrinks past its own tabs and one project's tabs
   overprint the next project's.
-- **The strip is off the shared ladder, on purpose.** Every other ground here is
-  within a few percent of black, which is right for a surface you read *through*
-  and wrong for the one whose job is to separate. `--sleeve` (`#333c4b`) is the
-  lightest ground in the interface, which buys the two steps that say something:
-  the sleeve against the bar is 1.54:1 (it was 1.08, then 1.18) and the tab you
-  are in — `--ink`, the only fill on the strip — is 1.66:1 against its
-  neighbours (1.17, then 1.28). It stops there because `--graphite`, which
-  everything quiet on a tab is written in, measures 4.54:1 on it; one more rung
-  is under the floor.
-- **Hover steps down, not up.** On a sleeve this light `--rule-bright` is 1.06:1
-  and simply not there, and down is the better direction anyway: the tab you are
-  in is the darkest thing on the strip, so a hover in `--rule` (1.30:1) reads as
-  being on the way to it. The separator between two inactive tabs went the same
-  way for the same reason.
+- **The strip runs Chrome's way round, and the page runs with it.** A dark
+  interface usually gets darker as it goes deeper; Chrome's strip does the
+  opposite, and that is what makes it legible: the frame is the darkest thing on
+  screen, an unselected tab *is* the frame, and the tab you are in is a light
+  grey continuous with the toolbar under it — a hole cut in the frame onto the
+  surface below (measured from Chrome: frame `#202124` against toolbar `#35363a`,
+  1.58:1). So `--page` (`#333c4b`) is both the ground the row of windows sits on
+  and the fill of the tab you are in, which is what makes the two read as one
+  thing; `--sleeve` is the trough, a rung off the bar's `--ink`. The tab you are
+  in measures 1.54:1 above the sleeve and 1.66:1 above the bar, against 1.17:1
+  when it was the dark one. `--page` stops there because `--graphite` — what
+  everything quiet on a tab is written in, and it lands on this ground on the
+  active tab — is 4.54:1 against it; one more rung is under the floor.
+- **Hover steps up, toward the tab you are in.** `--rule` is 1.30:1 above the
+  sleeve and still 1.42:1 below `--page`, so it reads as a step on the way and
+  never as the tab you are already in. The separator between two inactive tabs
+  goes up for the same reason: on a ground this dark, lighter is the only
+  direction that reads.
 - **Brightness says which tab you are in**, which is Chrome's other half of the
   job — its unselected titles are dim and its selected one is bright, and that
   difference does as much work as the tab's shape. Every tab here used to be
   `--bone`, so the *only* thing saying where you were was that 1.28:1 fill. The
-  resting label is `--graphite` (4.54:1 on the sleeve) and the active tab's is
-  `--bone` (14.46:1 on its own ink): 1.92:1 between the two labels, against 1.0
+  resting label is `--graphite` (6.98:1 on the sleeve) and the active tab's is
+  `--bone` (8.71:1 on `--page`): 1.92:1 between the two labels, against 1.0
   before. What that channel used to carry — awake or asleep — costs nothing to
   give up, since every tab in the strip is awake except the one that says
   "zZ 3" in words.
-- **Contrast pins two more rules.** `--graphite-dim` is 3.40:1 on the sleeve, so
-  everything quiet on a tab is `--graphite`, which clears the floor on all three
-  of a tab's grounds (4.54 sleeve, 5.89 hovered, 7.54 active). And the pill's ×
-  turns `--danger` with no ground under it: 6.10:1 on the pill's own `--ink`,
-  against 3.90 if the hover lit a `--rule-bright` ring behind it.
+- **Contrast pins two more rules.** Everything quiet on a tab is `--graphite`,
+  one value that clears the floor on all three of a tab's grounds (6.98 sleeve,
+  5.89 hovered, 4.54 on the active tab, which is the light one and so the
+  tightest). And the pill's × turns `--danger` with no ground under it: 4.77:1
+  on the pill's own `--rule`, against 3.90 if the hover lit a `--rule-bright`
+  ring behind it.
 
 ## The row is a grid of units
 
