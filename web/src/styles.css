@@ -418,7 +418,7 @@ button {
    move the bar beside them. */
 .usage__row {
   display: grid;
-  grid-template-columns: 42px 54px 26px;
+  grid-template-columns: 42px 54px 26px 24px;
   align-items: center;
   gap: 6px;
   font-size: 10px;
@@ -455,6 +455,20 @@ button {
 .usage__percent {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * How long until this limit comes back.
+ *
+ * A step quieter than the percent beside it, because it answers the second
+ * question rather than the first: --graphite-dim measures 5.24:1 on --slab,
+ * which clears the floor, and the ladder is what says which number you are
+ * meant to read first.
+ */
+.usage__resets {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--graphite-dim);
 }
 
 /*

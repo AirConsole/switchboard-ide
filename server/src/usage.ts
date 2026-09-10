@@ -50,6 +50,74 @@ const shorten = (name: string): string => {
   return lower.replace(/^current\s+/, '')
 }
 
+const MONTHS = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+]
+
+/**
+ * `Sep 10, 5:29pm (UTC)` -> an epoch, so the bar can say how long is left.
+ *
+ * Written out rather than handed to `Date.parse`, which does not take `5:29pm`
+ * and is free to guess at anything non-standard. Two things the report leaves
+ * out have to be supplied:
+ *
+ * - **The year.** Whichever one puts the date nearest today, so a reset in
+ *   January read in December lands next year rather than eleven months ago.
+ * - **The zone**, when the trailing `(...)` is not one this understands. Local
+ *   is the better guess than UTC there: a report that names a zone at all
+ *   names the reader's own, and being wrong by the offset beats being wrong by
+ *   a whole day.
+ *
+ * Anything that does not match is null, and the caller keeps the prose.
+ */
+const RESET = /^([a-z]{3,9})\s+(\d{1,2}),\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/
+
+const HALF_YEAR_MS = 182 * 24 * 60 * 60 * 1000
+
+export const parseResetAt = (text: string, now = Date.now()): number | null => {
+  const zoned = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(text.trim())
+  const body = (zoned?.[1] ?? text).trim().toLowerCase()
+  const zone = zoned?.[2]?.trim().toLowerCase()
+  const utc = zone === undefined || zone === 'utc' || zone === 'gmt' || zone === 'z'
+  const match = RESET.exec(body)
+  if (!match) return null
+  const [, monthName, day, hour, minute, meridiem] = match
+  const month = MONTHS.indexOf((monthName ?? '').slice(0, 3))
+  if (month === -1) return null
+  const dayNumber = Number(day)
+  const minuteNumber = minute === undefined ? 0 : Number(minute)
+  let hourNumber = Number(hour)
+  if (hourNumber === 12) hourNumber = 0
+  if (meridiem === 'pm') hourNumber += 12
+  if (dayNumber < 1 || dayNumber > 31 || hourNumber > 23 || minuteNumber > 59) return null
+
+  const build = (year: number): number =>
+    utc
+      ? Date.UTC(year, month, dayNumber, hourNumber, minuteNumber)
+      : new Date(year, month, dayNumber, hourNumber, minuteNumber).getTime()
+
+  const thisYear = new Date(now).getFullYear()
+  let at = build(thisYear)
+  if (at - now > HALF_YEAR_MS) at = build(thisYear - 1)
+  else if (now - at > HALF_YEAR_MS) at = build(thisYear + 1)
+  // A day that does not exist (Feb 31) rolls over into the next month, which is
+  // not a reading of anything.
+  const check = new Date(at)
+  const rolled = utc ? check.getUTCDate() : check.getDate()
+  return rolled === dayNumber ? at : null
+}
+
 /** Every limit `/usage` reported, in the order it reported them. */
 export const parseUsage = (text: string): UsageLimit[] => {
   const limits: UsageLimit[] = []
@@ -64,6 +132,7 @@ export const parseUsage = (text: string): UsageLimit[] => {
       label: shorten(name),
       percent: Math.min(100, Math.max(0, value)),
       resets: resets ?? null,
+      resetsAt: resets === undefined ? null : parseResetAt(resets),
     })
     if (limits.length >= MAX_LIMITS) break
   }

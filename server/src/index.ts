@@ -145,5 +145,20 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => void shutdown(signal))
 }
 
-await app.listen({ host: config.host, port: config.port })
+/*
+ * Failing to listen is fatal, and has to say so here.
+ *
+ * The `uncaughtException` handler above deliberately keeps the process alive
+ * through a fault, and a top-level await that rejects reaches it -- so a second
+ * server started on a port already in use logged EADDRINUSE, stayed up, and
+ * answered nothing at all, which is worse than the crash it replaced. Measured
+ * while starting a scratch instance twice. Everything else may be survivable;
+ * a server with no socket is not.
+ */
+try {
+  await app.listen({ host: config.host, port: config.port })
+} catch (err) {
+  app.log.error({ err }, `cannot listen on ${config.host}:${config.port}`)
+  process.exit(1)
+}
 app.log.info(`ide-n-dream on http://${config.host}:${config.port} (tmux socket ${tmuxSocketPath})`)
