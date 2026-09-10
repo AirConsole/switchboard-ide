@@ -225,79 +225,169 @@ button {
 
 /* ---------------------------------------------------------------- top bar -- */
 
+/*
+ * The rule under the bar is a background rather than a border, so the tab you
+ * are in can paint over it: a descendant paints above its parent's background
+ * and below its border, and the whole point of Chrome's active tab is that
+ * there is no line between it and what is below.
+ */
 .topbar {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--rule);
-  background: var(--slab);
+  background:
+    linear-gradient(var(--rule), var(--rule)) bottom left / 100% 1px no-repeat,
+    var(--slab);
   min-width: 0;
 }
 
 /*
- * Every open project, side by side. There is no active project any more, so
- * this is a list rather than a switcher.
+ * The tab strip: Chrome's, deliberately.
+ *
+ * This is the one place where an established shape beats an invented one --
+ * anyone who has used a browser already knows what a tab strip is, which tab
+ * they are in, and what the × on one does. Chromium's own constants are the
+ * reference (`chrome/browser/ui/tabs/tab_style.cc`: 10px top corners, a 12px
+ * bottom radius for the feet, a separator 2px wide and 16px tall), scaled into
+ * a 38px bar.
+ *
+ * What is not copied is Chrome's colour. A tab group there picks a hue; here
+ * the sleeve is grey, because amber and green mean one thing each in this
+ * interface and identity is not it. The only colour on a tab is its state
+ * bullet.
  */
-.groups {
+.tabstrip {
   display: flex;
   align-items: stretch;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  /* Every awake worktree has a tab whether or not they all fit, so the strip
+     scrolls once they are at their floor. No scrollbar -- the tabs are the
+     index, and one more horizontal line in a 38px bar reads as clutter. */
   overflow-x: auto;
   scrollbar-width: none;
-  min-width: 0;
-  flex: 1;
 }
 
-.groups::-webkit-scrollbar {
+.tabstrip::-webkit-scrollbar {
   display: none;
 }
 
 /*
- * One project and its worktrees.
+ * One project, as a Chrome tab group: a sleeve behind its tabs, with the
+ * project's name in a pill at the left.
  *
- * The boundary between projects has to read as stronger than the boundary
- * between two tabs, and the tabs already own the hairline. So a group is set
- * apart by space and a brighter full-height rule, and its name is set in the
- * label voice rather than the tab voice -- a project is not a thing you select.
+ * Flush with the bottom of the bar and inset at the top, so the sleeve and its
+ * tabs stand on the edge the row of windows starts at -- which is what lets the
+ * tab you are in run into that row instead of floating above it.
  */
-.group {
+.tabgroup {
   display: flex;
   align-items: stretch;
-  flex: none;
+  /*
+   * No `min-width: 0`, deliberately: a flex item's automatic minimum is its
+   * min-content, which here is the pill plus every tab at its floor plus the
+   * +. With it set to zero the sleeve shrank past that and its own tabs
+   * overlapped the next project's -- measured at 1100px with thirteen of them,
+   * as unreadable overprinted text. This is what makes the strip scroll
+   * instead.
+   */
+  flex: 0 1 auto;
+  margin-top: 3px;
+  padding: 0 4px;
+  border-radius: 8px 8px 0 0;
+  background: var(--slab-raised);
 }
 
-.group + .group {
-  margin-left: 10px;
-  border-left: 1px solid var(--graphite-dim);
-  padding-left: 10px;
-}
-
-.group__name {
+/*
+ * The pill: the project's name, and the way to close it.
+ *
+ * A filled pill rather than a bare label, which is what Chrome does with a
+ * group's name -- and it means the project needs no separate mark beside it,
+ * because the pill is the mark. 22px on a 35px tab band, centred on the same
+ * line, so the two read level despite being different heights.
+ *
+ * The 14px to its right is what a foot needs: the active tab's curve reaches
+ * 12px past its own edge, and this is what stops that curve landing on the
+ * sleeve's rounded corner or outside the sleeve altogether.
+ */
+.tabgroup__pill {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--graphite);
-  white-space: nowrap;
-}
-
-.group__mark {
-  width: 9px;
-  height: 9px;
+  gap: 5px;
   flex: none;
-  border: 1px solid var(--graphite);
-  border-radius: 1px;
+  align-self: center;
+  height: 22px;
+  margin-right: 14px;
+  padding: 0 3px 0 9px;
+  border-radius: 11px;
+  background: var(--rule-bright);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--bone);
+  white-space: nowrap;
+  cursor: default;
 }
 
-.group__close {
-  padding: 0 2px;
-  font-size: 14px;
+.tabgroup__name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * --graphite, not --graphite-dim: on the pill's --rule-bright the dim grey
+ * measures 3.58:1, under the 4.5 floor, and --graphite measures 4.77.
+ */
+.tabgroup__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--graphite);
+}
+
+/*
+ * Still red, but on a darker ground than the pill: --danger measures 3.88:1 on
+ * --rule-bright and 6.15 on --ink, so the hover brings its own ground with it
+ * rather than the warning colour being the thing that fails to be readable.
+ */
+.tabgroup__close:hover {
+  background: var(--ink);
+  color: var(--danger);
+}
+
+/*
+ * Chrome's new-tab button, at the end of its own group's tabs.
+ *
+ * Per project rather than one for the bar: with several projects open, this is
+ * the only unambiguous way to say which one a new worktree belongs to.
+ */
+.tabgroup__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  /* The same 14px the pill keeps on its other side, and for the same reason:
+     the last tab's foot has to land on sleeve, not on its corner. */
+  margin-left: 14px;
+  border-radius: 6px;
+  font-size: 15px;
   line-height: 1;
   color: var(--graphite-dim);
 }
 
-.group__close:hover {
-  color: var(--danger);
+.tabgroup__add:hover {
+  background: var(--rule);
+  color: var(--bone);
 }
 
 /*
@@ -407,191 +497,346 @@ button {
   background: var(--slab-raised);
 }
 
-.chip {
+/*
+ * One tab.
+ *
+ * A wrapper rather than a button: a tab and its × are two targets, and a button
+ * inside a button is not HTML. The wrapper carries the shape and the state, the
+ * body carries the click that takes you there.
+ *
+ * `flex: 1 1 auto` between a floor and a ceiling is Chrome's sizing -- tabs
+ * share what there is, grow no wider than a comfortable read, and stop
+ * shrinking at a width that still holds the bullet and the ×. Past that the
+ * strip scrolls rather than shrinking them into nothing.
+ */
+.tab {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  /*
+   * As wide as its own label, under a cap that tightens as more tabs open.
+   *
+   * Chrome narrows its tabs as you open more; the cap is how that happens here,
+   * and it is set from the count on the strip (see the end of this section)
+   * rather than from each tab's width. Flexbox cannot do it on its own:
+   * `min-width: 0` on the body is what lets a name ellipsise, and it zeroes
+   * what the body contributes to an `auto` basis, so every tab collapsed to its
+   * floor with the strip half empty; `width: max-content` fixes that and then a
+   * tab's min-content contribution is its full width, so measured, the sleeve
+   * could not shrink at all -- min-content 1402px against a 1402px sleeve --
+   * and the strip scrolled while there was room. The cap sidesteps both.
+   */
+  flex: 0 1 auto;
+  width: max-content;
+  min-width: 56px;
+  max-width: var(--tab-max, 200px);
+  /*
+   * The ground is the wrapper's, not the body's: the × is the body's sibling,
+   * so a fill on the body stopped short of it and the active tab's ink ended
+   * before its own close button. One property, read by the fill and by both
+   * feet, so the three pieces can never disagree about what colour this tab is.
+   */
+  --tab-fill: transparent;
+  background: var(--tab-fill);
+  border-radius: 9px 9px 0 0;
+}
+
+/* The zZ tab stands for a count, not for a name, so it takes what it needs. */
+.tab--zz {
+  flex: none;
+  max-width: none;
+}
+
+.tab__body {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  border-right: 1px solid var(--rule);
-  /*
-   * --tab-state is the colour of the agent's state, set by the status class
-   * below and deliberately left unset when nothing is running: there is then
-   * no line to draw, and `var()`'s fallback is what makes that state say so in
-   * both places it is read. See .chip--active for the other reader.
-   */
-  border-bottom: 2px solid var(--tab-state, transparent);
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 5px 0 9px;
   font-family: var(--font-ui);
   font-size: 13px;
   white-space: nowrap;
   color: var(--graphite);
 }
 
-.chip:hover {
-  background: var(--slab-raised);
+.tab--zz .tab__body {
+  padding: 0 9px;
+}
+
+/*
+ * Chrome's separator: between two inactive tabs only, and gone on either side
+ * of the active tab and of the one under the pointer. It hangs off the body
+ * rather than the wrapper because the wrapper's two pseudo-elements are the
+ * feet below.
+ */
+.tab + .tab > .tab__body::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 16px;
+  margin-top: -8px;
+  background: var(--rule-bright);
+}
+
+.tab--active > .tab__body::before,
+.tab--active + .tab > .tab__body::before,
+.tab:hover > .tab__body::before,
+.tab:hover + .tab > .tab__body::before {
+  display: none;
+}
+
+/* Nothing at all until the pointer arrives, then a rounded panel: Chrome's
+   inactive tab, which has no shape of its own until you go for it. */
+.tab:not(.tab--active):hover {
+  --tab-fill: var(--rule);
+  border-radius: 9px;
+}
+
+.tab:not(.tab--active):hover > .tab__body {
   color: var(--bone);
 }
 
 /*
- * The worktree you are in: bracketed in its agent's own colour.
- *
- * Three sides and open at the foot, so the tab reads as a tab -- a mouth onto
- * the window below it rather than a box floating in the bar -- and the top
- * corners are rounded because that is where a three-sided frame ends and it
- * should end deliberately. The state line that used to run along the bottom is
- * hidden here, and nothing is lost by hiding it: the bracket is drawn in that
- * same colour, so the tab you are in still says what its agent is doing, once
- * instead of twice.
- *
- * The colour is borrowed rather than invented -- `--tab-state`, amber when
- * that agent is blocked on you, green when it is done, grey while it is
- * working -- so the frame says "you are here" by existing at all, and what it
- * is made of says the rest. No new colour is spent, which is what makes it
- * affordable at this size.
- *
- * With no agent running there is no state to borrow and the fallback is grey.
- * The mark must not disappear in that case, or "where you are" would go
- * missing in exactly the worktree whose window shows least; the price is that
- * the active tab cannot tell "working" from "nothing running", which its own
- * window says in words a glance away.
- *
- * Inset shadows rather than borders, because a border would make the tab wider
- * and the whole strip would shift by 2px every time you stepped to another
- * worktree. They are clipped to the padding box, so the tab's own 1px --rule
- * right border stays outside the bracket and the neighbour's does on the left:
- * a hairline either side of it, which is why the frame reads as centred. They
- * follow the radius too, so the corners curve with the tab.
- *
- * The 2px the state line would have taken becomes padding rather than being
- * dropped: an inset shadow is clipped to the padding box, so with a border
- * there -- even a transparent one -- the two side strokes stopped 2px short of
- * the bar and the frame looked cut off rather than open. Trading the border for
- * padding of the same width moves nothing: the box is stretched to the bar's
- * height either way, so the content box keeps its size and place and the label
- * does not shift by a pixel.
- *
- * The ground is the quieter half, and recessed rather than raised on purpose.
- * --ink is what the row of windows sits on, so the tab reads as continuous
- * with the window below it, and hover -- --slab-raised, lighter than the bar
- * -- keeps pointing the other way. Hover does win the ground while the pointer
- * is there, which is the other reason the frame is what carries the fact.
+ * Paint order, not decoration: every tab is positioned (it carries its own
+ * feet), and among positioned siblings the later one in the DOM paints on top
+ * -- so the tab to the right of the active one covered its right foot.
  */
-.chip--active {
-  --mark: var(--tab-state, var(--graphite-dim));
-  background: var(--ink);
-  border-bottom-width: 0;
-  padding-bottom: 2px;
-  border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow:
-    inset 2px 0 0 var(--mark),
-    inset 0 2px 0 var(--mark),
-    inset -2px 0 0 var(--mark);
+.tab:hover {
+  z-index: 1;
+}
+
+.tab--active {
+  z-index: 2;
 }
 
 /*
- * Awake or asleep is carried by brightness; what Claude is doing is carried by
- * the line under the tab.
+ * The tab you are in.
  *
- * Two facts, two channels, so neither has to stand for the other. The line is
- * the same vocabulary as a tile's left rail -- amber only for a worktree
- * blocked on you, weight for the rest -- and it works the same on a collapsed
- * tab, which shows the most urgent of the worktrees behind it.
+ * --ink is what the row of windows sits on, so this is a hole through the bar
+ * to the window below rather than a box drawn on it. The bar's own rule is a
+ * background, so the ink covers it and there is no line between the two --
+ * which is exactly what Chrome's active tab does against its toolbar.
  */
-.chip--shown {
+.tab--active {
+  --tab-fill: var(--ink);
+}
+
+.tab--active > .tab__body {
   color: var(--bone);
 }
 
-.chip--asleep {
-  color: var(--graphite);
+/*
+ * The feet.
+ *
+ * A 12px square of the tab's own colour with a circle of nothing punched out of
+ * it, one either side, drawn outside the tab: what is left is the curve that
+ * carries the tab's wall away into the sleeve. Transparent rather than
+ * sleeve-coloured, so it works on whatever ground it lands on, and the stop is
+ * at 11.5 of the 12 so the arc has a pixel to antialias in.
+ */
+.tab--active::before,
+.tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  /*
+   * A foot hangs 12px over the tab beside it, so without this it would swallow
+   * the first 12px of that tab's click target -- `elementFromPoint` says so.
+   */
+  pointer-events: none;
 }
 
-.chip--asleep:hover {
-  color: var(--bone);
+.tab--active::before {
+  left: -12px;
+  background: radial-gradient(circle 12px at top left, #0000 11.5px, var(--tab-fill) 12px);
 }
 
-/* Blocked on you: the one place the chrome is allowed colour. */
-.chip--needs {
-  --tab-state: var(--signal);
-  color: var(--signal);
+.tab--active::after {
+  right: -12px;
+  background: radial-gradient(circle 12px at top right, #0000 11.5px, var(--tab-fill) 12px);
 }
 
 /*
- * Restated under the pointer, for the reason `.tile:hover` names three sides:
- * hover brightens a tab by setting `color`, and `.chip:hover` outweighs a
- * single class, so reaching for the tab of the worktree that is blocked on you
- * took the amber out of it on the way. Brightening is hover's to do; the
- * signal is not.
+ * The state, where Chrome keeps the favicon.
+ *
+ * One declaration for four states: `--tab-state` fills it while something is
+ * running, and when nothing is the fill falls away and the ring is all that is
+ * left -- so "nothing running" is a hollow dot rather than a colour of its own.
  */
-.chip--needs:hover {
-  color: var(--signal);
+.tab__dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tab-state, transparent);
+  box-shadow: inset 0 0 0 1px var(--tab-state, var(--graphite-dim));
 }
 
-.chip--working {
-  --tab-state: var(--graphite);
+.tab__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
 
-/* Done, and the tab says so from across the bar. */
-.chip--idle {
-  --tab-state: var(--done);
+.tab__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/*
- * Nothing running, so nothing is set: no line under the tab, and the band over
- * it -- if this is the tab you are in -- has no state to borrow and falls back
- * to grey. A worktree with no agent is the one case where "where you are" is
- * all the mark can say.
- */
-.chip--off {
+.tab__branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--graphite-dim);
 }
 
-.chip__zz {
+.tab__dirty,
+.tab__queued {
+  flex: none;
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+.tab__zz {
+  flex: none;
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--graphite-dim);
 }
 
-.chip--needs .chip__zz {
-  color: inherit;
-}
-
-/* Bigger than the label it follows, and bigger than any other text on the bar:
-   it is the only thing on the tab saying "there is more behind this", so it has
-   to be seen before it is read. U+25BE is a small triangle inside its em box --
-   about two fifths of it -- so the glyph still lands smaller than the 13px name
-   beside it even at this size. */
-.chip__caret {
+/* Bigger than the label it follows: it is the only thing on the tab saying
+   there is more behind it. U+25BE draws a small triangle inside its em box, so
+   the glyph still lands smaller than the 13px name beside it. */
+.tab__caret {
+  flex: none;
   font-size: 17px;
   line-height: 1;
   color: var(--graphite);
 }
 
-
-
-.chip__branch {
-  color: var(--graphite-dim);
-}
-
-.chip__dirty {
-  font-size: 11px;
-  color: var(--graphite-dim);
-}
-
-/* Byte-identical to the dirty count today, and named separately so the two
-   facts can part company later without one of them changing by accident. */
-.chip__queued {
-  font-size: 11px;
-  color: var(--graphite-dim);
-}
-
-.chip--add {
-  padding: 0 12px;
+/* Chrome's close button: a circle that only fills under the pointer. */
+.tab__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   font-size: 15px;
+  line-height: 1;
   color: var(--graphite-dim);
 }
 
-.chip--add:hover {
+.tab__close:hover {
+  background: var(--rule-bright);
   color: var(--bone);
 }
 
+/*
+ * --graphite-dim measures 4.42:1 on --rule, under the 4.5 floor this interface
+ * keeps, so everything quiet steps up a rung for as long as the hover ground is
+ * under it -- the × included. On the sleeve (4.83) and on the active tab's
+ * --ink (5.65) the dim grey is legal and stays.
+ */
+.tab:not(.tab--active):hover .tab__branch,
+.tab:not(.tab--active):hover .tab__dirty,
+.tab:not(.tab--active):hover .tab__queued,
+.tab:not(.tab--active):hover .tab__zz,
+.tab:not(.tab--active):hover .tab__close {
+  color: var(--graphite);
+}
+
+/*
+ * Awake or asleep is brightness; what Claude is doing is the bullet.
+ *
+ * Two facts, two channels, so neither stands for the other. Source order is
+ * load-bearing from here down: these are all single-class rules, and the amber
+ * one has to come after the two that set `color` for brightness.
+ */
+.tab--awake > .tab__body {
+  color: var(--bone);
+}
+
+.tab--asleep > .tab__body {
+  color: var(--graphite);
+}
+
+.tab--asleep:hover > .tab__body {
+  color: var(--bone);
+}
+
+/* Blocked on you: the one place the chrome is allowed colour. Restated under
+   the pointer, because hover brightens by setting `color` and would otherwise
+   take the signal out of the tab you are reaching for. */
+.tab--needs > .tab__body,
+.tab--needs:hover > .tab__body,
+.tab--needs.tab--active > .tab__body {
+  color: var(--signal);
+}
+
+.tab--needs {
+  --tab-state: var(--signal);
+}
+
+.tab--working {
+  --tab-state: var(--graphite);
+}
+
+/* Done, and the bullet says so from across the bar. */
+.tab--idle {
+  --tab-state: var(--done);
+}
+
+/*
+ * Nothing running, so nothing is set: the bullet has no fill to take and falls
+ * back to a ring. A worktree with no agent has finished nothing, which is why
+ * this is not green.
+ */
+.tab--off {
+}
+
+/*
+ * What a crowded strip gives up, in the order it can afford to lose it: how
+ * much is queued, then how much is uncommitted, then which branch it is on.
+ * The name goes to an ellipsis, and the bullet and the × never go at all.
+ *
+ * Driven by the number of tabs rather than by each tab's width, because the two
+ * cannot both be true: a container query size-contains the box it measures, so
+ * a tab whose body was a container reported no content width and every tab came
+ * out at its floor with the strip half empty. The count is what the strip knows
+ * for certain, and it is the same thing the width would have been standing in
+ * for.
+ */
+.tabstrip[data-tight='1'] .tab__queued,
+.tabstrip[data-tight='2'] .tab__queued,
+.tabstrip[data-tight='2'] .tab__dirty,
+.tabstrip[data-tight='3'] .tab__queued,
+.tabstrip[data-tight='3'] .tab__dirty,
+.tabstrip[data-tight='3'] .tab__branch {
+  display: none;
+}
+
+/* And the names give ground too, a step at a time, so more of them fit before
+   the strip has to start scrolling. */
+.tabstrip[data-tight='1'] {
+  --tab-max: 170px;
+}
+
+.tabstrip[data-tight='2'] {
+  --tab-max: 130px;
+}
+
+.tabstrip[data-tight='3'] {
+  --tab-max: 96px;
+}
 /* ------------------------------------------------------------------ views -- */
 
 .view {

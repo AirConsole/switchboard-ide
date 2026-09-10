@@ -8,7 +8,7 @@ object, and that is enough.
 App.tsx              projects -> groups -> the row; every dialog; UI state writes
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
-components/TopBar    project groups, awake tabs, the zZ dropdown, usage bars
+components/TopBar    the tab strip: project groups, tabs, zZ dropdown, usage bars
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip
@@ -22,6 +22,56 @@ views/overviewLayout   MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth
 views/useNearViewport  whether a tile is close enough to mount its terminal
 views/tileMotion       keeps a departing tile alive while it animates out
 ```
+
+## The top bar is Chrome's tab strip
+
+Copied on purpose, and closely: everyone already knows what a tab strip is,
+which tab they are in, and what the × on one does. Chromium's own constants are
+the reference — `chrome/browser/ui/tabs/tab_style.cc` gives a 10px top radius,
+a 12px bottom radius for the feet, and a 2px separator 16px tall — scaled into
+the 38px bar.
+
+What is **not** copied is Chrome's colour. A tab group there picks a hue; here
+the sleeve is grey, and the only colour on a tab is its state bullet: amber
+blocked on you, green done, grey working, a hollow ring when nothing is running.
+Identity is not what colour is for in this interface.
+
+The pieces, and why each is the way it is:
+
+- **A project is a tab group** — a `--slab-raised` sleeve, flush with the bar's
+  foot and inset 3px at the top, with the project's name in a filled pill. The
+  pill *is* the project's mark, so there is no separate square any more.
+- **The tab you are in is `--ink`**, the ground the row of windows sits on, with
+  two masked pseudo-elements as feet. The bar's bottom rule is a background
+  rather than a border precisely so the active tab can paint over it: a
+  descendant paints above its parent's background and below its border, and the
+  whole point of Chrome's active tab is that there is no line between it and
+  what is below.
+- **The feet need `pointer-events: none`.** Each hangs 12px over the tab beside
+  it; without it they swallow that tab's first 12px, which `elementFromPoint`
+  reports. They also need `z-index` on the active and hovered tab, because among
+  positioned siblings the later one paints on top and the tab to the right
+  covered the active tab's right foot.
+- **Inactive tabs have no shape** until hovered, when they get a rounded panel
+  in `--rule`. Separators sit between two inactive tabs only and vanish either
+  side of the active tab and the hovered one.
+- **The × opens the sleep dialog**, which is also where deleting lives — so the
+  worktree's own toolbar has no trashcan. A tab is therefore a `<span>` wrapper
+  with two buttons inside it: a `<button>` inside a `<button>` is not HTML.
+- **Widths come from a cap that tightens with the count**, `data-tight` on the
+  strip, not from flexbox. Two attempts failed and the measurements are worth
+  keeping: `min-width: 0` on the body is what lets a name ellipsise, and it
+  zeroes what the body contributes to an `auto` flex basis, so every tab
+  collapsed to its floor with the strip half empty; `width: max-content` fixes
+  that and then a tab's min-content *contribution* is its full width, so the
+  sleeve cannot shrink at all — measured, min-content 1402px against a 1402px
+  sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
+  `min-width: 0`: it then shrinks past its own tabs and one project's tabs
+  overprint the next project's.
+- **Contrast pins two rules.** `--graphite-dim` measures 4.42:1 on `--rule` and
+  3.62:1 on `--rule-bright`, both under the floor, so everything quiet steps up
+  to `--graphite` while a hover ground is under it, and the pill's × is
+  `--graphite` with `--danger` only on a hover that brings its own `--ink`.
 
 ## The row is a grid of units
 

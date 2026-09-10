@@ -268,31 +268,6 @@ const idleReason = (session: Session | undefined): string => {
   return `Claude exited with status ${session.exitStatus}.`
 }
 
-/**
- * Removing a worktree is the one destructive thing in the bar, so it is the one
- * control that is not a word: an icon is read before it is parsed. Hairlines at
- * the same weight as the rest of the chrome, and currentColor so it inherits
- * the quiet-until-hovered treatment of the button around it.
- */
-const TrashIcon = (): React.ReactElement => (
-  <svg
-    className="tile__icon"
-    viewBox="0 0 16 16"
-    width="14"
-    height="14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.2"
-    strokeLinecap="round"
-    aria-hidden="true"
-  >
-    <path d="M2.5 4.5h11" />
-    <path d="M6.25 2.5h3.5" />
-    <path d="M4.1 4.5l.55 8.1a1 1 0 0 0 1 .9h4.7a1 1 0 0 0 1-.9l.55-8.1" />
-    <path d="M6.6 7v3.8M9.4 7v3.8" />
-  </svg>
-)
-
 interface WorktreeTileProps {
   worktree: Worktree
   /**
@@ -332,7 +307,6 @@ interface WorktreeTileProps {
   onSleep: () => void
   /** Bring this worktree wholly into view. */
   onReveal: () => void
-  onRemove: () => void
   onTogglePanel: (panel: PanelName) => void
   /** This worktree's queue ran itself out; the pane has nothing left to do. */
   onQueueDrained: () => void
@@ -370,7 +344,6 @@ const WorktreeTile = ({
   onStart,
   onSleep,
   onReveal,
-  onRemove,
   onTogglePanel,
   onQueueDrained,
   onSelectTerminal,
@@ -523,17 +496,6 @@ const WorktreeTile = ({
    */
   const controls = (
     <div className="tile__controls">
-      {/* The main worktree cannot be removed, so it gets no control. */}
-      {!worktree.isMain && (
-        <button
-          className="tile__remove"
-          onClick={onRemove}
-          title={`Remove ${worktree.name}`}
-          aria-label={`Remove worktree ${worktree.name}`}
-        >
-          <TrashIcon />
-        </button>
-      )}
       <button
         className="tile__zz"
         onClick={onSleep}
@@ -790,7 +752,6 @@ export interface OverviewProps {
   onSleep: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand its Claude the keyboard. */
   onReveal: (worktreeId: string) => void
-  onRemoveWorktree: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** A worktree's queue emptied itself into Claude; close its todo panel. */
   onQueueDrained: (worktreeId: string) => void
@@ -833,7 +794,6 @@ export const Overview = ({
   onStart,
   onSleep,
   onReveal,
-  onRemoveWorktree,
   onTogglePanel,
   onQueueDrained,
   onNewWorktree,
@@ -1256,7 +1216,6 @@ export const Overview = ({
                       onStart={() => onStart(worktree.id)}
                       onSleep={() => onSleep(worktree.id)}
                       onReveal={() => onReveal(worktree.id)}
-                      onRemove={() => onRemoveWorktree(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
