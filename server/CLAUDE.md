@@ -209,6 +209,28 @@ things in it are load-bearing:
   and inode -- `mtimeMs` is a double that rounds away exactly the sub-millisecond
   precision a write guard needs, and the inode catches a temp-file-and-rename.
 
+## Is there anything of yours left in this worktree
+
+Two counts answer that, and the bar shows whichever applies: `dirty` is work not
+committed, `unmerged` is work committed and not merged. A worktree with neither
+is one you can forget about.
+
+`unmerged` is `rev-list --count <default>..HEAD` — "would merging this bring
+anything". What counts as the default branch is resolved once per repository and
+cached for the life of the process, in this order: `origin/HEAD`, because that
+is what the remote itself says its default is and it survives a repository whose
+default is neither `main` nor `master`; then `origin/main` or `origin/master` if
+one exists, since `origin/HEAD` is only written at clone time or by `set-head`;
+then a local `main` or `master`. All local reads — nothing here touches the
+network. Measured: this repo resolves to `master` (no remote), mapplets to
+`origin/master` from its `origin/HEAD`, and a repository with no commits at all
+resolves to nothing, which is correct — there is no branch to be unmerged from,
+and the count is 0.
+
+Cost: one `rev-list` per worktree per poll, alongside the `git status` that
+`dirty` already pays. Measured over four worktrees of this repo, 38ms for both
+halves together and 15ms for the `rev-list` half, against a 4s poll.
+
 ## What a worktree is working on
 
 `lastPrompt(cwd)` is the line a window's bar shows, and reading it is not the

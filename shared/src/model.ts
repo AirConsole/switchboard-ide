@@ -45,6 +45,15 @@ export interface Worktree {
   /** Changed tracked+untracked entries, for the tab's dirty dot. */
   dirty?: number
   /**
+   * Commits here that the default branch does not have yet.
+   *
+   * The other half of "is there work in this worktree": `dirty` is work not
+   * committed, this is work committed and not merged. A worktree with neither
+   * has nothing of its own left in it, which is the state in which it is safe
+   * to forget about.
+   */
+  unmerged?: number
+  /**
    * The commit checked out here.
    *
    * Carried so that "something changed in this worktree" can be detected when

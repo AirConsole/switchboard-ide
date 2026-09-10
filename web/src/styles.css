@@ -703,6 +703,14 @@ button {
   color: var(--graphite-dim);
 }
 
+/* Where the dirty count would be, in the same quiet grey, and optically
+   centred: a 12px box against 13px text sits a hair low on a shared baseline. */
+.tab__fork {
+  flex: none;
+  margin-top: -1px;
+  color: var(--graphite-dim);
+}
+
 .tab__zz {
   flex: none;
   font-size: 10px;
@@ -750,7 +758,8 @@ button {
 .tab:not(.tab--active):hover .tab__dirty,
 .tab:not(.tab--active):hover .tab__queued,
 .tab:not(.tab--active):hover .tab__zz,
-.tab:not(.tab--active):hover .tab__close {
+.tab:not(.tab--active):hover .tab__close,
+.tab:not(.tab--active):hover .tab__fork {
   color: var(--graphite);
 }
 
