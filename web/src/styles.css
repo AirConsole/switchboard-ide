@@ -690,6 +690,9 @@ button {
   text-overflow: ellipsis;
 }
 
+/* Only in the dropdown now -- a tab does not name the branch, see
+   WorktreeLabel -- so it never lands on a hover ground and --graphite-dim is
+   legal here at 4.83:1 on the menu's own --slab-raised. */
 .tab__branch {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -700,6 +703,14 @@ button {
 .tab__queued {
   flex: none;
   font-size: 11px;
+  color: var(--graphite-dim);
+}
+
+/* Where the dirty count would be, in the same quiet grey, and optically
+   centred: a 12px box against 13px text sits a hair low on a shared baseline. */
+.tab__fork {
+  flex: none;
+  margin-top: -1px;
   color: var(--graphite-dim);
 }
 
@@ -746,11 +757,11 @@ button {
  * under it -- the × included. On the sleeve (4.83) and on the active tab's
  * --ink (5.65) the dim grey is legal and stays.
  */
-.tab:not(.tab--active):hover .tab__branch,
 .tab:not(.tab--active):hover .tab__dirty,
 .tab:not(.tab--active):hover .tab__queued,
 .tab:not(.tab--active):hover .tab__zz,
-.tab:not(.tab--active):hover .tab__close {
+.tab:not(.tab--active):hover .tab__close,
+.tab:not(.tab--active):hover .tab__fork {
   color: var(--graphite);
 }
 
@@ -819,8 +830,7 @@ button {
 .tabstrip[data-tight='2'] .tab__queued,
 .tabstrip[data-tight='2'] .tab__dirty,
 .tabstrip[data-tight='3'] .tab__queued,
-.tabstrip[data-tight='3'] .tab__dirty,
-.tabstrip[data-tight='3'] .tab__branch {
+.tabstrip[data-tight='3'] .tab__dirty {
   display: none;
 }
 

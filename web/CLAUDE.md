@@ -58,6 +58,14 @@ The pieces, and why each is the way it is:
 - **The × opens the sleep dialog**, which is also where deleting lives — so the
   worktree's own toolbar has no trashcan. A tab is therefore a `<span>` wrapper
   with two buttons inside it: a `<button>` inside a `<button>` is not HTML.
+- **A tab says whether work is left in the worktree**, in one slot: the dirty
+  count when there is one, otherwise a fork glyph when the branch has commits
+  the default branch does not. Committed and uncommitted work answer the same
+  question, and the count is the more urgent answer, so it wins the slot.
+- **A tab does not name the branch.** A worktree is nearly always on the branch
+  it is named after, so it was a second copy of the name most of the time and
+  every tab paid width for it. The dropdown still names it, where a sleeping
+  worktree is hardest to recognise, and so does the window's own bar.
 - **Widths come from a cap that tightens with the count**, `data-tight` on the
   strip, not from flexbox. Two attempts failed and the measurements are worth
   keeping: `min-width: 0` on the body is what lets a name ellipsise, and it

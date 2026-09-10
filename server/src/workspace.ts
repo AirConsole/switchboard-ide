@@ -20,7 +20,9 @@ import {
   addWorktree,
   defaultWorktreeRoot,
   deleteBranch,
+  defaultBranchRef,
   dirtyCount,
+  unmergedCount,
   enclosingRepoRoot,
   ensureWorktreesIgnored,
   initRepository,
@@ -68,7 +70,8 @@ export class Workspace {
     return worktrees
       .map(
         (w) =>
-          `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.missing === true}:${w.prompt ?? ''}`,
+          `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.unmerged ?? 0}:` +
+          `${w.missing === true}:${w.prompt ?? ''}`,
       )
       .join('|')
   }
@@ -111,10 +114,14 @@ export class Workspace {
     for (const project of this.store.projects) {
       try {
         const list = await listWorktrees(project.id, project.root)
+        // Once per project, not once per worktree: they share a repository and
+        // therefore a default branch.
+        const defaultRef = await defaultBranchRef(project.root)
         for (const worktree of list) {
           all.push({
             ...worktree,
             dirty: await dirtyCount(worktree.path),
+            unmerged: await unmergedCount(worktree.path, defaultRef),
             prompt: await lastPrompt(worktree.path),
           })
         }
