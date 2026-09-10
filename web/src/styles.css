@@ -2025,9 +2025,12 @@ button {
 .todo__new {
   display: grid;
   gap: 6px;
+  flex: none;
   padding: 10px;
   background: var(--slab-raised);
-  border-bottom: 1px solid var(--rule-bright);
+  /* At the foot of the panel, so the rule that separates it from the queue is
+     above it. */
+  border-top: 1px solid var(--rule-bright);
 }
 
 .todo__new .todo__prompt {

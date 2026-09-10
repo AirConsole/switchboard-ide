@@ -321,8 +321,12 @@ export const TodoPane = ({
 
   return (
     <div className="todo">
-      <NewTodo worktreeId={worktreeId} onError={setError} focus={focus ?? null} />
-      {error !== null && <p className="todo__empty">{error}</p>}
+      {/*
+       * The list first and the form under it, the way anything you add to a
+       * running list is written: what is already queued reads top to bottom in
+       * the order it will go, and the box you type into is the last thing in
+       * that order rather than sitting above its own output.
+       */}
       <div className="todo__list">
         {todos.length === 0 ? (
           <p className="todo__empty">Nothing queued for this worktree.</p>
@@ -339,6 +343,8 @@ export const TodoPane = ({
           ))
         )}
       </div>
+      {error !== null && <p className="todo__empty">{error}</p>}
+      <NewTodo worktreeId={worktreeId} onError={setError} focus={focus ?? null} />
     </div>
   )
 }
