@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import type { Worktree } from '@ide-n-dream/shared'
+import type { Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import { api } from '../api.js'
-import { removalQuestions } from '../selectors.js'
+import { removalQuestions, removalWarnings } from '../selectors.js'
 import { useEscape } from './useEscape.js'
 
 export interface RemoveWorktreeDialogProps {
   worktree: Worktree
+  /** For the warnings: what is running in the worktree, and what is queued. */
+  sessions: Session[]
+  todos: WorktreeTodo[]
   onClose: () => void
   onRemoved: () => void
 }
@@ -19,16 +22,29 @@ export interface RemoveWorktreeDialogProps {
  * A checkbox for uncommitted changes in a clean worktree is a hazard the reader
  * has to rule out before acting, and a branch already merged into the default
  * one holds nothing: leaving it behind is litter, so it goes with the worktree
- * and is not put to a vote. When neither is offered this dialog does not open
- * at all; `removalAsks` is what the caller checks.
+ * and is not put to a vote.
+ *
+ * What is *running* is told, not asked: a working Claude, a queue of todos, a
+ * terminal with something in it are all destroyed whatever you answer, so a
+ * checkbox would be a decision that does not exist. They are the reason this
+ * dialog opens for a worktree git has nothing to say about -- see
+ * `removalWarnings` -- and pressing the red button is the confirmation.
+ *
+ * Every hazard here is red. Amber means one thing in this interface -- an agent
+ * is blocked on you -- and a modal that has already interrupted you does not
+ * need a second severity: `--danger` is the colour of the button they all lead
+ * to.
  */
 export const RemoveWorktreeDialog = ({
   worktree,
+  sessions,
+  todos,
   onClose,
   onRemoved,
 }: RemoveWorktreeDialogProps): React.ReactElement => {
   useEscape(onClose)
   const asks = removalQuestions(worktree)
+  const warnings = removalWarnings(worktree, sessions, todos)
   const [force, setForce] = useState(false)
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,11 +86,16 @@ export const RemoveWorktreeDialog = ({
           </p>
           <p className="field__hint">{worktree.path}</p>
           {asks.discard && (
-            <p className="field__hint" style={{ color: 'var(--signal)' }}>
+            <p className="dialog__warn">
               {worktree.dirty} uncommitted change{worktree.dirty === 1 ? '' : 's'} here. Git will
               refuse to remove it unless you discard them.
             </p>
           )}
+          {warnings.map((warning) => (
+            <p className="dialog__warn" key={warning.key}>
+              {warning.text}
+            </p>
+          ))}
           {asks.discard && (
             <label className="check">
               <input
@@ -98,7 +119,7 @@ export const RemoveWorktreeDialog = ({
               Delete the branch &ldquo;{worktree.branch}&rdquo; as well
             </label>
           )}
-          {error && <p className="field__hint" style={{ color: 'var(--danger)' }}>{error}</p>}
+          {error && <p className="dialog__warn">{error}</p>}
         </div>
         <div className="dialog__foot">
           <button className="btn btn--quiet" onClick={onClose}>

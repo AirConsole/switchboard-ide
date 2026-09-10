@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Session, Worktree } from '@ide-n-dream/shared'
+import type { Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import { claudeSession, removalAsks, terminalSessions } from '../selectors.js'
 import { useEscape } from './useEscape.js'
 
@@ -12,6 +12,8 @@ export interface SleepOptions {
 export interface SleepWorktreeDialogProps {
   worktree: Worktree
   sessions: Session[]
+  /** Only for the delete button's label; see `removalAsks`. */
+  todos: WorktreeTodo[]
   onClose: () => void
   onSleep: (keep: SleepOptions) => void
   /**
@@ -43,6 +45,7 @@ export interface SleepWorktreeDialogProps {
 export const SleepWorktreeDialog = ({
   worktree,
   sessions,
+  todos,
   onClose,
   onSleep,
   onDelete,
@@ -114,9 +117,10 @@ export const SleepWorktreeDialog = ({
             <button className="btn btn--danger" onClick={onDelete}>
               {/* The ellipsis means "and then it will ask you something", so it
                   is dropped when there is nothing left to ask: a worktree with
-                  nothing uncommitted and nothing unmerged is removed by this
-                  click, and the label should not promise another one. */}
-              Delete worktree{removalAsks(worktree) ? '…' : ''}
+                  nothing uncommitted, nothing unmerged, nothing running and no
+                  todos is removed by this click, and the label should not
+                  promise another one. */}
+              Delete worktree{removalAsks(worktree, sessions, todos) ? '…' : ''}
             </button>
           )}
           <button className="btn btn--quiet" onClick={onClose}>
