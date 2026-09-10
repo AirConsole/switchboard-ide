@@ -420,6 +420,8 @@ interface WorktreeTileProps {
   /** Null closes the pane; the hook calls it that way when a hash goes stale. */
   onSelectCommit: (hash: string | null) => void
   onToggleDir: (dir: string) => void
+  /** Open a directory and its ancestors: a search hit that is a place. */
+  onExpandDir: (dir: string) => void
   onFilesMode: (mode: FilesMode) => void
 }
 
@@ -460,6 +462,7 @@ const WorktreeTile = ({
   onCloseFile,
   onSelectCommit,
   onToggleDir,
+  onExpandDir,
   onFilesMode,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
@@ -544,6 +547,7 @@ const WorktreeTile = ({
     expanded: expandedDirs,
     onOpen: onOpenPath,
     onToggleDir,
+    onExpandDir,
   })
   const counts: PanelCounts = {
     todos: todos.length,
@@ -879,6 +883,7 @@ export interface OverviewProps {
   /** Drop one of a worktree's open files; the last one takes the editor with it. */
   onCloseFile: (worktreeId: string, path: string) => void
   onToggleDir: (worktreeId: string, dir: string) => void
+  onExpandDir: (worktreeId: string, dir: string) => void
   onFilesMode: (worktreeId: string, mode: FilesMode) => void
 }
 
@@ -920,6 +925,7 @@ export const Overview = ({
   onOpenPath,
   onCloseFile,
   onToggleDir,
+  onExpandDir,
   onFilesMode,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
@@ -1467,6 +1473,7 @@ export const Overview = ({
                       onCloseFile={(path) => onCloseFile(worktree.id, path)}
                       onSelectCommit={(hash) => selectCommit(worktree.id, hash)}
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
+                      onExpandDir={(dir) => onExpandDir(worktree.id, dir)}
                       onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
                     />
                   )}

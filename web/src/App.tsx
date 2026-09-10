@@ -483,6 +483,24 @@ export const App = (): React.ReactElement => {
     [setUi],
   )
 
+  /**
+   * Open a directory and everything above it, expanding nothing else.
+   *
+   * What picking a directory out of the search results means: you asked for a
+   * place, so the tree has to be showing it once the query goes. `toggleDir`
+   * cannot do this -- it is one directory at a time, and two calls in a render
+   * both read the same `uiRef`, so the second would drop the first.
+   */
+  const expandDir = useCallback(
+    (worktreeId: string, dir: string): void => {
+      const ui = uiRef.current
+      const was = ui.expandedByWorktree[worktreeId] ?? []
+      const opened = new Set([...was, ...ancestorsOf(dir), dir])
+      setUi({ expandedByWorktree: { ...ui.expandedByWorktree, [worktreeId]: [...opened] } })
+    },
+    [setUi],
+  )
+
   /** Expand or collapse one directory of a worktree's file tree. */
   const toggleDir = useCallback(
     (worktreeId: string, dir: string): void => {
@@ -698,6 +716,7 @@ export const App = (): React.ReactElement => {
         onOpenPath={openPath}
         onCloseFile={closeFile}
         onToggleDir={toggleDir}
+        onExpandDir={expandDir}
         onFilesMode={filesMode}
         onCloseTerminal={closeTerminal}
       />

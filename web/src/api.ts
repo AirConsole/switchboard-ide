@@ -1,6 +1,7 @@
 import type {
   AppSnapshot,
   FileContent,
+  FileHit,
   FileListing,
   FileSaved,
   FileUnchanged,
@@ -157,7 +158,7 @@ export const api = {
    * you reach a file whose directory you have never opened.
    */
   find: (worktreeId: string, q: string) =>
-    request<{ paths: string[]; truncated?: boolean }>(
+    request<{ hits: FileHit[]; truncated?: boolean }>(
       `/api/worktrees/${worktreeId}/find?q=${encodeURIComponent(q)}`,
     ),
 

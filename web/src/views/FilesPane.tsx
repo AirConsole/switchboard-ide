@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FileEntry, FilesMode } from '@ide-n-dream/shared'
+import type { FileEntry, FileHit, FilesMode } from '@ide-n-dream/shared'
 import {
   ChangesList,
   CommitsList,
@@ -68,6 +68,7 @@ export interface FilesState {
   error: string | null
   open: (path: string) => void
   toggleDir: (dir: string) => void
+  expandDir: (dir: string) => void
   edited: (text: string) => void
   draft: () => string | null
   save: () => void
@@ -87,6 +88,69 @@ const joinPath = (dir: string, name: string): string => (dir === '' ? name : `${
 export const ancestorsOf = (path: string): string[] => {
   const parts = path.split('/').slice(0, -1)
   return parts.map((_, index) => parts.slice(0, index + 1).join('/'))
+}
+
+/** A search hit, or a directory on the way to one. */
+interface HitRow {
+  path: string
+  name: string
+  kind: 'dir' | 'file'
+  depth: number
+  /** Whether this row matched, as opposed to being a directory above one. */
+  hit: boolean
+  /** Directories: whether anything under it is shown here. */
+  open: boolean
+}
+
+/**
+ * Search hits, as a tree.
+ *
+ * A flat list of paths was two lines per hit -- the name, and the directory
+ * under it in small type -- which is a second way of drawing the same thing the
+ * tree already draws, and it read as a different panel rather than the same one
+ * filtered. So the directories between the hits are drawn back in: every
+ * ancestor of every hit is a row, the hits sit under them, and the shape is the
+ * one the reader already knows.
+ *
+ * Ordered exactly as the tree is, by walking the segments: directories before
+ * files at each level, then by name, and a parent always above its children.
+ */
+const hitRows = (hits: FileHit[]): HitRow[] => {
+  const kinds = new Map<string, 'dir' | 'file'>()
+  for (const hit of hits) {
+    for (const dir of ancestorsOf(hit.path)) kinds.set(dir, 'dir')
+    // A directory that is also an ancestor stays a directory either way.
+    if (!kinds.has(hit.path)) kinds.set(hit.path, hit.kind)
+  }
+  const matched = new Set(hits.map((hit) => hit.path))
+  const paths = [...kinds.keys()]
+  const isDir = (segments: string[], upto: number): boolean =>
+    segments.length > upto + 1 || kinds.get(segments.slice(0, upto + 1).join('/')) === 'dir'
+  paths.sort((a, b) => {
+    const left = a.split('/')
+    const right = b.split('/')
+    const shared = Math.min(left.length, right.length)
+    for (let i = 0; i < shared; i++) {
+      if (left[i] === right[i]) continue
+      const leftDir = isDir(left, i)
+      if (leftDir !== isDir(right, i)) return leftDir ? -1 : 1
+      return (left[i] ?? '').localeCompare(right[i] ?? '')
+    }
+    // One is inside the other: the parent comes first.
+    return left.length - right.length
+  })
+  return paths.map((path) => {
+    const segments = path.split('/')
+    const kind = kinds.get(path) ?? 'file'
+    return {
+      path,
+      name: segments[segments.length - 1] ?? path,
+      kind,
+      depth: segments.length - 1,
+      hit: matched.has(path),
+      open: kind === 'dir' && paths.some((other) => other.startsWith(`${path}/`)),
+    }
+  })
 }
 
 /**
@@ -136,8 +200,10 @@ export const useFilesState = (opts: {
   expanded: string[]
   onOpen: (path: string) => void
   onToggleDir: (dir: string) => void
+  /** Open a directory and everything above it, without touching the rest. */
+  onExpandDir: (dir: string) => void
 }): FilesState => {
-  const { worktreeId, revision, enabled, path, expanded, onOpen, onToggleDir } = opts
+  const { worktreeId, revision, enabled, path, expanded, onOpen, onToggleDir, onExpandDir } = opts
 
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({})
   const [file, setFile] = useState<EditorFile | null>(null)
@@ -416,6 +482,7 @@ export const useFilesState = (opts: {
     error,
     open: onOpen,
     toggleDir: onToggleDir,
+    expandDir: onExpandDir,
     edited,
     draft,
     save,
@@ -593,7 +660,7 @@ export const FilesPane = ({
    * mode switch, though, because it is one box whose meaning follows the mode.
    */
   const [query, setQuery] = useState('')
-  const [found, setFound] = useState<string[]>([])
+  const [found, setFound] = useState<FileHit[]>([])
   const searching = query.trim() !== ''
   /*
    * One nonce per thing the row can hand the keyboard to. Both are separate
@@ -602,7 +669,7 @@ export const FilesPane = ({
    */
   const [editorFocus, setEditorFocus] = useState<number | null>(null)
   const [searchFocus, setSearchFocus] = useState<number | null>(null)
-  const { rows, open, toggleDir } = files
+  const { rows, open, toggleDir, expandDir } = files
   const [cursor, setCursor] = useState<string | null>(null)
   const [keyFocus, setKeyFocus] = useState(0)
 
@@ -632,7 +699,7 @@ export const FilesPane = ({
     void api
       .find(files.worktreeId, query)
       .then((res) => {
-        if (live) setFound(res.paths)
+        if (live) setFound(res.hits)
       })
       .catch(() => {
         if (live) setFound([])
@@ -775,26 +842,47 @@ export const FilesPane = ({
   const sidebar = (): React.ReactElement => {
     if (mode === 'files' && searching) {
       /*
-       * A flat list of paths, not a tree: these come from all over the worktree
-       * and the directories between them are not what you asked about.
+       * The same rows the tree draws, with the directories between the hits put
+       * back in -- see `hitRows`. A file opens and leaves the search up, since
+       * looking at one hit is rarely looking at the last. A directory does the
+       * opposite: it drops the query and unfolds itself in the real tree, which
+       * is the only thing you can have meant by picking a place rather than a
+       * file.
        */
+      const rowsFound = hitRows(found)
       return (
         <div className="files__tree" ref={treeRef}>
-          {found.length === 0 && <p className="files__note">No file matches.</p>}
-          {found.map((path) => {
-            const cut = path.lastIndexOf('/')
-            return (
-              <button
-                key={path}
-                className={path === files.path ? 'files__hit files__hit--on' : 'files__hit'}
-                onClick={() => open(path)}
-                title={path}
-              >
-                <span className="files__hit-name">{path.slice(cut + 1)}</span>
-                {cut !== -1 && <span className="files__hit-dir">{path.slice(0, cut)}</span>}
-              </button>
-            )
-          })}
+          {rowsFound.length === 0 && <p className="files__note">Nothing matches.</p>}
+          {rowsFound.map((row) => (
+            <button
+              key={row.path}
+              data-kind={row.kind}
+              className={[
+                'files__row',
+                row.path === files.path ? 'files__row--on' : '',
+                // A directory on the way to a hit is scenery; the hits are what
+                // you asked for, and read at full strength.
+                row.hit ? 'files__row--changed' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              style={{ paddingLeft: 6 + row.depth * INDENT }}
+              onClick={() => {
+                if (row.kind === 'file') {
+                  open(row.path)
+                  return
+                }
+                setQuery('')
+                expandDir(row.path)
+              }}
+              title={row.path}
+            >
+              <span className="files__twist" aria-hidden="true">
+                {row.kind === 'dir' ? (row.open ? '▾' : '▸') : ''}
+              </span>
+              <span className="files__name">{row.name}</span>
+            </button>
+          ))}
         </div>
       )
     }
@@ -972,11 +1060,23 @@ export const FilesPane = ({
                * the same rule the tree keeps.
                */
               if (event.key === 'ArrowUp' || event.key === 'Enter') {
-                const first = treeRef.current?.querySelector<HTMLButtonElement>('button')
-                if (!first) return
+                const list = treeRef.current
+                if (!list) return
+                /*
+                 * Enter means the first *file*: the results are a tree now, so
+                 * the topmost row is usually a directory on the way to
+                 * something, and picking one clears the search rather than
+                 * opening anything.
+                 */
+                const target =
+                  event.key === 'Enter'
+                    ? (list.querySelector<HTMLButtonElement>('button[data-kind="file"]') ??
+                      list.querySelector<HTMLButtonElement>('button'))
+                    : list.querySelector<HTMLButtonElement>('button')
+                if (!target) return
                 event.preventDefault()
-                if (event.key === 'Enter') first.click()
-                else first.focus()
+                if (event.key === 'Enter') target.click()
+                else target.focus()
               }
             }}
           />

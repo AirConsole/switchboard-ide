@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import type {
   FileContent,
   FileEntry,
+  FileHit,
   FileListing,
   FileRev,
   FileSaved,
@@ -173,9 +174,23 @@ const checkIgnore = async (cwd: string, paths: string[]): Promise<Set<string>> =
          * so that worktree answered a 500 with a git fatal in the body instead
          * of the 404 the rest of this file speaks.
          */
+        /*
+         * `err` first, and nothing read off it before that check.
+         *
+         * `execFile` reports success as a null error, and reading `.code` off
+         * it threw a TypeError -- inside the callback, so it escaped this
+         * promise rather than rejecting it, and the listing hung forever with
+         * the request still open. It only bit where something is actually
+         * ignored, since that is the only case git exits 0: every scratch
+         * repository here has an empty .gitignore, and every real one does not.
+         */
+        if (err === null) {
+          done(out)
+          return
+        }
         const code = (err as { code?: unknown }).code
-        if (err !== null && code !== 1 && code !== 128) fail(err)
-        else done(out)
+        if (code === 1 || code === 128) done(out)
+        else fail(err)
       },
     )
     // git may exit before we have finished writing; EPIPE is not interesting.
@@ -297,25 +312,63 @@ const baseOf = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
  * spawn a git per keystroke; the filtering itself is a fraction of a
  * millisecond over a thousand paths.
  */
+/**
+ * The directories the worktree has, derived from the files in it.
+ *
+ * git has no notion of an empty directory, so every directory worth reaching is
+ * an ancestor of a file `ls-files` reports -- which also means this inherits
+ * the ignore rules for free, the same way the file list does.
+ */
+const dirsOf = (paths: string[]): string[] => {
+  const dirs = new Set<string>()
+  for (const path of paths) {
+    let at = path.lastIndexOf('/')
+    while (at > 0) {
+      dirs.add(path.slice(0, at))
+      at = path.lastIndexOf('/', at - 1)
+    }
+  }
+  return [...dirs]
+}
+
+/**
+ * Files and directories whose path contains the query.
+ *
+ * Directories are in it because a search is also how you get to a *place* you
+ * have not walked to -- and one of them answers a different click from a file:
+ * opening a file leaves the search up, while picking a directory drops the
+ * query and unfolds that directory in the tree, which is where you were going.
+ *
+ * Ranked with matches on the name itself first, so `FilesPane` beats every file
+ * that merely lives in a directory of that name, and directories before files
+ * within a rank, which is the order the tree uses.
+ */
 export const findFiles = async (
   worktreePath: string,
   query: string,
-): Promise<{ paths: string[]; truncated?: boolean }> => {
+): Promise<{ hits: FileHit[]; truncated?: boolean }> => {
   const needle = query.trim().toLowerCase()
   // Nothing to look for: answer without asking git anything.
-  if (needle === '') return { paths: [] }
+  if (needle === '') return { hits: [] }
 
-  const hits: string[] = []
-  for (const path of await allFiles(worktreePath)) {
-    if (path.toLowerCase().includes(needle)) hits.push(path)
+  const files = await allFiles(worktreePath)
+  const hits: FileHit[] = []
+  for (const path of dirsOf(files)) {
+    if (path.toLowerCase().includes(needle)) hits.push({ path, kind: 'dir' })
+  }
+  for (const path of files) {
+    if (path.toLowerCase().includes(needle)) hits.push({ path, kind: 'file' })
   }
   hits.sort((a, b) => {
-    const inName = (path: string): number => (baseOf(path).toLowerCase().includes(needle) ? 0 : 1)
+    const inName = (hit: FileHit): number =>
+      baseOf(hit.path).toLowerCase().includes(needle) ? 0 : 1
     const byWhere = inName(a) - inName(b)
-    return byWhere !== 0 ? byWhere : a.localeCompare(b)
+    if (byWhere !== 0) return byWhere
+    if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1
+    return a.path.localeCompare(b.path)
   })
   return {
-    paths: hits.slice(0, MAX_FIND),
+    hits: hits.slice(0, MAX_FIND),
     ...(hits.length > MAX_FIND ? { truncated: true } : {}),
   }
 }
