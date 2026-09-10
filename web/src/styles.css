@@ -2439,6 +2439,13 @@ button {
   border-right: 1px solid var(--rule);
 }
 
+/* Nothing open, so the tree is the whole pane and the divider has nothing to
+   divide -- the tile's own border is already there, and a second line beside it
+   reads as an empty column. */
+.files__side:last-child {
+  border-right: none;
+}
+
 /*
  * Which face the panel is showing.
  *
@@ -2857,7 +2864,6 @@ button {
  * bar over the controls beside it -- which measured as no overflow and was
  * plainly wrong on screen, REFRESH sitting on top of the trash icon.
  */
-.files__path,
 .files__base,
 .files__unsaved {
   display: flex;
@@ -2871,11 +2877,41 @@ button {
   text-overflow: ellipsis;
 }
 
-/* A path is read character by character, so it is set in the mono face. */
-.files__path {
-  font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
+/*
+ * The open files, as tabs.
+ *
+ * The terminal strip's own classes, deliberately: these are the same object --
+ * a row of things one pane can show, one of them lit -- and giving them a
+ * second look would say they were different. Only the scroller is its own,
+ * because this strip shares its segment with Save while the terminals' has the
+ * segment to itself.
+ */
+.files__tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/*
+ * Put the patch away. Only in Changes and Commits, which have no tabs to close
+ * instead; the glyph points the divider back to the pane's right edge, which is
+ * where it goes.
+ */
+.files__collapse {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--graphite-dim);
+}
+
+.files__collapse:hover {
+  color: var(--bone);
+  background: var(--rule-bright);
 }
 
 /* Brightness, not colour: amber means an agent is blocked on you, and an unsaved

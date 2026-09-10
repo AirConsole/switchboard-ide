@@ -249,6 +249,19 @@ export interface UiState {
    * Absent means `files`, and nothing is written until the switch is used.
    */
   filesModeByWorktree: Record<string, FilesMode>
+  /**
+   * The files each worktree has open in Files mode, oldest first.
+   *
+   * These are the tabs above the editor, and the list is also what says whether
+   * the editor exists at all: empty means the panel is the tree alone and half
+   * a spot narrower. `openPathByWorktree` names which of them is showing.
+   *
+   * Files mode only. Changes and Commits open one thing at a time and close it
+   * by clicking it again, so there is nothing there to keep a list of -- and a
+   * diff is not something you collect the way you collect the files you are
+   * working in.
+   */
+  openFilesByWorktree: Record<string, string[]>
 }
 
 export const defaultUiState = (): UiState => ({
@@ -258,6 +271,7 @@ export const defaultUiState = (): UiState => ({
   openPathByWorktree: {},
   expandedByWorktree: {},
   filesModeByWorktree: {},
+  openFilesByWorktree: {},
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
