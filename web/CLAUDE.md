@@ -387,9 +387,13 @@ element is the tab's × or the project's +, and restoring it would leave the
 caret in the top bar with nothing to type into. `active` is the honest record —
 it is written from focus moves inside the row, and the top bar is not part of
 the row — so `App`'s `refocus()` reveals that pane again, which also brings a
-window that had scrolled off the side back with the keyboard. There is one case
-with no answer: a removal leaves the pane you were in gone, and focus is on the
-document until you click or step.
+window that had scrolled off the side back with the keyboard.
+
+A removal has no pane to go back to, so it moves you on: the worktree after the
+one that went, or the one before it when it was the last in the row -- where the
+eye already is, and where a Cmd+arrow step from the gap would have taken you.
+Read off the row as it still stands, before the refresh drops the worktree,
+which is why it can be answered at all.
 
 ## The todo panel holds no state of its own
 

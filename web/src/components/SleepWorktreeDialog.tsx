@@ -104,19 +104,12 @@ export const SleepWorktreeDialog = ({
         </div>
         {/* `--split` because one of these is not undoable: see the stylesheet. */}
         <div className="dialog__foot dialog__foot--split">
-          <button className="btn btn--quiet" onClick={onClose}>
-            Leave it awake
-          </button>
-          <button
-            className="btn"
-            onClick={() => onSleep({ claude: keepClaude, terminals: keepTerminals })}
-          >
-            Sleep
-          </button>
-          {/* Danger last, as everywhere else here, and it opens the dialog that
-              asks properly rather than doing anything itself. The main worktree
-              cannot be removed, so it is not offered -- the gate that used to
-              sit on the window's trashcan moved with the action. */}
+          {/* First in the row and first in the tab order, which is the same
+              thing: the corner it sits in is the far one from the buttons this
+              dialog is actually for, and nothing about it should be reachable
+              by a hand aiming at those. The main worktree cannot be removed, so
+              it is not offered -- the gate that used to sit on the window's
+              trashcan moved with the action. */}
           {onDelete !== undefined && !worktree.isMain && (
             <button className="btn btn--danger" onClick={onDelete}>
               {/* The ellipsis means "and then it will ask you something", so it
@@ -126,6 +119,15 @@ export const SleepWorktreeDialog = ({
               Delete worktree{removalAsks(worktree) ? '…' : ''}
             </button>
           )}
+          <button className="btn btn--quiet" onClick={onClose}>
+            Leave it awake
+          </button>
+          <button
+            className="btn"
+            onClick={() => onSleep({ claude: keepClaude, terminals: keepTerminals })}
+          >
+            Sleep
+          </button>
         </div>
       </div>
     </div>
