@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- interactive-widget: the on-screen keyboard must resize the page rather than
+         sit on top of it. Chrome honours this; Safari needs the visualViewport
+         mirror in main.tsx, which covers both. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>ide-n-dream</title>
   </head>
   <body>

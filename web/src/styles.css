@@ -153,11 +153,29 @@
   box-sizing: border-box;
 }
 
+/*
+ * The app is as tall as the visible viewport, not the window.
+ *
+ * `--app-height` is the visual viewport, mirrored by trackViewport(); it falls
+ * back to the window before that runs and on anything without the API. The
+ * difference only shows on a phone, where the keyboard is drawn over the page
+ * and 100% would put the terminal underneath it. `position: fixed` with the
+ * offset applied keeps the app where you can see it on iOS, which scrolls the
+ * layout viewport instead of resizing it.
+ */
 html,
-body,
-#root {
+body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+}
+
+#root {
+  position: fixed;
+  top: var(--app-offset, 0);
+  left: 0;
+  right: 0;
+  height: var(--app-height, 100%);
 }
 
 body {
@@ -1442,6 +1460,14 @@ button {
 .term-host {
   width: 100%;
   height: 100%;
+  /*
+   * The browser may pan this sideways -- that is the row of windows moving --
+   * but the up-and-down axis belongs to the pane, which turns it into the Page
+   * Up and Page Down the app inside understands. Without this the browser
+   * claims the vertical drag first and the handler never sees a cancelable
+   * move.
+   */
+  touch-action: pan-x;
 }
 
 /* xterm needs an explicit size from its container, and its own focus ring
