@@ -59,8 +59,9 @@ The pieces, and why each is the way it is:
   worktree's own toolbar has no trashcan. A tab is therefore a `<span>` wrapper
   with two buttons inside it: a `<button>` inside a `<button>` is not HTML.
 - **A tab says whether work is left in the worktree**, in one slot: the dirty
-  count when there is one, otherwise a fork glyph when the branch has commits
-  the default branch does not. Committed and uncommitted work answer the same
+  count when there is one, otherwise a fork glyph — GitHub's `repo-forked` way
+  up, two heads over a shared trunk — when the branch has commits the default
+  branch does not. Committed and uncommitted work answer the same
   question, and the count is the more urgent answer, so it wins the slot. The
   **Files toggle in a window's own bar carries the same slot** — `ForkIcon` is
   shared for exactly that reason — because it is the control you click to look

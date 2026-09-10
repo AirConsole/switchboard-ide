@@ -34,13 +34,18 @@ export const ForkIcon = ({
     strokeLinecap="round"
     aria-hidden="true"
   >
-    <circle cx="8" cy="3.6" r="1.7" />
-    <circle cx="4.4" cy="12.4" r="1.7" />
-    <circle cx="11.6" cy="12.4" r="1.7" />
-    {/* One commit going two ways, GitHub's way up: the trunk drops and splits,
-        rather than two branches coming together -- this says diverged, not
-        merged. */}
-    <path d="M8 5.3v1.4" />
-    <path d="M4.4 10.7V9.4a2.7 2.7 0 0 1 2.7-2.7h1.8a2.7 2.7 0 0 1 2.7 2.7v1.3" />
+    {/*
+      Two heads above a shared trunk: GitHub's `repo-forked` way up, which is
+      the one people have seen ten thousand times. It was drawn upside down --
+      trunk at the top, splitting downwards -- on the argument that a fork
+      diverging reads better going down; rotated 180° here, coordinates and
+      arc sweeps both, rather than with a `transform`, so what the file says
+      is what is on screen.
+    */}
+    <circle cx="4.4" cy="3.6" r="1.7" />
+    <circle cx="11.6" cy="3.6" r="1.7" />
+    <circle cx="8" cy="12.4" r="1.7" />
+    <path d="M8 9.3v1.4" />
+    <path d="M4.4 5.3v1.3a2.7 2.7 0 0 0 2.7 2.7h1.8a2.7 2.7 0 0 0 2.7-2.7V5.3" />
   </svg>
 )
