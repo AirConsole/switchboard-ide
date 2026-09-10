@@ -24,14 +24,17 @@ the top bar and, unless you said otherwise, nothing of it is running. Waking
 continues the conversation it was having rather than starting a new one.
 
 The row of windows is a strip you scroll along, and it is laid out in **units**
-of half a pane. Claude is two units, and so is a terminal or the todo list; the
-files panel is three, since it spends a quarter of its width on the tree beside
-the editor and would otherwise be the one pane that cannot keep the 80-column
-promise. A worktree shows **one panel at a time** -- its todos, its files and
-changes, or its terminals -- so a window is two units, four, or five: one pane,
-two, or two and a half. A unit is as wide as it needs to be for as many as fit
-to fill the screen, and two of them never fall below 80 columns. Navigation
-always lands on a unit boundary, so no window is ever shown half-cut.
+of half a pane. Claude is two units, and so is a terminal or the todo list. The
+files panel is the one that changes size: **one unit while it is only its tree**,
+and three once you open something in it, since a pane holding both the tree and
+the file spends a quarter of its width on the tree and would otherwise be the one
+pane that cannot keep the 80-column promise. A worktree shows **one panel at a
+time** -- its todos, its files and changes, or its terminals -- so a window is
+two, three, four or five units. A unit is as wide as it needs to be for as many
+as fit to fill the screen, and two of them never fall below 80 columns; the
+tree by itself is the one thing allowed to have less, because it is names and
+not code. Navigation always lands on a unit boundary, so no window is ever shown
+half-cut.
 
 ## Commands
 

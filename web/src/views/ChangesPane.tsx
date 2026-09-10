@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Commit, FileChange, FilesMode, WorktreeChanges } from '@ide-n-dream/shared'
 import { api } from '../api.js'
 
@@ -153,16 +153,15 @@ export interface ChangesState {
   patch: string | null
   error: string | null
   /**
-   * The commit whose patch is shown, and the one selection this hook still
-   * owns. The file is `ui.openPathByWorktree`, shared with the editor.
+   * The commit whose patch is shown. Owned by the row, not by this hook.
    *
-   * Not persisted, unlike the path: a rebase, an amend or a squash -- all
-   * routine here -- makes a stored hash name nothing at all, and the list moves
-   * under you constantly. It does auto-select, unlike the file, precisely
-   * because it is local and writes nothing: there is no cost to being wrong.
+   * It moved out when the panel stopped always showing a content pane: whether
+   * a commit is open decides how wide the tile is, and only the row lays out
+   * the row. It is still not persisted -- a rebase, an amend or a squash makes
+   * a stored hash name nothing at all.
    */
   commit: string | null
-  selectCommit: (hash: string) => void
+  selectCommit: (hash: string | null) => void
   reload: () => void
 }
 
@@ -185,12 +184,14 @@ export const useChangesState = (opts: {
   path: string
   /** Which face is showing: only `commits` diffs a commit. */
   mode: FilesMode
+  /** The open commit, held by the row because it decides the tile's width. */
+  commit: string | null
+  onSelectCommit: (hash: string | null) => void
 }): ChangesState => {
-  const { worktreeId, revision, enabled, path, mode } = opts
+  const { worktreeId, revision, enabled, path, mode, commit, onSelectCommit } = opts
   const [changes, setChanges] = useState<WorktreeChanges | null>(null)
   const [patch, setPatch] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [commit, setCommit] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
@@ -230,14 +231,26 @@ export const useChangesState = (opts: {
   }, [worktreeId, revision, nonce, enabled])
 
   /*
-   * Follow the commit list, and only it. The file selection is not touched
-   * here: it belongs to the panel as a whole, and moving it from inside an
-   * effect would change what the editor shows without anyone having clicked.
+   * A hash that no longer names a commit closes the pane.
+   *
+   * Nothing auto-selects any more: the panel opens its content pane when you
+   * pick something, so choosing for you would open it on arrival and the tile
+   * would never be seen at its narrow width. This is the other half of that --
+   * an amend or a rebase leaves a selection pointing at nothing, and an open
+   * pane showing no patch is worse than the tree it came from.
+   *
+   * The file selection is still not touched here: it belongs to the panel as a
+   * whole, and moving it from inside an effect would change what the editor
+   * shows without anyone having clicked.
    */
+  const selectRef = useRef(onSelectCommit)
+  selectRef.current = onSelectCommit
   useEffect(() => {
-    if (changes === null) return
-    if (commit !== null && changes.commits.some((c) => c.hash === commit)) return
-    setCommit(changes.commits[0]?.hash ?? null)
+    if (changes === null || commit === null) return
+    if (changes.commits.some((c) => c.hash === commit)) return
+    // Through a ref, so the row's per-tile arrow -- a fresh identity on every
+    // render -- does not put this effect in every render's way.
+    selectRef.current(null)
   }, [changes, commit])
 
   useEffect(() => {
@@ -276,8 +289,7 @@ export const useChangesState = (opts: {
     }
   }, [worktreeId, path, commit, mode, changes, revision, nonce, enabled])
 
-  const selectCommit = useCallback((hash: string) => setCommit(hash), [])
-  return { changes, patch, error, commit, selectCommit, reload }
+  return { changes, patch, error, commit, selectCommit: onSelectCommit, reload }
 }
 
 /**

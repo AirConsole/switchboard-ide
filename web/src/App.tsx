@@ -10,7 +10,7 @@ import { Overview, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
-import type { FilesMode, PanelName, Project, Worktree } from '@ide-n-dream/shared'
+import type { FilesMode, PanelName, Project, UiState, Worktree } from '@ide-n-dream/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
 export interface ProjectGroup {
@@ -308,10 +308,46 @@ export const App = (): React.ReactElement => {
       const ui = uiRef.current
       const was = ui.expandedByWorktree[worktreeId] ?? []
       const opened = new Set([...was, ...ancestorsOf(path)])
+      /*
+       * In Files mode the file also joins the tabs above the editor, which is
+       * what makes the pane exist at all. Only in Files mode: picking a changed
+       * file in Changes opens its diff, and collecting diffs as tabs is not
+       * what the list is for. It joins on the mode switch instead, below.
+       */
+      const tabs = ui.openFilesByWorktree[worktreeId] ?? []
+      const keeps = (ui.filesModeByWorktree[worktreeId] ?? 'files') === 'files'
+      const next = keeps && path !== '' && !tabs.includes(path) ? [...tabs, path] : tabs
       setUi({
         openPathByWorktree: { ...ui.openPathByWorktree, [worktreeId]: path },
         expandedByWorktree: { ...ui.expandedByWorktree, [worktreeId]: [...opened] },
+        ...(next === tabs ? {} : { openFilesByWorktree: { ...ui.openFilesByWorktree, [worktreeId]: next } }),
       })
+    },
+    [setUi],
+  )
+
+  /**
+   * Close one of a worktree's open files.
+   *
+   * The keyboard goes to the tab on the right, falling back to the left, which
+   * is the rule every tab strip has; closing the last one empties the list and
+   * takes the editor with it, leaving the panel as the tree alone.
+   */
+  const closeFile = useCallback(
+    (worktreeId: string, path: string): void => {
+      const ui = uiRef.current
+      const tabs = ui.openFilesByWorktree[worktreeId] ?? []
+      const at = tabs.indexOf(path)
+      if (at === -1) return
+      const next = tabs.filter((file) => file !== path)
+      const patch: Partial<UiState> = {
+        openFilesByWorktree: { ...ui.openFilesByWorktree, [worktreeId]: next },
+      }
+      if (ui.openPathByWorktree[worktreeId] === path) {
+        const heir = next[at] ?? next[at - 1] ?? ''
+        patch.openPathByWorktree = { ...ui.openPathByWorktree, [worktreeId]: heir }
+      }
+      setUi(patch)
     },
     [setUi],
   )
@@ -326,7 +362,21 @@ export const App = (): React.ReactElement => {
   const filesMode = useCallback(
     (worktreeId: string, mode: FilesMode): void => {
       const ui = uiRef.current
-      setUi({ filesModeByWorktree: { ...ui.filesModeByWorktree, [worktreeId]: mode } })
+      const patch: Partial<UiState> = {
+        filesModeByWorktree: { ...ui.filesModeByWorktree, [worktreeId]: mode },
+      }
+      /*
+       * The one selection serves all three modes, so arriving in Files with a
+       * file picked in Changes has to give that file a tab -- otherwise the
+       * editor would have nothing to sit under and the panel would close on
+       * the file you just asked to read.
+       */
+      const path = ui.openPathByWorktree[worktreeId] ?? ''
+      const tabs = ui.openFilesByWorktree[worktreeId] ?? []
+      if (mode === 'files' && path !== '' && !tabs.includes(path)) {
+        patch.openFilesByWorktree = { ...ui.openFilesByWorktree, [worktreeId]: [...tabs, path] }
+      }
+      setUi(patch)
     },
     [setUi],
   )
@@ -492,6 +542,7 @@ export const App = (): React.ReactElement => {
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
         openPathByWorktree={ui.openPathByWorktree}
+        openFilesByWorktree={ui.openFilesByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
         // With one project open there is no question which project a new
@@ -517,6 +568,7 @@ export const App = (): React.ReactElement => {
         }
         onNewTerminal={newTerminal}
         onOpenPath={openPath}
+        onCloseFile={closeFile}
         onToggleDir={toggleDir}
         onFilesMode={filesMode}
         onCloseTerminal={closeTerminal}

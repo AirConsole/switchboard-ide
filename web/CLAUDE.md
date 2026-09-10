@@ -99,8 +99,20 @@ quarter of its width on the tree beside the editor and at one spot its editor
 came to 56–63 columns, under the 80 the layout exists to guarantee. Measured,
 and worse the wider the monitor: 57 columns at 3440px, because more spots fit
 and a two-pane tile is always two of them. At three units it is 90–107 columns
-from 1687px up. Nothing may ask for one unit: that is half a pane, and the
-80-column floor is a promise about panes.
+from 1687px up, and 82 once the editor asks for exactly 80.
+
+**The files panel is one unit while it is only its tree**, and that is the single
+exception to "nothing may ask for one unit". The floor of two exists to keep the
+80-column promise, and that promise is about panes you read *code* in — a
+terminal, a diff, the editor. A tree is chrome: names at a few levels of indent,
+its own floor 158px, against a unit that measures 336px at 2400px and 403px on a
+phone. So `panesOf` asks `filesContentOpen` before it asks `PANE_UNITS`, and a
+worktree browsing its files is three units where one reading a file is five —
+measured, 1011px and 1694px at 2400px. Two things fall out of that and must stay
+true: a panel that asks for *less* than the floor cannot settle for less still
+(`least` is `min(wants, 2, capacity)`, not `min(2, capacity)`), and a panel alone
+on the window takes `capacity` rather than what it asked for, or a phone would
+show a tree down one half of the screen and nothing down the other.
 
 A panel asks and settles. Files wants three units but takes two rather than
 cost you Claude's pane on a window with only four — a narrower editor beats no
@@ -160,6 +172,35 @@ is hidden. While a query is present the sidebar is a flat list of hits, and
 opening one expands its ancestors -- so clearing the box leaves the tree already
 opened onto the file you found.
 
+**The content pane comes and goes.** The panel opens as its list alone and grows
+a second column only once you pick something, which is where the one-unit width
+above comes from. Each mode says "something is open" differently, and
+`contentOpen` in the pane and `filesContentOpen` in the row must give the same
+answer or the tile is laid out for a column it does not render:
+
+- **Files keeps tabs**, `ui.openFilesByWorktree`, in the worktree's bar above the
+  editor and wearing the terminal strip's own classes — it is the same object, a
+  row of things one pane can show with one of them lit, and a second look would
+  say it was a different one. Opening a file adds one; closing the last takes the
+  editor with it. Closing the showing tab moves to the one on its right, falling
+  back to the left, which is what every tab strip does.
+- **Changes and Commits keep no list.** You open one thing and click it again to
+  put it away, or use the `»` at the right of the bar, which is the same action
+  with a name. A diff is not something you collect the way you collect the files
+  you are working in.
+
+Nothing auto-selects any more. The commit list used to choose its newest for you,
+which was free when the pane was always there and is not now: it would open the
+second column on arrival and the narrow panel could never be seen. The other half
+of that is `useChangesState`'s stale check — an amend or a rebase leaves the
+selection naming nothing, and it closes the pane rather than showing an empty
+one. Verified by rewriting a commit under an open panel in a scratch repo: the
+selection cleared and the tile went 1776px back to 1061px.
+
+The commit selection therefore lives in `Overview`, not in `useChangesState`: it
+decides how wide the tile is, and only the row lays out the row. It is still not
+persisted, for the reason it never was.
+
 One panel with three faces -- **Changes**, **Commits**, **Files** -- switched
 from the top of its own sidebar. It was two panels, files and a git panel beside
 it; they answered questions about the same objects, kept two selections that
@@ -199,7 +240,11 @@ Six things in it are load-bearing:
   scrolling the file slid the whole row of windows sideways.
 - **The tree must stay a scroller** (`overflow-y: auto`) for the same second
   reason -- it is what `inner()` looks for so a wheel over it does not reach the
-  row.
+  row. Still true with the file column gone, and checked with a real wheel over
+  a tree-only panel: the tree moved 61px and `.grid`'s `scrollLeft` stayed at 0.
+- **The error notice is in the sidebar, not in the content pane.** A tree that
+  failed to read has no content pane to say so in. The *conflict* notice stays
+  beside the file, because it can only happen while one is open.
 - **The draft lives in a ref, and only a boolean reaches state.** The editor is
   uncontrolled: it is handed the file as it is on disk and reports its buffer
   back, never the reverse. If the buffer were state, every keystroke would
