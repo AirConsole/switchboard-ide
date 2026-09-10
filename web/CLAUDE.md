@@ -316,10 +316,16 @@ echoes back exactly what was sent. Verified by typing into a prompt while a
 
 The **form is at the foot of the panel**, under the queue: the list reads top to
 bottom in the order it will go and the box you type into is the next line of it,
-rather than sitting above its own output. And when the last queued todo has gone
-to Claude the panel closes and **Claude takes the keyboard** — the queue was
-typed into that agent, so that is where you are about to be looking, and the
-alternative is a closing panel dropping focus on the document.
+rather than sitting above its own output.
+
+And when the **last todo** has gone to Claude the panel closes and **Claude
+takes the keyboard** — the queue was typed into that agent, so that is where you
+are about to be looking, and the alternative is a closing panel dropping focus
+on the document. The last *todo*, not merely the last one queued: an empty queue
+closed the panel with four todos still written down, in the middle of lining
+them up. Two other ways of emptying it still close nothing — taking a todo out
+of the queue leaves it in the list, and deleting one by hand is a click that
+says you are still working in here.
 
 ## UI state
 
