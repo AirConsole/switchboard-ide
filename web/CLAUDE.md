@@ -206,9 +206,21 @@ expanded and the file worth searching for is the one you have not walked to:
 `GET /api/worktrees/:id/find` runs `git ls-files --cached --others
 --exclude-standard`, which inherits the same ignore rules `check-ignore` does
 and never lists `.git`, so the finder and the tree can never disagree about what
-is hidden. While a query is present the sidebar is a flat list of hits, and
-opening one expands its ancestors -- so clearing the box leaves the tree already
-opened onto the file you found.
+is hidden.
+
+**Hits are drawn as a tree**, with the directories between them put back in
+(`hitRows`) -- a flat list with each hit's directory in small type under its
+name was a second way of drawing what the tree already draws, and it read as a
+different panel rather than the same one filtered. The two kinds of hit answer
+different clicks: a **file** opens and leaves the query up, since looking at one
+hit is rarely looking at the last, and opening it expands its ancestors so
+clearing the box leaves the tree already on it. A **directory** does the
+opposite -- it drops the query and unfolds itself in the tree, which is the only
+thing picking a place rather than a file can mean. `expandDir` is a separate
+action from `toggleDir` for that: two `toggleDir` calls in one render read the
+same `uiRef` and the second drops the first, so the ancestors have to be opened
+in one write. Enter from the box takes the first *file* rather than the first
+row, which in a tree is usually a directory on the way to something.
 
 **The content pane comes and goes.** The panel opens as its list alone and grows
 a second column only once you pick something, which is where the one-unit width

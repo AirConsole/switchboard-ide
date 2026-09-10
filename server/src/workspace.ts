@@ -5,6 +5,7 @@ import { customAlphabet } from 'nanoid'
 import type {
   AppSnapshot,
   FileContent,
+  FileHit,
   FileListing,
   FileSaved,
   FileUnchanged,
@@ -475,7 +476,7 @@ export class Workspace {
   async findFiles(
     worktreeId: string,
     query: string,
-  ): Promise<{ paths: string[]; truncated?: boolean }> {
+  ): Promise<{ hits: FileHit[]; truncated?: boolean }> {
     const { worktree } = await this.resolve(worktreeId)
     return findFiles(worktree.path, query)
   }

@@ -388,6 +388,18 @@ export interface FileListing {
 }
 
 /**
+ * One answer from the finder: a path, and what is at it.
+ *
+ * Directories are in it as well as files, because a search is also how you
+ * reach a *place* you have never walked to -- and the two answer different
+ * clicks, so the kind travels with the path rather than being guessed from it.
+ */
+export interface FileHit {
+  path: string
+  kind: 'dir' | 'file'
+}
+
+/**
  * A file's identity, for the stale-write guard. Opaque to the client.
  *
  * Deliberately not the mtime alone. `mtimeMs` is a double that rounds away
