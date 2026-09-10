@@ -1117,22 +1117,24 @@ button {
 /*
  * The window you are in, at its edge.
  *
- * Its bar is lit and its tab is the light one; this is the outline that ties
- * the two together. --graphite-dim is 3.40:1 against the page it sits on and
- * 5.24:1 against the window's own ground, where the resting --rule is 1.30 and
- * 1.18 -- a hairline you had to look for. Three sides only: the left is the
- * state rail, and painting all four here would outrank the single-class rules
- * below that colour it.
+ * Darker than the page, not lighter: the windows are dark objects on a lit
+ * ground now, so the edge that reads as *this one's* is the one cut into the
+ * ground rather than a ring drawn on top of it -- the way a window on a bright
+ * desktop is bounded by its own shadow. --ink is 1.66:1 against the page, where
+ * the resting --rule is 1.30, and it is the same colour as the bar the strip
+ * sits in, so nothing new enters the palette to say this.
  *
- * Restated under the pointer, because `.tile:hover` is a class plus a
- * pseudo-class and would otherwise win and put the resting border back on the
- * one window that should keep it.
+ * Three sides only: the left is the state rail, and painting all four here
+ * would outrank the single-class rules below that colour it. Restated under the
+ * pointer, because `.tile:hover` is a class plus a pseudo-class and would
+ * otherwise win and put the resting border back on the one window that should
+ * keep it.
  */
 .tile--current,
 .tile--current:hover {
-  border-top-color: var(--graphite-dim);
-  border-right-color: var(--graphite-dim);
-  border-bottom-color: var(--graphite-dim);
+  border-top-color: var(--ink);
+  border-right-color: var(--ink);
+  border-bottom-color: var(--ink);
 }
 
 .tile--working {
