@@ -1462,10 +1462,14 @@ button {
   height: 100%;
   /*
    * The browser may pan this sideways -- that is the row of windows moving --
-   * but the up-and-down axis belongs to the pane, which turns it into the Page
-   * Up and Page Down the app inside understands. Without this the browser
+   * and the up-and-down axis belongs to the pane. Without this the browser
    * claims the vertical drag first and the handler never sees a cancelable
    * move.
+   *
+   * Nothing is lost by taking the whole vertical axis: the pty runs `tmux
+   * attach-session` and tmux lives on the alternate screen, so every terminal
+   * here holds one screenful and no scrollback for the browser to pan. The
+   * history belongs to tmux, and keys are the only way to it.
    */
   touch-action: pan-x;
 }
