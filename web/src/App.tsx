@@ -275,6 +275,19 @@ export const App = (): React.ReactElement => {
           [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'todo'),
         },
       })
+      /*
+       * The panel is going, so the keyboard goes to that worktree's Claude --
+       * which is exactly who the queue was just typed into, and where you would
+       * be looking to see what it does with it. Written out rather than calling
+       * `reveal`, whose identity changes every render and would defeat the
+       * memoisation the drain effect depends on; both setters are stable.
+       */
+      setActive({ id: worktreeId, pane: 'claude' })
+      setScrollTo((previous) => ({
+        id: worktreeId,
+        pane: 'claude',
+        nonce: (previous?.nonce ?? 0) + 1,
+      }))
     },
     [ui.panels, setUi],
   )
