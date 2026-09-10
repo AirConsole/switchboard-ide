@@ -16,6 +16,17 @@
 export const trackViewport = (): void => {
   const viewport = window.visualViewport
   const apply = (): void => {
+    /*
+     * Not while zoomed.
+     *
+     * The visual viewport shrinks for a pinch exactly as it does for a
+     * keyboard, and the app's height is the pty's height: a zoom would reach
+     * the ResizeObserver, resize the terminal and reflow the running TUI at
+     * whatever row count the magnified view happens to have. A zoom is a way
+     * of looking at something, not a geometry negotiation, so the last known
+     * size stands until the pinch is released.
+     */
+    if (viewport != null && Math.abs(viewport.scale - 1) > 0.01) return
     const height = viewport?.height ?? window.innerHeight
     const offset = viewport?.offsetTop ?? 0
     const root = document.documentElement
@@ -27,5 +38,9 @@ export const trackViewport = (): void => {
   // the visual viewport, the other scrolls it.
   viewport?.addEventListener('resize', apply)
   viewport?.addEventListener('scroll', apply)
+  // And the window itself, which is the only signal there is when the visual
+  // viewport is missing -- without it the fallback above is measured once at
+  // load and never again, on the one browser that depends on it.
+  window.addEventListener('resize', apply)
   window.addEventListener('orientationchange', apply)
 }

@@ -308,53 +308,89 @@ export const TerminalView = ({
      */
     const PAGE_UP = '\x1b[5~'
     const PAGE_DOWN = '\x1b[6~'
+    /*
+     * The finger this gesture belongs to.
+     *
+     * By identifier, not `touches[0]`: a second finger landing mid-drag
+     * reorders that list, and reading the wrong one moves the anchor to an
+     * unrelated Y -- which came out as a burst of page keys at once, because
+     * the leftover distance is spent in a `while`.
+     */
+    let finger: number | null = null
     let touchY = 0
     let touchX = 0
     let carried = 0
     let axis: 'vertical' | 'horizontal' | null = null
-    host.addEventListener(
-      'touchstart',
-      (event) => {
-        const touch = event.touches[0]
-        if (event.touches.length !== 1 || !touch) return
-        touchY = touch.clientY
-        touchX = touch.clientX
-        carried = 0
-        axis = null
-      },
-      { passive: true },
-    )
-    host.addEventListener(
-      'touchmove',
-      (event) => {
-        const touch = event.touches[0]
-        if (event.touches.length !== 1 || !touch) return
-        // Decided once per gesture, so a drifting finger does not change its
-        // mind half way through.
-        if (axis === null && Math.abs(touch.clientY - touchY) + Math.abs(touch.clientX - touchX) > 8) {
-          axis =
-            Math.abs(touch.clientY - touchY) > Math.abs(touch.clientX - touchX)
-              ? 'vertical'
-              : 'horizontal'
-        }
-        if (axis !== 'vertical') return
-        // A terminal with scrollback of its own scrolls itself; leave it be.
-        if (term.buffer.active.type !== 'alternate') return
-        event.preventDefault()
-        carried += touch.clientY - touchY
-        touchY = touch.clientY
-        const page = Math.max(120, host.clientHeight / 2)
-        while (carried >= page) {
-          send(PAGE_UP)
-          carried -= page
-        }
-        while (carried <= -page) {
-          send(PAGE_DOWN)
-          carried += page
-        }
-      },
-      { passive: false },
-    )
+
+    const onTouchStart = (event: TouchEvent): void => {
+      const touch = event.touches[0]
+      if (event.touches.length !== 1 || !touch) return
+      finger = touch.identifier
+      touchY = touch.clientY
+      touchX = touch.clientX
+      carried = 0
+      axis = null
+    }
+
+    /** Any change to which fingers are down ends the gesture. */
+    const onTouchEnd = (): void => {
+      finger = null
+      carried = 0
+      axis = null
+    }
+
+    const onTouchMove = (event: TouchEvent): void => {
+      if (finger === null) return
+      const touch = [...event.touches].find((t) => t.identifier === finger)
+      // Its own finger has gone, or another has joined: stop rather than
+      // measure against an anchor that no longer means anything.
+      if (!touch || event.touches.length !== 1) {
+        onTouchEnd()
+        return
+      }
+      // Decided once per gesture, so a drifting finger does not change its
+      // mind half way through.
+      if (axis === null && Math.abs(touch.clientY - touchY) + Math.abs(touch.clientX - touchX) > 8) {
+        axis =
+          Math.abs(touch.clientY - touchY) > Math.abs(touch.clientX - touchX)
+            ? 'vertical'
+            : 'horizontal'
+      }
+      if (axis !== 'vertical') return
+      event.preventDefault()
+      carried += touch.clientY - touchY
+      touchY = touch.clientY
+
+      /*
+       * Always the keys, because this terminal never has anything to scroll.
+       *
+       * The pty runs `tmux attach-session`, and tmux itself lives on the
+       * alternate screen -- so every session here is an alternate-screen
+       * terminal whatever runs inside it, and xterm holds exactly one screenful
+       * and no scrollback. Measured: a shell that had just printed 300 lines
+       * reported `type: 'alternate'`, `baseY: 0`, `length: 42` for 42 rows.
+       * The history is tmux's, and the only way to reach it is to send keys.
+       *
+       * Claude answers Page Up and Page Down. A plain shell does not, and its
+       * scrollback stays out of reach on a phone -- that wants a tmux copy-mode
+       * binding, which `tmux.conf` deliberately does not have (`prefix None`,
+       * every key unbound so the app gets them all). Worth doing, separately.
+       */
+      const page = Math.max(120, host.clientHeight / 2)
+      while (carried >= page) {
+        send(PAGE_UP)
+        carried -= page
+      }
+      while (carried <= -page) {
+        send(PAGE_DOWN)
+        carried += page
+      }
+    }
+
+    host.addEventListener('touchstart', onTouchStart, { passive: true })
+    host.addEventListener('touchmove', onTouchMove, { passive: false })
+    host.addEventListener('touchend', onTouchEnd, { passive: true })
+    host.addEventListener('touchcancel', onTouchEnd, { passive: true })
 
     const consumer: ConsumerOptions = {
       primary,
@@ -403,6 +439,13 @@ export const TerminalView = ({
       // listener left on it would still be here after this term is disposed,
       // stopping events for a terminal that no longer exists.
       host.removeEventListener('mousemove', hover, true)
+      // Same reason, and the same host: left behind, these keep answering
+      // drags for a disposed terminal and send its page keys to the session
+      // this view used to be showing.
+      host.removeEventListener('touchstart', onTouchStart)
+      host.removeEventListener('touchmove', onTouchMove)
+      host.removeEventListener('touchend', onTouchEnd)
+      host.removeEventListener('touchcancel', onTouchEnd)
       unsubscribe()
       termRef.current = null
       term.dispose()

@@ -44,10 +44,22 @@ const migrateUi = (ui: UiState): UiState => {
   let moved = false
   for (const [worktreeId, list] of Object.entries(panels)) {
     const renamed = list.map((panel) => (panel === 'git' ? 'files' : panel))
-    if (renamed.some((panel, index) => panel !== list[index])) {
-      moved = true
+    if (renamed.some((panel, index) => panel !== list[index])) moved = true
+    /*
+     * Anyone who already had this panel open keeps Changes, whether or not the
+     * rename touched them.
+     *
+     * Keyed on the panel rather than on the rename, because a worktree whose
+     * panel was toggled between the git -> files rename and the default
+     * flipping to Files stores `['files']` and no mode at all. Under the old
+     * default it showed Changes; gated on the rename it would silently come
+     * back as the file tree -- the very surprise this migration exists to
+     * avoid, on the set the rename does not cover.
+     */
+    if (renamed.includes('files') && modes[worktreeId] === undefined) {
       // Only where the reader has not since chosen a mode for themselves.
-      modes[worktreeId] ??= 'changes'
+      modes[worktreeId] = 'changes'
+      moved = true
     }
     // Last occurrence wins, so the survivor inherits the newer position.
     const seen = renamed.filter((panel, index) => renamed.lastIndexOf(panel) === index)
