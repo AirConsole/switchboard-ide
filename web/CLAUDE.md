@@ -190,6 +190,32 @@ unit in a JSON string, node-pty re-encodes it as two UTF-8 bytes, and tmux then
 consumes the wrong three bytes and passes the rest on as text — measured as a
 bare `9999...8888` arriving in a prompt.
 
+## On a phone
+
+Two things the desktop never exercises, both measured:
+
+**The keyboard must shrink the app, not cover it.** `height: 100%` means the
+window, and the on-screen keyboard is drawn over that, so the terminal and its
+input end up underneath it. `interactive-widget=resizes-content` in the viewport
+meta asks the browser to resize the page instead — Chrome honours it, Safari
+does not — so `trackViewport()` mirrors `visualViewport.height` and `offsetTop`
+into `--app-height` / `--app-offset` and `#root` is fixed to those. The offset
+is not decoration: iOS scrolls the layout viewport to keep the caret in view
+rather than resizing anything, and without it the app is the right height in the
+wrong place.
+
+**A finger dragged up or down scrolls the app.** There is no wheel and no Page
+Up key, and on the alternate screen there is no scrollback for the browser to
+move — the app owns its history. Claude scrolls on Page Up / Page Down, so a
+vertical drag on a terminal sends those, half a pane's worth of drag to the
+page; horizontal drags are left to the row. `.term-host` carries
+`touch-action: pan-x` so the browser hands over the vertical axis instead of
+claiming it for a pan that has nowhere to go.
+
+This is not the wheel rule in reverse. A wheel over a tile means "scroll the
+row", which is why turning it into keystrokes was wrong; a finger inside a pane
+has no other meaning.
+
 ## Cmd+Left and Cmd+Right belong to the row
 
 They step through the worktrees from wherever the caret is — a terminal, a

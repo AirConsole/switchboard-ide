@@ -291,6 +291,71 @@ export const TerminalView = ({
     term.onData(send)
     term.onBinary(send)
 
+    /*
+     * A finger dragged up or down scrolls the app, because nothing else can.
+     *
+     * On the alternate screen there is no scrollback for the browser to move --
+     * the app owns its own history -- and a phone has no wheel and no Page Up
+     * key. Claude scrolls on Page Up and Page Down (measured: its "Jump to
+     * bottom (ctrl+End)" hint appears on the first one), so a vertical drag
+     * becomes those, half a pane's worth of drag to the page. Horizontal drags
+     * are left alone: they belong to the row of windows.
+     *
+     * This is not the wheel rule in reverse. A wheel over a tile means "scroll
+     * the row", so turning it into keystrokes was wrong; a finger dragged
+     * inside a pane has no other meaning here, and a key is the only way to
+     * scroll what the app is holding.
+     */
+    const PAGE_UP = '\x1b[5~'
+    const PAGE_DOWN = '\x1b[6~'
+    let touchY = 0
+    let touchX = 0
+    let carried = 0
+    let axis: 'vertical' | 'horizontal' | null = null
+    host.addEventListener(
+      'touchstart',
+      (event) => {
+        const touch = event.touches[0]
+        if (event.touches.length !== 1 || !touch) return
+        touchY = touch.clientY
+        touchX = touch.clientX
+        carried = 0
+        axis = null
+      },
+      { passive: true },
+    )
+    host.addEventListener(
+      'touchmove',
+      (event) => {
+        const touch = event.touches[0]
+        if (event.touches.length !== 1 || !touch) return
+        // Decided once per gesture, so a drifting finger does not change its
+        // mind half way through.
+        if (axis === null && Math.abs(touch.clientY - touchY) + Math.abs(touch.clientX - touchX) > 8) {
+          axis =
+            Math.abs(touch.clientY - touchY) > Math.abs(touch.clientX - touchX)
+              ? 'vertical'
+              : 'horizontal'
+        }
+        if (axis !== 'vertical') return
+        // A terminal with scrollback of its own scrolls itself; leave it be.
+        if (term.buffer.active.type !== 'alternate') return
+        event.preventDefault()
+        carried += touch.clientY - touchY
+        touchY = touch.clientY
+        const page = Math.max(120, host.clientHeight / 2)
+        while (carried >= page) {
+          send(PAGE_UP)
+          carried -= page
+        }
+        while (carried <= -page) {
+          send(PAGE_DOWN)
+          carried += page
+        }
+      },
+      { passive: false },
+    )
+
     const consumer: ConsumerOptions = {
       primary,
       cols: term.cols,
