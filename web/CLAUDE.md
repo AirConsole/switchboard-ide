@@ -311,6 +311,13 @@ mutation in the app refreshes it mid-sentence. The draft holds until the server
 echoes back exactly what was sent. Verified by typing into a prompt while a
 `curl` created a todo on another worktree — the keystrokes and the caret survive.
 
+The **form is at the foot of the panel**, under the queue: the list reads top to
+bottom in the order it will go and the box you type into is the next line of it,
+rather than sitting above its own output. And when the last queued todo has gone
+to Claude the panel closes and **Claude takes the keyboard** — the queue was
+typed into that agent, so that is where you are about to be looking, and the
+alternative is a closing panel dropping focus on the document.
+
 ## UI state
 
 `ui` lives on the server but **belongs to the client**: it is adopted on first
