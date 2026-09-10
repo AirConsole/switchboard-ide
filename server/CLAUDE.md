@@ -247,11 +247,25 @@ worktree:
   `/plan ...` the person had actually typed was invisible and a two-turn-old
   instruction sat in the bar. A real user record now wins wherever there is one;
   the bookkeeping is the fallback for a session with none in reach.
-- **Plan feedback is a tool result.** What someone types into a plan dialog comes
-  back as `ExitPlanMode`'s own result, phrased for Claude ("... the user said:
-  <words>"), so a reader that only looks at user records cannot see the newest
-  thing a person said during planning. `PLAN_FEEDBACK` digs it out, behind a
-  substring test because a tool result can be hundreds of kilobytes.
+- **Plan feedback is a tool result.** What someone types when they turn a tool
+  use down comes back as that tool's own result, phrased for Claude ("The user
+  doesn't want to proceed with this tool use ... the user said: <words>") --
+  usually `ExitPlanMode`, so a reader that only looks at user records cannot see
+  the newest thing a person said during planning. `PLAN_FEEDBACK` digs it out,
+  behind a substring test because a tool result can be hundreds of kilobytes,
+  and **anchored at the start of the result**: a tool result is whatever a tool
+  printed, and the bare phrase matched this file's own comment, so an agent that
+  read `claude.ts` put `<words>". So the 197- * newest thing a person said` in
+  its own window.
+- **The harness records its own business as `user` records too**, each opening
+  with a tag: `<task-notification>`, `<bash-input>`, `<bash-stdout>`,
+  `<local-command-stdout>`, `<system-reminder>`, `<attachment>` -- surveyed over
+  120 live transcripts. That was a list of three and a `startsWith`, and it went
+  stale the way such a list does: a finished background task put 453 characters
+  of `<task-id>` XML in a worktree's bar. `INJECTED` tests the shape instead,
+  the opening tag rather than a whole wrapped block, because `<bash-stdout>`
+  closes and continues into `<bash-stderr>`. A slash command opens with a tag as
+  well and is read first, so it still survives.
 
 And the reason it is incremental: the real record was **857KB** past the end of
 that transcript, well outside any tail worth reading on every poll. So the
