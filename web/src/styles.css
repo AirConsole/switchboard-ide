@@ -1150,6 +1150,35 @@ button {
 }
 
 /*
+ * The window you are in, at the top of it.
+ *
+ * The strip already says which worktree you are in by making its tab the light
+ * one; this is the same sentence finished at the other end. --rule-bright is
+ * 1.45:1 above every other window's bar and sits one rung under --page, so the
+ * bar belongs to the same lit surface as the tab and the ground around the
+ * windows without pretending to be it.
+ *
+ * Everything quiet in the bar goes up a rung with it. --graphite-dim measures
+ * 3.62:1 here, under the floor, so the project, the branch and the prompt --
+ * the three things written in it -- read as --graphite (4.83:1). The names and
+ * the toggles are already --bone and --graphite and clear it as they are.
+ */
+.tile--current .tile__bar {
+  background: var(--rule-bright);
+}
+
+.tile--current .tile__bar:hover {
+  background: var(--page);
+}
+
+.tile--current .tile__project,
+.tile--current .tile__slash,
+.tile--current .tile__branch,
+.tile--current .tile__prompt {
+  color: var(--graphite);
+}
+
+/*
  * Every control in the bar fills its height, and none of them carries a frame.
  *
  * A row of bordered pills inside a bordered bar draws the same edge twice and
