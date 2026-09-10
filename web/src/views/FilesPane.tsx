@@ -164,8 +164,21 @@ export const useFilesState = (opts: {
   const freshRevRef = useRef<string | null>(null)
 
   const filePath = path === '' ? null : path
+  /** The file on screen right now, for callbacks that resolve later. */
+  const pathRef = useRef<string | null>(filePath)
+  pathRef.current = filePath
   // The root is always read; everything else only once it has been expanded.
   const dirsKey = ['', ...expanded].join('\n')
+  /**
+   * What is expanded right now, for the 404 path below.
+   *
+   * Collapsing a directory changes `dirsKey` and so tears that request down
+   * before its handler runs, which is what keeps the toggle there honest today.
+   * This makes it not depend on that: a toggle used to mean "collapse" is one
+   * refactor away from re-expanding the directory you just closed.
+   */
+  const expandedRef = useRef(expanded)
+  expandedRef.current = expanded
 
   // Only while the panel is on screen; see TREE_POLL_MS.
   useEffect(() => {
@@ -189,6 +202,7 @@ export const useFilesState = (opts: {
         .tree(worktreeId, dir)
         .then((listing) => {
           if (!live) return
+          setError(null)
           setListings((previous) => {
             const had = previous[dir]
             if (had !== undefined && JSON.stringify(had) === JSON.stringify(listing.entries)) {
@@ -212,9 +226,14 @@ export const useFilesState = (opts: {
               delete next[dir]
               return next
             })
-            onToggleDir(dir)
+            if (expandedRef.current.includes(dir)) onToggleDir(dir)
             return
           }
+          // The root failing is a real error -- and it must not also leave the
+          // tree claiming to be loading for the rest of the session, since
+          // `loading` is "the root listing is missing" and nothing else ever
+          // fills it in.
+          if (dir === '') setListings((previous) => ({ ...previous, '': previous[''] ?? [] }))
           setError(err instanceof Error ? err.message : String(err))
         })
     }
@@ -247,6 +266,10 @@ export const useFilesState = (opts: {
         .readFile(worktreeId, filePath, revRef.current ?? undefined)
         .then((result) => {
           if (!live) return
+          // A read that worked clears whatever the last failure said. Only the
+          // save path used to do this, so one transient 404 -- an agent moving
+          // a file under you -- left the red notice up for the session.
+          setError(null)
           if ('unchanged' in result) return
           revRef.current = result.rev
           if (result.binary === true) {
@@ -314,11 +337,22 @@ export const useFilesState = (opts: {
     (ifRev: string): void => {
       const text = draftRef.current
       if (text === null || filePath === null) return
+      const saved = filePath
       setSaving(true)
       void api
         .writeFile(worktreeId, { path: filePath, text, ifRev })
-        .then((saved) => {
-          revRef.current = saved.rev
+        .then((result) => {
+          /*
+           * Only if this is still the file on screen.
+           *
+           * A save is a round trip, and clicking another file during it used to
+           * end with A's text and A's rev installed under B's path: the poll
+           * that would repair it is gated on there being no draft, and typing
+           * one character created one. Saving then sent B's path with A's text
+           * and A's rev, and the conflict dialog's Overwrite wrote A into B.
+           */
+          if (saved !== pathRef.current) return
+          revRef.current = result.rev
           freshRevRef.current = null
           draftRef.current = null
           setDirty(false)
@@ -326,7 +360,7 @@ export const useFilesState = (opts: {
           setError(null)
           // The editor already holds this text, so the follow-up produces no
           // edit and the cursor does not move.
-          setFile({ path: saved.path, text })
+          setFile({ path: result.path, text })
         })
         .catch((err: unknown) => {
           if (err instanceof ApiError && err.code === 'stale-file') {

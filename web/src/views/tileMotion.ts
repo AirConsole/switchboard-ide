@@ -39,7 +39,19 @@ export interface MovingSlot<T> extends Slot<T> {
  * tile you are watching close would empty out halfway.
  */
 export const useTileMotion = <T,>(slots: Slot<T>[]): MovingSlot<T>[] => {
-  const [leaving, setLeaving] = useState<{ slot: Slot<T>; at: number }[]>([])
+  /*
+   * Each leaver carries its own deadline.
+   *
+   * The removal used to be one timer per batch, cancelled by this effect's own
+   * cleanup whenever the set of tiles changed again -- and the "nothing left"
+   * branch only dropped entries whose key had come *back*. A tile whose timer
+   * was cancelled was in neither set, so it stayed in this list for the life of
+   * the page: animated to zero width and invisible, but still a mounted
+   * WorktreeTile, holding a WebGL context and polling for changes in a worktree
+   * you had put away, with its buttons still in the tab order. Two projects
+   * open and "Stop everything" on one of them was enough.
+   */
+  const [leaving, setLeaving] = useState<{ slot: Slot<T>; at: number; until: number }[]>([])
   const previous = useRef<Slot<T>[]>([])
   // A string, so the effect runs when the set of tiles actually changes rather
   // than on every render that rebuilds the array.
@@ -53,25 +65,32 @@ export const useTileMotion = <T,>(slots: Slot<T>[]): MovingSlot<T>[] => {
       .filter((entry) => !present.has(entry.slot.key))
     previous.current = slots
 
-    if (gone.length === 0) {
+    const now = Date.now()
+    setLeaving((current) => {
       // A worktree woken again while it was still closing is a live tile once
-      // more; drop it from the exit list so it is not rendered twice.
-      setLeaving((current) =>
-        current.some((entry) => present.has(entry.slot.key))
-          ? current.filter((entry) => !present.has(entry.slot.key))
-          : current,
-      )
-      return
-    }
-
-    setLeaving((current) => [...current.filter((entry) => !present.has(entry.slot.key)), ...gone])
-    const timer = setTimeout(() => {
-      const keys = new Set(gone.map((entry) => entry.slot.key))
-      setLeaving((current) => current.filter((entry) => !keys.has(entry.slot.key)))
-    }, MOTION_MS + 60)
-    return () => clearTimeout(timer)
+      // more, and one whose time is up is finished with either way.
+      const kept = current.filter((entry) => !present.has(entry.slot.key) && entry.until > now)
+      if (gone.length === 0 && kept.length === current.length) return current
+      return [...kept, ...gone.map((entry) => ({ ...entry, until: now + MOTION_MS + 60 }))]
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature])
+
+  /*
+   * One sweep, armed at the earliest deadline and re-armed as the list changes.
+   *
+   * Keyed on the leavers rather than on the tiles, so nothing that is on its
+   * way out depends on another tile arriving to be cleaned up.
+   */
+  useEffect(() => {
+    if (leaving.length === 0) return
+    const soonest = Math.min(...leaving.map((entry) => entry.until))
+    const timer = setTimeout(
+      () => setLeaving((current) => current.filter((entry) => entry.until > Date.now())),
+      Math.max(0, soonest - Date.now()) + 20,
+    )
+    return () => clearTimeout(timer)
+  }, [leaving])
 
   /*
    * A closing tile is rendered back into the place it held, not on the end.

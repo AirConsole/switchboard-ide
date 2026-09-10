@@ -24,6 +24,25 @@ export const useNearViewport = (
   rootMargin = '100%',
 ): boolean => {
   const [near, setNear] = useState(false)
+  /*
+   * The root, as an element rather than a ref.
+   *
+   * An IntersectionObserver's root is fixed when it is constructed, and a ref
+   * is empty on the render that fills it -- so reading `scroller.current`
+   * inside the observer effect alone would leave every tile observed against
+   * the viewport for the life of the row if the scroller ever mounted second.
+   * The viewport is the wrong root here: it does not know where the row is
+   * clipped, so tiles scrolled out of the strip but still inside the window
+   * read as near and mount terminals nobody can see. Holding it in state is
+   * what gives the effect something to depend on.
+   */
+  const [root, setRoot] = useState<Element | null>(null)
+  // No dependency array on purpose: a ref filling in is not a render input, so
+  // there is nothing to key on. The body is a reference comparison, and the
+  // state is set only when the answer actually changed.
+  useEffect(() => {
+    setRoot((was) => (was === scroller.current ? was : scroller.current))
+  })
 
   useEffect(() => {
     const element = target.current
@@ -32,13 +51,11 @@ export const useNearViewport = (
       (entries) => {
         for (const entry of entries) setNear(entry.isIntersecting)
       },
-      // A null root falls back to the viewport, which is the right answer while
-      // the scroller is still mounting.
-      { root: scroller.current, rootMargin },
+      { root, rootMargin },
     )
     observer.observe(element)
     return () => observer.disconnect()
-  }, [target, scroller, rootMargin])
+  }, [target, root, rootMargin])
 
   return near
 }

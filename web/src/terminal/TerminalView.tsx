@@ -408,6 +408,11 @@ export const TerminalView = ({
         term.reset()
         term.write(snapshot)
       },
+      onGone: (message) => {
+        // Said on the terminal itself, because this pane will never paint: the
+        // session is gone and the socket has dropped us.
+        term.write(`\r\n\x1b[2m${message} — this terminal is no longer running.\x1b[0m\r\n`)
+      },
       onSize: (cols, rows) => {
         if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows)
       },
@@ -417,8 +422,8 @@ export const TerminalView = ({
     // Only a primary terminal negotiates geometry, from its own element size;
     // tiles keep the server's geometry and scale their font instead.
     let observer: ResizeObserver | null = null
+    let frame = 0
     if (primary) {
-      let frame = 0
       observer = new ResizeObserver(() => {
         cancelAnimationFrame(frame)
         frame = requestAnimationFrame(() => {
@@ -435,6 +440,9 @@ export const TerminalView = ({
 
     return () => {
       observer?.disconnect()
+      // Disconnecting stops future callbacks but not one already scheduled,
+      // which would then measure and resize a terminal that has been disposed.
+      cancelAnimationFrame(frame)
       // The host outlives the terminal -- it is the persistent ref -- so a
       // listener left on it would still be here after this term is disposed,
       // stopping events for a terminal that no longer exists.
@@ -459,8 +467,19 @@ export const TerminalView = ({
    * Declared after the effect that builds the terminal, so on a fresh mount
    * that one has already run and there is something to focus.
    */
+  /*
+   * The request each nonce stands for is answered once.
+   *
+   * `scrollTo` is never cleared, so the last worktree navigated to keeps a
+   * non-null nonce for good -- and this effect also runs on mount. A terminal
+   * that remounts (scrolled back inside the near-viewport margin, or rebuilt
+   * because Claude was respawned) therefore took the keyboard again, mid
+   * sentence, out of whatever window you had moved on to.
+   */
+  const answered = useRef<number | null>(null)
   useEffect(() => {
-    if (focus === null) return
+    if (focus === null || answered.current === focus) return
+    answered.current = focus
     termRef.current?.focus()
   }, [focus])
 
