@@ -276,6 +276,59 @@ const idleReason = (session: Session | undefined): string => {
   return `Claude exited with status ${session.exitStatus}.`
 }
 
+/**
+ * Claude's pane when it is not running: why it stopped, and how to start it.
+ *
+ * Its own component so the Start button can take the keyboard. A step that
+ * lands here has to land *somewhere*: the walk now reads which pane holds the
+ * keyboard rather than trusting React state, so a pane that quietly refuses
+ * focus is a pane the walk can never leave -- press Cmd+Left again and it is
+ * still asking for the same one. Measured before this existed: stepping out of
+ * a panel into a stopped Claude left the keyboard in the panel, and the next
+ * press skipped the worktree entirely.
+ */
+const IdleClaude = ({
+  session,
+  output,
+  onStart,
+  focus,
+}: {
+  session: Session | undefined
+  output: string[]
+  onStart: () => void
+  focus: number | null
+}): React.ReactElement => {
+  const startRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (focus === null) return
+    startRef.current?.focus()
+  }, [focus])
+
+  return (
+    <div className="tile__idle">
+      <p className="tile__idle-text">{idleReason(session)}</p>
+      {output.length > 0 && (
+        <pre
+          className="tile__idle-output"
+          /*
+           * Opened at the bottom, like a terminal: the last thing a failing
+           * command says is the part that says why, and a long one starts
+           * scrolled past it otherwise.
+           */
+          ref={(element) => {
+            if (element) element.scrollTop = element.scrollHeight
+          }}
+        >
+          {output.join('\n')}
+        </pre>
+      )}
+      <button className="btn" ref={startRef} onClick={onStart}>
+        Start Claude
+      </button>
+    </div>
+  )
+}
+
 interface WorktreeTileProps {
   worktree: Worktree
   /**
@@ -608,27 +661,12 @@ const WorktreeTile = ({
                   />
                 )
               ) : (
-                <div className="tile__idle">
-                  <p className="tile__idle-text">{idleReason(session)}</p>
-                  {exitOutput.length > 0 && (
-                    <pre
-                      className="tile__idle-output"
-                      /*
-                       * Opened at the bottom, like a terminal: the last thing a
-                       * failing command says is the part that says why, and a
-                       * long one starts scrolled past it otherwise.
-                       */
-                      ref={(element) => {
-                        if (element) element.scrollTop = element.scrollHeight
-                      }}
-                    >
-                      {exitOutput.join('\n')}
-                    </pre>
-                  )}
-                  <button className="btn" onClick={onStart}>
-                    Start Claude
-                  </button>
-                </div>
+                <IdleClaude
+                  session={session}
+                  output={exitOutput}
+                  onStart={onStart}
+                  focus={focusPane === 'claude' ? focus : null}
+                />
               ))}
             {pane.kind === 'terminals' && near && (
               <TerminalsScreen
@@ -1055,20 +1093,37 @@ export const Overview = ({
       const grid = gridRef.current
       if (!grid || stops.length === 0 || pitch <= 0) return
       /*
-       * Where you are is the worktree holding the keyboard -- but only while
-       * you can still see the whole of it. Since stepping no longer always
-       * scrolls, the leftmost spot is no longer the answer on its own: three
-       * windows that all fit share one leftmost tile, and every step would
-       * offer the same neighbour again. If you have scrolled the active
-       * worktree off the side, though, it is not where you are looking, and
-       * the tile at the leftmost spot is the honest answer once more.
+       * Where you are, most authoritative first.
+       *
+       * What actually holds the keyboard comes before what React last recorded,
+       * and that ordering is the fix for two real bugs. `active` is state, so a
+       * step taken before it commits is measured from the previous one; and the
+       * row scrolls *smoothly*, so a second press while that animation runs
+       * found the tile not wholly on screen and fell through to the leftmost
+       * unit -- which threw the walk back to a tile you had already left.
+       * Measured: Right, Right, Left netted nothing at all instead of one stop.
+       * The DOM cannot be stale and does not care that the row is moving.
+       *
+       * The `wholeOnScreen` test survives for the case it was written for: no
+       * pane holds the keyboard, you have scrolled by hand, and the honest
+       * answer is the tile you are looking at rather than the one you left.
        */
-      const at = stops.findIndex(
-        (stop) => stop.worktree.id === active?.id && stop.kind === active.pane,
-      )
-      const seen = stops[at]
-      const tile = seen ? { at: seen.at, units: seen.units } : null
-      let here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? at : -1
+      const held = (document.activeElement as HTMLElement | null)
+        ?.closest('[data-pane]')
+        ?.getAttribute('data-pane')
+      let here =
+        held === undefined || held === null
+          ? -1
+          : stops.findIndex((stop) => paneKey(stop.worktree.id, stop.kind) === held)
+
+      if (here === -1) {
+        const at = stops.findIndex(
+          (stop) => stop.worktree.id === active?.id && stop.kind === active.pane,
+        )
+        const seen = stops[at]
+        const tile = seen ? { at: seen.at, units: seen.units } : null
+        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? at : -1
+      }
       if (here === -1) {
         /*
          * Back to the leftmost unit, and to that tile's *first* pane: landing
