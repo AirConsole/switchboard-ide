@@ -760,15 +760,6 @@ button {
   text-overflow: ellipsis;
 }
 
-/* Only in the dropdown now -- a tab does not name the branch, see
-   WorktreeLabel -- so it never lands on a hover ground and --graphite-dim is
-   legal here at 4.83:1 on the menu's own --slab-raised. */
-.tab__branch {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--graphite-dim);
-}
-
 /*
  * The quiet channel on a tab: --graphite, not --graphite-dim.
  *
@@ -2385,71 +2376,45 @@ button {
 }
 
 /*
- * Two lines now: what the worktree is, and what it was doing.
+ * The sleeping-worktrees dropdown: the same tabs, stacked.
  *
- * A column, so the prompt gets a line of its own -- on the name's line it would
- * have to fight the state label for the same few characters, and the whole
- * point of it is that it is longer than a name.
+ * It used to invent a row of its own -- the state spelled out in words, the
+ * prompt on a second line -- which made one worktree look like two different
+ * objects depending on where you met it. The rows are `.tab`s now, so the
+ * sleeve goes under them and everything a tab knows how to say it says here
+ * too.
  */
-.menu__row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+.menu--tabs {
   gap: 2px;
-  padding: 5px 8px;
-  border-radius: 2px;
-  font: inherit;
-  text-align: left;
-  white-space: nowrap;
-  color: var(--graphite);
+  padding: 4px;
+  /*
+   * As wide as its widest row, up to a cap. A tab in the strip is capped at
+   * 200px because the strip has to hold every awake worktree; this is a list
+   * with one job, and a sleeping worktree is the one you have least chance of
+   * recognising, so it gets the width to say its whole name.
+   */
+  width: max-content;
+  max-width: 420px;
+  background: var(--sleeve);
+  /* --rule-bright is 1.06:1 on this ground and would be no edge at all; --rule
+     reads on both sides of it, against the sleeve and against the row's ink. */
+  border-color: var(--rule);
 }
 
-.menu__row:hover {
-  color: var(--bone);
-  background: var(--rule-bright);
+/* A tab in the strip stands on the strip's floor, which is where its square
+   shoulders and its feet come from. Nothing here stands on anything: these are
+   loose tabs in a list, so they take the fully round shape a hovered tab has,
+   and they fill the menu rather than sharing a row. */
+.menu--tabs .tab {
+  width: auto;
+  max-width: none;
+  border-radius: 9px;
 }
 
-/* ---------------------------------------------------------------- sleep --- */
-
-/* The state of one sleeping worktree, in the dropdown that lists them. */
-.menu__line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-/* Longer than a name and shorter than the menu is wide, so it sets the width
-   and everything above it lines up against it. */
-.menu__prompt {
-  max-width: 380px;
-  font-size: 11px;
-  color: var(--graphite-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu__state {
-  margin-left: auto;
-  padding-left: 12px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--graphite-dim);
-  white-space: nowrap;
-}
-
-.menu__state--needs {
-  color: var(--signal);
-}
-
-.menu__state--working {
-  color: var(--graphite);
-}
-
-.menu__state--idle {
-  color: var(--done);
+/* Chrome's separator divides tabs side by side. In a column it is a mark
+   hanging off the left edge of every row but the first. */
+.menu--tabs .tab + .tab > .tab__body::before {
+  display: none;
 }
 
 /* -------------------------------------------------------------- the files -- */

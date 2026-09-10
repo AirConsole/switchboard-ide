@@ -88,8 +88,18 @@ The pieces, and why each is the way it is:
   at the answer, and two glyphs for one fact would be two things to learn.
 - **A tab does not name the branch.** A worktree is nearly always on the branch
   it is named after, so it was a second copy of the name most of the time and
-  every tab paid width for it. The dropdown still names it, where a sleeping
-  worktree is hardest to recognise, and so does the window's own bar.
+  every tab paid width for it. The window's own bar names it, and so does a
+  tab's title.
+- **The zZ dropdown is the same tabs, stacked.** A sleeping worktree is one of
+  these tabs that happens not to be in the row, so it is drawn by the same
+  `tab()`: the sleeve under it, the bullet, the zZ, the name and its marks, the
+  hover panel — only fully round rather than square-shouldered, since nothing in
+  a list stands on a floor. It used to invent a row of its own, with the state
+  spelled out in words and the prompt on a second line, which made one worktree
+  look like two different objects depending on where you met it; both facts are
+  still there, on the bullet and in the title. The menu takes its width from its
+  widest row up to 420px, where the strip caps a tab at 200: this is a list with
+  one job, and a sleeper is the worktree you have least chance of recognising.
 - **Widths come from a cap that tightens with the count**, `data-tight` on the
   strip, not from flexbox. Two attempts failed and the measurements are worth
   keeping: `min-width: 0` on the body is what lets a name ellipsise, and it
