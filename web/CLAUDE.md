@@ -542,6 +542,15 @@ when the pair is unchanged, and that is not a nicety: `activeId` was a string, s
 rewriting it was free, while an object is not, and this now fires on every focus
 move *within* a pane.
 
+**The window you are in says so at both ends.** The strip makes its tab the
+light one; `.tile--current` gives that window's own bar `--rule-bright`, 1.45:1
+above every other bar and one rung under `--page`, so the tab, the bar and the
+ground around the windows read as one lit surface. Everything quiet in that bar
+goes up a rung with it — `--graphite-dim` is 3.62:1 on it, under the floor, so
+the project, the branch and the prompt are `--graphite` there (4.83:1). It is
+driven by `active`, not by `scrollTo`: where you *are*, which clicking into a
+window sets without the row moving, rather than where you last navigated.
+
 Watch selector specificity in `styles.css`: an element-scoped rule and a
 class-scoped rule for the same padding cancel each other in ways that only show
 up as a section that is subtly wrong.

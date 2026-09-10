@@ -393,6 +393,14 @@ interface WorktreeTileProps {
   /** Which pane that focus request is for. */
   focusPane: PaneKind | null
   session: Session | undefined
+  /**
+   * The worktree you are in, which is the one whose tab is the light one.
+   *
+   * Not the same as `focus`: that is a request to hand the keyboard over and
+   * fires once, while this is a standing fact about where you are, and it
+   * survives clicking into a window without navigating to it.
+   */
+  current: boolean
   terminals: Session[]
   activeTerminalId: string | null
   /** The file this worktree has open, and the directories it has expanded. */
@@ -443,6 +451,7 @@ const WorktreeTile = ({
   focus,
   focusPane,
   session,
+  current,
   terminals,
   activeTerminalId,
   openPath,
@@ -634,7 +643,7 @@ const WorktreeTile = ({
   )
 
   return (
-    <div className={`tile tile--${state}`} ref={tileRef}>
+    <div className={`tile tile--${state}${current ? ' tile--current' : ''}`} ref={tileRef}>
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
@@ -1454,6 +1463,7 @@ export const Overview = ({
                       focus={scrollTo?.id === worktree.id ? scrollTo.nonce : null}
                       focusPane={scrollTo?.id === worktree.id ? scrollTo.pane : null}
                       session={claudeSession(sessions, worktree.id)}
+                      current={active?.id === worktree.id}
                       terminals={terminalSessions(sessions, worktree.id)}
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                       openPath={openPathByWorktree[worktree.id] ?? ''}
