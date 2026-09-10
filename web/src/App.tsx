@@ -9,7 +9,13 @@ import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { Overview, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
-import { claudeSession, orderWorktrees, terminalSessions } from './selectors.js'
+import {
+  claudeSession,
+  orderWorktrees,
+  removalAsks,
+  removalQuestions,
+  terminalSessions,
+} from './selectors.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@ide-n-dream/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -209,6 +215,22 @@ export const App = (): React.ReactElement => {
     setAwake([...awake, worktreeId])
     reveal(worktreeId)
     void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
+  }
+
+  /**
+   * A worktree is gone: drop everything this client remembered about it.
+   *
+   * "Where you are" included -- it would otherwise point at a window that is
+   * not there, which is what a Cmd+arrow step counts from. Shared by the two
+   * ways of removing one, the dialog and the straight-through delete, because
+   * what has to be forgotten does not depend on how many questions were asked.
+   */
+  const forgetWorktree = (worktreeId: string): void => {
+    const panels = { ...ui.panels }
+    delete panels[worktreeId]
+    setUi({ awake: [...awake].filter((id) => id !== worktreeId), panels })
+    if (active?.id === worktreeId) setActive(null)
+    void refresh()
   }
 
   /**
@@ -514,11 +536,27 @@ export const App = (): React.ReactElement => {
            * Putting a worktree away and getting rid of it are the same
            * question asked with different force, so they are asked in the same
            * place: the trashcan that used to live in the window's own bar is
-           * gone, and this hands over to the dialog that does the deleting.
+           * gone, and this hands over to the dialog that does the deleting --
+           * when that dialog has anything to ask. A worktree with nothing
+           * uncommitted and nothing unmerged loses nothing by going, so the
+           * second dialog would be two clicks to answer no questions, and this
+           * one has already asked.
            */
           onDelete={() => {
+            const worktree = worktrees.find((w) => w.id === sleeping)
             setSleeping(null)
-            setRemoving(sleeping)
+            if (worktree === undefined) return
+            if (removalAsks(worktree)) {
+              setRemoving(worktree.id)
+              return
+            }
+            void api
+              .removeWorktree(worktree.id, {
+                force: false,
+                deleteBranch: removalQuestions(worktree).branchGoesAnyway,
+              })
+              .then(() => forgetWorktree(worktree.id))
+              .catch(fail)
           }}
         />
       )}
@@ -527,15 +565,8 @@ export const App = (): React.ReactElement => {
           worktree={worktrees.find((w) => w.id === removing)!}
           onClose={() => setRemoving(null)}
           onRemoved={() => {
-            // A removed worktree leaves nothing of itself behind, "where you
-            // are" included -- it would otherwise point at a window that is
-            // not there, which is what a Cmd+arrow step would count from.
-            const panels = { ...ui.panels }
-            delete panels[removing]
-            setUi({ awake: [...awake].filter((id) => id !== removing), panels })
-            if (active?.id === removing) setActive(null)
+            forgetWorktree(removing)
             setRemoving(null)
-            void refresh()
           }}
         />
       )}

@@ -103,3 +103,43 @@ export const worktreeTodos = (todos: WorktreeTodo[], worktreeId: string): TodoVi
 /** How many of a worktree's todos are waiting to be typed into Claude. */
 export const queuedTodoCount = (todos: WorktreeTodo[], worktreeId: string): number =>
   todos.filter((t) => t.worktreeId === worktreeId && t.queuedAt !== undefined).length
+
+/**
+ * What removing a worktree still has to ask about.
+ *
+ * Both halves of "is there anything of yours left in here" answer a question
+ * the dialog would otherwise put to you for nothing: uncommitted work is what
+ * makes git refuse the removal without `--force`, and commits the default
+ * branch does not have are what make deleting the branch a decision rather
+ * than tidying up. With neither, the removal takes nothing with it that is not
+ * already on the default branch -- so nothing is asked, and the caller can
+ * skip the dialog altogether.
+ */
+export interface RemovalQuestions {
+  /** Uncommitted work is here, so discarding it has to be opted into. */
+  discard: boolean
+  /** Unmerged commits are here, so whether the branch goes is a choice. */
+  branch: boolean
+  /** The branch goes without being asked about: it holds nothing of its own. */
+  branchGoesAnyway: boolean
+}
+
+export const removalQuestions = (worktree: Worktree): RemovalQuestions => {
+  /*
+   * `unmerged` is optional on the model, and absent is not the same as zero:
+   * a server that did not send it has not told us the branch is spent, so the
+   * question stands. A detached HEAD has no branch to ask about at all.
+   */
+  const unmerged = worktree.unmerged === undefined || worktree.unmerged > 0
+  return {
+    discard: (worktree.dirty ?? 0) > 0,
+    branch: worktree.branch !== null && unmerged,
+    branchGoesAnyway: worktree.branch !== null && !unmerged,
+  }
+}
+
+/** Whether removal has anything to ask, and so whether to open its dialog. */
+export const removalAsks = (worktree: Worktree): boolean => {
+  const questions = removalQuestions(worktree)
+  return questions.discard || questions.branch
+}

@@ -57,6 +57,13 @@ The pieces, and why each is the way it is:
 - **Inactive tabs have no shape** until hovered, when they get a rounded panel
   in `--rule`. Separators sit between two inactive tabs only and vanish either
   side of the active tab and the hovered one.
+- **Removal only asks what it has to.** `removalQuestions` reads the same two
+  counts the tab shows: uncommitted work is what makes git refuse without
+  `--force`, and unmerged commits are what make deleting the branch a decision.
+  A clean worktree is not offered a "discard changes" box to rule out, a branch
+  the default branch already has goes with the worktree rather than being put to
+  a vote, and when neither is left to ask the removal dialog does not open at
+  all — the sleep dialog's button drops its ellipsis and does it.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
