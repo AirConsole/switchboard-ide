@@ -20,8 +20,10 @@ const UI_CACHE_KEY = 'idn.ui'
  * The git panel became the files panel's Changes mode. A stored `panels` list
  * still naming `git` is dropped by the row's own PANELS filter, so a worktree
  * that had only that panel open would come back with no panel at all -- the
- * Changes panel would simply cease to exist. It becomes `files`, which opens on
- * Changes by default, so there is nothing else to write.
+ * Changes panel would simply cease to exist. It becomes the `files` panel, and
+ * that worktree is put into Changes mode explicitly: the panel's own default is
+ * Files, so without this a git panel would come back showing the file tree,
+ * which is not what it was.
  *
  * The dedupe keeps the *last* occurrence, because `panesOf` keeps the newest
  * panels when a window is too narrow for all of them: a worktree that had both
@@ -38,15 +40,20 @@ const UI_CACHE_KEY = 'idn.ui'
 const migrateUi = (ui: UiState): UiState => {
   const panels = ui.panels as unknown as Record<string, string[]>
   const migrated: Record<string, PanelName[]> = {}
+  const modes = { ...ui.filesModeByWorktree }
   let moved = false
   for (const [worktreeId, list] of Object.entries(panels)) {
     const renamed = list.map((panel) => (panel === 'git' ? 'files' : panel))
-    if (renamed.some((panel, index) => panel !== list[index])) moved = true
+    if (renamed.some((panel, index) => panel !== list[index])) {
+      moved = true
+      // Only where the reader has not since chosen a mode for themselves.
+      modes[worktreeId] ??= 'changes'
+    }
     // Last occurrence wins, so the survivor inherits the newer position.
     const seen = renamed.filter((panel, index) => renamed.lastIndexOf(panel) === index)
     migrated[worktreeId] = seen as PanelName[]
   }
-  return moved ? { ...ui, panels: migrated } : ui
+  return moved ? { ...ui, panels: migrated, filesModeByWorktree: modes } : ui
 }
 
 /**

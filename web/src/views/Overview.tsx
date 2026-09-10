@@ -1251,7 +1251,7 @@ export const Overview = ({
                       activeTerminalId={activeTerminalByWorktree[worktree.id] ?? null}
                       openPath={openPathByWorktree[worktree.id] ?? ''}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
-                      filesMode={filesModeByWorktree[worktree.id] ?? 'changes'}
+                      filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
                       onSleep={() => onSleep(worktree.id)}

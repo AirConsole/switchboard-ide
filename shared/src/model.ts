@@ -218,7 +218,7 @@ export interface UiState {
    * including a clean one, so there is nothing here that can go stale. It is
    * the same kind of fact as which terminal a worktree has selected.
    *
-   * Absent means `changes`, and nothing is written until the switch is used.
+   * Absent means `files`, and nothing is written until the switch is used.
    */
   filesModeByWorktree: Record<string, FilesMode>
 }
