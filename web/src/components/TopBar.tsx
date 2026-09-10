@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
+import { ForkIcon } from './ForkIcon.js'
 import {
   claudeSession,
   mostUrgentStatus,
@@ -59,41 +60,6 @@ const OpenProjectIcon = (): React.ReactElement => (
   </svg>
 )
 
-/**
- * Commits here that the default branch has not.
- *
- * The fork glyph, because that is what it means: this branch has gone its own
- * way and nothing has brought it back yet. It stands where the dirty count
- * stands and only when there is none -- committed work and uncommitted work are
- * the same question, "is there anything of yours still in here", and the count
- * is the more urgent of the two answers.
- *
- * Hairlines at the chrome's own weight in currentColor, so it sits in the quiet
- * channel with the branch name and the counts rather than shouting from it.
- */
-const ForkIcon = (): React.ReactElement => (
-  <svg
-    className="tab__fork"
-    viewBox="0 0 16 16"
-    width="14"
-    height="14"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.3"
-    strokeLinecap="round"
-    aria-hidden="true"
-  >
-    <circle cx="8" cy="3.6" r="1.7" />
-    <circle cx="4.4" cy="12.4" r="1.7" />
-    <circle cx="11.6" cy="12.4" r="1.7" />
-    {/* One commit going two ways, GitHub's way up: the trunk drops and splits,
-        rather than two branches coming together -- this says diverged, not
-        merged. */}
-    <path d="M8 5.3v1.4" />
-    <path d="M4.4 10.7V9.4a2.7 2.7 0 0 1 2.7-2.7h1.8a2.7 2.7 0 0 1 2.7 2.7v1.3" />
-  </svg>
-)
-
 /** The tab class for a status: what colour its bullet is, if any. */
 const statusClass = (status: WorktreeStatus): string =>
   status === 'needs-you'
@@ -136,7 +102,7 @@ const WorktreeLabel = ({
     {worktree.dirty ? (
       <span className="tab__dirty">{worktree.dirty}&plusmn;</span>
     ) : worktree.unmerged ? (
-      <ForkIcon />
+      <ForkIcon className="tab__fork" />
     ) : null}
     {/* Said in the same quiet channel as the dirty count, because it is the same
         kind of fact: how much work is parked here. Not in colour and not on the

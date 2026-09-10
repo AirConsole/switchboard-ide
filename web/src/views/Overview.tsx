@@ -24,6 +24,7 @@ import { TodoBar, TodoPane } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
+import { ForkIcon } from '../components/ForkIcon.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { useNearViewport } from './useNearViewport.js'
@@ -125,6 +126,8 @@ interface PanelCounts {
   queued: number
   terminals: number
   changes: number
+  /** Commits the default branch does not have, for the fork glyph. */
+  unmerged: number
 }
 
 /**
@@ -146,7 +149,7 @@ interface PanelCounts {
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
  */
-const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
+const panelLabel = (panel: PanelName, counts: PanelCounts): React.ReactNode => {
   switch (panel) {
     case 'todo':
       // What is queued outranks what is merely written down: one is about to
@@ -164,8 +167,23 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): string => {
        * the panel opens on them: a number on a control promises that clicking
        * shows you those N things, which is exactly what Changes mode does.
        */
-      if (counts.changes === 0) return 'Files'
-      return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
+      if (counts.changes > 0) return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
+      /*
+       * With nothing uncommitted, the same glyph the worktree's tab shows: this
+       * branch has commits the default branch has not. One slot, the count when
+       * there is one and the fork otherwise, in both places -- the toggle and
+       * the tab answer the same question and clicking the toggle is where you
+       * go to look at the answer.
+       */
+      if (counts.unmerged > 0) {
+        return (
+          <>
+            Files
+            <ForkIcon className="tile__fork" size={12} />
+          </>
+        )
+      }
+      return 'Files'
   }
 }
 
@@ -450,6 +468,7 @@ const WorktreeTile = ({
     queued: todos.filter((view) => view.position !== null).length,
     terminals: terminals.length,
     changes: worktree.dirty ?? 0,
+    unmerged: worktree.unmerged ?? 0,
   }
 
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')

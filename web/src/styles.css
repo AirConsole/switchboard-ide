@@ -1378,6 +1378,9 @@ button {
   display: flex;
   align-items: center;
   flex: none;
+  /* Between a label and the glyph after it. The label's own letter-spacing
+     already leaves a hair of it, so this is 4 rather than 6. */
+  gap: 4px;
   padding: 0 12px;
   /* Transparent until it is on, so switching it on does not move the label. */
   border-bottom: 2px solid transparent;
@@ -1406,6 +1409,20 @@ button {
 .tile__toggle--on {
   color: var(--bone);
   border-bottom-color: var(--rule-bright);
+}
+
+/*
+ * The fork on the Files toggle: unmerged commits, where the dirty count goes.
+ *
+ * currentColor, unlike the tab's copy -- there the fork sits in the dim channel
+ * with the counts, here it is part of the toggle's own label and has to follow
+ * it into --bone on hover and while the panel is open. Nudged up for the same
+ * reason: a 12px box against 11px uppercase text sits a hair low on a shared
+ * baseline.
+ */
+.tile__fork {
+  flex: none;
+  margin-top: -1px;
 }
 
 /*
