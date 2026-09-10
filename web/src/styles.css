@@ -2432,6 +2432,88 @@ button {
   border-bottom-color: var(--rule-bright);
 }
 
+/*
+ * The search box: what the sidebar is showing, narrowed.
+ *
+ * A sibling above the tree rather than a row inside it. `.files__tree` being
+ * the sidebar's one scroller is load-bearing -- the row's wheel chaining looks
+ * for a scrollable ancestor -- and a box inside it would also scroll away as
+ * you arrow through the results.
+ *
+ * Mono, because what it filters is paths and a path is read character by
+ * character. Not `.field__input`, which is a dialog's control at 14px and
+ * would tower over 11px sidebar chrome.
+ */
+.files__find {
+  flex: none;
+  border-bottom: 1px solid var(--rule-bright);
+}
+
+.files__search {
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--bone);
+}
+
+.files__search::placeholder {
+  color: var(--graphite-dim);
+}
+
+/* The interface's own focus blue, which is neither signal nor done. */
+.files__search:focus {
+  outline: none;
+  border-bottom-color: var(--pulse);
+}
+
+/*
+ * A search hit: two lines, because a full path does not fit a 171px sidebar on
+ * one and the name alone is what a finder is for. Shaped like a commit row,
+ * which is this panel's existing answer to the same problem.
+ */
+.files__hit {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--graphite);
+}
+
+.files__hit:hover {
+  color: var(--bone);
+  background: var(--slab);
+}
+
+.files__hit--on {
+  color: var(--bone);
+  background: var(--rule-bright);
+}
+
+.files__hit--changed {
+  color: var(--bone);
+}
+
+.files__hit-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files__hit-dir {
+  display: block;
+  font-size: 11px;
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .files__tree {
   flex: 1;
   min-width: 0;

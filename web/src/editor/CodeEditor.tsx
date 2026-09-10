@@ -38,6 +38,16 @@ export interface CodeEditorProps {
   draft: () => string | null
   onChange: (text: string) => void
   onSave: () => void
+  /**
+   * Take the keyboard when this changes, and when it is already set at mount.
+   *
+   * A number rather than a flag, and a prop rather than a ref, for the reasons
+   * `TerminalView` gives: the same editor can be asked for twice running, and
+   * it may not be mounted when the request arrives -- this one is loaded
+   * lazily, so a request can land while its chunk is still in flight. Reading
+   * it in an effect is what closes both gaps.
+   */
+  focus?: number | null
 }
 
 /**
@@ -132,7 +142,13 @@ const followDisk = (view: EditorView, text: string): void => {
  * would then have to out-precedence. What is left below is the list that earns
  * its place.
  */
-export const CodeEditor = ({ file, draft, onChange, onSave }: CodeEditorProps): React.ReactElement => {
+export const CodeEditor = ({
+  file,
+  draft,
+  onChange,
+  onSave,
+  focus = null,
+}: CodeEditorProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   /** What the view currently shows, so the two kinds of update can be told apart. */
@@ -275,6 +291,15 @@ export const CodeEditor = ({ file, draft, onChange, onSave }: CodeEditorProps): 
       view.dispatch({ effects: language.reconfigure(support) })
     })
   }, [file.path, language])
+
+  /*
+   * Declared after the effect that builds the view, so on a fresh mount there
+   * is something to focus by the time this runs.
+   */
+  useEffect(() => {
+    if (focus === null) return
+    viewRef.current?.focus()
+  }, [focus])
 
   return <div className="files__cm" ref={hostRef} />
 }

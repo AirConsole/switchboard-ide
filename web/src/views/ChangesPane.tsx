@@ -34,6 +34,38 @@ const POLL_MS = 3000
  */
 export const INDENT = 11
 
+/**
+ * Filtering the two lists this pane already holds.
+ *
+ * Unlike Files mode, which has to ask the server because the tree only holds
+ * what you expanded, these arrive whole -- a worktree's changes and its commits
+ * are both short by nature. So they filter in place, with no round trip.
+ *
+ * Case-insensitive substring, matching the server's own rule for filenames, so
+ * one box means one thing in all three modes.
+ */
+export const matchingChanges = (changes: FileChange[], query: string): FileChange[] => {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return changes
+  return changes.filter(
+    (change) =>
+      change.path.toLowerCase().includes(needle) ||
+      (change.from ?? '').toLowerCase().includes(needle),
+  )
+}
+
+/** A commit matches on what you can see of it, plus its full hash. */
+export const matchingCommits = (commits: Commit[], query: string): Commit[] => {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return commits
+  return commits.filter(
+    (commit) =>
+      commit.subject.toLowerCase().includes(needle) ||
+      commit.author.toLowerCase().includes(needle) ||
+      commit.hash.toLowerCase().startsWith(needle),
+  )
+}
+
 /** One row of the changed-files tree. */
 export interface ChangeRow {
   /** The file, or the deepest directory of a folded chain. */
