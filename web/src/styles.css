@@ -1114,6 +1114,27 @@ button {
   box-shadow: 0 0 0 1px var(--signal-dim);
 }
 
+/*
+ * The window you are in, at its edge.
+ *
+ * Its bar is lit and its tab is the light one; this is the outline that ties
+ * the two together. --graphite-dim is 3.40:1 against the page it sits on and
+ * 5.24:1 against the window's own ground, where the resting --rule is 1.30 and
+ * 1.18 -- a hairline you had to look for. Three sides only: the left is the
+ * state rail, and painting all four here would outrank the single-class rules
+ * below that colour it.
+ *
+ * Restated under the pointer, because `.tile:hover` is a class plus a
+ * pseudo-class and would otherwise win and put the resting border back on the
+ * one window that should keep it.
+ */
+.tile--current,
+.tile--current:hover {
+  border-top-color: var(--graphite-dim);
+  border-right-color: var(--graphite-dim);
+  border-bottom-color: var(--graphite-dim);
+}
+
 .tile--working {
   border-left-color: var(--graphite);
 }
