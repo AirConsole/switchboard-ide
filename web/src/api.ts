@@ -7,6 +7,7 @@ import type {
   Project,
   Session,
   UiState,
+  Usage,
   Worktree,
   WorktreeChanges,
   WorktreeTodo,
@@ -61,6 +62,9 @@ export interface BrowseResult {
 
 export const api = {
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
+
+  /** Claude's usage limits. The server caches these for five minutes. */
+  usage: () => request<Usage>('/api/usage'),
   browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
   openProject: (path: string, opts: { create?: boolean; commitExisting?: boolean } = {}) =>
     request<Project>('/api/projects', {
@@ -127,13 +131,13 @@ export const api = {
    * makes the server broadcast an invalidate, which refetches it. A GET here
    * would be a second answer to a question the snapshot already answers.
    */
-  createTodo: (worktreeId: string, body: { title?: string; prompt: string }) =>
+  createTodo: (worktreeId: string, body: { prompt: string }) =>
     request<WorktreeTodo>(`/api/worktrees/${worktreeId}/todos`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  /** Null clears a title; `queued` is the RUN NEXT toggle. */
-  patchTodo: (id: string, patch: { title?: string | null; prompt?: string; queued?: boolean }) =>
+  /** `queued` is the RUN NEXT toggle. */
+  patchTodo: (id: string, patch: { prompt?: string; queued?: boolean }) =>
     request<WorktreeTodo>(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTodo: (id: string) => request<{ ok: true }>(`/api/todos/${id}`, { method: 'DELETE' }),
 

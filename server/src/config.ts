@@ -22,6 +22,13 @@ export const config = {
 
   /** Command used for `claude` sessions. */
   claudeCommand: env.IDN_CLAUDE_CMD ?? 'claude',
+  /*
+   * The real `claude`, for reading `/usage`.
+   *
+   * Deliberately not `claudeCommand`: that one is the agent a scratch instance
+   * swaps for vim or a stand-in script, and a stand-in cannot report usage.
+   */
+  usageCommand: env.IDN_USAGE_CMD ?? 'claude',
   shellCommand: env.IDN_SHELL ?? env.SHELL ?? '/bin/bash',
 
   /** Scrollback the server-side mirror keeps for reconnect repaints. */

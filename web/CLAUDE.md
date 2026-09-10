@@ -8,7 +8,7 @@ object, and that is enough.
 App.tsx              projects -> groups -> the row; every dialog; UI state writes
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
-components/TopBar    project groups, awake tabs, the zZ dropdown
+components/TopBar    project groups, awake tabs, the zZ dropdown, usage bars
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip
@@ -189,6 +189,19 @@ survive this transport: a byte above 127 (any column past 95) is a latin-1 code
 unit in a JSON string, node-pty re-encodes it as two UTF-8 bytes, and tmux then
 consumes the wrong three bytes and passes the rest on as text — measured as a
 bare `9999...8888` arriving in a prompt.
+
+## Cmd+Left and Cmd+Right belong to the row
+
+They step through the worktrees from wherever the caret is — a terminal, a
+todo's prompt, the editor in the files panel. The only thing that keeps the key
+is a dialog, which is modal: stepping the windows behind a scrim would act on
+something nobody asked about.
+
+The handler listens in the **capture** phase and calls `stopPropagation`, which
+is what makes that true. A text field and CodeMirror both handle the key at the
+target, before a listener on the document would see it, so without capturing you
+get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
+as "start of line" is the price; Home still does it.
 
 ## The todo panel holds no state of its own
 

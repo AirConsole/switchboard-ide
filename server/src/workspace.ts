@@ -338,11 +338,7 @@ export class Workspace {
     return text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
   }
 
-  async createTodo(input: {
-    worktreeId: string
-    title?: string
-    prompt: string
-  }): Promise<WorktreeTodo> {
+  async createTodo(input: { worktreeId: string; prompt: string }): Promise<WorktreeTodo> {
     // Throws 404 for a worktree that is not there, before anything is stored.
     await this.resolve(input.worktreeId)
     const prompt = Workspace.clean(input.prompt).trim()
@@ -352,7 +348,6 @@ export class Workspace {
       worktreeId: input.worktreeId,
       prompt,
       createdAt: Date.now(),
-      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     }
     this.store.addTodo(todo)
     return todo
@@ -365,10 +360,7 @@ export class Workspace {
    * says whether it wants the todo to run, and the server decides where in the
    * queue that puts it. Otherwise two browsers could disagree about the order.
    */
-  updateTodo(
-    id: string,
-    patch: { title?: string | null; prompt?: string; queued?: boolean },
-  ): WorktreeTodo {
+  updateTodo(id: string, patch: { prompt?: string; queued?: boolean }): WorktreeTodo {
     const todo = this.store.todo(id)
     if (!todo) throw new HttpError(404, 'no such todo')
     // Its prompt may already be on its way into Claude; editing it now would
@@ -377,10 +369,6 @@ export class Workspace {
       throw new HttpError(409, 'that todo is being sent to Claude', 'todo-dispatching')
     }
     const next: Partial<WorktreeTodo> = {}
-    if (patch.title !== undefined) {
-      const title = patch.title === null ? '' : Workspace.clean(patch.title).trim()
-      next.title = title === '' ? undefined : title
-    }
     if (patch.prompt !== undefined) {
       const prompt = Workspace.clean(patch.prompt).trim()
       if (prompt === '') throw new HttpError(400, 'a todo needs a prompt')
