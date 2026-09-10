@@ -185,20 +185,51 @@ type Mark =
 const COMMAND = /<command-name>([^<]*)<\/command-name>/
 const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
 
-/** Wrappers that are machinery around a turn rather than something asked. */
-const NOT_A_PROMPT = ['<local-command-stdout>', '<system-reminder>', '<attachment>']
+/**
+ * Machinery around a turn rather than something asked.
+ *
+ * The harness records several kinds of its own business as `user` records with
+ * ordinary string content, each opening with a tag of its own. This used to be
+ * a list of three of them and a `startsWith`, and it went stale the way such a
+ * list does: a `<task-notification>` -- what arrives when a background task
+ * finishes -- was read as a prompt, so a worktree's bar showed 453 characters
+ * of `<task-id>`/`<tool-use-id>` XML instead of the "do step 3" its person had
+ * typed two minutes earlier.
+ *
+ * So the test is the shape rather than the names. Surveyed over 120 live
+ * transcripts, the tags that reach here are `task-notification`,
+ * `local-command-stdout`, `bash-input` and `bash-stdout` (the `!` prefix's own
+ * echo, which continues into `<bash-stderr>` and so does not close at the end
+ * -- which is why this matches the opening tag and not a whole wrapped block),
+ * plus `system-reminder` and `attachment` from before. A slash command opens
+ * with a tag too and must survive: `readCommand` runs first and returns it.
+ *
+ * The cost is a paste that opens with markup -- `<div>...</div>` and a question
+ * after it -- which reads as machinery and leaves the previous prompt in the
+ * bar. A stale line for one turn, against a bar full of XML.
+ */
+const INJECTED = /^\s*<[a-z][a-z0-9-]*>/i
 
 /**
- * The words a person types into a plan-mode dialog.
+ * The words a person types when they turn a tool use down.
  *
- * They do not arrive as a user record at all: plan feedback comes back as the
- * `ExitPlanMode` tool's own result, phrased for Claude -- "The user doesn't want
- * to proceed ... To tell you how to proceed, the user said: <words>". So the
- * newest thing a person said during a planning session is invisible to anything
- * that reads user records only, which is half of why a window showed an
- * instruction two turns old.
+ * They do not arrive as a user record at all: the feedback comes back as the
+ * rejected tool's own result, phrased for Claude -- "The user doesn't want to
+ * proceed with this tool use. The tool use was rejected ... To tell you how to
+ * proceed, the user said: <words>". Most often that tool is `ExitPlanMode`, so
+ * the newest thing a person said during a planning session is invisible to
+ * anything that reads user records only, which is half of why a window showed
+ * an instruction two turns old.
+ *
+ * Anchored at the start of the tool result, and that is the whole of the guard.
+ * It used to be the bare phrase anywhere in one, and a tool result is whatever
+ * a tool printed: this very file quotes the sentence in the comment above, so
+ * an agent that so much as read `claude.ts` had `<words>". So the 197- * newest
+ * thing a person said...` in its window -- measured, in the worktree the fix
+ * was written in.
  */
-const PLAN_FEEDBACK = /the user said:\s*([\s\S]+)$/i
+const PLAN_FEEDBACK =
+  /^The user doesn['\u2019]t want to proceed with this tool use\.[\s\S]*?\bthe user said:\s*([\s\S]+)$/i
 
 const readCommand = (content: string): string | null => {
   const name = COMMAND.exec(content)
@@ -254,11 +285,13 @@ const markOf = (line: string): Mark => {
    * megabyte-scale scan.
    */
   if (Array.isArray(content)) {
-    if (!line.includes('the user said')) return null
+    // The rarer half of the sentence, so a tool result that merely says "the
+    // user said" is not parsed at all.
+    if (!line.includes('want to proceed with this tool use')) return null
     for (const part of content) {
       const said = (part as { content?: unknown } | null)?.content
       if (typeof said !== 'string') continue
-      const words = PLAN_FEEDBACK.exec(said)?.[1]?.trim()
+      const words = PLAN_FEEDBACK.exec(said.trim())?.[1]?.trim()
       if (words !== undefined && words !== '') return { kind: 'prompt', text: words }
     }
     return null
@@ -266,7 +299,7 @@ const markOf = (line: string): Mark => {
   if (typeof content !== 'string' || content.trim() === '') return null
   const command = readCommand(content)
   if (command !== null) return { kind: 'prompt', text: command }
-  if (NOT_A_PROMPT.some((wrapper) => content.startsWith(wrapper))) return null
+  if (INJECTED.test(content)) return null
   return { kind: 'prompt', text: content }
 }
 
