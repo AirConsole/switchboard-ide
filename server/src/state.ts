@@ -37,6 +37,32 @@ const emptyState = (): PersistedState => ({
 })
 
 /**
+ * A stored project, or nothing.
+ *
+ * Row by row, like the todos below, and for a sharper reason: this used to be a
+ * bare `.map()` inside the same `try` as `JSON.parse`, so one row missing
+ * `root` threw -- `resolve(undefined)` is a TypeError -- the whole load fell
+ * into the catch, and `emptyState()` was then written over the file 250ms
+ * later by the first UI patch. That takes the projects *and* the todo queue
+ * with it. The catch's comment says everything here is rebuildable by the
+ * user; a queue of prompts is not.
+ */
+const reviveProject = (value: unknown): Project | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Partial<Project>
+  if (typeof row.id !== 'string' || row.id === '') return null
+  if (typeof row.root !== 'string' || row.root === '') return null
+  return {
+    ...(row as Project),
+    // A project registered before hosts existed is a local one. Defaulting it
+    // here keeps the type honest about a field the stored file has never
+    // contained.
+    host: row.host ?? { kind: 'local' as const },
+    worktreeRoot: defaultWorktreeRoot(row.root),
+  }
+}
+
+/**
  * A stored todo, or nothing.
  *
  * Stricter than the projects beside it because of what a todo feeds: a prompt
@@ -102,16 +128,9 @@ export class StateStore {
           // The worktree location is derived, not remembered: recomputing it
           // migrates projects registered under an older convention instead of
           // leaving them pointed at a directory nothing else uses.
-          projects: (Array.isArray(candidate.projects) ? candidate.projects : []).map(
-            (project) => ({
-              ...project,
-              // A project registered before hosts existed is a local one.
-              // Defaulting it here keeps the type honest about a field the
-              // stored file has never contained.
-              host: project.host ?? { kind: 'local' as const },
-              worktreeRoot: defaultWorktreeRoot(project.root),
-            }),
-          ),
+          projects: (Array.isArray(candidate.projects) ? candidate.projects : [])
+            .map(reviveProject)
+            .filter((project): project is Project => project !== null),
           todos: (Array.isArray(candidate.todos) ? candidate.todos : [])
             .map(reviveTodo)
             .filter((todo): todo is WorktreeTodo => todo !== null),

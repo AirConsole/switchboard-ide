@@ -150,9 +150,24 @@ const Group = ({
     const key = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') setAt(null)
     }
+    /*
+     * The menu hangs from a rect measured when it was opened, and the strip it
+     * hangs from scrolls -- so a scroll or a resize with the menu open left it
+     * pointing at a tab that had moved. Re-measured rather than dismissed,
+     * because dismissing something you did not click is its own surprise.
+     */
+    const follow = (): void => {
+      const box = anchor.current?.getBoundingClientRect()
+      if (box) setAt({ left: box.left, top: box.bottom })
+    }
+    window.addEventListener('resize', follow)
+    // Capture, so a scroll of the strip itself is heard as well as the window's.
+    document.addEventListener('scroll', follow, true)
     document.addEventListener('pointerdown', dismiss)
     document.addEventListener('keydown', key)
     return () => {
+      window.removeEventListener('resize', follow)
+      document.removeEventListener('scroll', follow, true)
       document.removeEventListener('pointerdown', dismiss)
       document.removeEventListener('keydown', key)
     }

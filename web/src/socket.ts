@@ -9,6 +9,14 @@ export interface ConsumerOptions {
   /** Called with a full repaint whenever this consumer needs to (re)paint. */
   onSnapshot(snapshot: string, cols: number, rows: number): void
   onSize?(cols: number, rows: number): void
+  /**
+   * The server refused this session: it is gone, and no snapshot is coming.
+   *
+   * Without it the pane sat blank for the life of the page and the only trace
+   * was a console warning -- the consumer had been dropped from the socket, so
+   * nothing would ever paint it and nothing would say why.
+   */
+  onGone?(message: string): void
 }
 
 interface Consumer extends ConsumerOptions {
@@ -134,7 +142,12 @@ class TerminalSocket {
          * Reconnecting re-asks for every subscribed id, so without this a
          * single vanished session poisons its tile permanently.
          */
-        if (msg.sessionId !== undefined) this.consumers.delete(msg.sessionId)
+        if (msg.sessionId !== undefined) {
+          for (const consumer of this.consumers.get(msg.sessionId) ?? []) {
+            consumer.onGone?.(msg.message)
+          }
+          this.consumers.delete(msg.sessionId)
+        }
         return
     }
   }

@@ -111,7 +111,9 @@ const read = async (): Promise<Usage> => {
     // Keep the last good numbers and say they are stale. The alternative --
     // dropping them -- loses the only information there is over a failure the
     // next attempt may well clear.
-    cached = { limits: cached?.limits ?? [], fetchedAt: cached?.fetchedAt ?? 0, error: message }
+    // Stamped now, so the TTL applies to the failure as well: keeping the old
+    // timestamp is what made an error re-enter read() on every single poll.
+    cached = { limits: cached?.limits ?? [], fetchedAt: Date.now(), error: message }
     return cached
   } finally {
     reading = null
@@ -120,7 +122,10 @@ const read = async (): Promise<Usage> => {
 
 /** The current reading, taken now if the last one has expired. */
 export const usage = async (): Promise<Usage> => {
-  if (cached && !cached.error && Date.now() - cached.fetchedAt < TTL_MS) return cached
+  // An error is a reading too. Excluding it here meant a `claude` that could
+  // not answer was re-spawned on every poll of every open tab -- the opposite
+  // of what the TTL is for, and each attempt costs seconds.
+  if (cached && Date.now() - cached.fetchedAt < TTL_MS) return cached
   reading ??= read()
   return reading
 }

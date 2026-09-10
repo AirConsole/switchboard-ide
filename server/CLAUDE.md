@@ -150,7 +150,13 @@ checked against a real Claude before it was allowed to type anything.
 
 ## Worktrees and ids
 
-Worktrees are **discovered** from `git worktree list --porcelain` on every read.
+Worktrees are **discovered** from `git worktree list --porcelain -z` on every
+read. `-z` because the porcelain form prints a worktree's path raw and
+unquoted: a path containing a newline splits into two attributes, and the
+line-oriented parse then reports the path truncated at the newline (measured --
+`.../worktrees/od\nd` came back as `.../worktrees/od`, with the wrong id, since
+an id is a hash of the path).
+
 There is no registry, which is what lets the IDE be dropped onto a repo that
 already has worktrees. `head` from porcelain feeds `pollChanged()`'s signature
 (`id:branch:head:dirty:missing:prompt`), which is how the 4s poller decides

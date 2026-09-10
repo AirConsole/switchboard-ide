@@ -888,9 +888,12 @@ export const Overview = ({
    * between the units it covers, so tiles of any width occupy exactly the same
    * run of the row as the units they span.
    *
-   * Two units minimum, which is one pane: a window narrower than that has
-   * nowhere to put anything, and the tile overflows it rather than shrinking
-   * below the floor.
+   * Two units minimum, which is one pane -- and below that it is the pitch that
+   * gives, not the row: `units` cannot go under two, so a window narrower than
+   * a pane's own floor divides into two units smaller than half of one and the
+   * pane shrinks past MIN_PANE_COLUMNS with it. The floor is a promise about
+   * how a row is divided among the windows in it, not one a window smaller than
+   * a single pane can keep.
    */
   const unitPitch = (minPaneWidth + GAP) / 2
   const units = Math.max(2, Math.floor((width - GAP) / unitPitch))
@@ -1120,7 +1123,14 @@ export const Overview = ({
        * carries you along a row that has not got any shorter.
        */
       const step = (pixels > 0 ? 1 : -1) * 2
-      const to = Math.min(Math.max(from + step, 0), Math.max(0, totalUnits - 1))
+      /*
+       * The last offset the row can rest at, not the last unit that exists.
+       * Content is `totalUnits * pitch` wide and the window shows `units` of
+       * them, so clamping at `totalUnits - 1` let `aim` climb past the end and
+       * the first notch back read as a dead one.
+       */
+      const last = Math.max(0, totalUnits - units)
+      const to = Math.min(Math.max(from + step, 0), last)
       aim = to
       grid.scrollTo({ left: to * pitch })
     }

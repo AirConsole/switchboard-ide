@@ -299,23 +299,28 @@ const IN_TURN_STALE_MS = 30_000
  * still applied fresh each time, since that depends on the clock rather than on
  * the file.
  */
-const marks = new Map<string, { path: string; at: number; kind: 'prompt' | 'turn-end' }>()
+const marks = new Map<
+  string,
+  { path: string; at: number; kind: 'prompt' | 'turn-end' | 'none' }
+>()
 
 export const turnState = async (cwd: string, now = Date.now()): Promise<TurnState> => {
   const newest = await newestTranscript(transcriptDir(cwd))
   if (newest === null) return 'unknown'
   const cached = marks.get(cwd)
-  let kind: 'prompt' | 'turn-end'
+  let kind: 'prompt' | 'turn-end' | 'none'
   if (cached !== undefined && cached.path === newest.path && cached.at === newest.at) {
     kind = cached.kind
   } else {
     const text = await readTail(newest.path)
     if (text === null) return 'unknown'
-    const mark = newestMark(text)
-    if (mark === null) return 'unknown'
-    kind = mark.kind
+    // 'none' is cached too. A tool result bigger than the tail leaves no mark in
+    // the window, and not caching that answer meant a full 256KB read plus a
+    // directory listing every second, for as long as that transcript stood.
+    kind = newestMark(text)?.kind ?? 'none'
     marks.set(cwd, { path: newest.path, at: newest.at, kind })
   }
+  if (kind === 'none') return 'unknown'
   if (kind === 'turn-end') return 'between-turns'
   // Nothing has written here in half a minute, so whatever this prompt started
   // is not still going; let the screen answer instead.

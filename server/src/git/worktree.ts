@@ -52,10 +52,37 @@ export const isGitRepo = async (path: string): Promise<boolean> => {
 }
 
 /** Absolute root of the main worktree, given any path inside the repo. */
+/**
+ * The *main* worktree of whatever repository `path` belongs to.
+ *
+ * `--show-toplevel` alone answers "which working tree am I in", which inside a
+ * linked worktree is that worktree -- and a project registered there listed the
+ * whole repository's worktrees under a second project id. Since ids are derived
+ * from paths, every worktree then existed twice, `resolve()` returned whichever
+ * project was registered first, and closing the second one collected "its"
+ * worktrees and deleted the *other, still-open* project's queued todos.
+ * Measured here: from `.claude/worktrees/ui`, `--show-toplevel` returns that
+ * directory and `worktree list` returns all four.
+ *
+ * `--git-common-dir` is shared by every worktree of a repository, so its parent
+ * is the main worktree -- except for a bare repository, where there is no
+ * working tree to speak of and the toplevel is the honest answer.
+ */
 export const repoRoot = async (path: string): Promise<string> => {
   // --path-format=absolute keeps this correct when called from a subdirectory.
-  const out = await git(path, 'rev-parse', '--path-format=absolute', '--show-toplevel')
-  return out.trim()
+  const top = (await git(path, 'rev-parse', '--path-format=absolute', '--show-toplevel')).trim()
+  try {
+    const common = (
+      await git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    ).trim()
+    if (common === '' || basename(common) !== '.git') return top
+    const main = dirname(common)
+    // Only trust it if it is really a working tree; a bare repo's common dir
+    // has no worktree above it.
+    return (await isGitRepo(main)) ? main : top
+  } catch {
+    return top
+  }
 }
 
 export interface RawWorktree {
@@ -69,15 +96,21 @@ export interface RawWorktree {
 }
 
 /**
- * Parse `git worktree list --porcelain`: records separated by blank lines, each
- * a sequence of `key value` or bare-flag lines.
+ * Parse `git worktree list --porcelain -z`: attributes terminated by NUL, each
+ * a `key value` or a bare flag, with an empty attribute between records.
+ *
+ * `-z` rather than the line-oriented form because a worktree's path is printed
+ * raw and unquoted, so a path containing a newline splits into two attributes
+ * and the parse silently invents a worktree -- and an id is a hash of a path,
+ * so a mangled one is a session pointed at nothing. Supported since git 2.36
+ * (measured against 2.39.5 on this machine).
  */
 export const listRawWorktrees = async (root: string): Promise<RawWorktree[]> => {
-  const stdout = await git(root, 'worktree', 'list', '--porcelain')
+  const stdout = await git(root, 'worktree', 'list', '--porcelain', '-z')
   const out: RawWorktree[] = []
   let current: RawWorktree | null = null
-  for (const line of stdout.split('\n')) {
-    if (line.trim() === '') {
+  for (const line of stdout.split('\0')) {
+    if (line === '') {
       if (current) out.push(current)
       current = null
       continue
@@ -184,12 +217,22 @@ export const currentBranch = async (path: string): Promise<string | null> => {
 }
 
 /** Count of changed tracked+untracked entries, for the tab's dirty indicator. */
-export const dirtyCount = async (path: string): Promise<number> => {
+/**
+ * Changed tracked+untracked entries, or null when git could not say.
+ *
+ * Null rather than zero, because the two mean opposite things to the one caller
+ * that acts on this: `removeWorktree` reads a count of zero as "nothing to
+ * lose, safe to kill the sessions". A broken gitdir link, or a `git status`
+ * over the exec buffer, used to answer zero -- so the sessions died, git then
+ * refused the removal, and the comment promising that "a refusal costs nothing"
+ * was no longer true of the agent that had just been killed.
+ */
+export const dirtyCount = async (path: string): Promise<number | null> => {
   try {
     const out = await git(path, 'status', '--porcelain=v1', '--untracked-files=normal')
     return out.split('\n').filter((l) => l.trim() !== '').length
   } catch {
-    return 0
+    return null
   }
 }
 

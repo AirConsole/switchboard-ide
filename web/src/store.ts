@@ -85,6 +85,8 @@ const cachedUi = (): UiState => {
 
 interface AppState extends AppSnapshot {
   loaded: boolean
+  /** Whether the server's stored UI state has been taken; see refresh(). */
+  adopted: boolean
   error: string | null
   refresh: () => Promise<void>
   setUi: (patch: Partial<UiState>) => void
@@ -118,6 +120,7 @@ export const useStore = create<AppState>((set, get) => ({
   todos: [],
   ui: cachedUi(),
   loaded: false,
+  adopted: false,
   error: null,
 
   refresh: async () => {
@@ -133,7 +136,12 @@ export const useStore = create<AppState>((set, get) => ({
        * and then immediately refreshed, and the snapshot -- still carrying the
        * old view -- put you back in the detail view of a different worktree.
        */
-      const firstLoad = !get().loaded
+      // Whether the server's UI state has ever been taken, which is not the
+      // same as whether a snapshot has ever been *attempted*. Loading during a
+      // deploy failed, `loaded` went true in the catch, and the reconnect that
+      // followed then kept the browser's cached defaults -- and overwrote the
+      // real layout with them on the first click.
+      const firstLoad = !get().adopted
       /*
        * Over the defaults, not instead of them: the stored copy can predate a
        * field this build reads (an older server, or a hand-edited state file),
@@ -145,6 +153,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...rest,
         ui: firstLoad ? adopted : get().ui,
         loaded: true,
+        adopted: true,
         error: null,
       })
       if (firstLoad) localStorage.setItem(UI_CACHE_KEY, JSON.stringify(adopted))
@@ -177,8 +186,16 @@ export const useStore = create<AppState>((set, get) => ({
 }))
 
 /** Wire push updates from the server into the store. Called once at startup. */
-export const bindSocketToStore = (): void => {
-  terminalSocket.onSessionState((msg) => {
+/**
+ * Wire the socket to the store, and hand back the way to unwire it.
+ *
+ * The unsubscribers used to be discarded on the word that this runs once --
+ * but it is called from an effect, and under StrictMode React runs those twice
+ * in development, which is the mode this IDE is developed in. Every invalidate
+ * then fetched the snapshot twice for the life of the page.
+ */
+export const bindSocketToStore = (): (() => void) => {
+  const offState = terminalSocket.onSessionState((msg) => {
     useStore.getState().applySessionState(msg.sessionId, {
       liveness: msg.liveness,
       exitStatus: msg.exitStatus ?? null,
@@ -189,6 +206,10 @@ export const bindSocketToStore = (): void => {
       ...(msg.command === undefined ? {} : { command: msg.command }),
     })
   })
-  terminalSocket.onInvalidate(() => void useStore.getState().refresh())
+  const offInvalidate = terminalSocket.onInvalidate(() => void useStore.getState().refresh())
   terminalSocket.connect()
+  return () => {
+    offState()
+    offInvalidate()
+  }
 }

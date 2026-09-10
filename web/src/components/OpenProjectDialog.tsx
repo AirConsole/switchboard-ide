@@ -73,6 +73,10 @@ export const OpenProjectDialog = ({
   useEffect(() => browse(''), [])
 
   const open = (target: string, create = false): void => {
+    // The buttons are disabled while a request is in flight; Enter has to
+    // respect the same rule, or key repeat sends several opens whose failures
+    // are swallowed when the dialog unmounts.
+    if (busy) return
     setBusy(true)
     void api
       .openProject(target, { create, commitExisting })
