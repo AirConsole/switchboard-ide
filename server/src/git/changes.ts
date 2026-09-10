@@ -72,7 +72,7 @@ export const parseStatus = (out: string): FileChange[] => {
 }
 
 /**
- * How much history the main worktree shows when it has nothing ahead.
+ * How much history a worktree shows when it has nothing ahead.
  *
  * Enough to see what has been going on, not so much that the list becomes a
  * log viewer -- the panel is for reviewing a worktree, and `git log` in a
@@ -110,16 +110,6 @@ export const worktreeChanges = async (opts: {
   worktreeId: string
   root: string
   path: string
-  /**
-   * Only the main worktree falls back to history.
-   *
-   * A branch worktree with nothing ahead of its base has done nothing yet, and
-   * the history it would show is the base branch's, not its own -- listing it
-   * would credit this worktree with commits it did not make. The main worktree
-   * is the one place where "what does this have that its base does not" has no
-   * answer to give, so it is the one place history is the right answer.
-   */
-  isMain: boolean
 }): Promise<WorktreeChanges> => {
   const branch = await currentBranch(opts.path)
   const base = await resolveReviewBase(opts.root, branch)
@@ -132,7 +122,20 @@ export const worktreeChanges = async (opts: {
     branch,
     base: withBase,
     uncommitted,
-    commits: opts.isMain ? await recentCommits(opts.path) : [],
+    /*
+     * History, whatever worktree this is.
+     *
+     * Only the main worktree used to fall back to it, on the argument that a
+     * branch with nothing ahead of its base has done nothing yet and the
+     * history it would show is the base branch's, not its own. True, and the
+     * conclusion was wrong: what it produced was an empty panel on every
+     * worktree that had not committed yet, which answers nothing. `commitScope`
+     * already exists to keep it honest -- these are labelled "Recent commits"
+     * rather than as this branch's own work -- so showing them credits the
+     * worktree with nothing, and knowing what the branch was cut from is worth
+     * having.
+     */
+    commits: await recentCommits(opts.path),
     commitScope: 'recent',
     behind: 0,
   })

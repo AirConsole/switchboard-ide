@@ -238,7 +238,6 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       worktreeId: worktree.id,
       root: project.root,
       path: worktree.path,
-      isMain: worktree.isMain,
     })
   })
 
