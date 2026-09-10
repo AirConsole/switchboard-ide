@@ -27,9 +27,18 @@ views/tileMotion       keeps a departing tile alive while it animates out
 
 Copied on purpose, and closely: everyone already knows what a tab strip is,
 which tab they are in, and what the × on one does. Chromium's own constants are
-the reference — `chrome/browser/ui/tabs/tab_style.cc` gives a 10px top radius,
-a 12px bottom radius for the feet, and a 2px separator 16px tall — scaled into
-the 38px bar.
+the reference — `chrome/browser/ui/tabs/tab_style.cc` gives a 10px top radius
+and a 2px separator 16px tall — scaled into the 38px bar.
+
+What is **not** copied is Chrome's *shape*. Its tabs stand on the toolbar and
+grow feet to run into it; these are **pills**, round at the bottom as well as
+the top, floating in the sleeve with 3px of it under them. The feet went with
+the ground they ran into: the page is black and the tab you are in is the lit
+one, so there is nothing to be continuous with — and they cost a 12px overhang
+across each neighbour's click target that needed `pointer-events: none` to be
+safe, and a `z-index` on two states to paint in the right order. Both are gone;
+every tab now owns its own width at its left edge, its centre and its right,
+`elementFromPoint`-measured.
 
 What is **not** copied is Chrome's colour. A tab group there picks a hue; here
 the sleeve is grey, and the only colour on a tab is its state bullet: amber
@@ -43,17 +52,10 @@ The pieces, and why each is the way it is:
   project's mark, so there is no separate square any more, and it is `--rule`:
   a rung up from the trough it sits in, since a darker pill on a ground this
   dark is 1.15:1 and no pill at all.
-- **The tab you are in is `--page`**, the ground the row of windows sits on, with
-  two masked pseudo-elements as feet. The bar's bottom rule is a background
-  rather than a border precisely so the active tab can paint over it: a
-  descendant paints above its parent's background and below its border, and the
-  whole point of Chrome's active tab is that there is no line between it and
-  what is below.
-- **The feet need `pointer-events: none`.** Each hangs 12px over the tab beside
-  it; without it they swallow that tab's first 12px, which `elementFromPoint`
-  reports. They also need `z-index` on the active and hovered tab, because among
-  positioned siblings the later one paints on top and the tab to the right
-  covered the active tab's right foot.
+- **The tab you are in is `--tab-on`**, the lightest thing on the strip and the
+  only tab carrying a fill, 1.54:1 above the trough it floats in. The bar's
+  bottom rule is still a background rather than a border, which is what let the
+  active tab paint over it when it had feet.
 - **Inactive tabs have no shape** until hovered, when they get a rounded panel
   in `--rule`. Separators sit between two inactive tabs only and vanish either
   side of the active tab and the hovered one.
@@ -116,15 +118,15 @@ The pieces, and why each is the way it is:
   screen, an unselected tab *is* the frame, and the tab you are in is a light
   grey continuous with the toolbar under it — a hole cut in the frame onto the
   surface below (measured from Chrome: frame `#202124` against toolbar `#35363a`,
-  1.58:1). So `--page` (`#333c4b`) is both the ground the row of windows sits on
-  and the fill of the tab you are in, which is what makes the two read as one
-  thing; `--sleeve` is the trough, a rung off the bar's `--ink`. The tab you are
-  in measures 1.54:1 above the sleeve and 1.66:1 above the bar, against 1.17:1
-  when it was the dark one. `--page` stops there because `--graphite` — what
-  everything quiet on a tab is written in, and it lands on this ground on the
-  active tab — is 4.54:1 against it; one more rung is under the floor.
+  1.58:1). What we keep is that direction, not the continuity: the page is
+  black, the tabs are pills, and `--tab-on` (`#333c4b`) is simply the lit one —
+  1.54:1 above `--sleeve`, the trough it floats in, and 1.66:1 above the bar,
+  against 1.17:1 when the tab you were in was the dark one. It stops there
+  because `--graphite` — what everything quiet on a tab is written in, and it
+  lands on this ground on that tab — is 4.54:1 against it; one more rung is
+  under the floor.
 - **Hover steps up, toward the tab you are in.** `--rule` is 1.30:1 above the
-  sleeve and still 1.42:1 below `--page`, so it reads as a step on the way and
+  sleeve and still 1.42:1 below `--tab-on`, so it reads as a step on the way and
   never as the tab you are already in. The separator between two inactive tabs
   goes up for the same reason: on a ground this dark, lighter is the only
   direction that reads.
@@ -133,7 +135,7 @@ The pieces, and why each is the way it is:
   difference does as much work as the tab's shape. Every tab here used to be
   `--bone`, so the *only* thing saying where you were was that 1.28:1 fill. The
   resting label is `--graphite` (6.98:1 on the sleeve) and the active tab's is
-  `--bone` (8.71:1 on `--page`): 1.92:1 between the two labels, against 1.0
+  `--bone` (8.71:1 on `--tab-on`): 1.92:1 between the two labels, against 1.0
   before. What that channel used to carry — awake or asleep — costs nothing to
   give up, since every tab in the strip is awake except the one that says
   "zZ 3" in words.
@@ -542,23 +544,17 @@ when the pair is unchanged, and that is not a nicety: `activeId` was a string, s
 rewriting it was free, while an object is not, and this now fires on every focus
 move *within* a pane.
 
-**The window you are in says so at both ends.** The strip makes its tab the
-light one; `.tile--current` gives that window's own bar `--rule-bright`, 1.45:1
-above every other bar and one rung under `--page`, so the tab, the bar and the
-ground around the windows read as one lit surface. Everything quiet in that bar
-goes up a rung with it — `--graphite-dim` is 3.62:1 on it, under the floor, so
-the project, the branch and the prompt are `--graphite` there (4.83:1). Its outline steps the other
-way: `--ink` on three sides, 1.66:1 against the page it sits on where the
-resting `--rule` is 1.30 — darker than the ground rather than lighter, because
-the windows are dark objects on a lit page and the edge that reads as *this
-one's* is the one cut into the page, not a ring drawn on top of it. Three sides
-only, because the left border
-is the state rail and a rule painting all four would outrank the single-class
-rules that colour it, and restated under `:hover` so `.tile:hover` — a class
-plus a pseudo-class — does not put the quiet border back on the one window that
-should keep the loud one. It is
-driven by `active`, not by `scrollTo`: where you *are*, which clicking into a
-window sets without the row moving, rather than where you last navigated.
+**The window you are in says so at both ends.** The strip makes its tab the lit
+one; `.tile--current` gives that window's own bar `--rule-bright`, 1.45:1 above
+every other bar and one rung under `--tab-on`, so the tab and the bar read as
+the same lit surface at the two ends of the same sentence. Everything quiet in
+that bar goes up a rung with it — `--graphite-dim` is 3.62:1 on it, under the
+floor, so the project, the branch and the prompt are `--graphite` there
+(4.83:1). Its border is not touched: on a black page a darker edge has nothing
+to be darker than, and a lighter one reads as a focus ring drawn over the
+ground. It is driven by `active`, not by `scrollTo`: where you *are*, which
+clicking into a window sets without the row moving, rather than where you last
+navigated.
 
 Watch selector specificity in `styles.css`: an element-scoped rule and a
 class-scoped rule for the same padding cancel each other in ways that only show
