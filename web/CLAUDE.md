@@ -38,7 +38,7 @@ Identity is not what colour is for in this interface.
 
 The pieces, and why each is the way it is:
 
-- **A project is a tab group** — a `--rule` sleeve, flush with the bar's foot
+- **A project is a tab group** — a `--sleeve` sleeve, flush with the bar's foot
   and inset 3px at the top, with the project's name in a pill. The pill *is* the
   project's mark, so there is no separate square any more, and it is `--ink`:
   dark on the light sleeve, since the light-on-light version stopped reading as
@@ -100,20 +100,34 @@ The pieces, and why each is the way it is:
   sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
   `min-width: 0`: it then shrinks past its own tabs and one project's tabs
   overprint the next project's.
-- **The grounds are a ladder, and it was too shallow.** Every ground in the bar
-  is within a few percent of black, so the steps are small numbers and they have
-  to be spent where they say something. The sleeve went up a rung to `--rule`,
-  which takes it from 1.08:1 to 1.18:1 against the bar around it and — the one
-  that matters — takes the tab you are in from 1.17:1 to 1.28:1 against its
-  neighbours, since the active tab's `--ink` is the only fill on the strip. Hover
-  follows to `--rule-bright`.
-- **Contrast pins two rules.** `--graphite-dim` measures 4.42:1 on `--rule` and
-  3.62:1 on `--rule-bright`, both under the floor, so everything quiet on a tab
-  is `--graphite` — one value that clears it on all three of a tab's grounds
-  (5.89 sleeve, 4.83 hovered, 7.54 on the active tab), which removed a rule
-  rather than adding one. And the pill's × turns `--danger` with no ground under
-  it: 6.10:1 on the pill's own `--ink`, against 3.90 if the hover lit a
-  `--rule-bright` ring behind it.
+- **The strip is off the shared ladder, on purpose.** Every other ground here is
+  within a few percent of black, which is right for a surface you read *through*
+  and wrong for the one whose job is to separate. `--sleeve` (`#333c4b`) is the
+  lightest ground in the interface, which buys the two steps that say something:
+  the sleeve against the bar is 1.54:1 (it was 1.08, then 1.18) and the tab you
+  are in — `--ink`, the only fill on the strip — is 1.66:1 against its
+  neighbours (1.17, then 1.28). It stops there because `--graphite`, which
+  everything quiet on a tab is written in, measures 4.54:1 on it; one more rung
+  is under the floor.
+- **Hover steps down, not up.** On a sleeve this light `--rule-bright` is 1.06:1
+  and simply not there, and down is the better direction anyway: the tab you are
+  in is the darkest thing on the strip, so a hover in `--rule` (1.30:1) reads as
+  being on the way to it. The separator between two inactive tabs went the same
+  way for the same reason.
+- **Brightness says which tab you are in**, which is Chrome's other half of the
+  job — its unselected titles are dim and its selected one is bright, and that
+  difference does as much work as the tab's shape. Every tab here used to be
+  `--bone`, so the *only* thing saying where you were was that 1.28:1 fill. The
+  resting label is `--graphite` (4.54:1 on the sleeve) and the active tab's is
+  `--bone` (14.46:1 on its own ink): 1.92:1 between the two labels, against 1.0
+  before. What that channel used to carry — awake or asleep — costs nothing to
+  give up, since every tab in the strip is awake except the one that says
+  "zZ 3" in words.
+- **Contrast pins two more rules.** `--graphite-dim` is 3.40:1 on the sleeve, so
+  everything quiet on a tab is `--graphite`, which clears the floor on all three
+  of a tab's grounds (4.54 sleeve, 5.89 hovered, 7.54 active). And the pill's ×
+  turns `--danger` with no ground under it: 6.10:1 on the pill's own `--ink`,
+  against 3.90 if the hover lit a `--rule-bright` ring behind it.
 
 ## The row is a grid of units
 
