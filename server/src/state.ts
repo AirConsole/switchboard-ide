@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import type { Project, UiState, WorktreeTodo } from '@ide-n-dream/shared'
+import { basename, dirname } from 'node:path'
+import type { Project, RecentProject, UiState, WorktreeTodo } from '@ide-n-dream/shared'
 import { defaultUiState } from '@ide-n-dream/shared'
 import { defaultWorktreeRoot } from './git/worktree.js'
 import { stateFile } from './config.js'
@@ -26,13 +26,26 @@ export interface PersistedState {
    * required for the same reason.
    */
   todos: WorktreeTodo[]
+  /**
+   * Projects that were closed, newest first.
+   *
+   * The registry above says what is open; this says what used to be, which is
+   * the only thing closing a project actually costs you -- the path. Kept here
+   * rather than in `ui` because it is the server that mutates it, on close,
+   * and `ui` is the client's blob.
+   */
+  recents: RecentProject[]
   ui: UiState
 }
+
+/** How many closed projects are worth remembering. */
+const RECENT_LIMIT = 12
 
 const emptyState = (): PersistedState => ({
   version: 1,
   projects: [],
   todos: [],
+  recents: [],
   ui: defaultUiState(),
 })
 
@@ -62,6 +75,18 @@ const reviveTodo = (value: unknown): WorktreeTodo | null => {
     ...(num('queuedAt') === undefined ? {} : { queuedAt: num('queuedAt') }),
     ...(num('dispatchingAt') === undefined ? {} : { dispatchingAt: num('dispatchingAt') }),
     ...(str('lastError') === undefined ? {} : { lastError: str('lastError') }),
+  }
+}
+
+/** A stored recent, or nothing. Same discipline as `reviveTodo`. */
+const reviveRecent = (value: unknown): RecentProject | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Record<string, unknown>
+  if (typeof row.root !== 'string' || row.root === '') return null
+  return {
+    root: row.root,
+    name: typeof row.name === 'string' && row.name !== '' ? row.name : basename(row.root),
+    closedAt: typeof row.closedAt === 'number' && Number.isFinite(row.closedAt) ? row.closedAt : 0,
   }
 }
 
@@ -115,6 +140,10 @@ export class StateStore {
           todos: (Array.isArray(candidate.todos) ? candidate.todos : [])
             .map(reviveTodo)
             .filter((todo): todo is WorktreeTodo => todo !== null),
+          recents: (Array.isArray(candidate.recents) ? candidate.recents : [])
+            .map(reviveRecent)
+            .filter((recent): recent is RecentProject => recent !== null)
+            .slice(0, RECENT_LIMIT),
           ui: pickKnownUiKeys(candidate.ui),
         }
       }
@@ -154,6 +183,32 @@ export class StateStore {
   removeProject(id: string): void {
     this.state.projects = this.state.projects.filter((p) => p.id !== id)
     this.scheduleSave()
+  }
+
+  get recents(): RecentProject[] {
+    return this.state.recents
+  }
+
+  /**
+   * Remember a closed project, newest first.
+   *
+   * Keyed by root rather than by id, because the id is derived from the root
+   * and a recent has to survive being re-derived: what the picker does with
+   * this is hand the path back to `openProject`.
+   */
+  rememberRecent(project: Project): void {
+    this.state.recents = [
+      { root: project.root, name: project.name, closedAt: Date.now() },
+      ...this.state.recents.filter((r) => r.root !== project.root),
+    ].slice(0, RECENT_LIMIT)
+    this.scheduleSave()
+  }
+
+  /** Drop a root from the recents. Called when it is opened again. */
+  forgetRecent(root: string): void {
+    const before = this.state.recents.length
+    this.state.recents = this.state.recents.filter((r) => r.root !== root)
+    if (this.state.recents.length !== before) this.scheduleSave()
   }
 
   patchUi(patch: Partial<UiState>): UiState {

@@ -9,6 +9,7 @@ import type {
   FileSaved,
   FileUnchanged,
   Project,
+  RecentProject,
   Worktree,
   WorktreeTodo,
 } from '@ide-n-dream/shared'
@@ -216,6 +217,8 @@ export class Workspace {
       addedAt: Date.now(),
     }
     this.store.addProject(project)
+    // It is open again, so it is no longer somewhere you have to find.
+    this.store.forgetRecent(root)
     this.invalidate()
     return { ...project, defaultBase: await resolveDefaultBase(root).catch(() => undefined) }
   }
@@ -240,7 +243,12 @@ export class Workspace {
     // Collected before the project goes, because afterwards its worktrees are
     // no longer listed and there is nothing left to match todos against.
     const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
+    const project = this.store.project(id)
     if (opts.sleep === true) await this.engine.killForProject(id)
+    // Remembered before it is removed, and only for a local project: a recent
+    // is a path handed back to `openProject`, which is how a local one is
+    // opened. A remote project will be reopened by base URL instead.
+    if (project && project.host.kind === 'local') this.store.rememberRecent(project)
     this.store.removeProject(id)
     this.store.removeTodosFor(mine)
     this.invalidate()
@@ -461,6 +469,26 @@ export class Workspace {
   ): Promise<FileSaved> {
     const { worktree } = await this.resolve(worktreeId)
     return writeTextFile(worktree.path, path, text, ifRev)
+  }
+
+  /**
+   * Closed projects the picker can offer back, newest first.
+   *
+   * Two kinds are filtered out here rather than in the browser, because both
+   * questions are the server's to answer: one that is open again is not recent,
+   * it is on screen; and one whose directory has gone would send the picker
+   * into its "create this project?" proposal, offering to make a repository
+   * where a deleted one used to be. Not stat-ing them at rest is the point of
+   * doing it here -- this runs when the dialog opens, not on every snapshot.
+   */
+  async recentProjects(): Promise<RecentProject[]> {
+    const open = new Set(this.store.projects.map((p) => p.root))
+    const rows = await Promise.all(
+      this.store.recents
+        .filter((recent) => !open.has(recent.root))
+        .map(async (recent) => ((await isDirectory(recent.root)) ? recent : null)),
+    )
+    return rows.filter((recent): recent is RecentProject => recent !== null)
   }
 
   /** Directory listing for the "Open project" picker. */

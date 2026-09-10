@@ -5,6 +5,7 @@ import type {
   FileSaved,
   FileUnchanged,
   Project,
+  RecentProject,
   Session,
   UiState,
   Usage,
@@ -65,6 +66,8 @@ export const api = {
 
   /** Claude's usage limits. The server caches these for five minutes. */
   usage: () => request<Usage>('/api/usage'),
+  /** Closed projects, newest first; already filtered to ones still on disk. */
+  recents: () => request<RecentProject[]>('/api/recents'),
   browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
   openProject: (path: string, opts: { create?: boolean; commitExisting?: boolean } = {}) =>
     request<Project>('/api/projects', {
