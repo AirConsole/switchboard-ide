@@ -113,13 +113,24 @@ const statusClass = (status: WorktreeStatus): string =>
 const WorktreeLabel = ({
   worktree,
   queued,
+  branch = false,
 }: {
   worktree: Worktree
   queued: number
+  /**
+   * Whether to name the branch beside the worktree.
+   *
+   * Off on a tab: a worktree is nearly always on the branch it is named after,
+   * so the branch was a second copy of the name most of the time and the tab
+   * paid width for it every time. It stays on in the dropdown, where a sleeping
+   * worktree is the one you have least chance of recognising and there is room
+   * to say more, and the window's own bar names it too.
+   */
+  branch?: boolean
 }): React.ReactElement => (
   <>
     <span className="tab__name">{worktree.name}</span>
-    {worktree.branch && worktree.branch !== worktree.name && (
+    {branch && worktree.branch && worktree.branch !== worktree.name && (
       <span className="tab__branch">{worktree.branch}</span>
     )}
     {worktree.dirty ? (
@@ -226,6 +237,9 @@ const Group = ({
           onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
           title={[
             worktree.path,
+            ...(worktree.branch && worktree.branch !== worktree.name
+              ? [`on ${worktree.branch}`]
+              : []),
             stateLabel(claudeSession(sessions, worktree.id)),
             ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
             ...(worktree.dirty
@@ -331,7 +345,11 @@ const Group = ({
                     title={worktree.path}
                   >
                     <span className="menu__line">
-                      <WorktreeLabel worktree={worktree} queued={queuedTodoCount(todos, worktree.id)} />
+                      <WorktreeLabel
+                        worktree={worktree}
+                        queued={queuedTodoCount(todos, worktree.id)}
+                        branch
+                      />
                       {/* Said in words rather than a dot: there is room here, and
                           a sleeping worktree with Claude still running is the
                           thing you most need to be able to tell apart. */}
