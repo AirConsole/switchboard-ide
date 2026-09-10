@@ -1731,6 +1731,22 @@ button {
   overflow-wrap: anywhere;
 }
 
+/*
+ * A hazard the reader has to take in before pressing the red button.
+ *
+ * Same size as `.field__hint`, since it is the same kind of line under the same
+ * body copy -- only the colour changes, and it is the button's own: --danger
+ * measures 5.64:1 on the dialog's --slab. Not amber, which means an agent is
+ * blocked on you and nothing else, and not a box you tick: a working Claude and
+ * a queue of todos go whatever you answer, so there is nothing here to decide.
+ */
+.dialog__warn {
+  font-size: 12px;
+  font-family: var(--font-ui);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
 .check {
   display: flex;
   align-items: center;

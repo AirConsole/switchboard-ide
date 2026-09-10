@@ -64,6 +64,15 @@ The pieces, and why each is the way it is:
   the default branch already has goes with the worktree rather than being put to
   a vote, and when neither is left to ask the removal dialog does not open at
   all — the sleep dialog's button drops its ellipsis and does it.
+- **What is running is told, not asked.** `removalWarnings` covers what git
+  knows nothing about: a Claude that is working or waiting on you, todos queued
+  behind it, terminals still running. Each is one red line (`--danger`, the
+  colour of the button they lead to; amber means an agent is blocked on you and
+  nothing else), and none is a checkbox, because there is nothing to decide —
+  they go whatever you answer. They are also what makes the dialog open for a
+  worktree that is clean and merged: without them, a click removed an agent
+  mid-turn with four todos behind it and asked nothing. Only a worktree that is
+  clean, merged, running nothing and holding nothing goes without the dialog.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the

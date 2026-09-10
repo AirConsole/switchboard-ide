@@ -138,8 +138,82 @@ export const removalQuestions = (worktree: Worktree): RemovalQuestions => {
   }
 }
 
-/** Whether removal has anything to ask, and so whether to open its dialog. */
-export const removalAsks = (worktree: Worktree): boolean => {
+/**
+ * Something removal destroys that git will not mention.
+ *
+ * The questions above are about the repository; these are about what is
+ * *running*, and they are warnings rather than questions because there is
+ * nothing to decide: a turn in progress, a queue waiting to be typed in and a
+ * terminal's scrollback all go, whatever you answer. They exist so that the
+ * dialog opens at all -- a worktree can be clean and merged, and so have
+ * nothing for git to ask about, while an agent is mid-turn in it with four
+ * todos lined up behind it, and that click used to remove it outright.
+ */
+export interface RemovalWarning {
+  key: 'claude' | 'todos' | 'terminals'
+  text: string
+}
+
+const plural = (n: number, one: string, many = `${one}s`): string =>
+  `${n} ${n === 1 ? one : many}`
+
+export const removalWarnings = (
+  worktree: Worktree,
+  sessions: Session[],
+  todos: WorktreeTodo[],
+): RemovalWarning[] => {
+  const warnings: RemovalWarning[] = []
+  /*
+   * An idle Claude is not a warning: it is sitting at its prompt with nothing
+   * to lose but the conversation, which is what removing a worktree means.
+   * Working and needs-you both are -- one loses a turn mid-flight, the other a
+   * question nobody answered.
+   */
+  const status = worktreeStatus(sessions, worktree.id)
+  if (status === 'working') {
+    warnings.push({ key: 'claude', text: 'Claude is working here. Its turn is killed mid-flight.' })
+  } else if (status === 'needs-you') {
+    warnings.push({
+      key: 'claude',
+      text: 'Claude is waiting for an answer here. The question goes unanswered.',
+    })
+  }
+
+  const mine = todos.filter((todo) => todo.worktreeId === worktree.id)
+  if (mine.length > 0) {
+    const queued = mine.filter((todo) => todo.queuedAt !== undefined).length
+    const run = queued === 0 ? '' : `, ${queued} queued to run next`
+    warnings.push({
+      key: 'todos',
+      text: `${plural(mine.length, 'todo')} here${run}. They go with the worktree.`,
+    })
+  }
+
+  const terminals = terminalSessions(sessions, worktree.id).filter(isRunning)
+  if (terminals.length > 0) {
+    const it = terminals.length === 1 ? 'it' : 'them'
+    warnings.push({
+      key: 'terminals',
+      text: `${plural(terminals.length, 'terminal')} still running. Whatever is in ${it} is killed, scrollback included.`,
+    })
+  }
+  return warnings
+}
+
+/**
+ * Whether removal has anything to say, and so whether to open its dialog.
+ *
+ * Questions or warnings: the dialog is worth two clicks either to decide
+ * something or to be told something irreversible is about to happen. Only a
+ * worktree that is clean, merged, running nothing and holding nothing goes
+ * without it.
+ */
+export const removalAsks = (
+  worktree: Worktree,
+  sessions: Session[],
+  todos: WorktreeTodo[],
+): boolean => {
   const questions = removalQuestions(worktree)
-  return questions.discard || questions.branch
+  if (questions.discard || questions.branch) return true
+  return removalWarnings(worktree, sessions, todos).length > 0
 }

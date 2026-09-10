@@ -579,6 +579,7 @@ export const App = (): React.ReactElement => {
         <SleepWorktreeDialog
           worktree={worktrees.find((w) => w.id === sleeping)!}
           sessions={sessions}
+          todos={todos}
           onClose={() => {
             setSleeping(null)
             refocus()
@@ -598,7 +599,7 @@ export const App = (): React.ReactElement => {
             const worktree = worktrees.find((w) => w.id === sleeping)
             setSleeping(null)
             if (worktree === undefined) return
-            if (removalAsks(worktree)) {
+            if (removalAsks(worktree, sessions, todos)) {
               setRemoving(worktree.id)
               return
             }
@@ -615,6 +616,8 @@ export const App = (): React.ReactElement => {
       {removing && worktrees.some((w) => w.id === removing) && (
         <RemoveWorktreeDialog
           worktree={worktrees.find((w) => w.id === removing)!}
+          sessions={sessions}
+          todos={todos}
           onClose={() => {
             setRemoving(null)
             refocus()
