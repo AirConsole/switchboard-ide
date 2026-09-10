@@ -13,7 +13,7 @@ views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, and RUN NEXT
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/ChangesPane    what changed and what was committed; the patch renderer
-views/FilesPane      the panel: its three modes, the sidebar, and the editor
+views/FilesPane      the panel: its three modes, the search box, and the editor
 editor/CodeEditor    one CodeMirror view over one file
 editor/theme         the syntax palette and the editor's chrome
 editor/language      filename -> grammar, fetched on demand
@@ -90,6 +90,17 @@ remounted terminal paints exactly what it would have shown, and with nothing
 attached the pty's geometry is left alone.
 
 ## The files pane
+
+A search box sits under the switch in all three modes, filtering whichever list
+is showing. Changes and Commits filter in place, because they already hold their
+whole list. **Files asks the server**, because the tree only holds what you
+expanded and the file worth searching for is the one you have not walked to:
+`GET /api/worktrees/:id/find` runs `git ls-files --cached --others
+--exclude-standard`, which inherits the same ignore rules `check-ignore` does
+and never lists `.git`, so the finder and the tree can never disagree about what
+is hidden. While a query is present the sidebar is a flat list of hits, and
+opening one expands its ancestors -- so clearing the box leaves the tree already
+opened onto the file you found.
 
 One panel with three faces -- **Changes**, **Commits**, **Files** -- switched
 from the top of its own sidebar. It was two panels, files and a git panel beside
@@ -216,7 +227,7 @@ This is not the wheel rule in reverse. A wheel over a tile means "scroll the
 row", which is why turning it into keystrokes was wrong; a finger inside a pane
 has no other meaning.
 
-## Cmd+Left and Cmd+Right belong to the row
+## Cmd+Left and Cmd+Right walk panes, not only worktrees
 
 They step through the worktrees from wherever the caret is — a terminal, a
 todo's prompt, the editor in the files panel. The only thing that keeps the key
@@ -283,6 +294,31 @@ Every text colour clears 4.5:1 on every ground it lands on, including
 `--slab-raised`; the three greys are a ladder (13.4 : 7.0 : 5.2). Class names
 describe the interface's parts (`.tile`, `.chip`, `.grid__spot`); user-visible
 text never does — it says worktree, window, terminal, Claude.
+
+The stops are **panes**: `… wt1 Claude → wt1 panel → wt2 Claude → …`, built by
+flat-mapping each cell's `panes`. A worktree with nothing open contributes one
+stop, one with a panel two, and a window too narrow to hold Claude one again —
+all of it falls out of `panesOf` with no special case. **Scrolling stays at tile
+granularity**: `panesOf` guarantees no tile is wider than the window, so
+bringing the tile on screen brings the pane with it, and `wholeOnScreen` /
+`nearestOffset` keep working on cells.
+
+Arriving focuses what you would type into, through the same `number | null`
+nonce `TerminalView` has always taken — Claude's terminal, the active terminal,
+the new-todo box, or the files panel's editor. `FilesPane` decides between the
+editor and its search box from **`files.path`**, which is UI state and true this
+instant, not from `files.file`, which is a fetch result: keying it on the fetch
+lets the search box take the keyboard, you start typing, and the editor mount a
+beat later and take it back mid-word. A pane that refuses focus — a binary file,
+a Claude that is not running — traps nobody, because the stepper listens on the
+document and the next step still works.
+
+`onActivate` reports the **pane**, read off the nearest `data-pane`, which both
+the bar segments and the pane bodies carry — so a terminal tab reports
+`terminals` and Save in the files bar reports `files`. `App`'s `activate` bails
+when the pair is unchanged, and that is not a nicety: `activeId` was a string, so
+rewriting it was free, while an object is not, and this now fires on every focus
+move *within* a pane.
 
 Watch selector specificity in `styles.css`: an element-scoped rule and a
 class-scoped rule for the same padding cancel each other in ways that only show

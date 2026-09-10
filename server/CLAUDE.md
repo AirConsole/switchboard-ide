@@ -5,10 +5,10 @@ make one promise good: **a session survives the IDE.** The browser can close,
 this process can be restarted, and the agent keeps working.
 
 ```
-routes/api.ts   REST: projects, worktrees, sessions, changes, diffs, files
+routes/api.ts   REST: projects, worktrees, sessions, changes, diffs, files, find
 routes/ws.ts    the single socket; JSON control frames + binary output frames
 workspace.ts    the one funnel for every project/worktree operation
-files.ts        a worktree's own files: containment, listing, read, write
+files.ts        a worktree's own files: containment, listing, search, read, write
 http-error.ts   HttpError, so workspace.ts and files.ts can both throw it
 state.ts        state.json: projects and the opaque `ui` blob
 session/        engine (sessions, attachments, sizing) -> tmux -> node-pty

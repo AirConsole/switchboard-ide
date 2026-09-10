@@ -73,6 +73,8 @@ export interface TerminalsScreenProps {
   terminals: Session[]
   activeTerminalId: string | null
   fontSize: number
+  /** Hand the active terminal the keyboard when this changes. */
+  focus?: number | null
 }
 
 /** The terminals panel's pane: whichever terminal the tabs have selected. */
@@ -80,6 +82,7 @@ export const TerminalsScreen = ({
   terminals,
   activeTerminalId,
   fontSize,
+  focus = null,
 }: TerminalsScreenProps): React.ReactElement | null => {
   const active = selected(terminals, activeTerminalId)
   /*
@@ -90,5 +93,5 @@ export const TerminalsScreen = ({
    * recovery.
    */
   if (!active) return null
-  return <TerminalView session={active} primary={true} fontSize={fontSize} />
+  return <TerminalView session={active} primary={true} fontSize={fontSize} focus={focus} />
 }
