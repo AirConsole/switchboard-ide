@@ -38,9 +38,11 @@ Identity is not what colour is for in this interface.
 
 The pieces, and why each is the way it is:
 
-- **A project is a tab group** — a `--slab-raised` sleeve, flush with the bar's
-  foot and inset 3px at the top, with the project's name in a filled pill. The
-  pill *is* the project's mark, so there is no separate square any more.
+- **A project is a tab group** — a `--rule` sleeve, flush with the bar's foot
+  and inset 3px at the top, with the project's name in a pill. The pill *is* the
+  project's mark, so there is no separate square any more, and it is `--ink`:
+  dark on the light sleeve, since the light-on-light version stopped reading as
+  an object.
 - **The tab you are in is `--ink`**, the ground the row of windows sits on, with
   two masked pseudo-elements as feet. The bar's bottom rule is a background
   rather than a border precisely so the active tab can paint over it: a
@@ -80,10 +82,20 @@ The pieces, and why each is the way it is:
   sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
   `min-width: 0`: it then shrinks past its own tabs and one project's tabs
   overprint the next project's.
+- **The grounds are a ladder, and it was too shallow.** Every ground in the bar
+  is within a few percent of black, so the steps are small numbers and they have
+  to be spent where they say something. The sleeve went up a rung to `--rule`,
+  which takes it from 1.08:1 to 1.18:1 against the bar around it and — the one
+  that matters — takes the tab you are in from 1.17:1 to 1.28:1 against its
+  neighbours, since the active tab's `--ink` is the only fill on the strip. Hover
+  follows to `--rule-bright`.
 - **Contrast pins two rules.** `--graphite-dim` measures 4.42:1 on `--rule` and
-  3.62:1 on `--rule-bright`, both under the floor, so everything quiet steps up
-  to `--graphite` while a hover ground is under it, and the pill's × is
-  `--graphite` with `--danger` only on a hover that brings its own `--ink`.
+  3.62:1 on `--rule-bright`, both under the floor, so everything quiet on a tab
+  is `--graphite` — one value that clears it on all three of a tab's grounds
+  (5.89 sleeve, 4.83 hovered, 7.54 on the active tab), which removed a rule
+  rather than adding one. And the pill's × turns `--danger` with no ground under
+  it: 6.10:1 on the pill's own `--ink`, against 3.90 if the hover lit a
+  `--rule-bright` ring behind it.
 
 ## The row is a grid of units
 
