@@ -169,6 +169,29 @@
   --tile-bar-h: 38px;
   --radius: 4px;
 
+  /*
+   * The device's own furniture: notch, home indicator, rounded display corners.
+   *
+   * These resolve to something only where there is something to avoid -- an
+   * installed app on a phone, with `viewport-fit=cover` in the viewport meta and
+   * (for the top one on iOS) the black-translucent status bar style, both of
+   * which index.html sets. On a desktop browser all four are 0px, so everything
+   * built on them below costs nothing until it is needed.
+   *
+   * Named here rather than used inline for one practical reason: DevTools cannot
+   * simulate safe-area insets, even in device mode, so overriding these four on
+   * :root from the console is the only way to see what a phone sees from a
+   * desktop. That makes them testable; `env()` written inline would not be.
+   *
+   * The `0px` fallbacks are load-bearing, not decoration: an unresolved `env()`
+   * inside a `calc()` invalidates the whole declaration rather than falling back
+   * to zero.
+   */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
   color-scheme: dark;
 }
 
@@ -199,6 +222,28 @@ body {
   left: 0;
   right: 0;
   height: var(--app-height, 100%);
+  /*
+   * The device's insets are applied here and nowhere else, so the one box every
+   * other measurement is taken from is already the safe box.
+   *
+   * They must not go into `--app-height`. That is the visual viewport verbatim,
+   * it is what a pty's rows and columns are ultimately derived from, and folding
+   * device chrome into it would make the pinch-zoom bail in `trackViewport()`
+   * mean two things at once.
+   *
+   * Nor into `.grid`'s padding, which looks like the obvious home for the left
+   * and right ones: that `12px` is mirrored by `GAP` in Overview.tsx, which
+   * places the spot markers and sets every tile's width. Move one without the
+   * other and the markers slide off the tiles they mark.
+   *
+   * `box-sizing: border-box` is what makes this free: the height stays the
+   * visible viewport and the padding comes out of the content box, so the bar
+   * and the row inherit the safe area with no arithmetic anywhere.
+   */
+  padding-top: var(--safe-top);
+  padding-right: var(--safe-right);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
 }
 
 body {
