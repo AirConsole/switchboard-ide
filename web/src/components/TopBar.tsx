@@ -118,6 +118,7 @@ const Group = ({
   group,
   sessions,
   todos,
+  alone,
   activeId,
   onCloseProject,
   onNewWorktree,
@@ -128,6 +129,14 @@ const Group = ({
   group: ProjectGroup
   sessions: Session[]
   todos: WorktreeTodo[]
+  /**
+   * Whether this is the only project open.
+   *
+   * With one project the + is the only + there is, and the strip has the room
+   * to say what it does; with several, each sleeve has one and a label on every
+   * one of them would be the same three words repeated across the bar.
+   */
+  alone: boolean
 } & Pick<
   TopBarProps,
   'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal' | 'onSleep'
@@ -333,12 +342,13 @@ const Group = ({
       )}
 
       <button
-        className="tabgroup__add"
+        className={alone ? 'tabgroup__add tabgroup__add--labelled' : 'tabgroup__add'}
         onClick={() => onNewWorktree(project)}
         title={`New worktree in ${project.name}`}
         aria-label={`New worktree in ${project.name}`}
       >
-        +
+        <span aria-hidden="true">+</span>
+        {alone && <span className="tabgroup__add-label">New worktree</span>}
       </button>
     </div>
   )
@@ -532,6 +542,7 @@ export const TopBar = ({
           group={group}
           sessions={sessions}
           todos={todos}
+          alone={groups.length === 1}
           activeId={activeId}
           onCloseProject={onCloseProject}
           onNewWorktree={onNewWorktree}

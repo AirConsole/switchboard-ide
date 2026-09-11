@@ -75,6 +75,11 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
+- **The + says what it does when it is the only one.** With one project open it
+  is `+ New worktree`, because it is the only + on the bar and one project's
+  tabs never fill the strip; with several, each sleeve carries its own and the
+  label would be the same three words repeated across the bar, so they stay
+  glyphs and the tooltip names the project.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -166,10 +171,14 @@ and worse the wider the monitor: 57 columns at 3440px, because more spots fit
 and a two-pane tile is always two of them. At three units it is 90–107 columns
 from 1687px up, and 82 once the editor asks for exactly 80.
 
-**The files panel is one unit while it is only its tree**, and that is the single
-exception to "nothing may ask for one unit". The floor of two exists to keep the
-80-column promise, and that promise is about panes you read *code* in — a
-terminal, a diff, the editor. A tree is chrome: names at a few levels of indent,
+**The files panel is one unit while it is only its tree**, and the new-worktree
+placeholder is one always. They are the two exceptions to "nothing may ask for
+one unit", and both are chrome rather than something you read code in: the floor
+of two exists to keep the 80-column promise, and that promise is about panes you
+read *code* in — a terminal, a diff, the editor. The placeholder holds a +, a
+label and a sentence, none of which is better for being 80 columns wide, and at
+two it was a whole empty pane parked at the end of a row you scroll precisely
+because there is never enough of it. A tree is chrome: names at a few levels of indent,
 its own floor 158px, against a unit that measures 336px at 2400px and 403px on a
 phone. So `panesOf` asks `filesContentOpen` before it asks `PANE_UNITS`, and a
 worktree browsing its files is three units where one reading a file is five —
