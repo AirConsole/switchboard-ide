@@ -9,7 +9,7 @@ import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import '@xterm/xterm/css/xterm.css'
 
 /**
- * Must match the server's mirror scrollback (IDN_MIRROR_SCROLLBACK). xterm's
+ * Must match the server's mirror scrollback (SWB_MIRROR_SCROLLBACK). xterm's
  * reflow is deterministic, so identical content plus identical scrollback keeps
  * this terminal and the mirror in step through a resize.
  */

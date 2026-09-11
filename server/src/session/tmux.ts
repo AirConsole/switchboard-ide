@@ -98,8 +98,8 @@ export const exactTarget = (name: string): string => `=${name}`
  * Target for commands that take a *target-pane* rather than a target-session:
  * set-option, show-options and respawn-pane.
  *
- * These reject the `=name` form outright ("no such session: =idn-x" /
- * "can't find pane: =idn-x") even though every session-targeting command
+ * These reject the `=name` form outright ("no such session: =swb-x" /
+ * "can't find pane: =swb-x") even though every session-targeting command
  * accepts it. Verified on tmux 3.3a. Hence the bare name here.
  */
 export const paneTarget = (name: string): string => name
@@ -168,7 +168,7 @@ export const resizeSession = async (name: string, cols: number, rows: number): P
   }
 }
 
-const META_OPTION = '@idn_meta'
+const META_OPTION = '@swb_meta'
 
 /**
  * Metadata is stored in tmux itself, not only in our state file, so the server

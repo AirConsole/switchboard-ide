@@ -12,7 +12,7 @@ import { registerWs } from './routes/ws.js'
 
 const app = Fastify({
   logger: {
-    level: process.env.IDN_LOG_LEVEL ?? 'info',
+    level: process.env.SWB_LOG_LEVEL ?? 'info',
     transport: config.isDev ? { target: 'pino-pretty' } : undefined,
   },
 })

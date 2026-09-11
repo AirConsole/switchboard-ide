@@ -485,7 +485,7 @@ class LiveSession {
       owned?.primary === true
         ? owned
         : [...this.attachments.values()].filter((a) => a.primary).at(-1)
-    if (process.env.IDN_DEBUG_SIZE) {
+    if (process.env.SWB_DEBUG_SIZE) {
       console.log(
         `[size] ${this.record.tmuxName} attachments=${this.attachments.size}` +
           ` primary=${primary ? `${primary.cols}x${primary.rows}` : 'none'}` +
@@ -503,7 +503,7 @@ class LiveSession {
     this.pty?.resize(cols, rows)
     // Whatever comes back from this is the TUI redrawing at the new size.
     this.repaintQuietUntil = Date.now() + REPAINT_QUIET_MS
-    if (process.env.IDN_DEBUG_SIZE) {
+    if (process.env.SWB_DEBUG_SIZE) {
       console.log(`[size] ${this.record.tmuxName} -> applied ${cols}x${rows}`)
     }
     for (const attachment of this.attachments.values()) {
@@ -688,10 +688,10 @@ export class SessionEngine {
 
   async create(req: CreateSessionRequest): Promise<Session> {
     const id = newId()
-    // `idn-` is the old name's prefix and is frozen: the server finds its own
-    // sessions on the socket by this prefix after a restart, so changing it
-    // orphans everything already running. Cosmetic, invisible, not worth it.
-    const tmuxName = `idn-${id}`
+    // Decorative. `reconcile()` adopts whatever on our socket carries the
+    // metadata option, and reads the name back off tmux, so the prefix is for
+    // a human running `tmux ls` and nothing reads it.
+    const tmuxName = `swb-${id}`
     const cols = req.cols ?? DEFAULT_COLS
     const rows = req.rows ?? DEFAULT_ROWS
     const title = req.title ?? (req.kind === 'claude' ? 'claude' : 'shell')

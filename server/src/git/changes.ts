@@ -208,7 +208,7 @@ export const fileDiff = async (
      * outside the repo after `--`.
      */
     // Validated as an absolute path, then handed to git as a relative one: the
-    // patch header is the file's name in the worktree, and `a/tmp/idn-.../x`
+    // patch header is the file's name in the worktree, and `a/tmp/swb-.../x`
     // is not what the panel means to show.
     const target = relative(cwd, await containedPath(cwd, file))
     try {

@@ -66,8 +66,7 @@ The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
   again detached. It is never automatic and never run from a worktree.
 - **Never touch their project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
-  `tmux kill-server` on `~/.config/ide-n-dream/tmux.sock` (still the old
-  name's path, deliberately -- see `server/src/config.ts`).
+  `tmux kill-server` on `~/.config/switchboard/tmux.sock`.
 - **Do not test against :8084.** Clicks there fight the user for the same UI
   state, and a browser tab of your own competes for terminal geometry. Use:
 

@@ -10,8 +10,8 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${IDN_PORT:-8084}"
-LOG=/tmp/idn-prod.log
+PORT="${SWB_PORT:-8084}"
+LOG=/tmp/swb-prod.log
 
 cd "$REPO"
 pnpm build
@@ -32,7 +32,7 @@ fi
 # this script -- bash then waits for it and the deploy never returns. Forking
 # reparents the server to init, which is also what stops the terminal that ran
 # this from taking the IDE down when it closes.
-(cd server && NODE_ENV=production IDN_PORT="$PORT" \
+(cd server && NODE_ENV=production SWB_PORT="$PORT" \
   setsid --fork node dist/index.js >>"$LOG" 2>&1 </dev/null)
 
 for _ in $(seq 1 40); do
