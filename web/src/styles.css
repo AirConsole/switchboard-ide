@@ -1210,6 +1210,58 @@ button {
   /* Lines up with the terminal text below, which the pane insets by 8px. */
   padding: 0 10px;
   min-width: 0;
+  /* For the step hint, which is laid over this padding; see .tile__step. */
+  position: relative;
+}
+
+/*
+ * Where Cmd+Left and Cmd+Right would land, shown while Cmd is held.
+ *
+ * Absolute, in the label's own left padding, so the legend appearing does not
+ * move the title it annotates -- a name that jumps 14px every time you reach
+ * for Cmd is motion in an interface whose only motion is the terminal. The
+ * padding is 10px and the glyph is drawn at 11px, which fits it with a pixel
+ * either side; it is `aria-hidden` because it is a legend for a key, not
+ * content.
+ *
+ * --bone, not a colour: amber and green are states you scan a row of agents
+ * for, and where a key would take you is not one. It is the brightest rung the
+ * palette has and reads 8.71:1 at its worst, on a hovered current tile.
+ */
+.tile__step {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--bone);
+}
+
+/*
+ * The letter that opens a panel, lit in its toggle while Cmd is held.
+ *
+ * Tone only: the label keeps its box, so nothing in the bar moves when the
+ * legend comes and goes. Weight was tried and dropped -- a bolder letter is a
+ * wider letter, and "T E RMINAL" fell into three pieces at 11px with 0.08em of
+ * letter-spacing already between them.
+ *
+ * Two rungs of the one ladder rather than a colour. The word steps down to
+ * --graphite (4.54:1 at its worst, on a hovered current tile) and the letter
+ * stays --bone, which is the 1.92:1 step this interface already uses between a
+ * title and its metadata. Dimming the word is what makes the letter visible on
+ * the toggle whose panel is open, whose label is --bone to begin with; that
+ * toggle keeps its underline throughout, which is what says it is open.
+ *
+ * A label with no letter to light -- "3 QUEUED", which has no O in it -- wears
+ * .tile__key alone, so the whole of it is the bright rung.
+ */
+.tile__marked {
+  color: var(--graphite);
+}
+
+.tile__key {
+  color: var(--bone);
 }
 
 /*
