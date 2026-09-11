@@ -424,6 +424,34 @@ target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
 
+## Cmd+E, Cmd+O and Cmd+F are the three panel toggles
+
+The keyboard version of the buttons in a window's own bar, acting on the
+worktree that has the keyboard, and toggling the same way: pressed on the panel
+already showing, the shortcut closes it and gives the width back to Claude.
+Mnemonics rather than positions, because terminals would want Cmd+T, which is
+one of the few the browser will not give up.
+
+**Cmd, never Ctrl.** Ctrl+E is end-of-line and Ctrl+F forward-character in
+readline and in Claude's own prompt, and both are typed in these windows all
+day. Cmd itself costs the terminal nothing: xterm.js emits a printable key only
+when `!ctrlKey && !altKey && !metaKey`, and this build has no kitty-protocol or
+`modifyOtherKeys` encoding to fall back on, so a Cmd-modified key produces no
+bytes at all -- measured with `cat` as the stand-in agent, where a plain `x`
+arrived and Cmd+X, reaching xterm's own textarea, left the pane unchanged. tmux
+is not in the argument either: `tmux.conf` sets `prefix None` and
+`unbind-key -a`, so it binds nothing and every byte passes through.
+
+The browser claims all three on macOS -- find, open a file, and Safari's "use
+selection for find" -- and, unlike Cmd+N, Cmd+T and Cmd+W, it lets all three be
+cancelled. So they are taken outright in the capture phase, which is also what
+keeps them from reaching xterm: its `attachCustomKeyEventHandler` runs at the
+target and, as the comment in `TerminalView` says, returning false from it does
+not stop a browser default. Measured against a scratch instance: `e` pressed
+with a terminal focused arrived with `defaultPrevented`, never reached a
+bubble-phase listener, and put no character into the shell's prompt
+(`capture-pane`); in a dialog the same key is not prevented at all.
+
 ## Every dialog cancels on Escape, and gives the keyboard back
 
 `useEscape` is one hook per dialog, on the **window** in the capture phase with

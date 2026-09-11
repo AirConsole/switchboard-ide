@@ -115,6 +115,21 @@ export const PANELS: readonly PanelName[] = ['todo', 'files', 'terminals']
  */
 const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
 
+/**
+ * The key that opens each panel, with Cmd held.
+ *
+ * Mnemonics, not positions: terminals would want Cmd+T, which is the one
+ * shortcut on this list the browser will not give up, so the terminals take the
+ * other letter in the word you say out loud -- and iTerm and Terminal both use
+ * Cmd+E for something in a split, so the finger is already trained. Todos are
+ * Cmd+O and files Cmd+F.
+ *
+ * Cmd alone, never Ctrl. Ctrl+E is end-of-line and Ctrl+F forward-character in
+ * readline and in Claude's own prompt, and both are typed in these windows all
+ * day; a shortcut that ate them would be a shortcut that broke the terminal.
+ */
+const PANEL_KEYS: Record<string, PanelName> = { e: 'terminals', o: 'todo', f: 'files' }
+
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
@@ -1285,6 +1300,56 @@ export const Overview = ({
     document.addEventListener('keydown', step, true)
     return () => document.removeEventListener('keydown', step, true)
   }, [stops, active, pitch, width, onReveal])
+
+  /*
+   * Cmd+E, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
+   *
+   * The keyboard version of the three toggles in that window's own bar, and
+   * the same click: pressed on the panel already showing, it closes it and
+   * gives the width back to Claude. One shortcut per panel rather than one
+   * that cycles, because which panel you want is a thing you know before you
+   * press anything.
+   *
+   * "Which worktree" is the one that has the keyboard, the same question the
+   * Cmd+arrow step asks and in the same order -- the DOM first, `active`
+   * second. There is no third answer here: a step walks the row and so can
+   * start from whatever tile you have scrolled to, but this acts on one
+   * window, and with no window to act on the key is better left to the
+   * browser than guessed at.
+   *
+   * The browser claims all three on macOS -- find, open a file, and Safari's
+   * "use selection for find" -- and, unlike Cmd+N, Cmd+T and Cmd+W, it lets
+   * all three be taken. So they are cancelled outright, in the capture phase:
+   * that is what stops the find bar opening, and it is also what keeps the key
+   * from reaching xterm, whose own handler cannot suppress a browser default
+   * even when it returns false.
+   */
+  useEffect(() => {
+    const open = (event: KeyboardEvent): void => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      const panel = PANEL_KEYS[event.key]
+      if (panel === undefined) return
+      // A dialog keeps its keys for the same reason it keeps Cmd+arrow: it is
+      // modal, and opening a panel behind the scrim acts on something nobody
+      // asked about.
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.dialog')) return
+
+      const held = (document.activeElement as HTMLElement | null)
+        ?.closest('[data-pane]')
+        ?.getAttribute('data-pane')
+      const here =
+        stops.find((stop) => paneKey(stop.worktree.id, stop.kind) === held)?.worktree ??
+        cells.find((cell) => cell.worktree?.id === active?.id)?.worktree
+      if (!here) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      onTogglePanel(here.id, panel)
+    }
+    document.addEventListener('keydown', open, true)
+    return () => document.removeEventListener('keydown', open, true)
+  }, [stops, cells, active, onTogglePanel])
 
   /*
    * Keep your place across a resize.
