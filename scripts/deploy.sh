@@ -28,16 +28,6 @@ if [ -n "$pid" ]; then
   done
 fi
 
-# The rename's one-shot state move. It belongs exactly here: the server is down
-# (it holds `stateFile` resolved at import, so a running one would write
-# state.json back to the old path) and has not yet been started on the new code,
-# which is the only window where both halves agree. Idempotent, so every deploy
-# after the first passes straight through it. Delete this block along with the
-# script once the rename has settled.
-if [ -x "$REPO/scripts/migrate-to-switchboard.sh" ]; then
-  SWB_PORT="$PORT" "$REPO/scripts/migrate-to-switchboard.sh"
-fi
-
 # `setsid --fork`, and the --fork is the whole point: plain setsid execs in
 # place when it is not already a process-group leader, so node stays a child of
 # this script -- bash then waits for it and the deploy never returns. Forking

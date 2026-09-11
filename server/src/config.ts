@@ -20,8 +20,9 @@ export const config = {
    * Holds `state.json` and the tmux socket, so it is the one path that must not
    * change under a *running* server -- but it can be moved and the server
    * pointed at the new place, because a unix socket is bound to its inode and
-   * `mv` within a filesystem keeps it. `scripts/migrate-to-switchboard.sh` is
-   * that move, and `sun_path` is 108 bytes, so keep this short.
+   * `mv` within a filesystem keeps it -- which is how the rename from the old
+   * name moved this directory with all six sessions still running. `sun_path`
+   * is 108 bytes, so keep it short.
    */
   stateDir: env.SWB_STATE_DIR ?? join(homedir(), '.config', 'switchboard'),
 
