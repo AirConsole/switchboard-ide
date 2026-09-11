@@ -41,16 +41,48 @@ half-cut.
 ```sh
 pnpm install     # also compiles node-pty from source for this platform
 pnpm build       # shared -> web -> server, in that order
-pnpm typecheck   # the gate; builds shared first because the others import it
+pnpm typecheck   # a gate; builds shared first because the others import it
+pnpm test        # the other gate: vitest over all three packages
 pnpm start       # serves web/dist from the server on :8084
 pnpm dev         # vite on :5240 proxying the server on :8084
 
+pnpm test:watch  # the same, staying open
+pnpm coverage    # with a per-file table
 pnpm ensure-native   # rebuild node-pty if a Node upgrade left it ABI-stale
 ```
 
 **There is no linter.** `pnpm lint` does not exist and fails with "Command not
-found" — do not report it as passing. `pnpm typecheck` and `pnpm build` are the
-only automated gates, so the compiler is doing all the work a linter would.
+found" — do not report it as passing. `pnpm typecheck`, `pnpm test` and
+`pnpm build` are the only automated gates, so the compiler is doing all the work
+a linter would.
+
+## Tests
+
+`vitest run`, one project per package: `shared` and `server` in node, `web` in
+jsdom. Tests live in each package's `test/` rather than beside the source, so
+`tsc -p tsconfig.json` -- which is the build -- keeps emitting `src` and nothing
+else; `tsconfig.test.json` beside it is what typechecks them, and `pnpm
+typecheck` runs both.
+
+What is covered is the part that decides things: attention and readiness, the
+transcript reader, the dispatcher, the git parsers, containment, the state file,
+the workspace funnel, and the web's selectors, store and layout. The git tests
+run **real git against throwaway repositories** (`test/helpers/repo.ts`) rather
+than fixture strings, because every parser here exists to read git's actual
+output -- a hand-written fixture is only what we *think* git prints, and the
+`-z` porcelain parsers were written against measured output.
+
+What is not covered is the part you have to look at: React components, the pty
+and tmux engine, the routes and the socket. Those are driven in a browser
+against `scripts/scratch.sh`, and the traps in "Verifying changes" below are
+still the rules there.
+
+**A test here records a bug that actually happened.** Most of them cite the
+measurement in a comment, the way the code does -- that is what makes them worth
+keeping, and it is also how you tell a test that would catch a regression from
+one that merely runs the code. When you add one, break the line it guards and
+watch it fail; a test that passes either way is documentation with a runtime
+cost. Every test in the suite was checked that way once.
 
 ## A live instance is running on this machine
 

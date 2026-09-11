@@ -36,8 +36,12 @@ const UI_CACHE_KEY = 'swb.ui'
  * Idempotent, and writes nothing: it runs again on every first load until the
  * user next changes that worktree's panels. Delete it once no stored state
  * names `git`.
+ *
+ * Exported only so it can be tested: it reads a shape the type system cannot
+ * describe -- `'git'` is not a `PanelName` any more -- so a test is the only
+ * thing that can say it still does what it says.
  */
-const migrateUi = (ui: UiState): UiState => {
+export const migrateUi = (ui: UiState): UiState => {
   const panels = ui.panels as unknown as Record<string, string[]>
   const migrated: Record<string, PanelName[]> = {}
   const modes = { ...ui.filesModeByWorktree }

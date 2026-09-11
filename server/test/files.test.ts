@@ -1,0 +1,325 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtemp, rm, symlink, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
+import {
+  containedPath,
+  findFiles,
+  invalidateStatus,
+  listDirectory,
+  readTextFile,
+  writeTextFile,
+} from '../src/files.js'
+import { HttpError } from '../src/http-error.js'
+import { addWorktree } from '../src/git/worktree.js'
+import { makeRepoWithCommit, type TempRepo } from './helpers/repo.js'
+
+/** The status of a thrown HttpError, or the error itself if it is not one. */
+const statusOf = async (promise: Promise<unknown>): Promise<number | unknown> => {
+  try {
+    await promise
+    return 'did not throw'
+  } catch (err) {
+    return err instanceof HttpError ? err.status : err
+  }
+}
+
+describe('containment', () => {
+  let repo: TempRepo
+  let outside: string
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    outside = await mkdtemp(join(tmpdir(), 'swb-outside-'))
+    await writeFile(join(outside, 'secret.txt'), 'not yours\n')
+    await repo.write('src/a.ts', 'export const a = 1\n')
+    await repo.commit('add src')
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+    await rm(outside, { recursive: true, force: true })
+  })
+
+  it('resolves a path inside the worktree', async () => {
+    expect(await containedPath(repo.path, 'src/a.ts')).toBe(
+      resolve(await containedPath(repo.path, ''), 'src/a.ts'),
+    )
+  })
+
+  it('lets the worktree root itself through', async () => {
+    await expect(containedPath(repo.path, '')).resolves.toBeTypeOf('string')
+    await expect(containedPath(repo.path, '.')).resolves.toBeTypeOf('string')
+  })
+
+  it('refuses an escape through ..', async () => {
+    expect(await statusOf(containedPath(repo.path, '../../../etc/passwd'))).toBe(403)
+    expect(await statusOf(containedPath(repo.path, 'src/../../..'))).toBe(403)
+  })
+
+  it('refuses an absolute path rather than quietly re-rooting it', async () => {
+    // Refusing means a client bug is loud instead of odd.
+    expect(await statusOf(containedPath(repo.path, '/etc/passwd'))).toBe(400)
+  })
+
+  it('refuses a NUL, which node would otherwise turn into a 500', async () => {
+    expect(await statusOf(containedPath(repo.path, 'src/a\0.ts'))).toBe(400)
+  })
+
+  it('refuses a symlink pointing out of the worktree', async () => {
+    /*
+     * `resolve()` folds away `..` but knows nothing about symlinks, so a link
+     * committed into a repository and pointing at /etc would sail through it.
+     */
+    await symlink(join(outside, 'secret.txt'), join(repo.path, 'escape.txt'))
+    expect(await statusOf(containedPath(repo.path, 'escape.txt'))).toBe(403)
+  })
+
+  it('refuses a symlinked directory pointing out of the worktree', async () => {
+    await symlink(outside, join(repo.path, 'elsewhere'))
+    expect(await statusOf(containedPath(repo.path, 'elsewhere/secret.txt'))).toBe(403)
+  })
+
+  it('allows a symlink that stays inside', async () => {
+    await symlink(join(repo.path, 'src', 'a.ts'), join(repo.path, 'link.ts'))
+    await expect(containedPath(repo.path, 'link.ts')).resolves.toContain('a.ts')
+  })
+
+  it('refuses a sibling worktree whose name merely extends this one’s', async () => {
+    /*
+     * `startsWith(root)` alone is wrong, and quietly so: `/a/bc` starts with
+     * `/a/b`. This is that case, built for real.
+     */
+    const sibling = `${repo.path}-extra`
+    const rel = `../${basename(sibling)}/secret.txt`
+    await mkdir(sibling, { recursive: true })
+    try {
+      await writeFile(join(sibling, 'secret.txt'), 'not yours\n')
+      expect(await statusOf(containedPath(repo.path, rel))).toBe(403)
+    } finally {
+      await rm(sibling, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses .git by name, at any depth', async () => {
+    /*
+     * By name because `check-ignore` never reports it, and in a linked worktree
+     * it is a *file* rather than a directory, so a kind test would miss it too.
+     * At depth because this repo's own convention puts worktrees at
+     * `<repo>/.claude/worktrees/<branch>`, whose `.git` is a real file here.
+     */
+    expect(await statusOf(containedPath(repo.path, '.git/config'))).toBe(403)
+    const nested = join(repo.path, '.claude', 'worktrees', 'inner')
+    await addWorktree({ root: repo.path, path: nested, branch: 'inner' })
+    expect(await statusOf(containedPath(repo.path, '.claude/worktrees/inner/.git'))).toBe(403)
+  })
+
+  it('says 404 for a path that does not exist', async () => {
+    // Existence is required on purpose: nothing here creates files, and it also
+    // disposes of the dangling symlink, which a write would follow.
+    expect(await statusOf(containedPath(repo.path, 'nope.txt'))).toBe(404)
+    await symlink(join(outside, 'gone.txt'), join(repo.path, 'dangling.txt'))
+    expect(await statusOf(containedPath(repo.path, 'dangling.txt'))).toBe(404)
+  })
+})
+
+describe('listing', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('src/a.ts', 'a\n')
+    await repo.write('src/b.ts', 'b\n')
+    await repo.write('dist/built.js', 'built\n')
+    await repo.write('.gitignore', 'dist/\n')
+    await repo.commit('add tree')
+    invalidateStatus(repo.path)
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('lists one level, directories first then by name', async () => {
+    const listing = await listDirectory(repo.path, '')
+    expect(listing.path).toBe('')
+    expect(listing.entries.map((e) => e.name)).toEqual(['src', '.gitignore', 'README.md'])
+    expect(listing.entries[0]?.kind).toBe('dir')
+  })
+
+  it('applies the repository’s ignore rules', async () => {
+    const names = (await listDirectory(repo.path, '')).entries.map((e) => e.name)
+    expect(names).not.toContain('dist')
+  })
+
+  it('refuses an ignored directory outright rather than showing it empty', async () => {
+    expect(await statusOf(listDirectory(repo.path, 'dist'))).toBe(404)
+  })
+
+  it('never lists .git', async () => {
+    expect((await listDirectory(repo.path, '')).entries.map((e) => e.name)).not.toContain('.git')
+  })
+
+  it('marks a changed file and every directory above it', async () => {
+    await repo.write('src/a.ts', 'changed\n')
+    invalidateStatus(repo.path)
+    const root = await listDirectory(repo.path, '')
+    expect(root.entries.find((e) => e.name === 'src')?.changed).toBe(true)
+    const src = await listDirectory(repo.path, 'src')
+    expect(src.entries.find((e) => e.name === 'a.ts')?.changed).toBe(true)
+    // Absent rather than false: in a clean repository that would be every entry.
+    expect(src.entries.find((e) => e.name === 'b.ts')?.changed).toBeUndefined()
+  })
+
+  it('reports a symlinked directory as a directory', async () => {
+    // `dirent.isDirectory()` is false for a link to one, so reporting the
+    // link's own kind would make clicking it an error every time.
+    await symlink(join(repo.path, 'src'), join(repo.path, 'src-link'))
+    const entry = (await listDirectory(repo.path, '')).entries.find((e) => e.name === 'src-link')
+    expect(entry?.kind).toBe('dir')
+  })
+
+  it('drops a link that dangles or points out of the worktree', async () => {
+    await symlink('/etc', join(repo.path, 'etc-link'))
+    await symlink(join(repo.path, 'gone'), join(repo.path, 'dead-link'))
+    const names = (await listDirectory(repo.path, '')).entries.map((e) => e.name)
+    expect(names).not.toContain('etc-link')
+    expect(names).not.toContain('dead-link')
+  })
+
+  it('refuses to list a file', async () => {
+    expect(await statusOf(listDirectory(repo.path, 'README.md'))).toBe(400)
+  })
+})
+
+describe('find', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('web/src/views/FilesPane.tsx', 'x\n')
+    await repo.write('web/src/api.ts', 'x\n')
+    await repo.write('dist/FilesPane.js', 'x\n')
+    await repo.write('.gitignore', 'dist/\n')
+    await repo.commit('add tree')
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('asks git nothing for an empty query', async () => {
+    expect(await findFiles(repo.path, '   ')).toEqual({ hits: [] })
+  })
+
+  it('finds files and the directories on the way to them', async () => {
+    const { hits } = await findFiles(repo.path, 'views')
+    expect(hits).toContainEqual({ path: 'web/src/views', kind: 'dir' })
+    expect(hits).toContainEqual({ path: 'web/src/views/FilesPane.tsx', kind: 'file' })
+  })
+
+  it('ranks a hit in the name above one only in the path', async () => {
+    // Someone typing `filespane` means the file, not the directory above it.
+    const { hits } = await findFiles(repo.path, 'filespane')
+    expect(hits[0]?.path).toBe('web/src/views/FilesPane.tsx')
+  })
+
+  it('is case-insensitive', async () => {
+    expect((await findFiles(repo.path, 'FILESPANE')).hits).not.toHaveLength(0)
+  })
+
+  it('inherits the ignore rules from ls-files', async () => {
+    const { hits } = await findFiles(repo.path, 'FilesPane')
+    expect(hits.map((hit) => hit.path)).not.toContain('dist/FilesPane.js')
+  })
+})
+
+describe('read and write', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('src/a.ts', 'export const a = 1\n')
+    await repo.commit('add src')
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('reads a text file with an identity to save against', async () => {
+    const content = await readTextFile(repo.path, 'src/a.ts')
+    expect('text' in content && content.text).toBe('export const a = 1\n')
+    expect('rev' in content && content.rev).toBeTruthy()
+  })
+
+  it('answers a follow-poll with unchanged rather than the bytes again', async () => {
+    const first = await readTextFile(repo.path, 'src/a.ts')
+    const rev = 'rev' in first ? first.rev : ''
+    expect(await readTextFile(repo.path, 'src/a.ts', rev)).toEqual({ unchanged: true, rev })
+  })
+
+  it('refuses a binary file rather than showing U+FFFD', async () => {
+    await writeFile(join(repo.path, 'blob.bin'), Buffer.from([0x01, 0x00, 0x02]))
+    const content = await readTextFile(repo.path, 'blob.bin')
+    expect('binary' in content && content.binary).toBe(true)
+    expect('text' in content).toBe(false)
+  })
+
+  it('refuses a latin-1 file, which has no NUL but would be rewritten on save', async () => {
+    // A strict decode is the check that actually protects the file: latin-1
+    // decodes happily into U+FFFD, and saving it back rewrites every non-ASCII
+    // byte in it.
+    await writeFile(join(repo.path, 'latin.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+    const content = await readTextFile(repo.path, 'latin.txt')
+    expect('binary' in content && content.binary).toBe(true)
+  })
+
+  it('saves, and hands back the fresh rev the next poll needs', async () => {
+    const before = await readTextFile(repo.path, 'src/a.ts')
+    const rev = 'rev' in before ? before.rev : ''
+    const saved = await writeTextFile(repo.path, 'src/a.ts', 'export const a = 2\n', rev)
+    expect(saved.rev).not.toBe(rev)
+    /*
+     * Without the fresh rev the follow-poll two seconds later sees the client's
+     * own write as a foreign change and announces that the file moved.
+     */
+    expect(await readTextFile(repo.path, 'src/a.ts', saved.rev)).toEqual({
+      unchanged: true,
+      rev: saved.rev,
+    })
+  })
+
+  it('refuses a save against a rev the file has moved past', async () => {
+    // Last-writer-wins between a human and the agent in this worktree is how
+    // work disappears.
+    const stale = 'not-the-current-rev'
+    expect(await statusOf(writeTextFile(repo.path, 'src/a.ts', 'clobbered\n', stale))).toBe(409)
+    const content = await readTextFile(repo.path, 'src/a.ts')
+    expect('text' in content && content.text).toBe('export const a = 1\n')
+  })
+
+  it('carries the fresh rev on the refusal, so no second round trip is needed', async () => {
+    try {
+      await writeTextFile(repo.path, 'src/a.ts', 'x\n', 'stale')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as HttpError).code).toBe('stale-file')
+      expect((err as HttpError).details?.rev).toBeTruthy()
+    }
+  })
+
+  it('writes in place, keeping the inode', async () => {
+    /*
+     * Deliberately not write-a-temp-then-rename, which `state.ts` next door
+     * does: a rename changes the inode, breaks hardlinks and drops the mode.
+     */
+    await chmod(join(repo.path, 'src/a.ts'), 0o640)
+    const before = await readTextFile(repo.path, 'src/a.ts')
+    const rev = 'rev' in before ? before.rev : ''
+    const saved = await writeTextFile(repo.path, 'src/a.ts', 'x\n', rev)
+    // The rev carries the inode as its last field; only mtime and size move.
+    expect(saved.rev.split('-').at(-1)).toBe(rev.split('-').at(-1))
+  })
+
+  it('refuses to read or write anything outside the worktree', async () => {
+    expect(await statusOf(readTextFile(repo.path, '../../../etc/passwd'))).toBe(403)
+    expect(await statusOf(writeTextFile(repo.path, '/etc/passwd', 'x', 'r'))).toBe(400)
+  })
+})
