@@ -15,16 +15,6 @@ LOG=/tmp/swb-prod.log
 
 cd "$REPO"
 
-# Temporary, and deleted along with scripts/migrate-to-switchboard.sh once the
-# rename has landed. Without it, deploying first would start the new code
-# against a ~/.config/switchboard that does not exist yet: it would create an
-# empty state, start a second tmux server there, and leave every running
-# session orphaned on the old socket. Fail loudly before the build instead.
-if [ -e "$HOME/.config/ide-n-dream" ]; then
-  echo "deploy: ~/.config/ide-n-dream is still there -- run scripts/migrate-to-switchboard.sh first" >&2
-  exit 1
-fi
-
 pnpm build
 
 pid="$(ss -ltnp "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)"
@@ -36,6 +26,16 @@ if [ -n "$pid" ]; then
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.25
   done
+fi
+
+# The rename's one-shot state move. It belongs exactly here: the server is down
+# (it holds `stateFile` resolved at import, so a running one would write
+# state.json back to the old path) and has not yet been started on the new code,
+# which is the only window where both halves agree. Idempotent, so every deploy
+# after the first passes straight through it. Delete this block along with the
+# script once the rename has settled.
+if [ -x "$REPO/scripts/migrate-to-switchboard.sh" ]; then
+  SWB_PORT="$PORT" "$REPO/scripts/migrate-to-switchboard.sh"
 fi
 
 # `setsid --fork`, and the --fork is the whole point: plain setsid execs in
