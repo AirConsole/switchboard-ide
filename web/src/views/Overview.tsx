@@ -952,24 +952,25 @@ const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
  * Whether anything between `from` and the row would rather have this wheel.
  *
  * Standard scroll chaining, done by hand because the row has to know when the
- * wheel is spare. A panel with more to show scrolls itself; one already at its
- * end passes the gesture on, which is what the browser would do if the row
- * scrolled in the same axis as the wheel.
+ * gesture is spare. Something with more to show sideways scrolls itself -- a
+ * strip of file tabs, a diff wider than its pane -- and one already at its end
+ * passes it on, which is what the browser would do if the row were its parent
+ * scroller.
  */
 const inner = (from: EventTarget | null, stop: Element, delta: number): boolean => {
   for (let el = from as HTMLElement | null; el && el !== stop; el = el.parentElement) {
-    if (el.scrollHeight <= el.clientHeight) continue
-    const overflow = getComputedStyle(el).overflowY
+    if (el.scrollWidth <= el.clientWidth) continue
+    const overflow = getComputedStyle(el).overflowX
     if (overflow !== 'auto' && overflow !== 'scroll') continue
     const room =
-      delta < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1
+      delta < 0 ? el.scrollLeft > 0 : el.scrollLeft + el.clientWidth < el.scrollWidth - 1
     if (room) return true
   }
   return false
 }
 
 /**
- * How much wheel makes one pane: a notch, and nothing smaller.
+ * How much gesture makes one pane: a notch, and nothing smaller.
  *
  * A mouse notch is exactly 100px in Chrome, so one notch is one pane. It has
  * to be a whole notch in one event, though, rather than a total accumulated
@@ -980,10 +981,8 @@ const inner = (from: EventTarget | null, stop: Element, delta: number): boolean 
  * the row 0 -> 794, and a forty-event flick 0 -> 1588. Nobody asked for that,
  * and it read as the row moving on its own.
  *
- * Sideways gestures still scroll the row, natively and by the pixel, which is
- * the axis a trackpad has for a strip like this anyway. Firefox reports lines
- * rather than pixels; 40 is the usual line for a wheel, so its three-line
- * notch clears the same bar.
+ * Firefox reports lines rather than pixels; 40 is the usual line for a wheel,
+ * so its three-line notch clears the same bar.
  */
 const WHEEL_STEP = 100
 const WHEEL_LINE = 40
@@ -1533,19 +1532,24 @@ export const Overview = ({
   }, [pitch, width])
 
   /*
-   * The wheel moves the row.
+   * A sideways gesture moves the row, and only a sideways one.
    *
-   * A terminal on the alternate screen has nothing of its own to scroll, and
-   * `TerminalView` stops xterm turning the wheel into arrow keys there, so
-   * without this a wheel over most of the window did nothing at all. The row
-   * is the thing that scrolls, and this is the pointer's way of saying so.
+   * Scrolling *down* used to move it too, on the argument that a terminal on
+   * the alternate screen has nothing of its own to scroll and the row is the
+   * only thing that does -- so a wheel over most of a window would otherwise do
+   * nothing at all. That argument loses to what it costs: reading down a diff
+   * or a file and running off its end threw the row sideways, and so did any
+   * stray downward graze over a terminal. Nothing is the right answer to a
+   * downward wheel over a window; the row is walked with the tabs, Cmd+arrows,
+   * or a sideways gesture, which is the axis it actually scrolls in.
    *
    * By the spot, because `scroll-snap-type: x mandatory` would drag anything
-   * shorter straight back: a wheel notch is ~100px against a spot of ~780, so
-   * adding pixels to `scrollLeft` would snap to where it started and read as
-   * dead. Panels keep first claim through `inner`, and a gesture carries its
-   * own target so a second notch steps on from where the row is already going
-   * rather than from the tile it has not left yet.
+   * shorter straight back -- measured, a 120px sideways nudge snapped to where
+   * it started and read as dead, where a 600px flick landed a spot along.
+   * Anything with sideways scrolling of its own keeps first claim through
+   * `inner`, and a gesture carries its own target so a second notch steps on
+   * from where the row is already going rather than from the tile it has not
+   * left yet.
    */
   useEffect(() => {
     const grid = gridRef.current
@@ -1556,16 +1560,17 @@ export const Overview = ({
       // Whatever already acted on it -- a terminal scrolling its own scrollback
       // -- has spent the gesture.
       if (event.defaultPrevented) return
-      // Sideways is the scroller's own axis, and it can have it.
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
-      if (inner(event.target, grid, event.deltaY)) return
+      // Down belongs to whatever is under the pointer, and to nothing if that
+      // is a terminal. Only a gesture along the row moves the row.
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return
+      if (inner(event.target, grid, event.deltaX)) return
 
       const pixels =
         event.deltaMode === 1
-          ? event.deltaY * WHEEL_LINE
+          ? event.deltaX * WHEEL_LINE
           : event.deltaMode === 2
-            ? event.deltaY * grid.clientWidth
-            : event.deltaY
+            ? event.deltaX * grid.clientWidth
+            : event.deltaX
       // One event, one notch, or the row stays where it is. See WHEEL_STEP.
       if (Math.abs(pixels) < WHEEL_STEP) return
       event.preventDefault()

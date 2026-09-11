@@ -56,9 +56,13 @@ The pieces, and why each is the way it is:
   only tab carrying a fill, 1.54:1 above the trough it floats in. The bar's
   bottom rule is still a background rather than a border, which is what let the
   active tab paint over it when it had feet.
-- **Inactive tabs have no shape** until hovered, when they get a rounded panel
-  in `--rule`. Separators sit between two inactive tabs only and vanish either
-  side of the active tab and the hovered one.
+- **Every tab carries a fill**, `--rule` at rest, 1.18:1 above the trough — a
+  small step, as all of them are here, but the difference between a shape and no
+  shape. They used to be the trough showing through, with only their label to
+  say a tab was there. A 2px gap in the sleeve keeps two of them from reading as
+  one shape with a seam, which is what retired Chrome's separator: a 1px mark
+  hung off each tab's left edge and hidden either side of the active and hovered
+  ones, three rules doing what a gap does.
 - **Removal only asks what it has to.** `removalQuestions` reads the same two
   counts the tab shows: uncommitted work is what makes git refuse without
   `--force`, and unmerged commits are what make deleting the branch a decision.
@@ -130,11 +134,12 @@ The pieces, and why each is the way it is:
   because `--graphite` — what everything quiet on a tab is written in, and it
   lands on this ground on that tab — is 4.54:1 against it; one more rung is
   under the floor.
-- **Hover steps up, toward the tab you are in.** `--rule` is 1.30:1 above the
-  sleeve and still 1.42:1 below `--tab-on`, so it reads as a step on the way and
-  never as the tab you are already in. The separator between two inactive tabs
-  goes up for the same reason: on a ground this dark, lighter is the only
-  direction that reads.
+- **Hover lifts the fill a rung, and only the fill.** `--rule-bright` is 1.22:1
+  above a resting tab, on the way to `--tab-on`, which is where a hover should
+  point. The label deliberately stays `--graphite`: the tab you are in is only
+  1.06:1 lighter than a hovered one, so lighting the label on hover too would
+  leave nothing to tell them apart. Bright text is what "you are in this one"
+  means, and it outranks an echo of the pointer.
 - **Brightness says which tab you are in**, which is Chrome's other half of the
   job — its unselected titles are dim and its selected one is bright, and that
   difference does as much work as the tab's shape. Every tab here used to be
@@ -324,14 +329,13 @@ Six things in it are load-bearing:
 - **`.files__file` is a flex column, and that is not cosmetic.** CodeMirror's
   host is sized by `flex: 1; min-height: 0` from it. A block container instead
   left the host at its *content's* height -- an 11,792px editor inside a 225px
-  pane, measured. Two symptoms, one cause: `.cm-scroller` then has nothing to
-  scroll, so the file would not scroll; and with nothing scrollable under the
-  pointer, `inner()` finds no candidate and the row takes every wheel, so
-  scrolling the file slid the whole row of windows sideways.
-- **The tree must stay a scroller** (`overflow-y: auto`) for the same second
-  reason -- it is what `inner()` looks for so a wheel over it does not reach the
-  row. Still true with the file column gone, and checked with a real wheel over
-  a tree-only panel: the tree moved 61px and `.grid`'s `scrollLeft` stayed at 0.
+  pane, measured. `.cm-scroller` then has nothing to scroll, so the file would
+  not scroll at all. (It used to have a second symptom: the row took every
+  downward wheel a pane did not want, so scrolling a file slid the windows
+  sideways. The row no longer answers to a downward wheel at all -- see below --
+  but the flex column is still what makes the file scroll.)
+- **The tree must stay a scroller** (`overflow-y: auto`), which is what lets a
+  wheel over it scroll the tree rather than falling through to nothing.
 - **The error notice is in the sidebar, not in the content pane.** A tree that
   failed to read has no content pane to say so in. The *conflict* notice stays
   beside the file, because it can only happen while one is open.
@@ -416,9 +420,21 @@ page; horizontal drags are left to the row. `.term-host` carries
 `touch-action: pan-x` so the browser hands over the vertical axis instead of
 claiming it for a pan that has nowhere to go.
 
-This is not the wheel rule in reverse. A wheel over a tile means "scroll the
-row", which is why turning it into keystrokes was wrong; a finger inside a pane
-has no other meaning.
+This is not the wheel rule in reverse. Turning the wheel into keystrokes was
+wrong because the wheel is how you scroll what is under the pointer; a finger
+inside a pane has no other meaning.
+
+**Scrolling down never moves the row.** It used to: a terminal on the alternate
+screen has nothing of its own to scroll, so a downward wheel over most of a
+window would otherwise do nothing, and the row was offered the gesture instead.
+That loses to what it costs -- reading down a diff and running off its end threw
+the row sideways, and so did a stray graze over a terminal. Only a *sideways*
+gesture moves the row, stepped by the spot because `scroll-snap-type: x
+mandatory` drags anything shorter back (measured: a 120px nudge snapped to where
+it started, a 600px flick landed a spot along). Anything with sideways scrolling
+of its own keeps first claim through `inner()` -- measured on a tile's terminal
+tab strip, which took 8px of the gesture and left the row at 0, then handed the
+next one on once it was at its end.
 
 ## Cmd+Left and Cmd+Right walk panes, not only worktrees
 
@@ -669,8 +685,9 @@ geometry. Then:
   partly-applied value.
 - **Prove the wheel with a real gesture**, `page.mouse.wheel` over the element,
   not by reasoning about `inner()`. Read `.grid`'s `scrollLeft` before and
-  after: a pane whose content does not scroll hands the wheel to the row, and
-  that reads as the row drifting sideways while you scroll a file.
+  after, and remember the axes are not symmetric: a downward gesture must leave
+  the row where it is, while a sideways one over a pane with nothing to scroll
+  sideways steps it a spot.
 - **Syntax colour is in generated class names.** `HighlightStyle` emits its own
   (`ͼ5`, `ͼ9`); there is no `.tok-keyword` to look for. Read the computed colour
   of a span inside `.cm-line` instead.

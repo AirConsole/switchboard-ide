@@ -332,6 +332,14 @@ button {
    * project's, and it has no reason to float.
    */
   padding: 0 4px 3px;
+  /*
+   * 2px between the tabs, which is what a filled pill needs and an unfilled one
+   * did not: two of the same colour meeting edge to edge are one shape with a
+   * seam. This replaces Chrome's separator -- a 1px mark hung off each tab's
+   * left edge and hidden either side of the active and the hovered one, three
+   * rules doing what a gap does.
+   */
+  gap: 2px;
   border-radius: 8px 8px 0 0;
   /*
    * The trough the tabs sit in: a rung above the bar's --ink, and the ground an
@@ -633,7 +641,13 @@ button {
    * before its own close button. One property, read by the fill and by both
    * feet, so the three pieces can never disagree about what colour this tab is.
    */
-  --tab-fill: transparent;
+  /*
+   * A tab at rest carries a fill now, where it used to be the trough showing
+   * through. --rule is 1.18:1 above the sleeve -- small, as every step here is,
+   * but the difference between a shape and no shape -- and it leaves the tab
+   * you are in 1.30:1 above it, which is the step that has to survive.
+   */
+  --tab-fill: var(--rule);
   background: var(--tab-fill);
 }
 
@@ -671,47 +685,17 @@ button {
 }
 
 /*
- * Chrome's separator: between two inactive tabs only, and gone on either side
- * of the active tab and of the one under the pointer. It hangs off the body
- * rather than the wrapper because the wrapper's two pseudo-elements are the
- * feet below.
- */
-.tab + .tab > .tab__body::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 1px;
-  height: 16px;
-  margin-top: -8px;
-  /* Lighter than the sleeve it sits on, which is the only direction that reads
-     on a ground this dark. */
-  background: var(--rule-bright);
-}
-
-.tab--active > .tab__body::before,
-.tab--active + .tab > .tab__body::before,
-.tab:hover > .tab__body::before,
-.tab:hover + .tab > .tab__body::before {
-  display: none;
-}
-
-/*
- * Nothing at all until the pointer arrives, then a rounded panel: Chrome's
- * inactive tab, which has no shape of its own until you go for it.
+ * The pointer lifts the fill a rung, and only the fill.
  *
- * Lighter than the sleeve, because the tab you are in is the lightest thing on
- * the strip and a hover is on the way to it: --rule is 1.30:1 above the sleeve
- * and still 1.42:1 below --tab-on, so it reads as a step and never as the tab you
- * are already in. --graphite is 5.89:1 on it.
+ * --rule-bright is 1.22:1 above a resting tab and on the way to --tab-on, which
+ * is where a hover should point. The label stays --graphite here on purpose:
+ * the tab you are in is only 1.06:1 lighter than a hovered one, so if hovering
+ * also lit the label there would be nothing left to tell the two apart. Bright
+ * text is what "you are in this one" means, and it outranks an echo of the
+ * pointer.
  */
 .tab:not(.tab--active):hover {
-  --tab-fill: var(--rule);
-  border-radius: 9px;
-}
-
-.tab:not(.tab--active):hover > .tab__body {
-  color: var(--bone);
+  --tab-fill: var(--rule-bright);
 }
 
 /*
@@ -844,10 +828,6 @@ button {
  * load-bearing for the amber below: it has to come after everything that sets
  * `color`, because blocked-on-you outranks both.
  */
-.tab--asleep:hover > .tab__body {
-  color: var(--bone);
-}
-
 /* Blocked on you: the one place the chrome is allowed colour. Restated under
    the pointer, because hover brightens by setting `color` and would otherwise
    take the signal out of the tab you are reaching for. */
@@ -2499,12 +2479,6 @@ button {
   width: auto;
   max-width: none;
   border-radius: 9px;
-}
-
-/* Chrome's separator divides tabs side by side. In a column it is a mark
-   hanging off the left edge of every row but the first. */
-.menu--tabs .tab + .tab > .tab__body::before {
-  display: none;
 }
 
 /* -------------------------------------------------------------- the files -- */
