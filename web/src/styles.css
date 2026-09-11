@@ -436,6 +436,27 @@ button {
   color: var(--graphite);
 }
 
+/*
+ * With one project open, the + says what it does.
+ *
+ * It is the only + on the bar then, and the strip has the room -- one project's
+ * tabs never fill it. With several, each sleeve carries its own and the label
+ * would be the same three words repeated across the bar, so they stay glyphs
+ * and the tooltip names the project.
+ */
+.tabgroup__add--labelled {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px 0 7px;
+}
+
+.tabgroup__add-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .tabgroup__add:hover {
   /* With the pointer on it, the same step a tab takes: up toward --tab-on. */
   background: var(--rule);

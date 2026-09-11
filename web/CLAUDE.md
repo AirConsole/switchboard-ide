@@ -75,6 +75,11 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
+- **The + says what it does when it is the only one.** With one project open it
+  is `+ New worktree`, because it is the only + on the bar and one project's
+  tabs never fill the strip; with several, each sleeve carries its own and the
+  label would be the same three words repeated across the bar, so they stay
+  glyphs and the tooltip names the project.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
