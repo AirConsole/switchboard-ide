@@ -1,4 +1,4 @@
-import { decodeOutputFrame, type ClientMsg, type ServerMsg } from '@ide-n-dream/shared'
+import { decodeOutputFrame, type ClientMsg, type ServerMsg } from '@switchboard/shared'
 
 export interface ConsumerOptions {
   /** Size authority. True for the focused detail view, false for overview tiles. */

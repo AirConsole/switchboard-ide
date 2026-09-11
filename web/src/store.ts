@@ -7,12 +7,12 @@ import type {
   UiState,
   Worktree,
   PanelName,
-} from '@ide-n-dream/shared'
-import { defaultUiState } from '@ide-n-dream/shared'
+} from '@switchboard/shared'
+import { defaultUiState } from '@switchboard/shared'
 import { api } from './api.js'
 import { terminalSocket } from './socket.js'
 
-const UI_CACHE_KEY = 'idn.ui'
+const UI_CACHE_KEY = 'swb.ui'
 
 /**
  * Bring a stored UiState up to the shape this build reads.

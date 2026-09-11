@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { RecentProject } from '@ide-n-dream/shared'
+import type { RecentProject } from '@switchboard/shared'
 import { ApiError, api, type BrowseResult } from '../api.js'
 import { useEscape } from './useEscape.js'
 

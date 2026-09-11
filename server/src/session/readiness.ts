@@ -1,4 +1,4 @@
-import type { SessionKind } from '@ide-n-dream/shared'
+import type { SessionKind } from '@switchboard/shared'
 import { INPUT_BOX, looksBusy, looksLikePrompt } from './attention.js'
 import type { TurnState } from './claude.js'
 

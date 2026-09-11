@@ -1,4 +1,4 @@
-import type { Project, Session, Worktree } from '@ide-n-dream/shared'
+import type { Project, Session, Worktree } from '@switchboard/shared'
 import { useEscape } from './useEscape.js'
 
 export interface CloseProjectDialogProps {

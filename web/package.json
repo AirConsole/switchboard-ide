@@ -1,5 +1,5 @@
 {
-  "name": "@ide-n-dream/web",
+  "name": "@switchboard/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/state": "^6.7.4",
     "@codemirror/view": "^6.43.11",
-    "@ide-n-dream/shared": "workspace:*",
+    "@switchboard/shared": "workspace:*",
     "@lezer/highlight": "^1.2.3",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",

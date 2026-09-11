@@ -1,4 +1,4 @@
-import type { Session } from '@ide-n-dream/shared'
+import type { Session } from '@switchboard/shared'
 import { TerminalView } from '../terminal/TerminalView.js'
 import { terminalLabels } from './terminalLabels.js'
 

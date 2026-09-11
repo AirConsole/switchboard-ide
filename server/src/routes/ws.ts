@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 // RouteShorthandOptions. Without this the route option does not typecheck.
 import '@fastify/websocket'
 import { WebSocket } from 'ws'
-import type { ClientMsg, ServerMsg, Session } from '@ide-n-dream/shared'
+import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 
 /**

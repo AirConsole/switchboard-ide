@@ -148,7 +148,7 @@ export interface Session {
   id: string
   worktreeId: string
   kind: SessionKind
-  /** tmux session name on the private socket, e.g. `idn-V1StGXR8`. */
+  /** tmux session name on the private socket, e.g. `swb-V1StGXR8`. */
   tmuxName: string
   title: string
   cols: number
@@ -170,7 +170,7 @@ export interface Session {
    * what it is doing rather than an arbitrary number.
    */
   command?: string
-  /** Ready-to-paste escape hatch, e.g. `tmux -L ide-n-dream attach -t idn-V1StGXR8`. */
+  /** Ready-to-paste escape hatch, e.g. `tmux -S <socket> attach -t swb-V1StGXR8`. */
   attachCommand: string
 }
 
@@ -432,7 +432,7 @@ export interface FileContent {
    */
   binary?: boolean
   /**
-   * Over `IDN_MAX_FILE_BYTES`.
+   * Over `SWB_MAX_FILE_BYTES`.
    *
    * Nothing is ever truncated: a partial buffer that reached the editor would be
    * one Cmd+S away from destroying the rest of the file.

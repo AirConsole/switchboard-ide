@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
-import type { Project, RecentProject, UiState, WorktreeTodo } from '@ide-n-dream/shared'
-import { defaultUiState } from '@ide-n-dream/shared'
+import type { Project, RecentProject, UiState, WorktreeTodo } from '@switchboard/shared'
+import { defaultUiState } from '@switchboard/shared'
 import { defaultWorktreeRoot } from './git/worktree.js'
 import { stateFile } from './config.js'
 

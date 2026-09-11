@@ -16,7 +16,7 @@ import {
   removalQuestions,
   terminalSessions,
 } from './selectors.js'
-import type { FilesMode, PanelName, Project, UiState, Worktree } from '@ide-n-dream/shared'
+import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
 export interface ProjectGroup {

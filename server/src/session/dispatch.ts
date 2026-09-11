@@ -1,4 +1,4 @@
-import type { WorktreeTodo } from '@ide-n-dream/shared'
+import type { WorktreeTodo } from '@switchboard/shared'
 import type { StateStore } from '../state.js'
 import type { SessionEngine } from './engine.js'
 import { turnState } from './claude.js'
@@ -39,12 +39,12 @@ export interface Dispatcher {
 }
 
 /**
- * `IDN_DEBUG_DISPATCH=1` prints every verdict change, which is how the
+ * `SWB_DEBUG_DISPATCH=1` prints every verdict change, which is how the
  * predicate was checked against a real Claude before it was allowed to type.
  * Only on a change, so a session waiting five minutes prints one line.
  */
 const debug = (worktreeId: string, verdict: string): void => {
-  if (process.env.IDN_DEBUG_DISPATCH) {
+  if (process.env.SWB_DEBUG_DISPATCH) {
     // eslint-disable-next-line no-console
     console.log(`[dispatch] ${new Date().toISOString()} ${worktreeId} ${verdict}`)
   }
@@ -227,7 +227,7 @@ export const startDispatcher = (opts: {
         if (reasons.get(worktreeId) !== verdict.why) {
           // The turn is read from the verdict's own inputs rather than fetched
           // again: as an argument to debug() it was a transcript read on every
-          // verdict change, whether or not IDN_DEBUG_DISPATCH was set.
+          // verdict change, whether or not SWB_DEBUG_DISPATCH was set.
           debug(
             worktreeId,
             `${verdict.why} (quiet ${Date.now() - state.lastOutputAt}ms, human ${

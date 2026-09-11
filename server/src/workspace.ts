@@ -13,7 +13,7 @@ import type {
   RecentProject,
   Worktree,
   WorktreeTodo,
-} from '@ide-n-dream/shared'
+} from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'

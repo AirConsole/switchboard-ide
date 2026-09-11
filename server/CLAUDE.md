@@ -12,7 +12,7 @@ files.ts        a worktree's own files: containment, listing, search, read, writ
 http-error.ts   HttpError, so workspace.ts and files.ts can both throw it
 state.ts        state.json: projects and the opaque `ui` blob
 session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
-  tmux.ts       every tmux invocation, and the metadata in @idn_meta
+  tmux.ts       every tmux invocation, and the metadata in @swb_meta
   mirror.ts     a headless xterm per session, for repaint and attention
   attention.ts  idle / working / needs-you
   readiness.ts  whether it is safe to TYPE into a session -- a stricter question
@@ -22,7 +22,7 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
                 working on")
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
 usage.ts        Claude's own limits, read from `claude -p /usage` and cached
-config.ts       every IDN_* env var, in one place
+config.ts       every SWB_* env var, in one place
 ```
 
 ## tmux
@@ -44,7 +44,7 @@ Two tmux facts worth knowing before writing a command:
 - **Session-targeting commands accept `=name` for an exact match; pane-targeting
   commands reject it.** Hence `paneTarget()` returns the bare name. A wrong
   target here silently acts on a different session.
-- **`@idn_meta` dies with the session.** Session kind and worktree id are
+- **`@swb_meta` dies with the session.** Session kind and worktree id are
   recorded there, which is how a restarted server adopts running sessions — and
   why nothing can be remembered across a sleep. Resuming is derived from the
   transcript on disk instead.
@@ -151,7 +151,7 @@ sending it**, and a Return pressed on a screen we misread is not recoverable.
   Return is withheld unless the paste is visibly in the box. A todo found with
   `dispatchingAt` on startup is handed back to the human, never re-sent.
 
-`IDN_DEBUG_DISPATCH=1` logs every verdict change, which is how the predicate was
+`SWB_DEBUG_DISPATCH=1` logs every verdict change, which is how the predicate was
 checked against a real Claude before it was allowed to type anything.
 
 ## Worktrees and ids
@@ -185,7 +185,7 @@ transcript is megabytes and this runs per worktree per poll.
 
 `idFor(prefix, path, host)` hashes the path. **Local ids hash the bare absolute
 path and must keep doing so**, byte for byte: those ids are recorded in
-`@idn_meta`, so changing the derivation orphans every running session. The
+`@swb_meta`, so changing the derivation orphans every running session. The
 remote branch namespaces by base URL; that is the whole of the remote design
 that exists today, together with `Project.host`.
 
@@ -294,8 +294,8 @@ The reading costs a `claude` process, measured 4.3–4.6s, so it is cached for
 five minutes and there is no timer: the browser polls on the same interval and a
 poll inside the window is answered from the last reading, which also means
 nothing is spawned while nobody is looking. Concurrent requests share one
-in-flight read. `IDN_USAGE_CMD` overrides the binary and is deliberately *not*
-`IDN_CLAUDE_CMD`, which a scratch instance replaces with vim or a stand-in.
+in-flight read. `SWB_USAGE_CMD` overrides the binary and is deliberately *not*
+`SWB_CLAUDE_CMD`, which a scratch instance replaces with vim or a stand-in.
 
 Parsing keys on `% used`, because the rest of that report is full of percentages
 that are not limits ("96% of your usage came from subagent-heavy sessions"). An
@@ -315,24 +315,24 @@ A kill emits no event of its own, so any route that ends a session must call
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `IDN_HOST` / `IDN_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
-| `IDN_STATE_DIR` | `~/.config/ide-n-dream` | `state.json` *and* the tmux socket. |
-| `IDN_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |
-| `IDN_TMUX_CONF` | `server/tmux.conf` | The config loaded with `-f`. |
-| `IDN_CLAUDE_CMD` | `claude` | Command for agent sessions. |
-| `IDN_USAGE_CMD` | `claude` | The real binary, for reading `/usage`. |
-| `IDN_SHELL` | `$SHELL` | Command for terminal sessions. |
-| `IDN_MIRROR_SCROLLBACK` | `5000` | Lines each server-side mirror keeps. |
-| `IDN_MAX_FILE_BYTES` | `2097152` | Largest file the files panel opens or saves. |
-| `IDN_WEB_DIST` | `web/dist` | What `pnpm start` serves. |
-| `IDN_LOG_LEVEL` | `info` | Fastify's logger. |
-| `IDN_DEBUG_SIZE` | unset | Log every size decision and its owner. |
-| `IDN_DEBUG_DISPATCH` | unset | Log why a queued todo did or did not go. |
+| `SWB_HOST` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
+| `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |
+| `SWB_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |
+| `SWB_TMUX_CONF` | `server/tmux.conf` | The config loaded with `-f`. |
+| `SWB_CLAUDE_CMD` | `claude` | Command for agent sessions. |
+| `SWB_USAGE_CMD` | `claude` | The real binary, for reading `/usage`. |
+| `SWB_SHELL` | `$SHELL` | Command for terminal sessions. |
+| `SWB_MIRROR_SCROLLBACK` | `5000` | Lines each server-side mirror keeps. |
+| `SWB_MAX_FILE_BYTES` | `2097152` | Largest file the files panel opens or saves. |
+| `SWB_WEB_DIST` | `web/dist` | What `pnpm start` serves. |
+| `SWB_LOG_LEVEL` | `info` | Fastify's logger. |
+| `SWB_DEBUG_SIZE` | unset | Log every size decision and its owner. |
+| `SWB_DEBUG_DISPATCH` | unset | Log why a queued todo did or did not go. |
 
-All of it is in `config.ts`. `IDN_STATE_DIR` is the one that matters for
+All of it is in `config.ts`. `SWB_STATE_DIR` is the one that matters for
 testing: it moves both `state.json` and the tmux socket, which is what makes
-`scripts/scratch.sh` unable to touch a real instance. `IDN_CLAUDE_CMD` swaps the
-agent for something cheap. `IDN_DEBUG_SIZE=1` logs every size decision with the
+`scripts/scratch.sh` unable to touch a real instance. `SWB_CLAUDE_CMD` swaps the
+agent for something cheap. `SWB_DEBUG_SIZE=1` logs every size decision with the
 attachment that owned it.
 
 ## Testing server behaviour

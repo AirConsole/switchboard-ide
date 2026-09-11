@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Commit, FileChange, FilesMode, WorktreeChanges } from '@ide-n-dream/shared'
+import type { Commit, FileChange, FilesMode, WorktreeChanges } from '@switchboard/shared'
 import { api } from '../api.js'
 
 /**

@@ -1,4 +1,4 @@
-import type { Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 
 /** The Claude session for a worktree. There is at most one. */
 export const claudeSession = (sessions: Session[], worktreeId: string): Session | undefined =>

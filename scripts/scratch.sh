@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# A throwaway ide-n-dream instance, for developing the IDE with the IDE.
+# A throwaway Switchboard instance, for developing the IDE with the IDE.
 #
 # Every checkout gets its own. The state directory, the tmux socket, the scratch
 # repositories and the port are all derived from the path this script lives in,
@@ -20,7 +20,7 @@ scratch.sh url     print this checkout's URL (the port differs per worktree)
 scratch.sh list    every scratch instance on this machine, and whether it lives
 
   CLAUDE_CMD=vim scratch.sh up    use vim as the stand-in agent
-  IDN_SCRATCH_PORT=9000 ...       pin the port instead of deriving one
+  SWB_SCRATCH_PORT=9000 ...       pin the port instead of deriving one
 USAGE
 }
 
@@ -33,7 +33,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # separator character, and every directory would be named "<slug>-".
 SLUG="$(printf '%s' "$(basename "$REPO")" | tr -c 'A-Za-z0-9._-' '-')"
 HASH="$(printf '%s' "$REPO" | sha1sum | cut -c1-6)"
-ROOT="${TMPDIR:-/tmp}/idn-scratch-$SLUG-$HASH"
+ROOT="${TMPDIR:-/tmp}/swb-scratch-$SLUG-$HASH"
 STATE="$ROOT/state"
 PORTFILE="$ROOT/port"
 PIDFILE="$ROOT/server.pid"
@@ -98,12 +98,12 @@ up)
   fi
   "$0" down >/dev/null 2>&1 || true
   mkdir -p "$STATE"
-  PORT="${IDN_SCRATCH_PORT:-$(pick_port)}"
+  PORT="${SWB_SCRATCH_PORT:-$(pick_port)}"
   echo "$PORT" >"$PORTFILE"
   (
     cd "$REPO/server"
-    IDN_STATE_DIR="$STATE" IDN_PORT="$PORT" \
-      IDN_CLAUDE_CMD="${CLAUDE_CMD:-bash}" NODE_ENV=production \
+    SWB_STATE_DIR="$STATE" SWB_PORT="$PORT" \
+      SWB_CLAUDE_CMD="${CLAUDE_CMD:-bash}" NODE_ENV=production \
       nohup node dist/index.js >"$ROOT/server.log" 2>&1 &
     # From inside the subshell, so it is the node process rather than the shell.
     echo $! >"$PIDFILE"
@@ -150,7 +150,7 @@ url)
 list)
   shopt -s nullglob
   found=0
-  for dir in "${TMPDIR:-/tmp}"/idn-scratch-*/; do
+  for dir in "${TMPDIR:-/tmp}"/swb-scratch-*/; do
     found=1
     port=$(cat "$dir/port" 2>/dev/null || echo '?')
     pid=$(cat "$dir/server.pid" 2>/dev/null || true)

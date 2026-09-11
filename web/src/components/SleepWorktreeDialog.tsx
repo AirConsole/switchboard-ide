@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Session, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import { claudeSession, removalAsks, terminalSessions } from '../selectors.js'
 import { useEscape } from './useEscape.js'
 

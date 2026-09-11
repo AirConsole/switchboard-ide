@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { Worktree } from '@ide-n-dream/shared'
+import type { Worktree } from '@switchboard/shared'
 
 const exec = promisify(execFile)
 
@@ -23,7 +23,7 @@ export type HostKey = string
  * makes that automatic and needs no persistence to be correct.
  *
  * `host` is what keeps that true once a project can live on another
- * ide-n-dream server. A path alone is not unique across machines -- two hosts
+ * Switchboard server. A path alone is not unique across machines -- two hosts
  * with a checkout at the same path hash identically, and these ids key the
  * state store, the tmux metadata and every route parameter, so the two would
  * silently alias. A remote host contributes its base URL; a local one
