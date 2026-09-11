@@ -10,6 +10,30 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>Switchboard</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Duplicated from the manifest's theme_color rather than read from it:
+         Safari does not take the tab and status bar tint from a manifest, and
+         Chrome prefers the manifest in an installed window but this meta in a
+         tab. Both have to say --ink or the chrome changes colour depending on
+         how you opened the same page. -->
+    <meta name="theme-color" content="#10141a" />
+    <!-- An explicit icon, which also stops the browser probing /favicon.ico:
+         the SPA fallback answers that with index.html and a 200, and the
+         browser then discards a page of HTML it asked for as an image. -->
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png" />
+    <!-- iOS ignores the manifest's icons for the home screen and uses this one.
+         It is the square drawing, flattened opaque: iOS rounds the corners
+         itself, and composites any alpha onto black. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <!-- This is what makes env(safe-area-inset-top) non-zero in an installed
+         iOS app: the web view extends under the status bar instead of starting
+         below it. Only safe alongside the safe-area padding on #root in
+         styles.css, which is what keeps the strip out from under the clock. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- The standard spelling. The `apple-` prefixed form is deliberately not
+         here: it is obsolete, and Chrome logs a deprecation warning for it. -->
+    <meta name="mobile-web-app-capable" content="yes" />
   </head>
   <body>
     <div id="root"></div>

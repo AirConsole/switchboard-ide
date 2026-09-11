@@ -1,0 +1,51 @@
+<!--
+  Switchboard's mark: a patch panel with one jack lit.
+
+  The whole thesis in one image. Eight sockets sit empty; one is patched through
+  and amber, which is the single thing this interface spends colour on, meaning
+  an agent is blocked on you. It is the rule the row obeys, drawn at icon size.
+
+  Three tokens, no invented colours: the ground is the `ink` custom property
+  (#10141a) that the row sits on, the empty sockets are `tab-on` (#333c4b),
+  which is the lightest thing on the tab strip, and the lit one is `signal`
+  (#ffb454). The values are literal because an SVG served as a file has no
+  stylesheet to read them from, so they have to be kept in step with :root in
+  web/src/styles.css by hand.
+
+  (Written without the leading double hyphen those properties really carry: an
+  XML comment may not contain two hyphens in a row, which also rules out this
+  codebase's usual dashes throughout this file.)
+
+  The lit jack is dead centre on purpose. Everything but the amber disappears
+  below roughly 20px, so the favicon becomes one warm dot on a dark square,
+  which is the right thing to recognise in a tab strip and is only true if it
+  is centred. Centring also survives Android's circular crop and iOS's squircle
+  without the mark drifting.
+
+  Sockets are rings rather than discs so they read as empty. The lit one is
+  solid, because something is in it.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#10141a" />
+  <g fill="#333c4b">
+    <circle cx="140" cy="140" r="38" />
+    <circle cx="256" cy="140" r="38" />
+    <circle cx="372" cy="140" r="38" />
+    <circle cx="140" cy="256" r="38" />
+    <circle cx="372" cy="256" r="38" />
+    <circle cx="140" cy="372" r="38" />
+    <circle cx="256" cy="372" r="38" />
+    <circle cx="372" cy="372" r="38" />
+  </g>
+  <g fill="#10141a">
+    <circle cx="140" cy="140" r="17" />
+    <circle cx="256" cy="140" r="17" />
+    <circle cx="372" cy="140" r="17" />
+    <circle cx="140" cy="256" r="17" />
+    <circle cx="372" cy="256" r="17" />
+    <circle cx="140" cy="372" r="17" />
+    <circle cx="256" cy="372" r="17" />
+    <circle cx="372" cy="372" r="17" />
+  </g>
+  <circle cx="256" cy="256" r="38" fill="#ffb454" />
+</svg>
