@@ -433,16 +433,24 @@ target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
 
-## Cmd+E, Cmd+O and Cmd+F are the three panel toggles
+## Cmd+I, Cmd+O and Cmd+F are the three panel toggles
 
 The keyboard version of the buttons in a window's own bar, acting on the
 worktree that has the keyboard, and toggling the same way: pressed on the panel
 already showing, the shortcut closes it and gives the width back to Claude.
-Mnemonics rather than positions, because terminals would want Cmd+T, which is
-one of the few the browser will not give up.
+Mnemonics rather than positions -- each key is a letter inside the word its
+toggle already shows.
 
-**Cmd, never Ctrl.** Ctrl+E is end-of-line and Ctrl+F forward-character in
-readline and in Claude's own prompt, and both are typed in these windows all
+**Terminals are on their third letter.** T is what the word wants, and the
+browser will not give up Cmd+T. E was next, and was wrong for a reason no
+amount of `preventDefault` reaches: Claude's own browser extension takes Cmd+E
+before the page sees it. A key another tool holds is a key that does nothing
+here, so the terminals moved to the next free letter in TERMINAL.
+
+**Cmd, never Ctrl**, and Cmd+I is the sharpest case for it: Ctrl+I *is* Tab,
+the same byte 0x09, so binding it would have taken completion away from every
+shell and every prompt in the row. Ctrl+E is end-of-line and Ctrl+F
+forward-character for the same reason, and both are typed in these windows all
 day. Cmd itself costs the terminal nothing: xterm.js emits a printable key only
 when `!ctrlKey && !altKey && !metaKey`, and this build has no kitty-protocol or
 `modifyOtherKeys` encoding to fall back on, so a Cmd-modified key produces no
@@ -456,7 +464,7 @@ selection for find" -- and, unlike Cmd+N, Cmd+T and Cmd+W, it lets all three be
 cancelled. So they are taken outright in the capture phase, which is also what
 keeps them from reaching xterm: its `attachCustomKeyEventHandler` runs at the
 target and, as the comment in `TerminalView` says, returning false from it does
-not stop a browser default. Measured against a scratch instance: `e` pressed
+not stop a browser default. Measured against a scratch instance: the letter pressed
 with a terminal focused arrived with `defaultPrevented`, never reached a
 bubble-phase listener, and put no character into the shell's prompt
 (`capture-pane`); in a dialog the same key is not prevented at all.
@@ -466,7 +474,7 @@ bubble-phase listener, and put no character into the shell's prompt
 The shortcuts are only worth having if you can find them, and a printed list of
 five is a list nobody reads. So holding Cmd is treated as the question "what can
 I do from here", and the answer is written on the controls themselves: each
-panel toggle **of the window you are in** lights its letter -- T**E**RMINAL,
+panel toggle **of the window you are in** lights its letter -- TERM**I**NAL,
 T**O**DO, **F**ILES -- and the two windows a Cmd+arrow step would land in show
 that arrow in front of their name. The letters are one window's because the
 shortcut is: it opens a panel on the worktree that has the keyboard, and the

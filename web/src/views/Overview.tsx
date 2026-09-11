@@ -118,17 +118,21 @@ const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
 /**
  * The key that opens each panel, with Cmd held.
  *
- * Mnemonics, not positions: terminals would want Cmd+T, which is the one
- * shortcut on this list the browser will not give up, so the terminals take the
- * other letter in the word you say out loud -- and iTerm and Terminal both use
- * Cmd+E for something in a split, so the finger is already trained. Todos are
- * Cmd+O and files Cmd+F.
+ * Mnemonics, not positions, and every one of them a letter inside the word the
+ * toggle already shows. Todos are Cmd+O and files Cmd+F.
  *
- * Cmd alone, never Ctrl. Ctrl+E is end-of-line and Ctrl+F forward-character in
- * readline and in Claude's own prompt, and both are typed in these windows all
- * day; a shortcut that ate them would be a shortcut that broke the terminal.
+ * Terminals are Cmd+I, and are on their third letter. T is what the word wants
+ * and the browser will not give up Cmd+T; E was next and did not survive
+ * contact -- Claude's own browser extension takes Cmd+E, and a shortcut another
+ * tool holds is a shortcut that does nothing here. I is the next letter in
+ * TERMINAL that nothing else is using.
+ *
+ * Cmd alone, never Ctrl, and Cmd+I is the sharpest case for that rule on the
+ * list: Ctrl+I *is* Tab -- the same byte, 0x09 -- so binding it would have
+ * taken completion away from every shell and every prompt in the row. Ctrl+E is
+ * end-of-line and Ctrl+F forward-character for the same reason.
  */
-const PANEL_KEYS: Record<PanelName, string> = { terminals: 'e', todo: 'o', files: 'f' }
+const PANEL_KEYS: Record<PanelName, string> = { terminals: 'i', todo: 'o', files: 'f' }
 
 /** The same table read the way a keystroke arrives. */
 const PANEL_FOR_KEY = new Map<string, PanelName>(
@@ -1445,7 +1449,7 @@ export const Overview = ({
   }, [stops, active, pitch, width, onReveal])
 
   /*
-   * Cmd+E, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
+   * Cmd+I, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
    *
    * The keyboard version of the three toggles in that window's own bar, and
    * the same click: pressed on the panel already showing, it closes it and
