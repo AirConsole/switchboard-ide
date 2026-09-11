@@ -449,6 +449,86 @@ target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
 
+## Cmd+I, Cmd+O and Cmd+F are the three panel toggles
+
+The keyboard version of the buttons in a window's own bar, acting on the
+worktree that has the keyboard, and toggling the same way: pressed on the panel
+already showing, the shortcut closes it and gives the width back to Claude.
+Mnemonics rather than positions -- each key is a letter inside the word its
+toggle already shows.
+
+**Terminals are on their third letter.** T is what the word wants, and the
+browser will not give up Cmd+T. E was next, and was wrong for a reason no
+amount of `preventDefault` reaches: Claude's own browser extension takes Cmd+E
+before the page sees it. A key another tool holds is a key that does nothing
+here, so the terminals moved to the next free letter in TERMINAL.
+
+**Cmd, never Ctrl**, and Cmd+I is the sharpest case for it: Ctrl+I *is* Tab,
+the same byte 0x09, so binding it would have taken completion away from every
+shell and every prompt in the row. Ctrl+E is end-of-line and Ctrl+F
+forward-character for the same reason, and both are typed in these windows all
+day. Cmd itself costs the terminal nothing: xterm.js emits a printable key only
+when `!ctrlKey && !altKey && !metaKey`, and this build has no kitty-protocol or
+`modifyOtherKeys` encoding to fall back on, so a Cmd-modified key produces no
+bytes at all -- measured with `cat` as the stand-in agent, where a plain `x`
+arrived and Cmd+X, reaching xterm's own textarea, left the pane unchanged. tmux
+is not in the argument either: `tmux.conf` sets `prefix None` and
+`unbind-key -a`, so it binds nothing and every byte passes through.
+
+The browser claims all three on macOS -- find, open a file, and Safari's "use
+selection for find" -- and, unlike Cmd+N, Cmd+T and Cmd+W, it lets all three be
+cancelled. So they are taken outright in the capture phase, which is also what
+keeps them from reaching xterm: its `attachCustomKeyEventHandler` runs at the
+target and, as the comment in `TerminalView` says, returning false from it does
+not stop a browser default. Measured against a scratch instance: the letter pressed
+with a terminal focused arrived with `defaultPrevented`, never reached a
+bubble-phase listener, and put no character into the shell's prompt
+(`capture-pane`); in a dialog the same key is not prevented at all.
+
+## Holding Cmd draws the legend
+
+The shortcuts are only worth having if you can find them, and a printed list of
+five is a list nobody reads. So holding Cmd is treated as the question "what can
+I do from here", and the answer is written on the controls themselves: each
+panel toggle **of the window you are in** lights its letter -- TERM**I**NAL,
+T**O**DO, **F**ILES -- and the two windows a Cmd+arrow step would land in show
+that arrow in front of their name. The letters are one window's because the
+shortcut is: it opens a panel on the worktree that has the keyboard, and the
+same three letters lit across the row would promise something the key does not
+do. The arrows are the opposite case -- they are about arriving somewhere else,
+so they are drawn where you would arrive. Nothing is armed by it; the keys work whether the legend is on screen or
+not.
+
+It is greyscale, and that is the colour rule rather than an accident: amber and
+green are the two states you scan a row of agents for, and where a key would
+take you is not one of them. The letter is `--bone` and the word around it steps
+down to `--graphite` while Cmd is held -- the 1.92:1 step the interface already
+puts between a title and its metadata. **The word is dimmed rather than the
+letter merely brightened** because of the toggle whose panel is open: its label
+is already `--bone`, so a `--bone` letter in it would be no letter at all.
+Dimming is one rule that works open, hovered and plain, and the toggle keeps its
+underline throughout, which is what says which panel is on screen.
+
+`useMetaHeld` reads released from any key event reporting no Cmd, plus the
+window's `blur` -- Cmd+Tab away delivers its keyup to the application you
+switched to, which would otherwise leave the legend lit over a page nobody is
+typing into.
+
+The landing panes come from `active`, not from the DOM, which is the opposite of
+what the stepper does and right for the opposite reason: the stepper answers
+between two renders, where React's record can be a press behind, while this is
+rendered, and `active` is also the only one of the two whose change re-renders
+the row -- which is what makes the legend follow you as you walk.
+
+**A legend must not move what it annotates.** Two things were measured here.
+The arrow is absolutely positioned in the title's own 10px left padding, so no
+name shifts when Cmd goes down (`getBoundingClientRect` identical to 0.01px with
+and without). And the lit letter is wrapped so the label stays **one element**:
+`.tile__toggle` is a flex row with a 4px gap for the fork glyph, so splitting
+"TERMINAL" into three text nodes made three flex items and put two of those gaps
+inside the word -- the button grew from 86.98px to 95 the moment Cmd went down.
+Wrapped, it is 86.98 to 87.00. Weight is not used either, for the same reason.
+
 ## Every dialog cancels on Escape, and gives the keyboard back
 
 `useEscape` is one hook per dialog, on the **window** in the capture phase with
