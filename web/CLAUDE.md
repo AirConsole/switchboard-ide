@@ -462,6 +462,16 @@ two windows a Cmd+arrow step would land in show that arrow in front of their
 name. Nothing is armed by it; the keys work whether the legend is on screen or
 not.
 
+It is greyscale, and that is the colour rule rather than an accident: amber and
+green are the two states you scan a row of agents for, and where a key would
+take you is not one of them. The letter is `--bone` and the word around it steps
+down to `--graphite` while Cmd is held -- the 1.92:1 step the interface already
+puts between a title and its metadata. **The word is dimmed rather than the
+letter merely brightened** because of the toggle whose panel is open: its label
+is already `--bone`, so a `--bone` letter in it would be no letter at all.
+Dimming is one rule that works open, hovered and plain, and the toggle keeps its
+underline throughout, which is what says which panel is on screen.
+
 `useMetaHeld` reads released from any key event reporting no Cmd, plus the
 window's `blur` -- Cmd+Tab away delivers its keyup to the application you
 switched to, which would otherwise leave the legend lit over a page nobody is

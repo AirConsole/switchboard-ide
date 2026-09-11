@@ -190,12 +190,12 @@ line below is a mistake made in this codebase, not a hypothetical:
   greyscale except for the two states you scan a row of agents for: blocked on
   you is amber (`--signal`), and done — Claude running and come to rest — is
   green (`--done`). Nothing running is not done, and stays grey. The two are
-  matched in luminance so neither outshouts the other. The one green thing that
-  is not a state is the keyboard legend: hold Cmd and each panel toggle lights
-  the letter that opens it, while the two windows a Cmd+arrow step would land in
-  show that arrow in front of their name. Green rather than amber because amber
-  is the channel a blocked agent owns, and it lasts exactly as long as the key
-  is down. The exceptions are both content rather than chrome, and are read the
+  matched in luminance so neither outshouts the other. The keyboard legend is
+  what the rule looks like when it is kept: holding Cmd lights the letter that
+  opens each panel and draws an arrow in the two windows a Cmd+arrow step would
+  land in, and all of it is the grey ladder -- --bone on a word stepped down to
+  --graphite -- because where a key would take you is not a state you scan a row
+  of agents for. The exceptions are both content rather than chrome, and are read the
   way terminal output is: a diff's own green and red, and a source file's syntax
   colour. The rule still governs the interface around them, and neither
   exception may reach for amber or green — the files pane's palette is the terminal's own, minus its green, so that a

@@ -143,10 +143,17 @@ const PANEL_FOR_KEY = new Map<string, PanelName>(
  * from here" -- so the answer is written on the controls themselves, in the
  * letter you are about to press, and disappears when you let go.
  *
- * Green, which is the one colour in this interface that already means "nothing
- * is asked of you": amber would put the hint in the channel a blocked agent
- * owns. It is also the only thing green while Cmd is held that is not a state,
- * which is why it lasts exactly as long as the key does.
+ * Greyscale, and it has to be: the two colours in this interface are states you
+ * scan a row of agents for, and a legend is not a state. So the letter is
+ * --bone and the word it sits in steps down to --graphite while Cmd is held --
+ * the same rung the label already uses, and the same 1.92:1 step the interface
+ * puts between a title and its metadata.
+ *
+ * The word is dimmed rather than the letter merely brightened because of the
+ * toggle whose panel is open: its label is already --bone, so a --bone letter
+ * in it would be no letter at all. Dimming makes one rule that works in every
+ * state -- open, hovered, plain -- and the underline still says which panel is
+ * on screen.
  *
  * One label has no letter to light: a queue reads "3 QUEUED", with no O in it,
  * and that is the moment the todos matter most. The whole label goes green
@@ -163,7 +170,7 @@ const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => 
    * the button has the one child it had before and nothing in the bar moves.
    */
   return (
-    <span className={lit && at === -1 ? 'tile__key' : undefined}>
+    <span className={lit ? (at === -1 ? 'tile__key' : 'tile__marked') : undefined}>
       {at === -1 ? (
         text
       ) : (
