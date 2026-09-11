@@ -56,9 +56,13 @@ The pieces, and why each is the way it is:
   only tab carrying a fill, 1.54:1 above the trough it floats in. The bar's
   bottom rule is still a background rather than a border, which is what let the
   active tab paint over it when it had feet.
-- **Inactive tabs have no shape** until hovered, when they get a rounded panel
-  in `--rule`. Separators sit between two inactive tabs only and vanish either
-  side of the active tab and the hovered one.
+- **Every tab carries a fill**, `--rule` at rest, 1.18:1 above the trough — a
+  small step, as all of them are here, but the difference between a shape and no
+  shape. They used to be the trough showing through, with only their label to
+  say a tab was there. A 2px gap in the sleeve keeps two of them from reading as
+  one shape with a seam, which is what retired Chrome's separator: a 1px mark
+  hung off each tab's left edge and hidden either side of the active and hovered
+  ones, three rules doing what a gap does.
 - **Removal only asks what it has to.** `removalQuestions` reads the same two
   counts the tab shows: uncommitted work is what makes git refuse without
   `--force`, and unmerged commits are what make deleting the branch a decision.
@@ -130,11 +134,12 @@ The pieces, and why each is the way it is:
   because `--graphite` — what everything quiet on a tab is written in, and it
   lands on this ground on that tab — is 4.54:1 against it; one more rung is
   under the floor.
-- **Hover steps up, toward the tab you are in.** `--rule` is 1.30:1 above the
-  sleeve and still 1.42:1 below `--tab-on`, so it reads as a step on the way and
-  never as the tab you are already in. The separator between two inactive tabs
-  goes up for the same reason: on a ground this dark, lighter is the only
-  direction that reads.
+- **Hover lifts the fill a rung, and only the fill.** `--rule-bright` is 1.22:1
+  above a resting tab, on the way to `--tab-on`, which is where a hover should
+  point. The label deliberately stays `--graphite`: the tab you are in is only
+  1.06:1 lighter than a hovered one, so lighting the label on hover too would
+  leave nothing to tell them apart. Bright text is what "you are in this one"
+  means, and it outranks an echo of the pointer.
 - **Brightness says which tab you are in**, which is Chrome's other half of the
   job — its unselected titles are dim and its selected one is bright, and that
   difference does as much work as the tab's shape. Every tab here used to be
