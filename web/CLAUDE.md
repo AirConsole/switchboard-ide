@@ -452,6 +452,36 @@ with a terminal focused arrived with `defaultPrevented`, never reached a
 bubble-phase listener, and put no character into the shell's prompt
 (`capture-pane`); in a dialog the same key is not prevented at all.
 
+## Holding Cmd draws the legend
+
+The shortcuts are only worth having if you can find them, and a printed list of
+five is a list nobody reads. So holding Cmd is treated as the question "what can
+I do from here", and the answer is written on the controls themselves: each
+panel toggle lights its letter -- T**E**RMINAL, T**O**DO, **F**ILES -- and the
+two windows a Cmd+arrow step would land in show that arrow in front of their
+name. Nothing is armed by it; the keys work whether the legend is on screen or
+not.
+
+`useMetaHeld` reads released from any key event reporting no Cmd, plus the
+window's `blur` -- Cmd+Tab away delivers its keyup to the application you
+switched to, which would otherwise leave the legend lit over a page nobody is
+typing into.
+
+The landing panes come from `active`, not from the DOM, which is the opposite of
+what the stepper does and right for the opposite reason: the stepper answers
+between two renders, where React's record can be a press behind, while this is
+rendered, and `active` is also the only one of the two whose change re-renders
+the row -- which is what makes the legend follow you as you walk.
+
+**A legend must not move what it annotates.** Two things were measured here.
+The arrow is absolutely positioned in the title's own 10px left padding, so no
+name shifts when Cmd goes down (`getBoundingClientRect` identical to 0.01px with
+and without). And the lit letter is wrapped so the label stays **one element**:
+`.tile__toggle` is a flex row with a 4px gap for the fork glyph, so splitting
+"TERMINAL" into three text nodes made three flex items and put two of those gaps
+inside the word -- the button grew from 86.98px to 95 the moment Cmd went down.
+Wrapped, it is 86.98 to 87.00. Weight is not used either, for the same reason.
+
 ## Every dialog cancels on Escape, and gives the keyboard back
 
 `useEscape` is one hook per dialog, on the **window** in the capture phase with

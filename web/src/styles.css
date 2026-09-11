@@ -1189,6 +1189,46 @@ button {
   /* Lines up with the terminal text below, which the pane insets by 8px. */
   padding: 0 10px;
   min-width: 0;
+  /* For the step hint, which is laid over this padding; see .tile__step. */
+  position: relative;
+}
+
+/*
+ * Where Cmd+Left and Cmd+Right would land, shown while Cmd is held.
+ *
+ * Absolute, in the label's own left padding, so the legend appearing does not
+ * move the title it annotates -- a name that jumps 14px every time you reach
+ * for Cmd is motion in an interface whose only motion is the terminal. The
+ * padding is 10px and the glyph is drawn at 11px, which fits it with a pixel
+ * either side; it is `aria-hidden` because it is a legend for a key, not
+ * content.
+ *
+ * --done, the interface's one green, on the argument in the mark() comment:
+ * this is the colour that means nothing is asked of you, and it clears 4.5:1 on
+ * every ground a bar has -- 9.81 on --slab, 6.38 on a hovered current tile.
+ */
+.tile__step {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--done);
+}
+
+/*
+ * The letter that opens a panel, lit in its toggle while Cmd is held.
+ *
+ * Colour only: the label keeps its box, so nothing in the bar moves when the
+ * legend comes and goes. Weight was tried and dropped -- a bolder letter is a
+ * wider letter, and "T E RMINAL" fell into three pieces at 11px with 0.08em of
+ * letter-spacing already between them. --done for the same reason the arrows
+ * are: it is the channel that is not amber, and amber belongs to an agent that
+ * wants you.
+ */
+.tile__key {
+  color: var(--done);
 }
 
 /*

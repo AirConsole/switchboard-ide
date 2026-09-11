@@ -128,7 +128,54 @@ const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
  * readline and in Claude's own prompt, and both are typed in these windows all
  * day; a shortcut that ate them would be a shortcut that broke the terminal.
  */
-const PANEL_KEYS: Record<string, PanelName> = { e: 'terminals', o: 'todo', f: 'files' }
+const PANEL_KEYS: Record<PanelName, string> = { terminals: 'e', todo: 'o', files: 'f' }
+
+/** The same table read the way a keystroke arrives. */
+const PANEL_FOR_KEY = new Map<string, PanelName>(
+  Object.entries(PANEL_KEYS).map(([panel, key]) => [key, panel as PanelName]),
+)
+
+/**
+ * The mnemonic letter, lit in a toggle's label while Cmd is down.
+ *
+ * The shortcut is only worth having if you can find it, and a printed list of
+ * three is a list nobody reads. Holding Cmd is the question -- "what can I do
+ * from here" -- so the answer is written on the controls themselves, in the
+ * letter you are about to press, and disappears when you let go.
+ *
+ * Green, which is the one colour in this interface that already means "nothing
+ * is asked of you": amber would put the hint in the channel a blocked agent
+ * owns. It is also the only thing green while Cmd is held that is not a state,
+ * which is why it lasts exactly as long as the key does.
+ *
+ * One label has no letter to light: a queue reads "3 QUEUED", with no O in it,
+ * and that is the moment the todos matter most. The whole label goes green
+ * there rather than nothing at all.
+ */
+const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => {
+  const at = lit ? text.toLowerCase().indexOf(PANEL_KEYS[panel]) : -1
+  /*
+   * One element around the whole label, in both states, and it is load-bearing.
+   * The toggle is a flex row with a 4px gap -- for the fork glyph after the
+   * word -- so every text node in it is a flex item: splitting "TERMINAL" into
+   * three to colour the E put two of those gaps inside the word and grew the
+   * button by 8px the moment Cmd went down. Measured: 86.98px to 95. Wrapped,
+   * the button has the one child it had before and nothing in the bar moves.
+   */
+  return (
+    <span className={lit && at === -1 ? 'tile__key' : undefined}>
+      {at === -1 ? (
+        text
+      ) : (
+        <>
+          {text.slice(0, at)}
+          <span className="tile__key">{text[at]}</span>
+          {text.slice(at + 1)}
+        </>
+      )}
+    </span>
+  )
+}
 
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
@@ -167,25 +214,26 @@ interface PanelCounts {
  * Exhaustive on purpose: adding a panel to PanelName will not compile until it
  * says what it is called.
  */
-const panelLabel = (panel: PanelName, counts: PanelCounts): React.ReactNode => {
+const panelLabel = (panel: PanelName, counts: PanelCounts, lit: boolean): React.ReactNode => {
+  const text = (label: string): React.ReactNode => mark(label, panel, lit)
   switch (panel) {
     case 'todo':
       // What is queued outranks what is merely written down: one is about to
       // happen to this worktree and the other is a list. With nothing queued it
       // counts itself like the terminals do.
-      if (counts.queued > 0) return counts.queued === 1 ? '1 Queued' : `${counts.queued} Queued`
-      if (counts.todos === 0) return 'Todo'
-      return counts.todos === 1 ? '1 Todo' : `${counts.todos} Todos`
+      if (counts.queued > 0) return text(counts.queued === 1 ? '1 Queued' : `${counts.queued} Queued`)
+      if (counts.todos === 0) return text('Todo')
+      return text(counts.todos === 1 ? '1 Todo' : `${counts.todos} Todos`)
     case 'terminals':
-      if (counts.terminals === 0) return 'Terminal'
-      return counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`
+      if (counts.terminals === 0) return text('Terminal')
+      return text(counts.terminals === 1 ? '1 Terminal' : `${counts.terminals} Terminals`)
     case 'files':
       /*
        * The count is uncommitted files, and it belongs on this toggle now that
        * the panel opens on them: a number on a control promises that clicking
        * shows you those N things, which is exactly what Changes mode does.
        */
-      if (counts.changes > 0) return counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`
+      if (counts.changes > 0) return text(counts.changes === 1 ? 'Files 1±' : `Files ${counts.changes}±`)
       /*
        * With nothing uncommitted, the same glyph the worktree's tab shows: this
        * branch has commits the default branch has not. One slot, the count when
@@ -196,12 +244,12 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): React.ReactNode => {
       if (counts.unmerged > 0) {
         return (
           <>
-            Files
+            {text('Files')}
             <ForkIcon className="tile__fork" size={12} />
           </>
         )
       }
-      return 'Files'
+      return text('Files')
   }
 }
 
@@ -255,6 +303,40 @@ const FILES_TREE_UNITS = 1
 export type PaneKind = 'claude' | PanelName
 
 export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktreeId}:${pane}`
+
+/**
+ * Whether Cmd is down right now.
+ *
+ * What it is for: while it is held, every shortcut the row has says where it
+ * goes -- the three toggles light their letter, and the two windows a Cmd+arrow
+ * step would land in show the arrow that lands there. Nothing is armed by this;
+ * it is a legend, and the keys work whether it is on screen or not.
+ *
+ * Released is the state that must never be wrong, so it is read from three
+ * things rather than from Meta's own keyup: any key event that reports no Cmd
+ * clears it, and so does the window losing focus -- Cmd+Tab away is exactly the
+ * gesture that would otherwise leave the legend lit over a page nobody is
+ * typing into, because the keyup lands in the application you switched to.
+ */
+const useMetaHeld = (): boolean => {
+  const [held, setHeld] = useState(false)
+  useEffect(() => {
+    const read = (event: KeyboardEvent): void => setHeld(event.metaKey)
+    const clear = (): void => setHeld(false)
+    // Capture, so a pane that stops a key from propagating -- the panel
+    // shortcuts above do exactly that -- cannot also stop the legend from
+    // seeing it.
+    window.addEventListener('keydown', read, true)
+    window.addEventListener('keyup', read, true)
+    window.addEventListener('blur', clear)
+    return () => {
+      window.removeEventListener('keydown', read, true)
+      window.removeEventListener('keyup', read, true)
+      window.removeEventListener('blur', clear)
+    }
+  }, [])
+  return held
+}
 
 type Pane =
   | { kind: 'claude'; key: string; worktree: Worktree; units: number }
@@ -425,6 +507,18 @@ interface WorktreeTileProps {
   expandedDirs: string[]
   /** Which face its files panel is showing. */
   filesMode: FilesMode
+  /** Cmd is down, so the panel toggles show the letter that opens them. */
+  keysLit: boolean
+  /**
+   * The Cmd+arrow step that lands in this worktree, drawn in front of its name
+   * while Cmd is held. Null for the windows neither step reaches.
+   *
+   * At most one of the two, always: a step goes to the pane next door, and the
+   * panes of one worktree are contiguous in the row -- so the window you would
+   * arrive in going left cannot also be the one you would arrive in going
+   * right unless you are already inside it, and then only one side of it is.
+   */
+  step: 'left' | 'right' | null
   /** The commit whose patch is showing, in Commits mode. Null for none. */
   commit: string | null
   /** The scroller, so the tile can tell whether it is worth mounting. */
@@ -473,6 +567,8 @@ const WorktreeTile = ({
   openFiles,
   expandedDirs,
   filesMode,
+  keysLit,
+  step,
   commit,
   scroller,
   onStart,
@@ -585,8 +681,28 @@ const WorktreeTile = ({
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
   const revealHint = `Click to bring ${worktree.name}'s window into view`
 
+  /*
+   * Where a Cmd+arrow step would land, said in the window it would land in.
+   *
+   * In front of the name because that is the window's own title -- the step is
+   * about arriving in this worktree, not about any one of its panes -- and
+   * because a legend that appears while you hold a key must not move the thing
+   * it annotates: it is laid over the label's left padding rather than pushed
+   * into the line, so no title shifts when Cmd goes down.
+   *
+   * The glyphs are the keys: the arrow you are about to press, not a triangle
+   * that means "play".
+   */
+  const stepHint =
+    step === null ? null : (
+      <span className="tile__step" aria-hidden="true">
+        {step === 'left' ? '\u2190' : '\u2192'}
+      </span>
+    )
+
   const identity = (
     <span className="tile__label">
+      {stepHint}
       {/* Dropped when the worktree already carries the project's name, since
           saying it twice tells you nothing the once did not. */}
       {project && project.name !== worktree.name && (
@@ -650,7 +766,7 @@ const WorktreeTile = ({
             onClick={() => onTogglePanel(panel)}
             title={on ? `Close ${PANEL_NOUN[panel]}` : `Show ${PANEL_NOUN[panel]}`}
           >
-            {panelLabel(panel, counts)}
+            {panelLabel(panel, counts, keysLit)}
           </button>
         )
       })}
@@ -1324,10 +1440,29 @@ export const Overview = ({
    * from reaching xterm, whose own handler cannot suppress a browser default
    * even when it returns false.
    */
+  /*
+   * The legend: Cmd is down, so say what the keys would do.
+   *
+   * The landing panes are read from `active` rather than from the DOM, which is
+   * the opposite of what the stepper does and right for the opposite reason.
+   * The stepper answers between two renders, where React's record can be a
+   * press behind; this is rendered, so by the time it is on screen `active` has
+   * committed -- and it is the only one of the two that re-renders the row when
+   * it changes, which is what makes the hint follow you as you walk.
+   */
+  const keysLit = useMetaHeld()
+  const at = keysLit
+    ? stops.findIndex((stop) => stop.worktree.id === active?.id && stop.kind === active.pane)
+    : -1
+  const landing = {
+    left: at > 0 ? stops[at - 1]?.worktree.id : undefined,
+    right: at === -1 ? undefined : stops[at + 1]?.worktree.id,
+  }
+
   useEffect(() => {
     const open = (event: KeyboardEvent): void => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      const panel = PANEL_KEYS[event.key]
+      const panel = PANEL_FOR_KEY.get(event.key)
       if (panel === undefined) return
       // A dialog keeps its keys for the same reason it keeps Cmd+arrow: it is
       // modal, and opening a panel behind the scrim acts on something nobody
@@ -1535,6 +1670,19 @@ export const Overview = ({
                       openFiles={openFilesByWorktree[worktree.id] ?? EMPTY_FILES}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
                       filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
+                      keysLit={keysLit}
+                      /*
+                       * Left wins when a worktree is both, which cannot happen
+                       * -- see the prop -- but leaves the rule written down
+                       * rather than depending on the layout to keep it true.
+                       */
+                      step={
+                        landing.left === worktree.id
+                          ? 'left'
+                          : landing.right === worktree.id
+                            ? 'right'
+                            : null
+                      }
                       commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
