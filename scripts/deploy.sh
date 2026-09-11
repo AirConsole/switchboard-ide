@@ -14,6 +14,17 @@ PORT="${SWB_PORT:-8084}"
 LOG=/tmp/swb-prod.log
 
 cd "$REPO"
+
+# Temporary, and deleted along with scripts/migrate-to-switchboard.sh once the
+# rename has landed. Without it, deploying first would start the new code
+# against a ~/.config/switchboard that does not exist yet: it would create an
+# empty state, start a second tmux server there, and leave every running
+# session orphaned on the old socket. Fail loudly before the build instead.
+if [ -e "$HOME/.config/ide-n-dream" ]; then
+  echo "deploy: ~/.config/ide-n-dream is still there -- run scripts/migrate-to-switchboard.sh first" >&2
+  exit 1
+fi
+
 pnpm build
 
 pid="$(ss -ltnp "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)"
