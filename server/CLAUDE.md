@@ -329,6 +329,11 @@ A kill emits no event of its own, so any route that ends a session must call
 | `IDN_DEBUG_SIZE` | unset | Log every size decision and its owner. |
 | `IDN_DEBUG_DISPATCH` | unset | Log why a queued todo did or did not go. |
 
+The `IDN_` prefix and that path are the old name's, and both are frozen: the
+socket lives at that path and a restarted server re-adopts its sessions through
+it, and an env var renamed out from under a caller falls back through `??`
+silently -- which for this one means writing into the live instance's state.
+
 All of it is in `config.ts`. `IDN_STATE_DIR` is the one that matters for
 testing: it moves both `state.json` and the tmux socket, which is what makes
 `scripts/scratch.sh` unable to touch a real instance. `IDN_CLAUDE_CMD` swaps the

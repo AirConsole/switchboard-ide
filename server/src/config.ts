@@ -16,6 +16,15 @@ export const config = {
   host: env.IDN_HOST ?? '127.0.0.1',
   port: int(env.IDN_PORT, 8084),
 
+  /*
+   * Still named for the old name, and it has to stay that way. This directory
+   * holds the tmux socket, and a server that restarts re-adopts its running
+   * sessions by connecting to that exact path -- point it somewhere new and
+   * every session on the machine stays alive and becomes invisible. Frozen for
+   * the same reason `idFor` is, and the `IDN_` prefix below with it: renaming
+   * an env var that is read through `??` fails silently, and the one that would
+   * fail is this one, into the live instance's state.
+   */
   stateDir: env.IDN_STATE_DIR ?? join(homedir(), '.config', 'ide-n-dream'),
 
   tmuxConf: env.IDN_TMUX_CONF ?? new URL('../tmux.conf', import.meta.url).pathname,

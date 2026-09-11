@@ -1,4 +1,4 @@
-import type { Session } from '@ide-n-dream/shared'
+import type { Session } from '@switchboard/shared'
 
 /**
  * Label each terminal with what it is running.

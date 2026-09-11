@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Project } from '@ide-n-dream/shared'
+import type { Project } from '@switchboard/shared'
 import { api } from '../api.js'
 import { useEscape } from './useEscape.js'
 

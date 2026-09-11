@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { relative } from 'node:path'
 import { promisify } from 'node:util'
-import type { Commit, FileChange, WorktreeChanges } from '@ide-n-dream/shared'
+import type { Commit, FileChange, WorktreeChanges } from '@switchboard/shared'
 import { LOCAL_HEAD_BASE, currentBranch, resolveDefaultBase } from './worktree.js'
 import { containedPath } from '../files.js'
 import { HttpError } from '../http-error.js'

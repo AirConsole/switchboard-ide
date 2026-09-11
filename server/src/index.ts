@@ -161,4 +161,4 @@ try {
   app.log.error({ err }, `cannot listen on ${config.host}:${config.port}`)
   process.exit(1)
 }
-app.log.info(`ide-n-dream on http://${config.host}:${config.port} (tmux socket ${tmuxSocketPath})`)
+app.log.info(`Switchboard on http://${config.host}:${config.port} (tmux socket ${tmuxSocketPath})`)

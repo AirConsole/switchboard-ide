@@ -13,7 +13,7 @@ import type {
   Worktree,
   WorktreeChanges,
   WorktreeTodo,
-} from '@ide-n-dream/shared'
+} from '@switchboard/shared'
 
 /**
  * A failed request, carrying the server's machine-readable `code` so callers can

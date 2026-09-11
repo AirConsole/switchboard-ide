@@ -6,7 +6,7 @@ import type {
   Session,
   Worktree,
   WorktreeTodo,
-} from '@ide-n-dream/shared'
+} from '@switchboard/shared'
 import {
   TerminalView,
   TERMINAL_FONT_FAMILY,

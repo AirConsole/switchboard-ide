@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# A throwaway ide-n-dream instance, for developing the IDE with the IDE.
+# A throwaway Switchboard instance, for developing the IDE with the IDE.
 #
 # Every checkout gets its own. The state directory, the tmux socket, the scratch
 # repositories and the port are all derived from the path this script lives in,

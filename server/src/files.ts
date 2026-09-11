@@ -11,7 +11,7 @@ import type {
   FileRev,
   FileSaved,
   FileUnchanged,
-} from '@ide-n-dream/shared'
+} from '@switchboard/shared'
 import { config } from './config.js'
 import { HttpError } from './http-error.js'
 import { parseStatus } from './git/changes.js'

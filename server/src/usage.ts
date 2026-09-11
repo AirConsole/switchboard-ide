@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import type { Usage, UsageLimit } from '@ide-n-dream/shared'
+import type { Usage, UsageLimit } from '@switchboard/shared'
 import { config } from './config.js'
 
 /**

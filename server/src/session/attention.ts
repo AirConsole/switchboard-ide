@@ -1,4 +1,4 @@
-import type { AttentionState, SessionKind } from '@ide-n-dream/shared'
+import type { AttentionState, SessionKind } from '@switchboard/shared'
 import type { TurnState } from './claude.js'
 
 /** Output newer than this means the agent is actively producing. */

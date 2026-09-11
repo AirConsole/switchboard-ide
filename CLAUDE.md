@@ -1,4 +1,4 @@
-# ide-n-dream
+# Switchboard
 
 A web IDE for running several Claude Code agents at once, one per git worktree.
 Its job is to tell you which agent is blocked and get you into that worktree
@@ -66,7 +66,8 @@ The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
   again detached. It is never automatic and never run from a worktree.
 - **Never touch their project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
-  `tmux kill-server` on `~/.config/ide-n-dream/tmux.sock`.
+  `tmux kill-server` on `~/.config/ide-n-dream/tmux.sock` (still the old
+  name's path, deliberately -- see `server/src/config.ts`).
 - **Do not test against :8084.** Clicks there fight the user for the same UI
   state, and a browser tab of your own competes for terminal geometry. Use:
 
@@ -223,7 +224,7 @@ where they are.
 
 ## Not built yet
 
-- Remote projects: a project on another ide-n-dream server, with this server as
+- Remote projects: a project on another Switchboard server, with this server as
   the gateway. The seams are named in `server/CLAUDE.md`.
 - Registering as a Claude Code IDE (`~/.claude/ide/<port>.lock`) so agents get
   `openDiff` and diagnostics against this IDE.

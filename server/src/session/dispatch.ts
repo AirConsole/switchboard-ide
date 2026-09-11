@@ -1,4 +1,4 @@
-import type { WorktreeTodo } from '@ide-n-dream/shared'
+import type { WorktreeTodo } from '@switchboard/shared'
 import type { StateStore } from '../state.js'
 import type { SessionEngine } from './engine.js'
 import { turnState } from './claude.js'

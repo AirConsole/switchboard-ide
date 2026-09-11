@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FileEntry, FileHit, FilesMode } from '@ide-n-dream/shared'
+import type { FileEntry, FileHit, FilesMode } from '@switchboard/shared'
 import {
   ChangesList,
   CommitsList,

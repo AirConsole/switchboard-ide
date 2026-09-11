@@ -16,7 +16,7 @@ importers:
       '@fastify/websocket':
         specifier: ^11.3.0
         version: 11.3.0
-      '@ide-n-dream/shared':
+      '@switchboard/shared':
         specifier: workspace:*
         version: link:../shared
       '@xterm/addon-serialize':
@@ -80,7 +80,7 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.11
         version: 6.43.11
-      '@ide-n-dream/shared':
+      '@switchboard/shared':
         specifier: workspace:*
         version: link:../shared
       '@lezer/highlight':

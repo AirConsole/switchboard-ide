@@ -170,7 +170,7 @@ export interface Session {
    * what it is doing rather than an arbitrary number.
    */
   command?: string
-  /** Ready-to-paste escape hatch, e.g. `tmux -L ide-n-dream attach -t idn-V1StGXR8`. */
+  /** Ready-to-paste escape hatch, e.g. `tmux -S <socket> attach -t idn-V1StGXR8`. */
   attachCommand: string
 }
 

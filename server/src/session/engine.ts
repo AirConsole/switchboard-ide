@@ -6,8 +6,8 @@ import type {
   SessionKind,
   SessionLiveness,
   ServerMsg,
-} from '@ide-n-dream/shared'
-import { encodeOutputFrame } from '@ide-n-dream/shared'
+} from '@switchboard/shared'
+import { encodeOutputFrame } from '@switchboard/shared'
 import { config } from '../config.js'
 import { TerminalMirror } from './mirror.js'
 import { classify, REPAINT_QUIET_MS, WORKING_WINDOW_MS } from './attention.js'
@@ -688,6 +688,9 @@ export class SessionEngine {
 
   async create(req: CreateSessionRequest): Promise<Session> {
     const id = newId()
+    // `idn-` is the old name's prefix and is frozen: the server finds its own
+    // sessions on the socket by this prefix after a restart, so changing it
+    // orphans everything already running. Cosmetic, invisible, not worth it.
     const tmuxName = `idn-${id}`
     const cols = req.cols ?? DEFAULT_COLS
     const rows = req.rows ?? DEFAULT_ROWS

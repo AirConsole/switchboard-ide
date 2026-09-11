@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@ide-n-dream/shared'
+import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
 import { ForkIcon } from './ForkIcon.js'

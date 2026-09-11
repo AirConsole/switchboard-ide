@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
-import type { Session } from '@ide-n-dream/shared'
+import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import '@xterm/xterm/css/xterm.css'
 

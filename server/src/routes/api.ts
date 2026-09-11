@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { SessionKind } from '@ide-n-dream/shared'
+import type { SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
