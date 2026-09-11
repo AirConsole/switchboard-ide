@@ -203,12 +203,22 @@ const panelLabel = (panel: PanelName, counts: PanelCounts): React.ReactNode => {
  * Halving the atom fixes it without changing any of the arithmetic. Everything
  * below still counts whole units; there are simply twice as many, so a pane can
  * ask for three of them -- a spot and a half -- and a worktree can be two and a
- * half spots wide. Nothing may ask for one: a single unit is half a pane, and
- * the 80-column floor is a promise about panes.
+ * half spots wide. Nothing you read code in may ask for one: a single unit is
+ * half a pane, and the 80-column floor is a promise about panes. The two that
+ * do are chrome -- the files tree by itself, and the placeholder below.
  */
 const PANE_UNITS: Record<'claude' | 'add' | PanelName, number> = {
   claude: 2,
-  add: 2,
+  /*
+   * The new-worktree placeholder is one unit, not two.
+   *
+   * It holds a +, a line of label and a sentence of hint -- nothing that has to
+   * be 80 columns wide, and nothing that gets better for being wider. At two it
+   * was a whole empty pane at the end of the row, taking the space a real
+   * worktree could have used, on a row you scroll precisely because there is
+   * never enough of it.
+   */
+  add: 1,
   todo: 2,
   terminals: 2,
   files: 3,
