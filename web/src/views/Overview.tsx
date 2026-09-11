@@ -118,17 +118,21 @@ const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
 /**
  * The key that opens each panel, with Cmd held.
  *
- * Mnemonics, not positions: terminals would want Cmd+T, which is the one
- * shortcut on this list the browser will not give up, so the terminals take the
- * other letter in the word you say out loud -- and iTerm and Terminal both use
- * Cmd+E for something in a split, so the finger is already trained. Todos are
- * Cmd+O and files Cmd+F.
+ * Mnemonics, not positions, and every one of them a letter inside the word the
+ * toggle already shows. Todos are Cmd+O and files Cmd+F.
  *
- * Cmd alone, never Ctrl. Ctrl+E is end-of-line and Ctrl+F forward-character in
- * readline and in Claude's own prompt, and both are typed in these windows all
- * day; a shortcut that ate them would be a shortcut that broke the terminal.
+ * Terminals are Cmd+I, and are on their third letter. T is what the word wants
+ * and the browser will not give up Cmd+T; E was next and did not survive
+ * contact -- Claude's own browser extension takes Cmd+E, and a shortcut another
+ * tool holds is a shortcut that does nothing here. I is the next letter in
+ * TERMINAL that nothing else is using.
+ *
+ * Cmd alone, never Ctrl, and Cmd+I is the sharpest case for that rule on the
+ * list: Ctrl+I *is* Tab -- the same byte, 0x09 -- so binding it would have
+ * taken completion away from every shell and every prompt in the row. Ctrl+E is
+ * end-of-line and Ctrl+F forward-character for the same reason.
  */
-const PANEL_KEYS: Record<PanelName, string> = { terminals: 'e', todo: 'o', files: 'f' }
+const PANEL_KEYS: Record<PanelName, string> = { terminals: 'i', todo: 'o', files: 'f' }
 
 /** The same table read the way a keystroke arrives. */
 const PANEL_FOR_KEY = new Map<string, PanelName>(
@@ -141,7 +145,9 @@ const PANEL_FOR_KEY = new Map<string, PanelName>(
  * The shortcut is only worth having if you can find it, and a printed list of
  * three is a list nobody reads. Holding Cmd is the question -- "what can I do
  * from here" -- so the answer is written on the controls themselves, in the
- * letter you are about to press, and disappears when you let go.
+ * letter you are about to press, and disappears when you let go. In the window
+ * you are in and nowhere else: "from here" is one worktree, and the key does
+ * nothing to the other three.
  *
  * Greyscale, and it has to be: the two colours in this interface are states you
  * scan a row of agents for, and a legend is not a state. So the letter is
@@ -524,7 +530,15 @@ interface WorktreeTileProps {
   expandedDirs: string[]
   /** Which face its files panel is showing. */
   filesMode: FilesMode
-  /** Cmd is down, so the panel toggles show the letter that opens them. */
+  /**
+   * Cmd is down, so the panel toggles may show the letter that opens them.
+   *
+   * "May", because only the window you are in does: the shortcut acts on one
+   * worktree, and lighting the same three letters in every window on screen
+   * says a key does something here that it does not do. It is also a row of
+   * agents, and four copies of a legend is four things the eye has to dismiss
+   * to find the one that is blocked on you.
+   */
   keysLit: boolean
   /**
    * The Cmd+arrow step that lands in this worktree, drawn in front of its name
@@ -783,7 +797,7 @@ const WorktreeTile = ({
             onClick={() => onTogglePanel(panel)}
             title={on ? `Close ${PANEL_NOUN[panel]}` : `Show ${PANEL_NOUN[panel]}`}
           >
-            {panelLabel(panel, counts, keysLit)}
+            {panelLabel(panel, counts, keysLit && current)}
           </button>
         )
       })}
@@ -1435,7 +1449,7 @@ export const Overview = ({
   }, [stops, active, pitch, width, onReveal])
 
   /*
-   * Cmd+E, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
+   * Cmd+I, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
    *
    * The keyboard version of the three toggles in that window's own bar, and
    * the same click: pressed on the panel already showing, it closes it and
