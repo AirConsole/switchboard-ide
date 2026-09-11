@@ -141,7 +141,9 @@ const PANEL_FOR_KEY = new Map<string, PanelName>(
  * The shortcut is only worth having if you can find it, and a printed list of
  * three is a list nobody reads. Holding Cmd is the question -- "what can I do
  * from here" -- so the answer is written on the controls themselves, in the
- * letter you are about to press, and disappears when you let go.
+ * letter you are about to press, and disappears when you let go. In the window
+ * you are in and nowhere else: "from here" is one worktree, and the key does
+ * nothing to the other three.
  *
  * Greyscale, and it has to be: the two colours in this interface are states you
  * scan a row of agents for, and a legend is not a state. So the letter is
@@ -524,7 +526,15 @@ interface WorktreeTileProps {
   expandedDirs: string[]
   /** Which face its files panel is showing. */
   filesMode: FilesMode
-  /** Cmd is down, so the panel toggles show the letter that opens them. */
+  /**
+   * Cmd is down, so the panel toggles may show the letter that opens them.
+   *
+   * "May", because only the window you are in does: the shortcut acts on one
+   * worktree, and lighting the same three letters in every window on screen
+   * says a key does something here that it does not do. It is also a row of
+   * agents, and four copies of a legend is four things the eye has to dismiss
+   * to find the one that is blocked on you.
+   */
   keysLit: boolean
   /**
    * The Cmd+arrow step that lands in this worktree, drawn in front of its name
@@ -783,7 +793,7 @@ const WorktreeTile = ({
             onClick={() => onTogglePanel(panel)}
             title={on ? `Close ${PANEL_NOUN[panel]}` : `Show ${PANEL_NOUN[panel]}`}
           >
-            {panelLabel(panel, counts, keysLit)}
+            {panelLabel(panel, counts, keysLit && current)}
           </button>
         )
       })}

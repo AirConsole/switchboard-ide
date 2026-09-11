@@ -192,8 +192,8 @@ line below is a mistake made in this codebase, not a hypothetical:
   green (`--done`). Nothing running is not done, and stays grey. The two are
   matched in luminance so neither outshouts the other. The keyboard legend is
   what the rule looks like when it is kept: holding Cmd lights the letter that
-  opens each panel and draws an arrow in the two windows a Cmd+arrow step would
-  land in, and all of it is the grey ladder -- --bone on a word stepped down to
+  opens each panel of the window you are in, and draws an arrow in the two
+  windows a Cmd+arrow step would land in, and all of it is the grey ladder -- --bone on a word stepped down to
   --graphite -- because where a key would take you is not a state you scan a row
   of agents for. The exceptions are both content rather than chrome, and are read the
   way terminal output is: a diff's own green and red, and a source file's syntax

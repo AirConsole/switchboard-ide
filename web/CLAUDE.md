@@ -466,9 +466,13 @@ bubble-phase listener, and put no character into the shell's prompt
 The shortcuts are only worth having if you can find them, and a printed list of
 five is a list nobody reads. So holding Cmd is treated as the question "what can
 I do from here", and the answer is written on the controls themselves: each
-panel toggle lights its letter -- T**E**RMINAL, T**O**DO, **F**ILES -- and the
-two windows a Cmd+arrow step would land in show that arrow in front of their
-name. Nothing is armed by it; the keys work whether the legend is on screen or
+panel toggle **of the window you are in** lights its letter -- T**E**RMINAL,
+T**O**DO, **F**ILES -- and the two windows a Cmd+arrow step would land in show
+that arrow in front of their name. The letters are one window's because the
+shortcut is: it opens a panel on the worktree that has the keyboard, and the
+same three letters lit across the row would promise something the key does not
+do. The arrows are the opposite case -- they are about arriving somewhere else,
+so they are drawn where you would arrive. Nothing is armed by it; the keys work whether the legend is on screen or
 not.
 
 It is greyscale, and that is the colour rule rather than an accident: amber and
