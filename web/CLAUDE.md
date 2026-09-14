@@ -231,6 +231,19 @@ at all if it is already there (`nearestOffset`, `wholeOnScreen`). A tab click, a
 Cmd+arrow step, waking, and opening a panel all mean that same thing, so
 whatever you were already looking at stays in front of you when it can.
 
+**Focus landing in a pane means it too** (`revealTile`). Navigation lands the
+row on a tile boundary, but a drag or a wheel leaves it wherever the gesture
+ended, so the window you reach for is often the one hanging half off an edge --
+and the caret used to go into a pane a third of which was on screen and stay
+there. It reaches the same two functions, so a window you can already see whole
+does not move. It is deliberately *not* routed through `onReveal`: that hands
+the keyboard to the pane it names, and this is triggered by the keyboard
+arriving, so re-handing it would take the caret off the file in the tree or the
+terminal tab that was actually clicked. Measured at 1100px with 713px tiles:
+clipped on the right 0 -> 363 and whole, clipped on the left 363 -> 0 and whole,
+already whole 363 -> 363, and `activeElement` the clicked terminal's own
+textarea throughout.
+
 `measureMonoCharWidth` is **floored** on purpose. xterm rasterises glyphs into
 an atlas and blits per cell, so a cell is a whole number of pixels: canvas says
 8.429px where xterm lays out 8. This value now decides how many tiles the window

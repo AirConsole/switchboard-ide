@@ -1324,6 +1324,45 @@ export const Overview = ({
   }, [scrollTo, target, pitch, width, units])
 
   /*
+   * Clicking into a window you can only see part of brings the rest of it over.
+   *
+   * Navigation lands the row on a tile boundary, but a drag or a wheel leaves
+   * it wherever the gesture ended -- so the window you reach for is often the
+   * one hanging half off an edge, and the caret used to go into a pane a third
+   * of which was on screen and stay there. Clicking into a pane says the same
+   * thing clicking its tab says: this is the one I am working in. So it means
+   * what every other navigation here means, and reaches the same two functions:
+   * the least movement that brings the whole tile over, and nothing at all for
+   * one you can already see.
+   *
+   * The whole tile rather than the pane that was clicked, which is the rule the
+   * row has everywhere else -- a tile is never wider than the window, so the
+   * pane comes with it, and stopping at the pane's own edge would be this one
+   * action deliberately leaving a window half-cut.
+   *
+   * It does not go through `onReveal` and the request above, deliberately.
+   * That hands the keyboard to the pane it names, and this is triggered *by*
+   * the keyboard arriving -- re-handing it would take the caret off whatever
+   * inside the pane was actually clicked, a file in the tree or one terminal's
+   * tab among several. Measured: after a click that scrolls, `activeElement` is
+   * still the terminal's own textarea, and still the todo box when that is what
+   * was clicked.
+   *
+   * Focus is the trigger rather than the click, which is what it means to be
+   * working in a pane -- and the click on a pane's bar is already a reveal of
+   * its own. The one thing that does nothing is a click on a part of a panel
+   * that takes no focus, empty space under a short list of todos being the only
+   * real example.
+   */
+  const revealTile = (tile: { at: number; units: number }): void => {
+    const grid = gridRef.current
+    if (!grid || width === 0) return
+    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
+    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), units)
+    grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
+  }
+
+  /*
    * Cmd+Left and Cmd+Right step through the worktrees.
    *
    * The terminals have no claim on it: xterm produces nothing at all for a
@@ -1668,6 +1707,10 @@ export const Overview = ({
                           worktree.id,
                           pane === undefined || pane.kind === 'add' ? 'claude' : pane.kind,
                         )
+                        // Not for a tile on its way out: it is held at its old
+                        // place by the motion, and its `at` names a run of the
+                        // row the rest of the windows have already closed over.
+                        if (!slot.leaving) revealTile(slot.data)
                       }
                 }
                 className={slot.leaving ? 'slot slot--leaving' : 'slot'}
