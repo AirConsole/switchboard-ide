@@ -241,10 +241,11 @@ line below is a mistake made in this codebase, not a hypothetical:
   opens each panel of the window you are in, and draws an arrow in the two
   windows a Cmd+arrow step would land in, and all of it is the grey ladder -- --bone on a word stepped down to
   --graphite -- because where a key would take you is not a state you scan a row
-  of agents for. The exceptions are both content rather than chrome, and are read the
-  way terminal output is: a diff's own green and red, and a source file's syntax
-  colour. The rule still governs the interface around them, and neither
-  exception may reach for amber or green — the files pane's palette is the terminal's own, minus its green, so that a
+  of agents for. The exceptions are all content rather than chrome, and are read the
+  way terminal output is: a diff's own green and red, a source file's syntax
+  colour, and an image the files pane is showing, which is the file itself and
+  can be any colour a file is. The rule still governs the interface around them, and the two the
+  interface itself draws — the patch and the syntax — may not reach for amber or green: the files pane's palette is the terminal's own, minus its green, so that a
   string constant cannot catch the eye that is scanning a row of agents.
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the

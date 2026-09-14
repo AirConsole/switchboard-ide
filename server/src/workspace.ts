@@ -15,7 +15,7 @@ import type {
   WorktreeTodo,
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
-import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
+import { findFiles, listDirectory, mediaFile, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
@@ -561,6 +561,21 @@ export class Workspace {
   ): Promise<FileContent | FileUnchanged> {
     const { worktree } = await this.resolve(worktreeId)
     return readTextFile(worktree.path, path, ifNotRev)
+  }
+
+  /**
+   * Where a file the browser can draw itself is, and what to serve it as.
+   *
+   * The bytes do not come back through here: the route streams them. What the
+   * funnel owns is the same thing it owns for every other file operation --
+   * which worktree, and therefore which root the path is contained against.
+   */
+  async mediaFile(
+    worktreeId: string,
+    path: string,
+  ): Promise<{ file: string; type: string; size: number }> {
+    const { worktree } = await this.resolve(worktreeId)
+    return mediaFile(worktree.path, path)
   }
 
   /** Save a file, refusing if it moved on disk since it was read. */

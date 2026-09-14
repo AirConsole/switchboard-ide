@@ -181,6 +181,18 @@ export const api = {
     ),
 
   /**
+   * Where the browser fetches a media file's bytes from.
+   *
+   * A URL rather than a request, because what asks for it is an `<img src>`.
+   * The rev goes in it so that a file the agent regenerates is a different URL:
+   * the element repaints on the next poll instead of showing what the browser
+   * still has.
+   */
+  rawFileUrl: (worktreeId: string, path: string, rev: string) =>
+    `/api/worktrees/${worktreeId}/raw?path=${encodeURIComponent(path)}` +
+    `&rev=${encodeURIComponent(rev)}`,
+
+  /**
    * Save a file, refused with 409 `stale-file` if it moved since it was read.
    *
    * There is no force flag: the refusal carries the file's current rev, so

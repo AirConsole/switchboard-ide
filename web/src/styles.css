@@ -3177,6 +3177,57 @@ button {
   min-height: 0;
 }
 
+/*
+ * A file the browser draws itself.
+ *
+ * The box is the whole of what is left of the pane, and the picture is centred
+ * in it with its caption under it. `min-height: 0` for the same reason the
+ * editor's host needs it: without it the flex item is floored at its content's
+ * height and a tall image pushes the caption out of the pane instead of
+ * shrinking.
+ */
+.files__media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+/*
+ * Scaled down to fit, never up.
+ *
+ * Both caps are needed: width alone leaves a tall image running out of the
+ * bottom of the pane, and height alone leaves a wide one running out of the
+ * side. `object-fit: contain` is what keeps the aspect ratio while both apply,
+ * and `min-height: 0` lets the flex item actually shrink to them.
+ *
+ * Nothing scales it up: a 16px favicon is drawn at 16px. Filling the column
+ * with it would be inventing detail the file does not have.
+ */
+.files__image {
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  /* A transparent PNG would otherwise be read against whatever is behind it;
+     this is the same ground the editor draws code on. */
+  background: var(--level-panel);
+}
+
+/* What the picture cannot say: its real size, and the file's. The interface's
+   own voice, so the mono face `.files__file` sets is restated away. */
+.files__media-note {
+  flex: none;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
 /* What is in the way of saving, said above the file and never over it. Shaped
    like the name of a file inside a patch, because it is the same kind of thing:
    a label for the content below it. */

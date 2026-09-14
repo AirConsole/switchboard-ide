@@ -1,3 +1,4 @@
+import { createReadStream } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
@@ -115,6 +116,11 @@ const fileQuery = z.object({
   /** The rev the client already holds; unchanged files then cost one stat. */
   ifNotRev: z.string().optional(),
 })
+/**
+ * `/raw`'s query. `rev` is accepted and ignored -- it is a cache key the client
+ * puts in the URL, not something the server reads; see the route.
+ */
+const rawQuery = z.object({ path: filePath.min(1), rev: z.string().optional() })
 const saveFileBody = z.object({
   path: filePath.min(1),
   /** No `.min(1)`: saving a file empty is a legitimate edit. */
@@ -318,6 +324,49 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const { path, ifNotRev } = fileQuery.parse(request.query)
     return workspace.readFile(id, path, ifNotRev)
+  })
+
+  /*
+   * The bytes of a file the browser draws itself: an image, today.
+   *
+   * Separate from `/file` because it is the one response here that is not JSON
+   * -- base64 through the snapshot would be a third larger and would sit in two
+   * heaps on the way -- and because an `<img src>` is exactly a GET the browser
+   * makes on its own.
+   *
+   * `rev` is not read. It is in the URL so that a file the agent regenerates is
+   * a *different* URL and repaints on the next poll, which is what a cache is
+   * otherwise entitled to prevent. The type comes from our own extension table,
+   * never from the client.
+   *
+   * Three headers, all of them about the same worry -- this serves bytes from
+   * the worktree on the origin the IDE itself runs on:
+   *
+   * - `nosniff`, so a file whose bytes disagree with its extension is not
+   *   re-interpreted as something executable.
+   * - a `default-src 'none'; sandbox` CSP, which is what makes navigating
+   *   straight to this URL inert. An `<img>` cannot run script in any case, but
+   *   a person pasting the link into the address bar is a different renderer.
+   * - `inline` disposition without a filename, since nothing here is a download
+   *   and a filename header is one more thing to have to escape correctly.
+   */
+  app.get('/api/worktrees/:id/raw', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { path } = rawQuery.parse(request.query)
+    const { file, type, size } = await workspace.mediaFile(id, path)
+    return reply
+      .type(type)
+      .header('content-length', size)
+      .header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'none'; sandbox")
+      .header('content-disposition', 'inline')
+      /*
+       * Never stored. The URL already changes whenever the file does, so a
+       * cache buys one fetch per image per edit -- and the thing it would be
+       * keeping on disk is the contents of someone's working tree.
+       */
+      .header('cache-control', 'no-store')
+      .send(createReadStream(file))
   })
 
   /*
