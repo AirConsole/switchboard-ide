@@ -41,9 +41,11 @@ every tab now owns its own width at its left edge, its centre and its right,
 `elementFromPoint`-measured.
 
 What is **not** copied is Chrome's colour. A tab group there picks a hue; here
-the sleeve is grey, and the only colour on a tab is its state bullet: amber
-blocked on you, green done, grey working, a hollow ring when nothing is running.
-Identity is not what colour is for in this interface.
+the sleeve is grey, and the only colour on a tab is its **state bar** — 4px down
+its leading edge: amber blocked on you, green done, grey working, and nothing at
+all when nothing is running. (A blocked tab's *label* is amber too, which is the
+one place the state reaches past that bar.) Identity is not what colour is for
+in this interface.
 
 The pieces, and why each is the way it is:
 
@@ -63,6 +65,22 @@ The pieces, and why each is the way it is:
   one shape with a seam, which is what retired Chrome's separator: a 1px mark
   hung off each tab's left edge and hidden either side of the active and hovered
   ones, three rules doing what a gap does.
+- **The status is a bar, not the fill**, and that was the question. The fill is
+  the loudest channel on the strip — amber over the sleeve measures 9.70:1 where
+  every other step here is 1.18 to 1.54 — and it is already spoken for: it says
+  which tab you are in. Filling a tab with its status costs that twice, since
+  `--bone` on `--signal` is 1.38:1 and on `--done` 1.36:1, so those tabs' text
+  has to flip to `--ink` and the label's own 1.92:1 "you are in this one" step
+  has nowhere left to go. Four candidates were drawn before this one: a bone ring
+  for the active tab dies at 1.38:1 on exactly the amber tab it matters most on,
+  and the only active signal that survives a coloured fill is **shape** —
+  square shoulders on the active tab — which is the honest answer if the fill is
+  ever wanted for status after all. The bar gets roughly four times the old
+  bullet's area for none of it, and a severity stripe is nowhere a way of saying
+  "selected". It is an inset box-shadow on `.tab`, so the pill's 9px radius clips
+  it with nothing to keep in step and the menu's stacked tabs get it from the
+  same rule. Measured 1:1 off the rendered pixels: exactly 4px of `#ffb454` at
+  mid-height, 3px at the shoulders where the radius eats it.
 - **Removal only asks what it has to.** `removalQuestions` reads the same two
   counts the tab shows: uncommitted work is what makes git refuse without
   `--force`, and unmerged commits are what make deleting the branch a decision.
@@ -115,12 +133,12 @@ The pieces, and why each is the way it is:
   tab's title.
 - **The zZ dropdown is the same tabs, stacked.** A sleeping worktree is one of
   these tabs that happens not to be in the row, so it is drawn by the same
-  `tab()`: the sleeve under it, the bullet, the zZ, the name and its marks, the
+  `tab()`: the sleeve under it, the state bar, the zZ, the name and its marks, the
   hover panel — only fully round rather than square-shouldered, since nothing in
   a list stands on a floor. It used to invent a row of its own, with the state
   spelled out in words and the prompt on a second line, which made one worktree
   look like two different objects depending on where you met it; both facts are
-  still there, on the bullet and in the title. The menu takes its width from its
+  still there, on the bar and in the title. The menu takes its width from its
   widest row up to 420px, where the strip caps a tab at 200: this is a list with
   one job, and a sleeper is the worktree you have least chance of recognising.
 - **Widths come from a cap that tightens with the count**, `data-tight` on the
