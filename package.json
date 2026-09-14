@@ -11,8 +11,15 @@
     "build": "pnpm --filter @switchboard/shared build && pnpm --filter @switchboard/web build && pnpm --filter @switchboard/server build",
     "start": "pnpm --filter @switchboard/server start",
     "typecheck": "pnpm --filter @switchboard/shared build && pnpm -r typecheck",
+    "test": "pnpm --filter @switchboard/shared build && vitest run",
+    "test:watch": "pnpm --filter @switchboard/shared build && vitest",
+    "coverage": "pnpm --filter @switchboard/shared build && vitest run --coverage",
     "postinstall": "node scripts/ensure-node-pty.mjs",
     "ensure-native": "node scripts/ensure-node-pty.mjs"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.0.0",
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=22"
