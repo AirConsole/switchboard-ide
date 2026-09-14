@@ -1714,7 +1714,24 @@ button {
   gap: 2px;
 }
 
-.projpane__list .tab {
+/*
+ * A tab that is not in the strip: the project pane's list, and the todo
+ * panel's Move to.
+ *
+ * One rule for both, because a row's height here has to be *declared* and the
+ * two lists would otherwise drift. A tab in the strip takes its height from the
+ * bar -- 35px, the 38px bar less the 3px of sleeve above it -- and a row in a
+ * list has no bar to take it from, so left alone it is one 13px line, 15px
+ * tall. That is not merely short: 9px of radius top and bottom is then the
+ * whole of its left edge, so the state bar has no straight run to fill and
+ * comes out a crescent while the strip beside it draws a bar.
+ *
+ * Measured after the zZ dropdown was retired into the project pane, which took
+ * this rule with it and left Move to -- the list that inherited the dropdown's
+ * shape -- drawing 15px rows against the strip's 35px.
+ */
+.projpane__list .tab,
+.menu--tabs .tab {
   width: auto;
   max-width: none;
   min-height: 30px;
@@ -2836,13 +2853,15 @@ button {
 }
 
 /*
- * The sleeping-worktrees dropdown: the same tabs, stacked.
+ * A dropdown whose rows are worktrees: the same tabs, stacked.
  *
- * It used to invent a row of its own -- the state spelled out in words, the
- * prompt on a second line -- which made one worktree look like two different
- * objects depending on where you met it. The rows are `.tab`s now, so the
- * sleeve goes under them and everything a tab knows how to say it says here
- * too.
+ * It was the sleeping-worktrees dropdown first, and the todo panel's Move to
+ * inherited the shape when it needed the same list; the sleepers have since
+ * moved into the project pane, so Move to is what is left here. The rows are
+ * `.tab`s in both, so the sleeve goes under them and everything a tab knows how
+ * to say it says here too -- which is the point, and is what the dropdown got
+ * wrong when it invented a row of its own with the state spelled out in words
+ * and the prompt on a second line.
  */
 .menu--tabs {
   gap: 2px;
@@ -2857,8 +2876,7 @@ button {
   /*
    * As wide as its widest row, up to a cap. A tab in the strip is capped at
    * 200px because the strip has to hold every awake worktree; this is a list
-   * with one job, and a sleeping worktree is the one you have least chance of
-   * recognising, so it gets the width to say its whole name.
+   * with one job, so it gets the width to say a whole name.
    */
   width: max-content;
   max-width: 420px;
@@ -2869,10 +2887,6 @@ button {
   border-color: var(--rule-bright);
 }
 
-/* A tab in the strip stands on the strip's floor, which is where its square
-   shoulders and its feet come from. Nothing here stands on anything: these are
-   loose tabs in a list, so they take the fully round shape a hovered tab has,
-   and they fill the menu rather than sharing a row. */
 /* -------------------------------------------------------------- the files -- */
 
 /*
