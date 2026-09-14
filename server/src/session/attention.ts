@@ -34,26 +34,88 @@ export const REPAINT_QUIET_MS = 500
  * text loses them.
  *
  * They are *not* safe over the whole screen, which is where they used to be
- * read. Two of them are ordinary English -- `thisTurn` below has the measured
+ * read. Some of them are ordinary English -- `thisTurn` below has the measured
  * case -- and a screen is a scrollback, so every turn Claude has finished is
- * still on it. The `❯` glyph is the exception either way: it belongs to the
+ * still on it. That is also why `looksLikePrompt` will not consult any of them
+ * while the input box is on screen: the wording is Claude's as often as it is a
+ * dialog's, and the box is the thing that says which. The `❯` glyph is the exception either way: it belongs to the
  * input box and to a dialog's selected row, and Claude never prints it.
+ *
+ * `Do you (want to|trust)` used to head this list and is gone, because scoping
+ * to the turn was not enough for it: a dialog that has been *answered* stays on
+ * screen inside the same turn, and the phrase is one Claude itself writes.
+ * Measured on a live worktree -- an AskUserQuestion reading `How do you want to
+ * play the service worker?` was answered at 07:56:33 and the window stayed
+ * amber until the turn's done line landed at 07:59:21, three minutes of "needs
+ * you" over an agent that was deploying.
+ *
+ * Deleting it costs nothing, which was measured too, on Claude Code v2.1.270:
+ *   - the write-permission dialog says `Do you want to create b.txt?` *and*
+ *     draws `❯ 1. Yes`, so `❯ N.` already has it;
+ *   - the trust-folder dialog no longer contains the phrase at all -- it asks
+ *     `Is this a project you created or one you trust?` over `❯ No, exit`,
+ *     which is not even numbered, and is caught by `Enter to confirm`;
+ *   - an AskUserQuestion draws `❯ 1. ...` under
+ *     `Enter to select · ↑/↓ to navigate · Esc to cancel`, so three of these
+ *     patterns hold it up while it is live and none once it is answered.
  */
 const PROMPT_PATTERNS: RegExp[] = [
   // Claude Code's modal dialogs (tool permission, trust folder, /login, ...)
   // all render this footer. Observed verbatim on the trust-folder dialog; the
   // resting input box shows the mode hint instead, so it does not collide.
   /Enter to (?:confirm|select|continue)\b/i,
-  /Do you (?:want to|trust)\b/i,
   // Plan approval, verbatim from the dialog ExitPlanMode raises.
   /Would you like to proceed\?/i,
   /shift\+tab to approve\b/i,
-  // A numbered choice menu, e.g. "❯ 1. Yes".
-  /❯\s*\d+\.\s/,
   /\(y\/n\)/i,
   /Waiting for your input/i,
   /Press\s+(?:enter|y)\b/i,
 ]
+
+/**
+ * A numbered choice menu's selected row, and one of its other options.
+ *
+ * `❯ N.` alone used to be the whole test, and it was wrong for a reason the
+ * chevron was supposed to rule out: the mirror draws a *submitted user message*
+ * as `❯ <text>` too, so a prompt that opens with a numbered item -- "1. fix the
+ * parser, 2. then the tests" -- is a chevron, a digit and a full stop, and it
+ * sits at the top of the turn, which held the window amber for the whole of it.
+ *
+ * So a menu has to be more than its selected row: it has to have another option
+ * beside it, numbered one away. Measured on Claude Code v2.1.270, all three of
+ * the menus this has to catch put that option on the very next line --
+ *
+ *   permission:  ` ❯ 1. Yes` / `   2. Yes, and switch to accept edits ...`
+ *   plan:        ` ❯ 1. Yes, and use auto mode` / `   2. Yes, manually approve`
+ *   question:    `❯ 1. Drop the phrase pattern` / `  2. Demote it to a footer`
+ *
+ * -- and a window of a few lines either side is what makes it tolerant of a
+ * description under an option (the plan dialog puts `shift+tab to approve with
+ * this feedback` under its third) and of the chevron sitting on the last option
+ * rather than the first, without becoming "a numbered line anywhere in the
+ * turn". That was tried, as `^1. Yes`, and Claude's own prose about options
+ * made a finished worktree read as waiting.
+ */
+const MENU_ROW = /^\s*❯\s*(\d+)\.\s/
+const OPTION_ROW = /^\s*(\d+)\.\s/
+
+/** How far either side of the selected row its siblings are looked for. */
+const MENU_SIBLING_ROWS = 4
+
+const hasChevronMenu = (turn: string): boolean => {
+  const lines = turn.split('\n')
+  for (let index = 0; index < lines.length; index++) {
+    const selected = MENU_ROW.exec(lines[index] ?? '')
+    if (!selected) continue
+    const chosen = Number(selected[1])
+    for (let near = index - MENU_SIBLING_ROWS; near <= index + MENU_SIBLING_ROWS; near++) {
+      if (near === index) continue
+      const option = OPTION_ROW.exec(lines[near] ?? '')
+      if (option && Math.abs(Number(option[1]) - chosen) === 1) return true
+    }
+  }
+  return false
+}
 
 /**
  * Patterns believed only on the last few lines, where a dialog's footer lives.
@@ -118,7 +180,9 @@ export const looksBusy = (text: string): boolean => {
  * and prose collides with the dialogs' wording -- measured on a live worktree,
  * `Which way do you want to go?` matched the tool-permission dialog's
  * `Do you want to ...` and left the tile amber while the agent was visibly
- * working two rows from the bottom, twenty rows below that line.
+ * working two rows from the bottom, twenty rows below that line. (That pattern
+ * is gone now, for a second measured reason the scoping could not fix; the
+ * remaining ones are ordinary English too, and this is what keeps them honest.)
  *
  * A dialog Claude is showing *now* is always under the marker, so nothing has
  * to be given up to exclude the text above it -- in particular not the breadth
@@ -135,20 +199,6 @@ const thisTurn = (screen: string): string => {
 }
 
 /**
- * Whether Claude is showing something a person has to answer.
- *
- * Give it the whole visible screen: it reads the current turn's whole height,
- * where the strong patterns are safe, and consults the weak ones only near the
- * bottom.
- */
-export const looksLikePrompt = (screen: string): boolean => {
-  const turn = thisTurn(screen)
-  if (PROMPT_PATTERNS.some((re) => re.test(turn))) return true
-  const footer = turn.split('\n').slice(-FOOTER_ROWS).join('\n')
-  return PROMPT_FOOTERS.some((re) => re.test(footer))
-}
-
-/**
  * Claude Code's input box, as a line: the chevron and whatever is in it.
  *
  * The one piece of chrome that is always at the bottom when a session is not
@@ -156,6 +206,94 @@ export const looksLikePrompt = (screen: string): boolean => {
  * the furniture below it.
  */
 export const INPUT_BOX = /^\s*[❯>]\s?(.*)$/
+
+/*
+ * Known gap, left open deliberately: a dialog whose options are NOT numbered
+ * and which carries none of the footer wordings reads as *finished*, which is
+ * the green light rather than merely a grey one. `INPUT_BOX` matches a dialog's
+ * selected row (` ❯ Yes, I trust this folder`) exactly as readily as the real
+ * box, so `screenState` takes that row for the boundary and reports the done
+ * marker above it.
+ *
+ * Two things were measured trying to close it, and both say not to:
+ *
+ *   - "a menu row has a sibling indented two columns further" is true of every
+ *     dialog measured, and also of a draft too long for one line: at 90 columns
+ *     a wrapped draft continues at exactly +2. There is a test for that.
+ *   - "the input box is bracketed by `─` rules" is true in every capture, but
+ *     the queued-message display (`  ❯ and then deploy`) has no rule above it
+ *     either, so treating "no rule" as "menu" trades this gap for a false amber
+ *     on every queued prompt.
+ *
+ * And tightening `screenState` alone would change nothing: `busy` there is
+ * settled by the transcript, which says `between-turns` for a session sitting
+ * on a picker -- the turn really did end -- so the answer comes back idle
+ * regardless. Closing this needs `looksLikePrompt` to recognise an unnumbered
+ * menu, and nothing measured so far separates one from the input box. Every
+ * unnumbered dialog seen in the wild is held up by its footer instead.
+ */
+
+/**
+ * The rule drawn directly above the input box, which is what says it is a box.
+ *
+ * Eight dashes rather than a whole line of them: the top rule carries the
+ * session's name in the middle of it (`──── switchboard-standalone-app ─`), so
+ * a "nothing but dashes" test does not see it.
+ */
+const BOX_RULE = /─{8,}/
+
+/**
+ * Is Claude's input box on the screen?
+ *
+ * The one measured thing that separates a modal from an agent at work:
+ * **Claude Code takes the input box away while a modal is up.** Captured on
+ * v2.1.270, the box is present on a session at rest and on one mid-turn with
+ * its queue showing, and absent on all three modals -- the permission dialog,
+ * the plan approval and an AskUserQuestion.
+ *
+ * It has to be the rule that identifies it, not the chevron, because the
+ * chevron is on four other things: every submitted user message, the queued
+ * message display, and a dialog's own selected row. Only the box has a rule
+ * drawn directly above it.
+ *
+ * Note which way this fails. If the rule ever stops being drawn, or changes
+ * character, this answers "no box" and every pattern below is simply believed
+ * again -- today's behaviour, false positives and all. It takes a *wrong yes*
+ * to lose a real dialog, and that needs a modal to draw its selected row
+ * directly under a horizontal rule, which none of the three measured does --
+ * or something matching `INPUT_BOX`'s other glyph, a bare `>`, to land under
+ * one. Ten tests fail if this is loosened to "any chevron", which is what that
+ * direction would look like.
+ */
+const inputBoxVisible = (screen: string): boolean => {
+  const lines = screen.split('\n')
+  return lines.some(
+    (line, index) => INPUT_BOX.test(line) && BOX_RULE.test(lines[index - 1] ?? ''),
+  )
+}
+
+/**
+ * Whether Claude is showing something a person has to answer.
+ *
+ * Give it the whole visible screen: it reads the current turn's whole height,
+ * where the strong patterns are safe, and consults the weak ones only near the
+ * bottom.
+ *
+ * Nothing on a screen that still has its input box counts. Most of the wordings
+ * below are ordinary English -- Claude writes "Press enter in that pane", it
+ * quotes `read -p "continue? (y/n)"`, a tool prints "use j/k to navigate" --
+ * and every one of those was a measured amber over an agent that was working.
+ * What they have in common is that the box was on screen the whole time, and
+ * what the real dialogs have in common is that it was not.
+ */
+export const looksLikePrompt = (screen: string): boolean => {
+  if (inputBoxVisible(screen)) return false
+  const turn = thisTurn(screen)
+  if (hasChevronMenu(turn)) return true
+  if (PROMPT_PATTERNS.some((re) => re.test(turn))) return true
+  const footer = turn.split('\n').slice(-FOOTER_ROWS).join('\n')
+  return PROMPT_FOOTERS.some((re) => re.test(footer))
+}
 
 /**
  * Lines that are furniture rather than something Claude said.

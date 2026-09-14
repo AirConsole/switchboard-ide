@@ -78,15 +78,55 @@ is the point:
    dialog's sat 11, each option carrying a paragraph, so the old 12-row window
    caught both by a row or two and one more line of text would have lost them.
    The turn is everything below the last `· done HH:MM`, because the screen is
-   a scrollback and the patterns are not all safe on the turns above it: two of
-   them are ordinary English, and a live worktree's `Which way do you want to
+   a scrollback and the patterns are not all safe on the turns above it:
+   several of them are ordinary English, and a live worktree's `Which way do you want to
    go?` matched the permission dialog's "Do you want to …" and held a tile amber
-   through a turn the spinner was visibly running. A dialog Claude is showing
-   now is always below the marker — measured on a real permission dialog whose
+   through a turn the spinner was visibly running. That phrase pattern is gone
+   now, because scoping to the turn could not save it either: an
+   AskUserQuestion **stays on screen after it is answered**, inside the same
+   turn, and the question Claude asks is usually phrased "do you want to …" --
+   measured, three minutes of amber over an agent that was deploying. Nothing
+   was lost by deleting it, measured on v2.1.270: the permission dialog draws
+   `❯ 1. Yes` beside the phrase, and the trust dialog no longer contains the
+   phrase at all, asking "Is this a project you created or one you trust?"
+   over options that are not numbered -- so `❯ N.` misses it too, and what
+   holds it up is `Enter to confirm` together with the `Esc to cancel` footer,
+   which lands in the footer window because `tailText` pops trailing blank
+   rows. A dialog
+   Claude is showing now is always below the marker — measured on a real permission dialog whose
    question sat on line 28 of 34 with the previous turn's done line on 12. Weak
    patterns live in `PROMPT_FOOTERS` and are trusted only on the last three
    lines. `^1. Yes` was dropped outright: it is what Claude writes when
    *explaining* options, and it made a finished worktree read as waiting.
+
+   **Nothing is believed while the input box is on screen.** That is the one
+   measured thing separating a modal from an agent at work: Claude Code takes
+   the box away while a modal is up — captured on v2.1.270, present at rest and
+   mid-turn with a queue showing, absent on the permission dialog, the plan
+   approval and an AskUserQuestion. It is the `─` rule drawn directly above it
+   that identifies the box, never the chevron, which is also on every submitted
+   user message, on the queued-message display and on a dialog's own selected
+   row. This retired four false positives at once, all of them ordinary English
+   Claude writes or quotes: `read -p "continue? (y/n)"`, "Press enter in that
+   pane", "Would you like to proceed?", "use j/k to navigate". And it fails
+   safe: a rule that stops being drawn means "no box", which is only today's
+   behaviour again, while losing a real dialog would take a *wrong yes*.
+
+   A menu is recognised by its **selected row plus a sibling option numbered
+   one away**, within a few lines either side — not by `❯ N.` alone. The
+   chevron was picked because Claude never prints one, but the mirror draws a
+   submitted *user message* as `❯ <text>`, so a prompt opening "1. fix the
+   parser, 2. then the tests" was a chevron, a digit and a full stop at the top
+   of the turn, and held the window amber for the whole of it. All three menus
+   measured on v2.1.270 — permission, plan approval, AskUserQuestion — put the
+   sibling on the very next line.
+
+   The gap this leaves is written up beside `INPUT_BOX`: an unnumbered dialog
+   carrying none of the footer wordings reads as *finished*, which is the green
+   light rather than a grey one, because its selected row is indistinguishable
+   from the input box. Two candidate fixes were measured and both cost more
+   than they save; the note records which, so the next person does not
+   re-derive them.
 2. **Is it working?** Recent output, `turn === 'in-turn'`, or the spinner's
    parenthesised timer — `(3m 34s · …)`, and the minute and hour forms are not
    decoration: the pattern was `\(\d+s` and so missed every turn longer than a

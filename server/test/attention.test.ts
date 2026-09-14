@@ -54,7 +54,11 @@ describe('looksLikePrompt', () => {
     screen('✻ Baked for 2s · done 3:01 PM', '', ...lines)
 
   it('catches a tool-permission dialog', () => {
-    expect(looksLikePrompt(dialog('Do you want to run this command?', '❯ 1. Yes'))).toBe(true)
+    // A menu is its selected row *and* a sibling option: the mirror draws a
+    // submitted user message with a chevron too, so the row alone is not enough.
+    expect(
+      looksLikePrompt(dialog('Do you want to run this command?', '❯ 1. Yes', '  2. No')),
+    ).toBe(true)
   })
 
   it('catches a plan approval', () => {
@@ -68,7 +72,9 @@ describe('looksLikePrompt', () => {
      * them. The whole turn is read now, and this fixture is what says so.
      */
     const options = Array.from({ length: 11 }, (_, n) => `   some option prose, line ${n}`)
-    expect(looksLikePrompt(dialog('❯ 1. Yes', ...options, INPUT))).toBe(true)
+    expect(
+      looksLikePrompt(dialog('❯ 1. Yes', '  2. No, keep planning', ...options, INPUT)),
+    ).toBe(true)
   })
 
   it('ignores the same words above the last done marker', () => {
@@ -76,14 +82,216 @@ describe('looksLikePrompt', () => {
      * Measured on a live worktree: Claude wrote "Which way do you want to go?"
      * in prose, that matched the tool-permission dialog's wording, and the
      * window stayed amber while the agent worked two rows from the bottom.
+     *
+     * That exact phrase no longer matches anything -- `Do you (want to|trust)`
+     * was deleted, for the second measured reason below -- so the fixture uses
+     * a different line of ordinary English Claude writes, one a surviving
+     * pattern does still catch. Otherwise this passes whether or not the turn
+     * scoping is there, which is a test that guards nothing.
      */
     const prose = screen(
-      '● Which way do you want to go?',
+      '● Then press enter to continue, and it will pick up where it left off.',
       '✻ Baked for 2s · done 3:01 PM',
       '● Reading files',
       INPUT,
     )
     expect(looksLikePrompt(prose)).toBe(false)
+  })
+
+  it('tells a live question from the same question answered', () => {
+    /*
+     * The bug this whole deletion is for, measured twice on 2026-09-14.
+     *
+     * An AskUserQuestion stays on screen after it is answered, inside the same
+     * turn -- so scoping to the turn, which fixed the prose case above, cannot
+     * help here. In the name-and-app worktree the question below was answered
+     * at 07:56:33 and the window stayed amber until the turn's done line landed
+     * at 07:59:21: three minutes of "needs you" over an agent that was
+     * deploying. `Do you (want to|trust)` was the only pattern that matched.
+     *
+     * Verbatim from the mirror, which renders the answered block as a `●`
+     * opener and a `⎿` continuation carrying the question's own text.
+     */
+    const answered = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '● User declined to answer questions',
+      '  ⎿  · An answered AskUserQuestion leaves "How do you want to play the service',
+      '     worker?" on screen. How should I narrow it? (Drop the phrase pattern /',
+      '     Demote it to a footer / Require a menu with it)',
+      '',
+      '  Finding snapshots containing the dialog',
+      '* Whirring… (3m 15s · ↓ 13.1k tokens · thinking)',
+      INPUT,
+      HINT,
+    )
+    expect(looksLikePrompt(answered)).toBe(false)
+
+    /*
+     * The same question while it is still up, measured in this IDE's own
+     * window. This half is why the deletion is safe and the pair is why this
+     * test is worth its runtime: the wording is identical in both screens, so
+     * the only thing separating them is the menu -- a glyph Claude never
+     * prints, which disappears the moment the question is answered.
+     */
+    const asking = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '● An answered AskUserQuestion leaves "How do you want to play the service',
+      '  worker?" on screen. How should I narrow it?',
+      '',
+      '❯ 1. Drop the phrase pattern',
+      '  2. Demote it to a footer',
+      '  3. Require a menu with it',
+      '',
+      'Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel',
+    )
+    expect(looksLikePrompt(asking)).toBe(true)
+  })
+
+  it('still catches the write-permission dialog by its menu', () => {
+    /*
+     * Claude Code v2.1.270, verbatim: the phrase and the numbered menu are both
+     * there, which is why deleting the phrase costs nothing here.
+     */
+    const permission = screen(
+      '✻ Cooked for 3s · done 8:04 AM',
+      '❯ create a file b.txt containing the word bye',
+      '● Write(b.txt)',
+      '─────────────────────────────',
+      ' Create file',
+      ' b.txt',
+      ' Do you want to create b.txt?',
+      ' ❯ 1. Yes',
+      '   2. Yes, and switch to accept edits (auto-approve file edits) for this',
+      '      session (shift+tab)',
+      '   3. No',
+      '',
+      ' Esc to cancel · Tab to amend',
+      '',
+      '',
+      '',
+    )
+    expect(looksLikePrompt(permission)).toBe(true)
+  })
+
+  it('still catches the trust-folder dialog, which no longer says "trust" first', () => {
+    /*
+     * Claude Code v2.1.270, verbatim, and written the way `tailText` delivers
+     * it: the emulator pops trailing blank rows (mirror.ts), so the dialog's
+     * own footer is the last line of the screen even though tmux's capture
+     * shows twenty blank rows under it.
+     *
+     * The wording moved -- it asks "Is this a project you created or one you
+     * trust?" now, so the deleted phrase would not have seen it either -- and
+     * its options are not numbered, so `❯ N.` does not see it. What holds it up
+     * is `Enter to confirm` and, because of that trimming, the `Esc to cancel`
+     * footer as well. Two patterns, so this is a characterisation of a real
+     * dialog rather than a guard on one line; it fails only if both go.
+     */
+    const trust = screen(
+      ' Quick safety check: Is this a project you created or one you trust? (Like your own',
+      " code, a well-known open source project, or work from your team).",
+      '',
+      " Claude Code'll be able to read, edit, and execute files here.",
+      '',
+      ' ❯ No, exit',
+      '   Yes, I trust this folder',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    )
+    expect(looksLikePrompt(trust)).toBe(true)
+  })
+
+
+  it('believes nothing while the input box is still on screen', () => {
+    /*
+     * The rule that retired four separate false positives at once, and the
+     * measurement behind it: Claude Code takes the input box away while a modal
+     * is up. Captured on v2.1.270 -- present on a session at rest and on one
+     * mid-turn with its queue showing, absent on the permission dialog, the
+     * plan approval and an AskUserQuestion.
+     *
+     * Each line of prose below was a measured amber over an agent that was
+     * working. They are all things Claude writes or quotes, and the reason they
+     * were believed is that the patterns were read without asking whether
+     * anyone could still type. The box is drawn the way the mirror renders it:
+     * a rule, the chevron, a rule. The rule is what identifies it -- the
+     * chevron alone is on every submitted user message too.
+     */
+    const RULE = '──────────────────────────────────────────────'
+    const working = (...body: string[]): string =>
+      screen('✻ Baked for 2s · done 3:01 PM', ...body, RULE, INPUT, RULE, '', HINT)
+
+    expect(looksLikePrompt(working('● The script asks: read -p "continue? (y/n)"'))).toBe(false)
+    expect(looksLikePrompt(working('● Press enter in that pane and it will pick up.'))).toBe(false)
+    expect(looksLikePrompt(working('● Would you like to proceed? I will assume yes.'))).toBe(false)
+    expect(looksLikePrompt(working('● Ran a command', '  ⎿  use j/k to navigate'))).toBe(false)
+    expect(looksLikePrompt(working('● Enter to confirm it, or Esc to cancel.'))).toBe(false)
+    // And the chevron cases, which the sibling rule already handled -- kept here
+    // because the gate is what holds them if that rule is ever loosened.
+    expect(looksLikePrompt(working('❯ 1. fix the parser 2. then the tests'))).toBe(false)
+  })
+
+  it('does not read a numbered user prompt as a menu', () => {
+    /*
+     * The mirror draws a submitted user message as `❯ <text>` -- measured in
+     * this IDE's own window, where "❯ the name-and-app worktree currently looks
+     * like it needs attention" was the line above the work it started. So a
+     * prompt that opens with a numbered item is a chevron, a digit and a full
+     * stop, and `❯ N.` on its own called it a dialog. It sits at the top of the
+     * turn, so the window stayed amber for the whole of it.
+     */
+    const prompt = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '❯ 1. fix the parser 2. then the tests',
+      '',
+      '● Reading files',
+      INPUT,
+      HINT,
+    )
+    expect(looksLikePrompt(prompt)).toBe(false)
+  })
+
+  it('does not read a wrapped draft as a menu', () => {
+    /*
+     * Measured on Claude Code v2.1.270 at 90 columns: a draft too long for one
+     * line wraps inside the input box with its continuations indented by
+     * exactly two columns -- the same alignment a menu's unselected options
+     * have. So "the next line is indented two further" cannot be what
+     * identifies a menu, however much it looks like it on a dialog; the sibling
+     * has to carry a number. This fixture is here to fail that idea if it is
+     * tried again.
+     */
+    const draft = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '─────────────────────────────────────────',
+      '❯ 1. this is a deliberately long prompt whose only purpose is to wrap across',
+      '  several lines of the input box so that the continuation indent can be seen',
+      '─────────────────────────────────────────',
+      HINT,
+    )
+    expect(looksLikePrompt(draft)).toBe(false)
+  })
+
+  it('catches a plan approval, verbatim', () => {
+    /*
+     * Claude Code v2.1.270, captured from a real `--permission-mode plan`
+     * session. Three patterns hold it: the menu, "Would you like to proceed?"
+     * and "shift+tab to approve". The menu's options are adjacent here, which
+     * is what lets the sibling be looked for a few lines away rather than
+     * anywhere in the turn.
+     */
+    const plan = screen(
+      '  ──────────────────────────────────────────────────────────────',
+      "   Claude has written up a plan and is ready to execute. Would you like to proceed?",
+      '',
+      '   ❯ 1. Yes, and use auto mode',
+      '     2. Yes, manually approve edits',
+      '     3. Tell Claude what to change',
+      '        shift+tab to approve with this feedback',
+      '',
+      '   ctrl+g to edit in Vim · ~/.claude/plans/add-a-subtract-function.md',
+    )
+    expect(looksLikePrompt(plan)).toBe(true)
   })
 
   it('does not read a bare chevron as a question', () => {
@@ -179,7 +387,8 @@ describe('classify', () => {
   }
 
   it('calls a dead session idle whatever is on its screen', () => {
-    expect(classify({ ...base, dead: true, tailText: () => 'Do you want to proceed? ❯ 1. Yes' }))
+    const menu = screen('Do you want to proceed?', '❯ 1. Yes', '  2. No')
+    expect(classify({ ...base, dead: true, tailText: () => menu }))
       .toBe('idle')
   })
 
@@ -193,7 +402,12 @@ describe('classify', () => {
         ...base,
         lastOutputAt: now,
         tailText: () =>
-          screen('✻ Baked for 2s · done 3:01 PM', 'Do you want to proceed?', '❯ 1. Yes'),
+          screen(
+            '✻ Baked for 2s · done 3:01 PM',
+            'Do you want to proceed?',
+            '❯ 1. Yes',
+            '  2. No',
+          ),
       }),
     ).toBe('needs-you')
   })
