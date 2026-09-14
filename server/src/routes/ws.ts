@@ -139,7 +139,7 @@ export const registerWs = (
           ip: request.ip,
           allowed: [...config.publicOrigins],
         },
-        'refused a socket -- is SWB_PUBLIC_ORIGIN set, and is this machine meant to reach it?',
+        'refused a socket -- was --host passed, and is this machine meant to reach it?',
       )
       // 1008 is "policy violation", said out loud rather than dropped silently.
       socket.close(1008, 'origin not allowed')

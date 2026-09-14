@@ -13,17 +13,16 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${SWB_PORT:-8084}"
 LOG=/tmp/swb-prod.log
 
-# The origin the browser actually types, which is Caddy's and not ours.
+# The public name the browser actually types, which is Caddy's and not ours.
 #
 # `/ws` refuses a page from any origin it does not know, and behind a proxy this
 # process cannot derive the one the page was served from -- it only ever sees
 # 127.0.0.1. Unset, the loopback defaults still let a browser on this machine in
 # and every socket through Caddy is refused, so this is not optional here.
-# Both schemes, because which one the browser sends depends on how Caddy is
-# terminating and getting it wrong costs a page that loads over a row that
-# never paints. Listing both is no weaker: an attacker who could serve
-# http://<that name> already controls the name.
-ORIGIN="${SWB_PUBLIC_ORIGIN:-https://andrin.ide.n-dream.com:84,http://andrin.ide.n-dream.com:84}"
+#
+# A bare name on purpose: the server allows both schemes for it, so nobody has
+# to know how Caddy is terminating. Confirmed by probe that :84 is TLS.
+HOST="${SWB_PUBLIC_HOST:-andrin.ide.n-dream.com:84}"
 
 cd "$REPO"
 
@@ -45,8 +44,8 @@ fi
 # this script -- bash then waits for it and the deploy never returns. Forking
 # reparents the server to init, which is also what stops the terminal that ran
 # this from taking the IDE down when it closes.
-(cd server && NODE_ENV=production SWB_PORT="$PORT" SWB_PUBLIC_ORIGIN="$ORIGIN" \
-  setsid --fork node dist/index.js >>"$LOG" 2>&1 </dev/null)
+(cd server && NODE_ENV=production SWB_PORT="$PORT" \
+  setsid --fork node dist/index.js --host "$HOST" >>"$LOG" 2>&1 </dev/null)
 
 for _ in $(seq 1 40); do
   curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break
@@ -54,17 +53,19 @@ for _ in $(seq 1 40); do
 done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || { echo "did not come back -- see $LOG" >&2; exit 1; }
 
-# Prove the origin is right rather than assume it. `/ws` refuses a page from an
+# Prove the name is right rather than assume it. `/ws` refuses a page from an
 # origin it does not know, and `/api` refuses a Host it does not answer to -- so
-# a wrong SWB_PUBLIC_ORIGIN does not fail loudly, it serves a page whose row
-# never paints. Check it here, where it is still one edit away from fixed.
-for o in ${ORIGIN//,/ }; do
-  host="${o#*://}"
-  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $host" \
+# a wrong --host does not fail loudly, it serves a page whose row never paints.
+# Check it here, where it is still one edit away from fixed.
+for name in ${HOST//,/ }; do
+  bare="${name#*://}"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $bare" \
     -H 'sec-fetch-site: same-origin' "http://127.0.0.1:$PORT/api/snapshot")
-  [ "$code" = "200" ] || { echo "SWB_PUBLIC_ORIGIN looks wrong: /api answered $code for Host: $host" >&2; exit 1; }
+  [ "$code" = "200" ] || { echo "--host looks wrong: /api answered $code for Host: $bare" >&2; exit 1; }
+  # A bare name is allowed under both schemes, so checking https is enough.
+  origin="$name"; case "$name" in *://*) ;; *) origin="https://$name" ;; esac
   # `skip` rather than `refused` when ws cannot be loaded: a missing module is
-  # not evidence the origin is wrong, and blocking a deploy on it would be.
+  # not evidence the name is wrong, and blocking a deploy on it would be.
   ws=$(node -e '
     let WebSocket
     try { ({ WebSocket } = require("ws")) } catch { console.log("skip"); process.exit(0) }
@@ -74,11 +75,11 @@ for o in ${ORIGIN//,/ }; do
     ws.on("close", (c) => say(c === 1008 ? "refused" : "ok"))
     ws.on("error", () => say("refused"))
     setTimeout(() => say(ws.readyState === WebSocket.OPEN ? "ok" : "refused"), 700)
-  ' "$PORT" "$o" 2>/dev/null || echo skip)
-  [ "$ws" != "refused" ] || { echo "SWB_PUBLIC_ORIGIN looks wrong: /ws refused a page from $o" >&2; exit 1; }
+  ' "$PORT" "$origin" 2>/dev/null || echo skip)
+  [ "$ws" != "refused" ] || { echo "--host looks wrong: /ws refused a page from $origin" >&2; exit 1; }
 done
 
-echo "live on :$PORT at $(git rev-parse --short HEAD), for $ORIGIN"
+echo "live on :$PORT at $(git rev-parse --short HEAD), for $HOST"
 curl -fsS "http://127.0.0.1:$PORT/api/snapshot" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)

@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Session } from '@switchboard/shared'
 import { HttpError } from '../src/http-error.js'
-import { makeRepo, makeRepoWithCommit, type TempRepo } from './helpers/repo.js'
+import {
+  makeRepo,
+  makeRepoWithCommit,
+  makeRepoWithRemote,
+  type TempRemoteRepo,
+  type TempRepo,
+} from './helpers/repo.js'
 
 /* See state.test.ts: `stateFile` is derived from config at import time. */
 const stateDir = await mkdtemp(join(tmpdir(), 'swb-workspace-'))
@@ -313,7 +319,7 @@ describe('removeWorktree', () => {
   })
 
   it('removes a clean worktree and everything running in it', async () => {
-    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false })
+    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })
     expect(engine.killedWorktrees).toEqual([worktreeId])
     expect((await workspace.worktrees()).map((w) => w.id)).not.toContain(worktreeId)
   })
@@ -324,7 +330,7 @@ describe('removeWorktree', () => {
     // caller that only looked at the status.
     const main = (await workspace.worktrees()).find((w) => w.isMain)
     await expect(
-      workspace.removeWorktree({ worktreeId: main!.id, force: false, alsoDeleteBranch: false }),
+      workspace.removeWorktree({ worktreeId: main!.id, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false }),
     ).rejects.toThrow('refusing to remove the main worktree')
     expect(engine.killedWorktrees).toEqual([])
   })
@@ -338,7 +344,7 @@ describe('removeWorktree', () => {
     await writeFile(join(path, 'scratch.txt'), 'unsaved work\n')
     workspace.invalidate()
     expect(
-      await codeOf(workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false })),
+      await codeOf(workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })),
     ).toBe('worktree-dirty')
     expect(engine.killedWorktrees).toEqual([])
   })
@@ -351,7 +357,7 @@ describe('removeWorktree', () => {
      */
     await rm(path, { recursive: true, force: true })
     expect(
-      await codeOf(workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false })),
+      await codeOf(workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })),
     ).toBe('worktree-unknown')
     expect(engine.killedWorktrees).toEqual([])
   })
@@ -359,12 +365,12 @@ describe('removeWorktree', () => {
   it('removes dirty work when force says to', async () => {
     await writeFile(join(path, 'scratch.txt'), 'unsaved work\n')
     workspace.invalidate()
-    await workspace.removeWorktree({ worktreeId, force: true, alsoDeleteBranch: false })
+    await workspace.removeWorktree({ worktreeId, force: true, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })
     expect((await workspace.worktrees()).map((w) => w.id)).not.toContain(worktreeId)
   })
 
   it('deletes the branch when asked, and keeps it otherwise', async () => {
-    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false })
+    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })
     expect(await repo.git('branch', '--list', 'feature')).toContain('feature')
 
     const second = await workspace.createWorktree({ projectId, branch: 'other' })
@@ -372,6 +378,7 @@ describe('removeWorktree', () => {
       worktreeId: second.id,
       force: false,
       alsoDeleteBranch: true,
+      alsoDeleteRemoteBranch: false,
     })
     expect(await repo.git('branch', '--list', 'other')).toBe('')
   })
@@ -380,15 +387,111 @@ describe('removeWorktree', () => {
     // The worktree is gone, which is what was asked; an unmerged branch git
     // will not delete is not a failure of this operation.
     await repo.git('-C', path, 'commit', '--allow-empty', '-m', 'unmerged work')
-    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: true })
+    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: true, alsoDeleteRemoteBranch: false })
     expect((await workspace.worktrees()).map((w) => w.id)).not.toContain(worktreeId)
     expect(await repo.git('branch', '--list', 'feature')).toContain('feature')
   })
 
   it('takes the worktree’s todos with it', async () => {
     const todo = await workspace.createTodo({ worktreeId, prompt: 'do the thing' })
-    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false })
+    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })
     expect(store.todo(todo.id)).toBeUndefined()
+  })
+})
+
+describe('removeWorktree, and the branch on the remote', () => {
+  let remote: TempRemoteRepo
+  let projectId: string
+  let worktreeId: string
+
+  beforeEach(async () => {
+    remote = await makeRepoWithRemote()
+    projectId = (await workspace.openProject(remote.path)).id
+    const worktree = await workspace.createWorktree({ projectId, branch: 'feature' })
+    worktreeId = worktree.id
+    await remote.git('-C', worktree.path, 'commit', '--allow-empty', '-m', 'work')
+    await remote.git('-C', worktree.path, 'push', '-u', 'origin', 'feature')
+    workspace.invalidate()
+  })
+
+  afterEach(async () => {
+    await remote.cleanup()
+  })
+
+  it('reports the pushed branch and whether the default branch has it', async () => {
+    const before = (await workspace.worktrees()).find((w) => w.id === worktreeId)
+    expect(before?.remoteBranch).toBe('origin/feature')
+    expect(before?.remoteBranchMerged).toBe(false)
+
+    await remote.git('merge', '--no-ff', 'feature', '-m', 'merge')
+    await remote.git('push', 'origin', 'main')
+    workspace.invalidate()
+    const after = (await workspace.worktrees()).find((w) => w.id === worktreeId)
+    expect(after?.remoteBranchMerged).toBe(true)
+  })
+
+  it('deletes the branch on the remote when asked', async () => {
+    await workspace.removeWorktree({
+      worktreeId,
+      force: false,
+      alsoDeleteBranch: true,
+      alsoDeleteRemoteBranch: true,
+    })
+    expect(await remote.git('ls-remote', '--heads', 'origin', 'feature')).toBe('')
+    expect((await workspace.worktrees()).map((w) => w.id)).not.toContain(worktreeId)
+  })
+
+  it('leaves the remote alone when it was not asked about', async () => {
+    await workspace.removeWorktree({
+      worktreeId,
+      force: false,
+      alsoDeleteBranch: true,
+      alsoDeleteRemoteBranch: false,
+    })
+    expect(await remote.git('ls-remote', '--heads', 'origin', 'feature')).toContain('feature')
+  })
+
+  it('destroys nothing local when the remote refuses the deletion', async () => {
+    /*
+     * The ordering, and the reason for it. The push is the one step here that
+     * reaches off this machine and the one that fails for reasons nothing
+     * local can predict -- here a lease that does not hold, because somebody
+     * pushed to the branch after our last fetch. Doing it last would have
+     * killed the agent, deleted the directory and then failed, leaving a
+     * closed dialog and a branch still on the remote.
+     */
+    const theirs = await remote.elsewhere()
+    await theirs.git('checkout', '-b', 'feature', 'origin/feature')
+    await theirs.git('commit', '--allow-empty', '-m', 'work this clone has not seen')
+    await theirs.git('push', 'origin', 'feature')
+
+    expect(
+      await codeOf(
+        workspace.removeWorktree({
+          worktreeId,
+          force: false,
+          alsoDeleteBranch: true,
+          alsoDeleteRemoteBranch: true,
+        }),
+      ),
+    ).toBe('remote-branch')
+    expect(engine.killedWorktrees).toEqual([])
+    expect((await workspace.worktrees()).map((w) => w.id)).toContain(worktreeId)
+    expect(await remote.git('branch', '--list', 'feature')).toContain('feature')
+    expect(await remote.git('ls-remote', '--heads', 'origin', 'feature')).toContain('feature')
+  })
+
+  it('is not failed by a remote branch somebody else already deleted', async () => {
+    // Gone is the outcome that was asked for.
+    await remote.git('push', 'origin', '--delete', 'feature')
+    workspace.invalidate()
+    await workspace.removeWorktree({
+      worktreeId,
+      force: false,
+      alsoDeleteBranch: true,
+      alsoDeleteRemoteBranch: true,
+    })
+    expect((await workspace.worktrees()).map((w) => w.id)).not.toContain(worktreeId)
   })
 })
 

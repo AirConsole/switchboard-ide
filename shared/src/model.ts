@@ -110,6 +110,25 @@ export interface Worktree {
    */
   unmerged?: number
   /**
+   * Where this branch pushes to -- `origin/ui` -- when that ref is on disk.
+   *
+   * Absent means there is nothing on a remote to offer to delete. The test is
+   * the remote-tracking ref existing, never the configured upstream: deleting
+   * `origin/ui` from the remote leaves `branch.ui.remote` in the config behind,
+   * so `@{upstream}` keeps naming a branch that is measurably gone.
+   */
+  remoteBranch?: string
+  /**
+   * The default branch already has everything `remoteBranch` holds.
+   *
+   * The remote half of `unmerged`, and the same reading: absent is "the server
+   * did not say", not "no". Read from `refs/remotes/...` as it stands on disk
+   * -- nothing here fetches -- so it is only as fresh as the last fetch, which
+   * is why deleting on the strength of it uses a lease. See
+   * `deleteRemoteBranch`.
+   */
+  remoteBranchMerged?: boolean
+  /**
    * The commit checked out here.
    *
    * Carried so that "something changed in this worktree" can be detected when

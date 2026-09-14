@@ -390,13 +390,14 @@ Five rules, each of which was wrong once and found by measurement:
   the anti-rebinding check and nothing else catches it: a rebound page is
   *same-origin* with us, so it sends no `Origin`, needs no preflight, and
   reports `Sec-Fetch-Site: same-origin`. `Host` is the one thing it cannot
-  change. `config.publicHosts` is derived from `SWB_PUBLIC_ORIGIN` plus
-  loopback; a gateway is exempt, because it addresses a peer by a name that
-  machine never published and the token speaks for it. A scheme-less
-  `SWB_PUBLIC_ORIGIN` used to land an empty string in that set -- `new
-  URL('box.local:8084')` does not throw, it parses as a *scheme* -- which both
-  failed to allow the name meant and let `Host: :8084` through. Empty hostnames
-  are dropped.
+  change. `config.publicHosts` is derived from `--host` plus loopback; a gateway
+  is exempt, because it addresses a peer by a name that machine never published
+  and the token speaks for it. Both sets come from one canonicalisation, which
+  is what stops them disagreeing: they were derived twice, and
+  `https://IDE.Example.com` then allowed `/api` and refused `/ws`. A name that
+  is itself scheme-shaped is dropped rather than repaired -- `new
+  URL('box.local:8084')` does not throw, it parses as a *scheme*, whose
+  `.origin` is the literal string `"null"`.
 
 - **Key on the route Fastify matched, never on the URL text.** `request.url` is
   the raw request target and the router matches the *decoded* path, so the two
@@ -427,8 +428,8 @@ Five rules, each of which was wrong once and found by measurement:
   refused.
 
 Behind a proxy this process only ever sees `127.0.0.1`, so it cannot derive the
-origin the page was served from and a deployment must say: `SWB_PUBLIC_ORIGIN`,
-which `scripts/deploy.sh` sets. Unset, the loopback defaults still admit a
+origin the page was served from and a deployment must say so: `--host`, which
+`scripts/deploy.sh` passes. Unset, the loopback defaults still admit a
 browser on this machine, so a scratch instance needs nothing — and every socket
 through Caddy is refused, which is the failure to expect if it is forgotten.
 
@@ -589,12 +590,30 @@ And two about being the *other* machine:
   `state.json` is written `mode: 0o600` because of it, and the mode is set on the
   temp file so there is no instant where the contents exist under the umask.
 
+## Flags
+
+| Flag | Meaning |
+| --- | --- |
+| `--host <name[:port]>` | The public name a browser types. Repeatable, or comma-separated. A bare name allows **both** schemes; write `https://…` to pin one. Required behind a proxy. |
+| `--bind <address>` | The address to listen on. |
+
+Two things are flags rather than environment variables, and both for the same
+reason: they are what a *deployment* has to get right rather than a developer.
+A flag shows up in `ps`, cannot be inherited by accident from a parent shell,
+and a wrong one is visible in the command that started the process instead of in
+an environment somebody has to go and read.
+
+`--host` is the public name and `--bind` is the address: one word for each, on
+purpose. They were `SWB_PUBLIC_ORIGIN` and `SWB_HOST`, which put "host" on the
+one you answer *on* and left the one you answer *to* named something else — and
+these are security settings, where the cost of configuring the wrong one is not
+a typo.
+
 ## Env
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SWB_HOST` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
-| `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated and canonicalised. Decides which `Origin` may open `/ws` **and** which `Host` values `/api` answers to. Required behind a proxy. |
+| `SWB_BIND` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. `--bind` overrides. |
 | `NODE_ENV` | unset | `development` also trusts Vite's origin; anything else does not. `production` turns off the pretty logger. |
 | `SWB_TOKEN` | unset | Set to be somebody's peer. Unset, this server answers loopback only. |
 | `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |

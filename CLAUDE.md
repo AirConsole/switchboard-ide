@@ -96,8 +96,8 @@ The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
 - **`scripts/deploy.sh` is the restart**, run from the master checkout after a
   merge lands: it builds, and only if that succeeds stops :8084 and starts it
   again detached. It is never automatic and never run from a worktree. It also
-  passes `SWB_PUBLIC_ORIGIN`, without which every socket arriving through Caddy
-  is refused and the row never paints.
+  passes `--host`, without which every socket arriving through Caddy is refused
+  and the row never paints.
 - **Never touch their project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
   `tmux kill-server` on `~/.config/switchboard/tmux.sock`.
@@ -151,7 +151,8 @@ a WebSocket is exempt from CORS, so any page you visited could otherwise open
 one, read a session id off the broadcast and type into a running agent. And
 **what name a request was addressed to**: a DNS-rebound page is same-origin with
 us afterwards, so `Host` is the only thing about it that is not the attacker's
-to choose. Both need `SWB_PUBLIC_ORIGIN` behind a proxy, which `deploy.sh` sets.
+to choose. Both need `--host` behind a proxy -- the public name a browser types,
+which `deploy.sh` passes.
 
 Without `SWB_TOKEN` this instance serves **this machine only** -- there is no
 credential, so the connection's own address is the whole of the boundary.

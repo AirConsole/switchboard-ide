@@ -4,10 +4,12 @@ import { WebSocket } from 'ws'
 import type { Session } from '@switchboard/shared'
 
 /*
- * `config` reads the environment at import time, so the allow-list has to be
- * decided before anything under src/ is loaded. See state.test.ts.
+ * `config` reads its flags at import time, so the allow-list has to be decided
+ * before anything under src/ is loaded -- the same reason state.test.ts sets
+ * its environment there. A bare name, which is what a deployment passes, and
+ * which the server expands to both schemes.
  */
-process.env.SWB_PUBLIC_ORIGIN = 'https://ide.example:84'
+process.argv.push('--host', 'ide.example:84')
 const Fastify = (await import('fastify')).default
 const fastifyWebsocket = (await import('@fastify/websocket')).default
 const { registerWs } = await import('../src/routes/ws.js')
@@ -91,6 +93,19 @@ describe('/ws origin', () => {
     const { code, messages } = await settled
     expect(code).toBe(1000)
     expect(messages.map((m) => JSON.parse(m).sessionId)).toContain('sess-secret')
+  })
+
+  /*
+   * A bare `--host` means both schemes, because which one the browser sends
+   * depends on how the proxy terminates -- and the person passing the flag
+   * should not have to know. Getting it wrong costs a page that loads over a
+   * row that never paints, which is a bad thing to learn from the browser.
+   */
+  it('accepts either scheme for a name given without one', async () => {
+    for (const origin of ['https://ide.example:84', 'http://ide.example:84']) {
+      const { code } = await connect(origin)
+      expect([origin, code]).toEqual([origin, 1000])
+    }
   })
 
   /* curl, the health check, and a test: none of them is a browser. */

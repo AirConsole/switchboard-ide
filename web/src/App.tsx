@@ -625,6 +625,7 @@ export const App = (): React.ReactElement => {
               .removeWorktree(worktree.id, {
                 force: false,
                 deleteBranch: removalQuestions(worktree).branchGoesAnyway,
+                deleteRemoteBranch: removalQuestions(worktree).remoteBranchGoesAnyway,
               })
               .then(() => forgetWorktree(worktree.id))
               .catch(fail)

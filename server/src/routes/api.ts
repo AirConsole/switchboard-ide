@@ -56,6 +56,7 @@ const queryFlag = z
 const removeWorktreeQuery = z.object({
   force: queryFlag,
   deleteBranch: queryFlag,
+  deleteRemoteBranch: queryFlag,
 })
 const closeProjectQuery = z.object({
   /** Stop everything the project is running on the way out. */
@@ -332,11 +333,12 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.delete('/api/worktrees/:id', async (request) => {
     const { id } = request.params as { id: string }
-    const { force, deleteBranch } = removeWorktreeQuery.parse(request.query)
+    const { force, deleteBranch, deleteRemoteBranch } = removeWorktreeQuery.parse(request.query)
     await workspace.removeWorktree({
       worktreeId: id,
       force,
       alsoDeleteBranch: deleteBranch,
+      alsoDeleteRemoteBranch: deleteRemoteBranch,
     })
     broadcastInvalidate()
     return { ok: true }

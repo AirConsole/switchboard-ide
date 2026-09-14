@@ -136,9 +136,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  removeWorktree: (id: string, opts: { force: boolean; deleteBranch: boolean }) =>
+  removeWorktree: (
+    id: string,
+    opts: { force: boolean; deleteBranch: boolean; deleteRemoteBranch: boolean },
+  ) =>
     request<{ ok: true }>(
-      `/api/worktrees/${id}?force=${opts.force}&deleteBranch=${opts.deleteBranch}`,
+      `/api/worktrees/${id}?force=${opts.force}&deleteBranch=${opts.deleteBranch}` +
+        `&deleteRemoteBranch=${opts.deleteRemoteBranch}`,
       { method: 'DELETE' },
     ),
   /** Stop what a worktree is running. Either half can be kept alive. */

@@ -16,9 +16,12 @@
 :root {
   /* Ground: cool slate-ink rather than pure black, so terminal blacks read as
      content and the chrome recedes behind them. */
+  /*
+   * Ink, in the word's own sense: what you write with on a light ground -- the
+   * RUN NEXT button when it is on, and nothing else. It gave up the surface job
+   * to --level-ground, which holds the same value and says which it is.
+   */
   --ink: #10141a;
-  --slab: #171c24;
-  --slab-raised: #1d232d;
   --rule: #232a35;
   --rule-bright: #2f3846;
   /*
@@ -38,22 +41,69 @@
    * part that makes a strip legible: dark frame, dark unselected tabs, and the
    * one you are in the lightest thing there.
    *
-   * --tab-on stops here because --graphite, which everything quiet on a tab is
-   * written in and which lands on this ground on the tab you are in, measures
+   * --level-lit stops here because --graphite, which everything quiet on a tab
+   * is written in and which lands on this ground on the tab you are in, measures
    * 4.54:1 against it. One more rung is under the 4.5 floor.
    */
-  --sleeve: #171c24;
-  --tab-on: #333c4b;
+  /*
+   * THE LADDER. Six levels, deepest first, and every surface in the app picks
+   * one -- it does not invent a value.
+   *
+   * They are named for depth rather than for whatever component first needed
+   * them, which is how there came to be twelve greys describing five rungs:
+   * --sleeve, --tab-head, --tab-rest and --rule-bright-as-a-fill were all
+   * levels that already existed under another name, and three of those pairs
+   * measured 1.010, 1.014 and 1.046 apart -- one colour with two spellings,
+   * which nobody can see and nobody keeps in sync. `grep -- --level-` now finds
+   * every surface at a given depth.
+   *
+   * The values are as they were. Respacing them was measured and rejected: the
+   * invisible steps are all at the dark end, because contrast is
+   * (L1+0.05)/(L2+0.05) and near black the constant swamps the luminance --
+   * --level-frame and --level-ground differ by 72% in luminance and measure
+   * 1.05:1. Widening those costs the light end, where an evenly stepped
+   * six-level scale puts --graphite at 4.41 and 3.17, under the floor on two
+   * levels instead of one. Nobody reads anything against the dark steps; the
+   * light ones are where the text is.
+   */
+  --level-frame: #0a0d12;
+  --level-ground: #10141a;
+  --level-panel: #171c24;
+  --level-raised: #1d232d;
+  --level-object: #2b3341;
+  --level-lit: #3b4657;
+  /*
+   * And hover is an operation, not a level: part-way from where you are to
+   * where clicking takes you, so it cannot drift from either end.
+   *
+   * 40% and not 50% because --graphite has to survive it -- the halfway mix
+   * lands on 4.48:1, just under the floor, and this lands on 4.62.
+   */
+  --level-hover: color-mix(in srgb, var(--level-lit) 40%, var(--level-object));
+  /*
+   * What quiet text is written in, per level. Five of the six take --graphite
+   * (7.94, 7.54, 6.98, 6.44, 5.19); on --level-lit it falls to 3.90 and this
+   * takes over at 4.89. That pairing is the real ceiling on the ladder: one
+   * quiet grey buys about five levels, so a seventh is not a colour decision,
+   * it is a third grey.
+   */
+  --quiet-on: #b3bac6;
+
+  /*
+   * The strip's own name for one of those levels, kept because the comments
+   * around the tab strip are written in it. An alias, never a value.
+   */
+  --sleeve: var(--level-raised);
 
   /*
    * Three steps of text, and every one of them readable.
    *
    * Measured against the grounds below, the old greys were 4.71:1 (graphite)
-   * and 2.74:1 (graphite-dim) on --slab -- the dim one well under the 4.5:1
+   * and 2.74:1 (graphite-dim) on --level-panel -- the dim one well under the 4.5:1
    * text threshold and under even the 3:1 large-text one, which is why every
    * status label, branch name and note in the interface was hard to read. The
-   * ladder is now 13.4 : 7.0 : 5.2 on --slab, and nothing drops below 4.8 on
-   * any ground including --slab-raised, which the bar uses on hover.
+   * ladder is now 13.4 : 7.0 : 5.2 on --level-panel, and nothing drops below
+   * 4.8 on any ground including --level-raised, which the bar uses on hover.
    *
    * Still a ladder, though: quiet is a real job here, and these stay clearly
    * subordinate to --bone rather than all arriving at the same brightness.
@@ -75,7 +125,7 @@
    *
    * Not "nothing is running" -- that stays grey, because a worktree with no
    * agent has finished nothing. Matched to --signal's luminance (9.81 : 9.70
-   * on --slab) so the two read as peers: amber is the one that wants you, green
+   * on --level-panel) so the two read as peers: amber is the one that wants you, green
    * the one that is waiting to be read, and neither shouts over the other.
    */
   --done: #4ade80;
@@ -93,7 +143,15 @@
    */
   --diff-add: #6bd968;
   --diff-del: #ff6b6b;
-  --danger: #e5707a;
+  /*
+   * Lifted from #e5707a when the project's head joined the tabs at
+   * --level-object: the × it turns on hover measured 4.19:1 there, under the
+   * floor, where on the old head it was 5.64. --level-object is the lightest
+   * ground any red in this interface lands on, so clearing it at 4.82 clears
+   * every other -- the dialogs and the todo list, both on --level-panel, go
+   * 5.64 to 6.49. One red, raised, rather than a second red for one control.
+   */
+  --danger: #eb8087;
 
   /*
    * A source file is content in exactly the same sense as a patch, so it gets
@@ -249,7 +307,7 @@ body {
 body {
   /* The ground the row of windows sits on: black, so the windows and the strip
      are the only lit things on it. */
-  background: var(--ink);
+  background: var(--level-ground);
   color: var(--bone);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -312,7 +370,7 @@ button {
    */
   background:
     linear-gradient(var(--rule), var(--rule)) bottom left / 100% 1px no-repeat,
-    var(--ink);
+    var(--level-frame);
   min-width: 0;
 }
 
@@ -371,12 +429,21 @@ button {
   flex: 0 1 auto;
   margin-top: 3px;
   /*
-   * 3px under the tabs as well as over them, since they are pills now and a
-   * round bottom flush with the sleeve's floor is a flat one. The sleeve itself
-   * still stands on that floor: it is the band that says which tabs are one
-   * project's, and it has no reason to float.
+   * No padding at all: the tabs fill the group edge to edge and the shell clips
+   * them, so the first segment wears the group's left curve and the + wears its
+   * right.
+   *
+   * This is the grouping, and it replaces a trough nobody could see. Round pills
+   * are each their own object, so a row of them is a row of objects that happen
+   * to be near each other; square segments inside one rounded shell are one
+   * object divided, and the container holds every outer edge. It is the
+   * strongest grouping available without colour, which is the channel this
+   * interface will not spend on identity.
+   *
+   * The sleeve is now only ever seen in the 2px seams -- which is all a trough
+   * was ever for.
    */
-  padding: 0 4px 3px;
+  padding: 0;
   /*
    * 2px between the tabs, which is what a filled pill needs and an unfilled one
    * did not: two of the same colour meeting edge to edge are one shape with a
@@ -385,11 +452,17 @@ button {
    * rules doing what a gap does.
    */
   gap: 2px;
-  border-radius: 8px 8px 0 0;
+  border-radius: 9px 9px 0 0;
   /*
-   * The trough the tabs sit in: a rung above the bar's --ink, and the ground an
-   * unselected tab is read against. The step that does the work is not this one
-   * -- it is the tab you are in, --tab-on, at 1.54:1 above it.
+   * What clips the end segments to the shell's curve. Safe over the menu, which
+   * is `position: fixed` and so is not clipped by an ancestor's overflow -- the
+   * same property that already rescued it from the strip's own scroller.
+   */
+  overflow: hidden;
+  /*
+   * The trough the tabs sit in: a rung above --level-frame, and the ground a
+   * seam is read against. The step that does the work is not this one -- it is
+   * the tab you are in, --level-lit, at 1.75:1 above it.
    */
   background: var(--sleeve);
 }
@@ -406,27 +479,38 @@ button {
  * 12px past its own edge, and this is what stops that curve landing on the
  * sleeve's rounded corner or outside the sleeve altogether.
  */
+/*
+ * The project is the group's first segment, not a bead in front of it.
+ *
+ * It used to be a 22px fully-round pill, vertically centred, 14px clear of
+ * 32px square-shouldered tabs -- a different shape at a different height with a
+ * gap after it, which is what "dangling" was. Now it is the tabs' own height,
+ * flush against them, wearing the shell's left curve.
+ *
+ * It wears the segments' own --level-object, and that is a correction. It was a
+ * rung *below* them, on the argument that a heading should sit under the things
+ * it heads -- but the head and the + are the two segments at the ends of the
+ * slab, and at #171c24 they measured 1.14:1 against the bar behind them. They
+ * dissolved into it, so the shape the slab is supposed to be lost both of its
+ * ends and read as the tabs alone. At --level-object that is 1.53:1.
+ *
+ * What separates it from a tab is no longer the fill: it is set at label size,
+ * uppercase and letterspaced, because a heading is not a name you read one
+ * character at a time. Its × stays with it -- closing a project is the
+ * project's own action and belongs on the project's own segment.
+ */
 .tabgroup__pill {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: none;
-  align-self: center;
-  height: 22px;
-  margin-right: 14px;
-  padding: 0 3px 0 9px;
-  border-radius: 11px;
-  /*
-   * Up from the sleeve, not down: with the strip the Chrome way round the
-   * sleeve is dark and a darker pill on it is 1.15:1, which is no pill at all.
-   * --rule is 1.30:1 above it and 1.42:1 below the tab you are in, so it reads
-   * as an object in the trough without reading as the tab -- and the shape says
-   * the rest, 22px and fully round against a 31px tab with square shoulders.
-   */
-  background: var(--rule);
+  align-self: stretch;
+  padding: 0 4px 0 12px;
+  background: var(--level-object);
   font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--bone);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
   white-space: nowrap;
   cursor: default;
 }
@@ -471,36 +555,29 @@ button {
  * Per project rather than one for the bar: with several projects open, this is
  * the only unambiguous way to say which one a new worktree belongs to.
  */
+/*
+ * And the + is the last segment, always wearing its noun.
+ *
+ * A bare + at the end of a run of tabs is Chrome's "one more tab", full stop --
+ * so a *scoped* one gets read as the global one, and this bar already carries an
+ * "Open project" at its left that it was being confused with. The word costs
+ * about 60px per project, which is cheaper than the confusion; it used to be
+ * spent only when a single project made the + unambiguous anyway, which is the
+ * case that needed it least.
+ */
 .tabgroup__add {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   flex: none;
-  align-self: center;
-  width: 22px;
-  height: 22px;
-  /* The same 14px the pill keeps on its other side, and for the same reason:
-     the last tab's foot has to land on sleeve, not on its corner. */
-  margin-left: 14px;
-  border-radius: 6px;
-  font-size: 15px;
+  align-self: stretch;
+  padding: 0 11px 0 9px;
+  background: var(--level-object);
+  font-size: 11px;
   line-height: 1;
   /* --graphite-dim measures 3.40:1 on --sleeve, well under the floor. */
   color: var(--graphite);
-}
-
-/*
- * With one project open, the + says what it does.
- *
- * It is the only + on the bar then, and the strip has the room -- one project's
- * tabs never fill it. With several, each sleeve carries its own and the label
- * would be the same three words repeated across the bar, so they stay glyphs
- * and the tooltip names the project.
- */
-.tabgroup__add--labelled {
-  width: auto;
-  gap: 5px;
-  padding: 0 9px 0 7px;
 }
 
 .tabgroup__add-label {
@@ -511,8 +588,8 @@ button {
 }
 
 .tabgroup__add:hover {
-  /* With the pointer on it, the same step a tab takes: up toward --tab-on. */
-  background: var(--rule);
+  /* With the pointer on it, the same step a tab takes: up toward --level-lit. */
+  background: var(--level-hover);
   color: var(--bone);
 }
 
@@ -562,7 +639,7 @@ button {
 .usage__track {
   height: 3px;
   border-radius: 2px;
-  background: var(--rule-bright);
+  background: var(--level-object);
   overflow: hidden;
 }
 
@@ -587,7 +664,7 @@ button {
  * How long until this limit comes back.
  *
  * A step quieter than the percent beside it, because it answers the second
- * question rather than the first: --graphite-dim measures 5.24:1 on --slab,
+ * question rather than the first: --graphite-dim measures 5.24:1 on --level-panel,
  * which clears the floor, and the ladder is what says which number you are
  * meant to read first.
  */
@@ -601,7 +678,7 @@ button {
  * The last read failed, so these are the previous numbers. Dimmed rather than
  * removed: stale numbers beat none, and the tooltip says what went wrong.
  *
- * 0.8 and not less, because opacity is a contrast cut: --graphite over --slab
+ * 0.8 and not less, because opacity is a contrast cut: --graphite over --level-panel
  * measures 6.98:1, and dimming it to 0.5 would leave the labels at 2.74:1 --
  * under the 4.5 floor the rest of the interface keeps. 0.8 measures 4.93:1.
  */
@@ -634,7 +711,7 @@ button {
 
 .topbar__open:hover {
   color: var(--bone);
-  background: var(--slab-raised);
+  background: var(--level-raised);
 }
 
 /*
@@ -678,8 +755,12 @@ button {
    * active tab were exactly that curve. Nothing runs into anything here now, so
    * the shape has nothing to say and the feet were a 12px trap over each
    * neighbour's click target that needed `pointer-events: none` to be safe.
+   *
+   * Square, and the group is what is round: see `.tabgroup`. A tab owns no
+   * outer edge of its own any more -- only the seam it shares with its
+   * neighbour -- so the corners belong to the shell.
    */
-  border-radius: 9px;
+  border-radius: 0;
   /*
    * The ground is the wrapper's, not the body's: the × is the body's sibling,
    * so a fill on the body stopped short of it and the active tab's ink ended
@@ -692,8 +773,39 @@ button {
    * but the difference between a shape and no shape -- and it leaves the tab
    * you are in 1.30:1 above it, which is the step that has to survive.
    */
-  --tab-fill: var(--rule);
-  background: var(--tab-fill);
+  --tab-fill: var(--level-object);
+  /*
+   * The status is a bar down the leading edge, where an 11px bullet used to be:
+   * about four times the area, at the edge the eye lands on as it runs along a
+   * row, which is the one thing the top bar exists to make fast.
+   *
+   * It is not the fill, and that was the choice. The fill is the loudest
+   * channel on the strip -- amber over the sleeve is 9.70:1 where every other
+   * step here is 1.18 to 1.54 -- and it is already spoken for: it says which
+   * tab you are in. Taking it for status costs that twice over, because --bone
+   * on --signal is 1.38:1 and --bone on --done is 1.36:1, so a filled tab's
+   * text would have to flip to --ink, and the label's own 1.92:1 "you are in
+   * this one" step would have nowhere left to go. A bar keeps every one of
+   * those measurements as it was, and a severity stripe is not what selection
+   * looks like anywhere, so the two cannot be read for each other.
+   *
+   * A background gradient with a hard stop, which is the only one of the three
+   * ways to draw this that gives a straight edge. `inset 4px 0 0` looks right
+   * in a mockup and is wrong on a pill: an inset shadow is the box minus a copy
+   * of itself shifted 4px, so *both* of the band's edges follow the 9px radius
+   * and it bends away along the top and bottom of the tab instead of ending in
+   * a line. A pseudo-element would need `overflow: hidden` on a tab that is a
+   * wrapper around two buttons. A background is painted inside the border box
+   * and clipped by the radius for free, so the outer edge takes the pill's
+   * curve, the inner edge stays vertical, and the menu's stacked tabs inherit
+   * it from this one rule.
+   *
+   * Nothing running keeps a mark of its own -- see `.tab--off`.
+   */
+  background-color: var(--tab-fill);
+  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
+  background-size: 4px 100%;
+  background-repeat: no-repeat;
 }
 
 /* The zZ tab stands for a count, not for a name, so it takes what it needs. */
@@ -709,7 +821,13 @@ button {
   gap: 7px;
   flex: 1;
   min-width: 0;
-  padding: 0 5px 0 9px;
+  /*
+   * 13px of leading inset: the bar's 4px plus the 9px the text has always kept
+   * from the tab's edge. Every tab carries it whether or not it has a bar, so
+   * the names stay on one left edge down the row -- which is what a row is
+   * scanned along.
+   */
+  padding: 0 5px 0 13px;
   /*
    * Chrome's other half of "which tab am I in": its unselected titles are dim
    * (#9aa0a6) and its selected one is bright (#e8eaed), and that difference is
@@ -726,21 +844,22 @@ button {
 }
 
 .tab--zz .tab__body {
-  padding: 0 9px;
+  /* Its own symmetrical inset, plus the same room for the bar. */
+  padding: 0 9px 0 13px;
 }
 
 /*
  * The pointer lifts the fill a rung, and only the fill.
  *
- * --rule-bright is 1.22:1 above a resting tab and on the way to --tab-on, which
- * is where a hover should point. The label stays --graphite here on purpose:
+ * --level-hover is mixed 40% of the way from --level-object to --level-lit,
+ * which is where a hover should point. The label stays --graphite here on purpose:
  * the tab you are in is only 1.06:1 lighter than a hovered one, so if hovering
  * also lit the label there would be nothing left to tell the two apart. Bright
  * text is what "you are in this one" means, and it outranks an echo of the
  * pointer.
  */
 .tab:not(.tab--active):hover {
-  --tab-fill: var(--rule-bright);
+  --tab-fill: var(--level-hover);
 }
 
 /*
@@ -752,11 +871,26 @@ button {
  * which is exactly what Chrome's active tab does against its toolbar.
  */
 .tab--active {
-  --tab-fill: var(--tab-on);
+  --tab-fill: var(--level-lit);
 }
 
 .tab--active > .tab__body {
   color: var(--bone);
+}
+
+/*
+ * Everything quiet on the lit segment comes up with its ground.
+ *
+ * --graphite cleared the old #333c4b at 4.54:1 and is 3.90:1 on --level-lit. A
+ * brighter tab was never free; this is the price, and it is the whole price.
+ */
+.tab--active .tab__close,
+.tab--active .tab__dirty,
+.tab--active .tab__queued,
+.tab--active .tab__fork,
+.tab--active .tab__zz,
+.tab--active .tab__caret {
+  color: var(--quiet-on);
 }
 
 /*
@@ -766,18 +900,6 @@ button {
  * running, and when nothing is the fill falls away and the ring is all that is
  * left -- so "nothing running" is a hollow dot rather than a colour of its own.
  */
-.tab__dot {
-  width: 11px;
-  height: 11px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--tab-state, transparent);
-  /* The ring the "nothing running" state falls back to is --graphite like the
-     rest of a tab's quiet channel: 5.89:1 on the sleeve against the dim grey's
-     4.42, and filled-versus-hollow is what tells the states apart anyway. */
-  box-shadow: inset 0 0 0 1px var(--tab-state, var(--graphite));
-}
-
 .tab__label {
   display: flex;
   align-items: center;
@@ -855,7 +977,7 @@ button {
 }
 
 .tab__close:hover {
-  background: var(--rule-bright);
+  background: var(--level-hover);
   color: var(--bone);
 }
 
@@ -900,7 +1022,21 @@ button {
  * back to a ring. A worktree with no agent has finished nothing, which is why
  * this is not green.
  */
+/*
+ * Nothing running is a dashed bar, which is the old hollow bullet's job: solid
+ * against dashed is what told a working agent from a stopped one, the way
+ * filled against hollow used to.
+ *
+ * Absence was tried instead, on the argument that not running is the one state
+ * asking for nothing. It is wrong where it matters most: the zZ dropdown is
+ * mostly worktrees with nothing running, so every row lost its bar at once and
+ * the menu read as though the bar had not been built there -- reported from
+ * use, and the reason this is back. In the strip the same tabs are the quiet
+ * majority, and --graphite-dim dashed is the quietest thing that is still
+ * there.
+ */
 .tab--off {
+  background-image: repeating-linear-gradient(var(--graphite-dim) 0 3px, transparent 3px 6px);
 }
 
 /*
@@ -921,6 +1057,42 @@ button {
 .tabstrip[data-tight='3'] .tab__queued,
 .tabstrip[data-tight='3'] .tab__dirty {
   display: none;
+}
+
+/*
+ * The + gives its word up before the tabs give up their names.
+ *
+ * Measured with four worktrees over two projects: every name fits from 1150px
+ * with the word and from 1050px without it, so the noun is worth exactly 100px
+ * of headroom -- 50 a project, which is what it looked like it would cost. Two
+ * rules rather than one because the strip runs out of room two different ways,
+ * and either is enough: too many tabs, which is what `data-tight` counts, or
+ * too little window, which it does not -- it is derived from the tab count and
+ * measured 0 at every width here.
+ *
+ * A + is only ambiguous while there is room to wonder about it. By the time
+ * this fires it is one glyph between two tabs inside a visible slab, which
+ * already scopes it to the project -- the word was buying clarity the shell now
+ * supplies.
+ */
+@media (max-width: 1200px) {
+  .tabgroup__add-label {
+    display: none;
+  }
+
+  .tabgroup__add {
+    padding: 0 9px;
+  }
+}
+
+.tabstrip[data-tight='2'] .tabgroup__add-label,
+.tabstrip[data-tight='3'] .tabgroup__add-label {
+  display: none;
+}
+
+.tabstrip[data-tight='2'] .tabgroup__add,
+.tabstrip[data-tight='3'] .tabgroup__add {
+  padding: 0 9px;
 }
 
 /* And the names give ground too, a step at a time, so more of them fit before
@@ -1102,7 +1274,7 @@ button {
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: var(--slab);
+  background: var(--level-panel);
   border: 1px solid var(--rule);
   border-left: var(--rail) solid var(--rule-bright);
   border-radius: var(--radius);
@@ -1122,7 +1294,7 @@ button {
 .tile:hover {
   border-top-color: var(--rule-bright);
   border-right-color: var(--rule-bright);
-  border-bottom-color: var(--rule-bright);
+  border-bottom-color: var(--quiet-on);
 }
 
 /* State is carried by the left rail, matching the tabs. Only "waiting" is
@@ -1170,37 +1342,62 @@ button {
   cursor: pointer;
 }
 
+.tile__bar {
+  background: var(--level-object);
+}
+
 .tile__bar:hover {
-  background: var(--slab-raised);
+  background: var(--level-hover);
 }
 
 /*
  * The window you are in, at the top of it.
  *
  * The strip already says which worktree you are in by making its tab the light
- * one; this is the same sentence finished at the other end. --rule-bright is
- * 1.45:1 above every other window's bar and sits one rung under --tab-on, so
- * the bar and the tab read as the same lit surface at the two ends of the same
- * sentence.
+ * one; this bar is the same sentence finished at the other end, so it is
+ * literally the same surface -- --level-lit, 1.79:1 above every other window's
+ * bar. It had drifted to a rung below and then two: the tab went up for the
+ * strip's redesign and this stayed, and the promise in this comment went on
+ * being made while the gap grew 1.07 to 1.24 to 1.33.
  *
- * Everything quiet in the bar goes up a rung with it. --graphite-dim measures
- * 3.62:1 here, under the floor, so the project, the branch and the prompt --
- * the three things written in it -- read as --graphite (4.83:1). The names and
- * the toggles are already --bone and --graphite and clear it as they are.
+ * Wearing the lit surface across a whole toolbar costs more than wearing it
+ * across a tab, and the cost is paid here rather than avoided. --graphite is
+ * 3.90:1 on it and --graphite-dim 2.92, so every quiet thing in this bar --
+ * the project, the slash, the branch, the prompt and the panel toggles -- is
+ * --quiet-on (4.89). --bone, which the worktree's own name is in, is 7.48 and
+ * needs nothing.
+ *
+ * --danger would have been the one colour with no lighter rung to reach for,
+ * at 3.15:1 here. It turned out not to be needed: the only red in this bar was
+ * `.tile__remove`, and that control has not been rendered since the trashcan
+ * moved into the sleep dialog.
  */
 .tile--current .tile__bar {
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
-.tile--current .tile__bar:hover {
-  background: var(--tab-on);
+.tile--current .tile__bar:hover,
+.tile--current .tile__toggle:hover {
+  /*
+   * Nothing fills on hover here, because there is nothing above lit to fill
+   * with: a lift big enough to see -- 6% white, 1.19:1 -- puts --quiet-on back
+   * under the floor at 4.11. On this bar the pointer is said by the label
+   * alone, which goes --bone, and --bone survives any lift.
+   */
+  background: var(--level-lit);
 }
 
 .tile--current .tile__project,
 .tile--current .tile__slash,
 .tile--current .tile__branch,
-.tile--current .tile__prompt {
-  color: var(--graphite);
+.tile--current .tile__prompt,
+.tile--current .tile__toggle {
+  color: var(--quiet-on);
+}
+
+.tile--current .tile__toggle:hover,
+.tile--current .tile__toggle--on {
+  color: var(--bone);
 }
 
 /*
@@ -1357,22 +1554,6 @@ button {
   border-left: 1px solid var(--rule);
 }
 
-/*
- * Removal is destructive, so the control stays quiet until you go for it and
- * only turns red on hover -- it should not read as part of the status line.
- */
-.tile__remove {
-  display: flex;
-  align-items: center;
-  flex: none;
-  padding: 0 10px;
-  color: var(--graphite-dim);
-}
-
-.tile__remove:hover {
-  color: var(--danger);
-  background: var(--rule-bright);
-}
 
 .tile__icon {
   display: block;
@@ -1386,7 +1567,7 @@ button {
  */
 .tile__project {
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1397,7 +1578,7 @@ button {
 
 .tile__slash {
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   /* Pulled in on both sides: the label's 8px gap is the spacing between two
      names, and this is punctuation inside one address. */
   margin: 0 -3px;
@@ -1426,7 +1607,7 @@ button {
 
 .tile__branch {
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1447,7 +1628,7 @@ button {
   min-width: 0;
   padding-right: 10px;
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1489,7 +1670,7 @@ button {
   overflow: auto;
   padding: 8px 10px;
   border-left: 1px solid var(--rule-bright);
-  background: var(--slab-raised);
+  background: var(--level-raised);
   color: var(--graphite);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1571,7 +1752,7 @@ button {
 
 .tile__toggle:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /*
@@ -1637,7 +1818,7 @@ button {
 
 .termtab:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* The same underline as a lit panel toggle and a shown chip: one mark for "this
@@ -1678,7 +1859,7 @@ button {
 
 .termtab--add:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* ------------------------------------------------------- empty and errors -- */
@@ -1734,7 +1915,7 @@ button {
   padding: 7px 14px;
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
-  background: var(--slab-raised);
+  background: var(--level-raised);
   font-family: var(--font-ui);
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -1783,7 +1964,7 @@ button {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  background: var(--slab);
+  background: var(--level-panel);
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
   overflow: hidden;
@@ -1849,7 +2030,7 @@ button {
 
 .field__input {
   padding: 8px 10px;
-  background: var(--ink);
+  background: var(--level-ground);
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
   font-family: var(--font-mono);
@@ -1874,7 +2055,7 @@ button {
  *
  * Same size as `.field__hint`, since it is the same kind of line under the same
  * body copy -- only the colour changes, and it is the button's own: --danger
- * measures 5.64:1 on the dialog's --slab. Not amber, which means an agent is
+ * measures 5.64:1 on the dialog's --level-panel. Not amber, which means an agent is
  * blocked on you and nothing else, and not a box you tick: a working Claude and
  * a queue of todos go whatever you answer, so there is nothing here to decide.
  */
@@ -1898,7 +2079,7 @@ button {
 .picker {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--ink);
+  background: var(--level-ground);
   max-height: 300px;
   overflow-y: auto;
 }
@@ -1921,7 +2102,7 @@ button {
 }
 
 .picker__row:hover {
-  background: var(--slab-raised);
+  background: var(--level-raised);
 }
 
 .picker__tag {
@@ -1980,11 +2161,11 @@ button {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--ink);
+  background: var(--level-ground);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--rule-bright);
+  background: var(--level-object);
   border-radius: 5px;
 }
 
@@ -2067,12 +2248,12 @@ button {
 
 .git__row:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 .git__row--on {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
 /* Two letters, so it is sized for two letters -- an abbreviated hash gets its
@@ -2182,7 +2363,7 @@ button {
 
 .git__reload:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /*
@@ -2202,7 +2383,7 @@ button {
   gap: 8px;
   padding: 3px 0 3px 4px;
   border-left: 2px solid var(--rule-bright);
-  background: var(--slab);
+  background: var(--level-panel);
   font-size: 12px;
   color: var(--bone);
 }
@@ -2253,7 +2434,7 @@ button {
   gap: 6px;
   flex: none;
   padding: 10px;
-  background: var(--slab-raised);
+  background: var(--level-raised);
   /* At the foot of the panel, so the rule that separates it from the queue is
      above it. */
   border-top: 1px solid var(--rule-bright);
@@ -2263,7 +2444,7 @@ button {
   padding: 6px 8px;
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
-  background: var(--ink);
+  background: var(--level-ground);
 }
 
 .todo__newfoot {
@@ -2355,7 +2536,7 @@ button {
 .todo__prompt:focus {
   outline: none;
   border-color: var(--pulse);
-  background: var(--ink);
+  background: var(--level-ground);
   color: var(--bone);
 }
 
@@ -2394,7 +2575,7 @@ button {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--graphite);
-  background: var(--slab);
+  background: var(--level-panel);
   white-space: nowrap;
 }
 
@@ -2483,7 +2664,7 @@ button {
   padding: 4px;
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
-  background: var(--slab-raised);
+  background: var(--level-raised);
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   font-family: var(--font-ui);
   font-size: 12px;
@@ -2500,7 +2681,14 @@ button {
  */
 .menu--tabs {
   gap: 2px;
-  padding: 4px;
+  /*
+   * No padding, for the reason `.tabgroup` has none: the rows are segments of
+   * one shape and the shell holds every outer edge. A sleeper met here and one
+   * met in the strip have to be the same object, so the dropdown is that slab
+   * stood on end.
+   */
+  padding: 0;
+  overflow: hidden;
   /*
    * As wide as its widest row, up to a cap. A tab in the strip is capped at
    * 200px because the strip has to hold every awake worktree; this is a list
@@ -2523,7 +2711,17 @@ button {
 .menu--tabs .tab {
   width: auto;
   max-width: none;
-  border-radius: 9px;
+  border-radius: 0;
+  /*
+   * The same height a tab has in the strip, where 35px falls out of the 38px
+   * bar less the 3px of sleeve above it. Declared here because a menu
+   * row has no bar to derive it from, and it has to be declared: a row is
+   * otherwise one 13px line, 15px tall, and 9px of radius top and bottom is
+   * then the whole of its left edge -- so the state bar had no straight section
+   * to fill and came out as a crescent while the strip beside it drew a bar.
+   * They are meant to be one object met in two places, so they are one height.
+   */
+  min-height: 35px;
 }
 
 /* -------------------------------------------------------------- the files -- */
@@ -2624,7 +2822,7 @@ button {
 
 .files__mode:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 /* The same underline as a lit panel toggle and a shown chip: one mark for
@@ -2758,12 +2956,12 @@ button {
 
 .files__commit:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 .files__commit--on {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
 .files__hash {
@@ -2800,12 +2998,12 @@ button {
 
 .files__row:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 .files__row--on {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
 /*
@@ -2912,7 +3110,7 @@ button {
   gap: 10px;
   padding: 4px 8px;
   border-left: 2px solid var(--rule-bright);
-  background: var(--slab);
+  background: var(--level-panel);
   color: var(--bone);
 }
 
@@ -3021,7 +3219,7 @@ button {
 
 .files__collapse:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* Brightness, not colour: amber means an agent is blocked on you, and an unsaved
@@ -3048,7 +3246,7 @@ button {
 .files__save:hover:not(:disabled),
 .files__reload:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* Present whenever a file is open, so the first keystroke does not shove the

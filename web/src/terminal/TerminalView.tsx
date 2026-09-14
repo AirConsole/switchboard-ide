@@ -39,9 +39,26 @@ export const TERMINAL_FONT_FAMILY = 'Menlo, monospace'
  * Type size for every terminal.
  *
  * It is not only a readability choice: the overview derives its minimum tile
- * width from this font's character width, so raising it makes tiles wider and
- * can cost a column. 14px is the largest size that still fits two 80-column
- * tiles side by side on a 1500px window; 15px drops that to one.
+ * width from this font's character width, so this number also decides how many
+ * windows a screen divides into.
+ *
+ * It decides that through the *cell* rather than the type size, because xterm
+ * rasterises into an atlas and lays out whole pixels -- `measureMonoCharWidth`
+ * floors for exactly that reason. At Menlo's 0.602 advance, 14px measures 8.43
+ * and lays out 8, 13px measures 7.83 and lays out 7. Eighty columns is 640px
+ * against 560, so the size steps in plateaus and one point is most of a tile.
+ *
+ * 13 was tried and rejected: it does buy a third window on a 1920 screen, at 84
+ * columns against 80, and a window at every other common width too -- and it
+ * reads too small for a row of agents you watch all day, which is what this
+ * size is for. The layout is not the only thing it answers to. Do not reach for
+ * it again to fit another window in; nothing about the arithmetic changed.
+ *
+ * The arithmetic is worth keeping, though, for whoever asks the same question
+ * next. The other two candidates cannot reach it: `PANE_CHROME_WIDTH` is 18px
+ * of the 658 a pane needs, so zeroing the padding outright still leaves 1920 at
+ * two and a half windows, and doing it on columns means dropping
+ * MIN_PANE_COLUMNS to 75, which is the promise the layout exists to keep.
  */
 export const TERMINAL_FONT_SIZE = 14
 
