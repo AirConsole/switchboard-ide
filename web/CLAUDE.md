@@ -193,6 +193,13 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
+- **The + lights when you are standing in its tile.** That tile is the one cell
+  in the row with no tab of its own, so without this the strip claimed nobody
+  was anywhere while you were in it. The + *is* its tab — it is what walks you
+  there — so `.tabgroup__add--on` takes `--level-lit` and `--bone`, exactly as
+  the tab of the window you are in does. It keys off `activeId === addKey(id)`,
+  which works because the row's cells and `active` are keyed by cell rather than
+  by worktree.
 - **The + is the group's last segment, and a bare glyph.** It wore the noun
   while it was the thing that opened the form, because a scoped + reads as
   Chrome's global "one more tab" and this bar already carries an **Open project**

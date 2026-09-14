@@ -3,6 +3,7 @@ import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboa
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
 import { ForkIcon } from './ForkIcon.js'
+import { addKey } from '../views/Overview.js'
 import {
   claudeSession,
   mostUrgentStatus,
@@ -118,7 +119,6 @@ const Group = ({
   group,
   sessions,
   todos,
-  alone,
   activeId,
   onCloseProject,
   onNewWorktree,
@@ -129,14 +129,6 @@ const Group = ({
   group: ProjectGroup
   sessions: Session[]
   todos: WorktreeTodo[]
-  /**
-   * Whether this is the only project open.
-   *
-   * With one project the + is the only + there is, and the strip has the room
-   * to say what it does; with several, each sleeve has one and a label on every
-   * one of them would be the same three words repeated across the bar.
-   */
-  alone: boolean
 } & Pick<
   TopBarProps,
   'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal' | 'onSleep'
@@ -345,8 +337,16 @@ const Group = ({
           tab" -- but the form is a tile at the end of this project's run now,
           so this is navigation rather than a create, and the tile it walks you
           to says what it is in full. */}
+      {/*
+        * The + is this project's new-worktree tile the way a tab is a
+        * worktree's window, so it lights the same way when you are in it.
+        * That tile is the only cell in the row with no tab of its own, and
+        * without this the strip said nobody was anywhere while you stood in it.
+        */}
       <button
-        className="tabgroup__add"
+        className={
+          activeId === addKey(project.id) ? 'tabgroup__add tabgroup__add--on' : 'tabgroup__add'
+        }
         onClick={() => onNewWorktree(project)}
         title={`New worktree in ${project.name}`}
         aria-label={`New worktree in ${project.name}`}
@@ -545,7 +545,6 @@ export const TopBar = ({
           group={group}
           sessions={sessions}
           todos={todos}
-          alone={groups.length === 1}
           activeId={activeId}
           onCloseProject={onCloseProject}
           onNewWorktree={onNewWorktree}
