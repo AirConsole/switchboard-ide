@@ -96,8 +96,8 @@ The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
 - **`scripts/deploy.sh` is the restart**, run from the master checkout after a
   merge lands: it builds, and only if that succeeds stops :8084 and starts it
   again detached. It is never automatic and never run from a worktree. It also
-  passes `SWB_PUBLIC_ORIGIN`, without which every socket arriving through Caddy
-  is refused and the row never paints.
+  passes `--host`, without which every socket arriving through Caddy is refused
+  and the row never paints.
 - **Never touch their project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
   `tmux kill-server` on `~/.config/switchboard/tmux.sock`.
@@ -150,7 +150,8 @@ it. The one thing it checks itself is **who may open `/ws`**, because a
 WebSocket is exempt from CORS and neither the bind address nor Caddy is in that
 path: any page you visited could otherwise open one, read a session id off the
 broadcast and type into a running agent. Behind a proxy that check needs
-`SWB_PUBLIC_ORIGIN`, which `deploy.sh` sets. See `server/CLAUDE.md`.
+`--host`, the public name a browser types, which `deploy.sh` passes. See
+`server/CLAUDE.md`.
 
 It also **installs as an app** -- a manifest and icons in `web/public/`, so
 Chrome's "Install page as app" gives it its own window, icon and place in the
