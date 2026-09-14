@@ -807,6 +807,17 @@ when the pair is unchanged, and that is not a nicety: `activeId` was a string, s
 rewriting it was free, while an object is not, and this now fires on every focus
 move *within* a pane.
 
+**`--level-object` is deliberately quiet.** It was `#2b3341` for a day and read
+too bright across four places at once. At `#222833` it is 1.32:1 against the bar
+behind the strip and 1.28:1 against the terminal under a window's bar — enough
+to be a shape, and no more — while the step up to `--level-lit` *grew* from
+1.33:1 to **1.55**, so the thing you are in stands out more, not less. Toning it
+down also undid both things the brighter value had forced: `--graphite-dim`
+clears it again at 4.53 so a window bar's metadata went back to it, and
+`--danger` clears at 4.88 so the red went back to `#e5707a`. The seam moved with
+it — see `--sleeve`, which is the frame now, because at `--level-raised` the
+darker segments closed the seams to 1.10:1.
+
 **One surface means "not this one", everywhere.** `--level-object` is the fill
 of an inactive tab, of the project's head, of `＋ Worktree`, and of every window
 bar that is not the one you are in. `--level-lit` is the exception in all four
