@@ -849,6 +849,21 @@ twice: the tab went up for the strip's redesign and this stayed, then the ladder
 moved it again, and the gap grew 1.07 → 1.24 → 1.33 while this paragraph went on
 promising they matched.
 
+**The three panel names are white, and one white rule says which is open.**
+`TERMINAL`, `TODO` and `FILES` all read `--bone` — 11.59:1 on a quiet bar,
+7.48 on the lit one — and `.tile__toggle--on` carries a 2px `--bone` underline.
+It used to be the other way round: brightness said which panel was on screen
+and the underline agreed underneath, except that underline was `--rule-bright`
+at **1.25:1** and **1.24:1**, so it said nothing and the label carried it alone.
+Moving the job to the line is what let the labels become equally legible.
+
+That also gave the lit bar its hover back. It could not fill on hover while its
+labels were `--quiet-on`, because a lift big enough to see put them on 4.11:1 —
+so the pointer was said by the label brightening instead. White labels spend
+that trick, but `--bone` survives a lift where the grey did not, so the fill
+returns as `--level-lift`, a 10% wash of `--bone` over the lit surface: 1.28:1
+over it, label still at 5.83.
+
 Wearing the lit surface across a whole **toolbar** costs more than wearing it
 across a tab, and that cost is the interesting part. `--graphite` is 3.90:1 on it
 and `--graphite-dim` 2.92, so every quiet thing in that bar — project, slash,
