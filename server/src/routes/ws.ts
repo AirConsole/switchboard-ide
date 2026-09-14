@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 // Imported for its declaration merging, which adds `websocket: true` to
 // RouteShorthandOptions. Without this the route option does not typecheck.
 import '@fastify/websocket'
@@ -6,6 +6,7 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
+import { hasPeerToken } from '../gate.js'
 
 /**
  * One WebSocket carries every terminal in the app.
@@ -91,8 +92,17 @@ class SocketSink implements Sink {
  * one of ours. See `publicOrigins` in config.ts for why it is a list and not a
  * comparison against `Host`.
  */
-const clientAllowed = (origin: string | undefined): boolean =>
-  origin === undefined || config.publicOrigins.has(origin)
+const clientAllowed = (request: FastifyRequest): boolean => {
+  // A gateway reading this machine: not a browser, so no Origin, and the token
+  // is the whole of what it presents.
+  if (hasPeerToken(request)) return true
+  const origin = request.headers.origin
+  // Once this instance is somebody's peer it is reachable off this machine, so
+  // "no Origin" stops meaning "a local script" and starts meaning "anything on
+  // the network". A peer admits browsers and token-holders, and nothing else.
+  if (config.token !== undefined && origin === undefined) return false
+  return origin === undefined || config.publicOrigins.has(origin)
+}
 
 export const registerWs = (
   app: FastifyInstance,
@@ -121,7 +131,7 @@ export const registerWs = (
     // Refused *before* the sink joins `sinks`: every session's liveness and
     // attention is broadcast to everything in that set, session ids included,
     // and a refused client must not be handed one on its way out.
-    if (!clientAllowed(request.headers.origin)) {
+    if (!clientAllowed(request)) {
       // 1008 is "policy violation". Said out loud rather than dropped silently,
       // because the other thing that reaches here is our own page behind a proxy
       // whose origin nobody set, and "it just does not connect" is a bad day.

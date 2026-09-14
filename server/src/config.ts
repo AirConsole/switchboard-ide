@@ -1,4 +1,4 @@
-import { homedir } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 
 const env = process.env
@@ -61,6 +61,25 @@ export const config = {
 
   /** Origins whose pages may open `/ws`. See `publicOrigins` above. */
   publicOrigins: publicOrigins(),
+
+  /**
+   * The shared secret that makes this instance reachable as somebody's peer.
+   *
+   * Unset -- the default, and what a normal instance stays -- nothing changes:
+   * the bind address and whatever proxy sits in front are the boundary, as they
+   * always were. Set, every `/api` and `/ws` request must either carry it or be
+   * our own page, which is what makes it safe to bind an address other than
+   * loopback so a gateway on the network can read this machine. See gate.ts.
+   */
+  token: env.SWB_TOKEN === '' ? undefined : env.SWB_TOKEN,
+
+  /**
+   * What this machine calls itself in another machine's UI.
+   *
+   * The hostname is the obvious default and a poor one for testing, where two
+   * instances share a host and would be one name twice.
+   */
+  serverName: env.SWB_SERVER_NAME ?? hostname(),
 
   /*
    * Holds `state.json` and the tmux socket, so it is the one path that must not

@@ -9,6 +9,7 @@ import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
+import { allowRequest } from './gate.js'
 
 const app = Fastify({
   logger: {
@@ -48,6 +49,26 @@ process.on('uncaughtException', (err) => {
 })
 process.on('unhandledRejection', (reason) => {
   app.log.error({ err: reason }, 'unhandled rejection; the server is staying up')
+})
+
+/*
+ * The API's gate, which does nothing at all unless this instance is somebody's
+ * peer (`SWB_TOKEN`). See gate.ts for the two callers it recognises.
+ *
+ * Registered before the routes so a route added later is covered by it without
+ * anyone remembering to, and scoped to `/api` because the static SPA and its
+ * assets are what a browser asks for before it can ask for anything else. `/ws`
+ * runs the same rule at its upgrade, where a hook cannot reach.
+ */
+app.addHook('onRequest', async (request, reply) => {
+  if (!request.url.startsWith('/api')) return
+  // `/api/health` stays open: it says `{ok:true}` and nothing else, and it is
+  // what `deploy.sh` and `scratch.sh` poll with curl -- which is neither a
+  // browser nor a gateway, and would otherwise have to be handed the token to
+  // ask whether the process had come back up.
+  if (request.url.startsWith('/api/health')) return
+  if (allowRequest(request)) return
+  await reply.status(401).send({ error: 'not allowed' })
 })
 
 const { broadcastInvalidate, clientCount } = registerWs(app, engine)

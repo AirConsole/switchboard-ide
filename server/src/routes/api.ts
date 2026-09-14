@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { SessionKind } from '@switchboard/shared'
+import { PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -173,6 +173,19 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   })
 
   app.get('/api/health', async () => ({ ok: true }))
+
+  /*
+   * Who this machine is, for a gateway that has just been pointed at it.
+   *
+   * The version is here rather than in a header so a mismatch is a reply a
+   * human can be shown, naming both numbers. It is compared on every read and
+   * not only when a peer is added, because the other machine is upgraded on its
+   * own schedule.
+   */
+  app.get('/api/server', async () => ({
+    name: config.serverName,
+    protocolVersion: PROTOCOL_VERSION,
+  }))
 
   app.get('/api/snapshot', async () => workspace.snapshot())
 

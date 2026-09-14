@@ -1,6 +1,17 @@
 import type { AttentionState, SessionLiveness } from './model.js'
 
 /**
+ * Bumped when a change makes two instances unable to talk to each other.
+ *
+ * Compiled into both sides and compared on every read, not only when a peer is
+ * added: the other machine is upgraded on its own schedule, and the failure
+ * this prevents is silent -- a field one side stopped sending reads as
+ * `undefined` on the other, and a worktree simply looks wrong rather than
+ * broken. Refusing loudly and naming the version is the cheaper answer.
+ */
+export const PROTOCOL_VERSION = 1
+
+/**
  * Terminal traffic rides one WebSocket for the whole app. Control messages are
  * JSON; terminal output is binary, because it is the only high-volume direction
  * and JSON-encoding it would double the bytes and cost a parse per frame.
