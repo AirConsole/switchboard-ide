@@ -70,7 +70,7 @@
   --level-ground: #10141a;
   --level-panel: #171c24;
   --level-raised: #1d232d;
-  --level-object: #2b3341;
+  --level-object: #222833;
   --level-lit: #3b4657;
   /*
    * And hover is an operation, not a level: part-way from where you are to
@@ -93,7 +93,15 @@
    * The strip's own name for one of those levels, kept because the comments
    * around the tab strip are written in it. An alias, never a value.
    */
-  --sleeve: var(--level-raised);
+  /*
+   * The seam between segments, which is the only place it is ever seen -- 2px
+   * at a time, since `.tabgroup` has no padding. That is why it can be the
+   * frame: it stopped being a trough the moment the segments met edge to edge,
+   * so it is free to be whatever keeps the seam crisp. Against --level-raised
+   * the toned-down segments measured 1.10:1 and the seams closed up; against
+   * the frame they are 1.32, and read as slots cut through the slab.
+   */
+  --sleeve: var(--level-frame);
 
   /*
    * Three steps of text, and every one of them readable.
@@ -144,14 +152,13 @@
   --diff-add: #6bd968;
   --diff-del: #ff6b6b;
   /*
-   * Lifted from #e5707a when the project's head joined the tabs at
-   * --level-object: the × it turns on hover measured 4.19:1 there, under the
-   * floor, where on the old head it was 5.64. --level-object is the lightest
-   * ground any red in this interface lands on, so clearing it at 4.82 clears
-   * every other -- the dialogs and the todo list, both on --level-panel, go
-   * 5.64 to 6.49. One red, raised, rather than a second red for one control.
+   * It was briefly #eb8087. When the project's head joined the tabs the × it
+   * turns on hover landed on 4.19:1, under the floor, so the red was raised to
+   * clear it -- and then --level-object was toned down and the original clears
+   * at 4.88 again. The lift is gone; the episode is kept, because the next
+   * person to brighten a surface will meet the same wall.
    */
-  --danger: #eb8087;
+  --danger: #e5707a;
 
   /*
    * A source file is content in exactly the same sense as a patch, so it gets
@@ -1567,7 +1574,7 @@ button {
  */
 .tile__project {
   font-size: 11px;
-  color: var(--graphite);
+  color: var(--graphite-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1578,7 +1585,7 @@ button {
 
 .tile__slash {
   font-size: 11px;
-  color: var(--graphite);
+  color: var(--graphite-dim);
   /* Pulled in on both sides: the label's 8px gap is the spacing between two
      names, and this is punctuation inside one address. */
   margin: 0 -3px;
@@ -1607,7 +1614,7 @@ button {
 
 .tile__branch {
   font-size: 11px;
-  color: var(--graphite);
+  color: var(--graphite-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1628,7 +1635,7 @@ button {
   min-width: 0;
   padding-right: 10px;
   font-size: 11px;
-  color: var(--graphite);
+  color: var(--graphite-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
