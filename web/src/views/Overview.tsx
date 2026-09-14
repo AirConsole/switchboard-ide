@@ -1216,7 +1216,22 @@ export const Overview = ({
     // is already at its own: a collapsed files panel cannot give anything back.
     const least = Math.min(wants, 2, capacity)
     if (claude.units + wants <= capacity) return [claude, pane(wants)]
-    if (claude.units + least <= capacity) return [claude, pane(least)]
+    /*
+     * A panel that asked for more than a pane's floor asked because it splits.
+     * The files panel is a tree or a list beside the file, diff or commit you
+     * opened, and it spends about a quarter of its width on that left-hand
+     * side -- so squeezed back to two units the half you are actually reading
+     * lands at 56 to 63 columns, under the MIN_PANE_COLUMNS this whole layout
+     * exists to guarantee.
+     *
+     * So Claude gives way, not the panel. It used to be the other way round,
+     * on the argument that a narrower editor beats no agent -- but a diff you
+     * cannot read at 80 columns is not a narrower editor, it is a broken one,
+     * and the agent is still there when you close the panel. `wants > least`
+     * is exactly "this panel would have to be squeezed", since `least` is what
+     * the squeeze would give it.
+     */
+    if (wants === least && claude.units + least <= capacity) return [claude, pane(least)]
     // Alone on the window, so it takes the whole of it rather than what it
     // asked for -- there is nothing left to share the row with.
     return [pane(capacity)]
