@@ -13,6 +13,14 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${SWB_PORT:-8084}"
 LOG=/tmp/swb-prod.log
 
+# The origin the browser actually types, which is Caddy's and not ours.
+#
+# `/ws` refuses a page from any origin it does not know, and behind a proxy this
+# process cannot derive the one the page was served from -- it only ever sees
+# 127.0.0.1. Unset, the loopback defaults still let a browser on this machine in
+# and every socket through Caddy is refused, so this is not optional here.
+ORIGIN="${SWB_PUBLIC_ORIGIN:-https://andrin.ide.n-dream.com:84}"
+
 cd "$REPO"
 
 pnpm build
@@ -33,7 +41,7 @@ fi
 # this script -- bash then waits for it and the deploy never returns. Forking
 # reparents the server to init, which is also what stops the terminal that ran
 # this from taking the IDE down when it closes.
-(cd server && NODE_ENV=production SWB_PORT="$PORT" \
+(cd server && NODE_ENV=production SWB_PORT="$PORT" SWB_PUBLIC_ORIGIN="$ORIGIN" \
   setsid --fork node dist/index.js >>"$LOG" 2>&1 </dev/null)
 
 for _ in $(seq 1 40); do
@@ -42,7 +50,7 @@ for _ in $(seq 1 40); do
 done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || { echo "did not come back -- see $LOG" >&2; exit 1; }
 
-echo "live on :$PORT at $(git rev-parse --short HEAD)"
+echo "live on :$PORT at $(git rev-parse --short HEAD), for $ORIGIN"
 curl -fsS "http://127.0.0.1:$PORT/api/snapshot" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)

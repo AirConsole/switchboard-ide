@@ -351,11 +351,53 @@ remote project would implement. Routes stay thin: parse, call, map `HttpError`.
 A kill emits no event of its own, so any route that ends a session must call
 `broadcastInvalidate()`; otherwise clients only find out on their next poll.
 
+## Who may open the socket
+
+`/ws` refuses a browser page whose `Origin` it does not know, and that check is
+the whole of the app's authentication. It exists because **a WebSocket is exempt
+from CORS**: a browser will open one to any origin, with no preflight and no
+`Access-Control-*` to satisfy. Binding `127.0.0.1` does not help, because the
+page runs in *your* browser, which is already inside — and Caddy does not help
+either, because it fronts the public name while the socket is reached on
+loopback.
+
+What that cost before the check, measured on master and recorded in
+`test/ws-origin.test.ts`: a page on any origin opened a socket, and
+`session-state` — carrying a live session id — arrived **unasked**, because
+every liveness and attention change is broadcast to every sink. With an id, a
+single `{"t":"input"}` frame types a prompt and a Return into a running Claude.
+That is command execution as you, from a page you merely looked at.
+
+Three things about the rule, each of which is a trap if reversed:
+
+- **The refusal happens before the sink joins `sinks`.** Closing a socket that
+  is already in the broadcast set is a race, not a fix — the frame it must not
+  see may already be on the wire.
+- **It is an allow-list, not `Origin` against `Host`.** DNS rebinding makes
+  those two agree: the attacker owns the name, re-points it at this address, and
+  both headers then read `evil.example`. A name we never published is exactly
+  what has to be refused, so the names are named.
+- **A missing `Origin` is allowed, and that is not a hole.** Browsers set it on
+  every socket and script cannot override it, so nothing that omits it is a
+  page. curl, the health check and the tests are what arrive that way, and they
+  are gated the way every `/api` route is.
+
+Behind a proxy this process only ever sees `127.0.0.1`, so it cannot derive the
+origin the page was served from and a deployment must say: `SWB_PUBLIC_ORIGIN`,
+which `scripts/deploy.sh` sets. Unset, the loopback defaults still admit a
+browser on this machine, so a scratch instance needs nothing — and every socket
+through Caddy is refused, which is the failure to expect if it is forgotten.
+
+`/api` is still unauthenticated and still relies on the bind address and the
+proxy. Rebinding can therefore still *read* it; that is information disclosure
+rather than execution, and closing it is a `Host` allow-list, not this.
+
 ## Env
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SWB_HOST` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
+| `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated. Required behind a proxy. |
 | `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |
 | `SWB_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |
 | `SWB_TMUX_CONF` | `server/tmux.conf` | The config loaded with `-f`. |

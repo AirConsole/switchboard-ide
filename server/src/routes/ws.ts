@@ -5,6 +5,7 @@ import '@fastify/websocket'
 import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
+import { config } from '../config.js'
 
 /**
  * One WebSocket carries every terminal in the app.
@@ -76,6 +77,23 @@ class SocketSink implements Sink {
   }
 }
 
+
+/**
+ * Whether a client may open the socket.
+ *
+ * A missing `Origin` is not a browser -- curl, a test, a health check and any
+ * server-to-server client send none -- and those are gated the way every `/api`
+ * route is, by the bind address and whatever sits in front. This check exists
+ * for the one thing `/api` gets for free and a socket does not: a browser will
+ * open a WebSocket to any origin, no preflight, no CORS, no questions asked.
+ *
+ * So the rule is only about pages: if a browser named an origin, it has to be
+ * one of ours. See `publicOrigins` in config.ts for why it is a list and not a
+ * comparison against `Host`.
+ */
+const clientAllowed = (origin: string | undefined): boolean =>
+  origin === undefined || config.publicOrigins.has(origin)
+
 export const registerWs = (
   app: FastifyInstance,
   engine: SessionEngine,
@@ -99,7 +117,27 @@ export const registerWs = (
     })
   })
 
-  app.get('/ws', { websocket: true }, (socket) => {
+  app.get('/ws', { websocket: true }, (socket, request) => {
+    // Refused *before* the sink joins `sinks`: every session's liveness and
+    // attention is broadcast to everything in that set, session ids included,
+    // and a refused client must not be handed one on its way out.
+    if (!clientAllowed(request.headers.origin)) {
+      /*
+       * Logged, and at warn, because the other thing that reaches here is our
+       * own page behind a proxy whose origin nobody configured -- and that
+       * failure is otherwise invisible: the page loads, every REST call works,
+       * and only the row never paints. Naming the origin that was refused
+       * turns "the IDE is broken" into one grep and one env var.
+       */
+      app.log.warn(
+        { origin: request.headers.origin ?? null, allowed: [...config.publicOrigins] },
+        'refused a socket from an origin that is not ours -- is SWB_PUBLIC_ORIGIN set?',
+      )
+      // 1008 is "policy violation", said out loud rather than dropped silently.
+      socket.close(1008, 'origin not allowed')
+      return
+    }
+
     const sink = new SocketSink(socket)
     sinks.add(sink)
 
