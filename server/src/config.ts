@@ -8,13 +8,59 @@ const int = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback
 }
 
+const port = int(env.SWB_PORT, 8084)
+const isDev = env.NODE_ENV !== 'production'
+
+/**
+ * Origins whose pages may open `/ws`.
+ *
+ * A WebSocket is exempt from CORS by design, so without this any page you
+ * happen to visit can open one to this server, read a session id off the state
+ * broadcast every client gets, and send a prompt and a Return into a running
+ * Claude -- command execution as you, from a page you merely looked at. The
+ * bind address does not help: the page runs in *your* browser, which is already
+ * inside. `Origin` is what closes it, because a browser sets it on every socket
+ * and script cannot override it.
+ *
+ * An allow-list, rather than checking `Origin` against `Host`: DNS rebinding
+ * makes those two agree -- the attacker owns the name and re-points it here, so
+ * both read `evil.example` -- and a name we never published is exactly what
+ * this has to refuse.
+ *
+ * Behind a reverse proxy the browser's origin is the proxy's, which this
+ * process has no way to derive, so a deployment must name it. `deploy.sh` does.
+ */
+const publicOrigins = (): ReadonlySet<string> => {
+  // Three spellings of this machine, because which one reaches the server is
+  // the user's choice of URL and all three are the same server.
+  const loopback = ['127.0.0.1', 'localhost', '[::1]']
+  const allowed = loopback.map((h) => `http://${h}:${port}`)
+  // In dev the page is Vite's and it proxies `/ws` here, so the browser's origin
+  // is Vite's rather than ours. `changeOrigin` rewrites `Host` and leaves
+  // `Origin` alone, which is why this is needed and why it names the web port.
+  if (isDev) {
+    const webPort = int(env.SWB_WEB_PORT, 5240)
+    for (const h of loopback) allowed.push(`http://${h}:${webPort}`)
+  }
+  for (const raw of (env.SWB_PUBLIC_ORIGIN ?? '').split(',')) {
+    // Trailing slash trimmed: an origin has none, but a value pasted from a
+    // browser's address bar does, and the two must not be different origins.
+    const origin = raw.trim().replace(/\/+$/, '')
+    if (origin !== '') allowed.push(origin)
+  }
+  return new Set(allowed)
+}
+
 export const config = {
   /**
    * Caddy already fronts 127.0.0.1:8084 as andrin.ide.n-dream.com:84 with auth,
    * so the app itself stays unauthenticated and bound to localhost.
    */
   host: env.SWB_HOST ?? '127.0.0.1',
-  port: int(env.SWB_PORT, 8084),
+  port,
+
+  /** Origins whose pages may open `/ws`. See `publicOrigins` above. */
+  publicOrigins: publicOrigins(),
 
   /*
    * Holds `state.json` and the tmux socket, so it is the one path that must not
@@ -56,7 +102,7 @@ export const config = {
   /** Static web build, served in production. */
   webDist: env.SWB_WEB_DIST ?? new URL('../../web/dist', import.meta.url).pathname,
 
-  isDev: env.NODE_ENV !== 'production',
+  isDev,
 } as const
 
 export const stateFile = join(config.stateDir, 'state.json')
