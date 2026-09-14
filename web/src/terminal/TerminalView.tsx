@@ -39,11 +39,26 @@ export const TERMINAL_FONT_FAMILY = 'Menlo, monospace'
  * Type size for every terminal.
  *
  * It is not only a readability choice: the overview derives its minimum tile
- * width from this font's character width, so raising it makes tiles wider and
- * can cost a column. 14px is the largest size that still fits two 80-column
- * tiles side by side on a 1500px window; 15px drops that to one.
+ * width from this font's character width, so this number decides how many
+ * windows a screen divides into.
+ *
+ * What it decides through is the *cell*, not the type size, because xterm
+ * rasterises into an atlas and lays out whole pixels -- `measureMonoCharWidth`
+ * floors for exactly that reason. Measured at Menlo's 0.602 advance: 14px is
+ * 8.43 and lays out 8, 13px is 7.83 and lays out 7. Eighty columns is 640px
+ * against 560, and that 80px is most of a tile.
+ *
+ * So the size steps in plateaus, and 13 is the top of its own: 12px lays out a
+ * 7px cell too and buys nothing more. At 13 a 1920px screen holds three
+ * windows rather than two and a half, and every one of them is 86 columns --
+ * measured, against the 80 the floor promises. 14px cost a window at every
+ * common width for no columns anyone was using: 1512 went 2 windows to 2.5,
+ * 2560 3.5 to 4, 3440 5 to 5.5.
+ *
+ * Going the other way is expensive in the same steps. 15px lays out 9 and
+ * takes 1920 back to two and a half windows.
  */
-export const TERMINAL_FONT_SIZE = 14
+export const TERMINAL_FONT_SIZE = 13
 
 export interface TerminalViewProps {
   session: Session

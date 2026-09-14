@@ -186,7 +186,10 @@ quarter of its width on the tree beside the editor and at one spot its editor
 came to 56–63 columns, under the 80 the layout exists to guarantee. Measured,
 and worse the wider the monitor: 57 columns at 3440px, because more spots fit
 and a two-pane tile is always two of them. At three units it is 90–107 columns
-from 1687px up, and 82 once the editor asks for exactly 80.
+from 1687px up, and 82 once the editor asks for exactly 80. Those figures were
+taken at a 8px cell and are about a seventh low for the 7px one the terminal
+lays out now; the conclusion is untouched, since it turns on the tree taking a
+quarter of the panel and not on the type size.
 
 **The files panel is one unit while it is only its tree**, and the new-worktree
 placeholder is one always. They are the two exceptions to "nothing may ask for
@@ -246,9 +249,22 @@ textarea throughout.
 
 `measureMonoCharWidth` is **floored** on purpose. xterm rasterises glyphs into
 an atlas and blits per cell, so a cell is a whole number of pixels: canvas says
-8.429px where xterm lays out 8. This value now decides how many tiles the window
-divides into, and 5% of slack costs a whole tile in some width bands.
+7.827px at 13px where xterm lays out 7, and 8.429 at 14px where it lays out 8.
+This value now decides how many tiles the window divides into, and 5% of slack
+costs a whole tile in some width bands.
 `PANE_CHROME_WIDTH` tracks `.tile__pane`'s padding — change one, change both.
+
+**`TERMINAL_FONT_SIZE` is the lever that decides how many windows fit**, and it
+works through the floored cell rather than through the type size, so it moves in
+plateaus: 12px and 13px both lay out 7, 14px lays out 8, 15px and 16px lay out
+9. Eighty columns is 560px against 640 against 720, and that is most of a tile —
+which is why the other two candidates cannot reach it. `PANE_CHROME_WIDTH` is
+18px of the 658 a 14px pane needed, so zeroing the padding entirely still leaves
+1920px at five units; and getting there on columns alone means dropping
+`MIN_PANE_COLUMNS` to 75, which is the one promise this layout exists to keep.
+Measured at 1920: 13px gives three windows of 84 columns, 14px two and a half of
+89. The pty's own report, `tmux list-sessions -F '#{window_width}'`, is how both
+were read.
 
 ## Terminals mount lazily, and that is not optional
 
