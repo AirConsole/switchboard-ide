@@ -240,14 +240,14 @@ export class Workspace {
    *
    * `localOnly` is what a peer answers with, and it is a loop guard as much as
    * an optimisation. Without it two instances peered at each other -- which
-   * `selectProjects` says outright is an expected configuration -- turn one
+   * `localTo` says outright is an expected configuration -- turn one
    * snapshot into a recursion that only unwinds when the 5s timeouts fire at
    * the leaves: measured, **8,500 requests and five seconds of pegged CPU from
    * a single `GET /api/snapshot`**, self-sustaining because the browser
    * refetches on every invalidate and the git poll fires every four seconds.
    * Adding your own URL as a machine does it on one box.
    *
-   * The work skipped was never wanted anyway: `selectProjects` keeps only the
+   * The work skipped was never wanted anyway: `localTo` keeps only the
    * projects a peer holds *locally*, so a peer's own view of third machines is
    * computed and then discarded on arrival.
    */

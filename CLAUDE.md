@@ -280,56 +280,66 @@ Do not add abstractions for things that do not exist yet. The two seams that
 were named ahead of time — `Project.host` and the id namespacing — are both
 used now, by the gateway described below.
 
-## Remote projects
+## Linked machines
 
-A project can live on another machine running this same IDE, and **this server
-is the gateway**. The browser still talks to one origin and, almost everywhere,
-never learns that a project is remote: `store.ts`, `Overview.tsx`, `TopBar.tsx`
-and `App.tsx` are untouched, so the unit arithmetic, the keyboard, the focus
-model and the WebGL budget never had to be reasoned about. Two places do know.
-The open dialog, because somebody has to pick the machine; and one branch of
-`socket.ts`, because a machine restarting re-attaches its panes and only a
-repaint can say what they show now.
+Another machine running this same IDE can be **linked**, and then everything
+open there is open here. There is no per-project subscription: you link the
+machine, and its projects, worktrees, sessions and queued todos join the row.
 
-That is the whole of the design, and everything else follows from it:
+That is the model the row is for. An agent blocked on you is blocked on you
+wherever it is, and under a per-project model one in a project you had not
+happened to register never reached you. It is also the model the rest of this
+IDE already has — every registered project is open, there is no active one.
 
+**This server is the gateway.** The browser talks to one origin and, almost
+everywhere, never learns that a project is remote: `store.ts`, `Overview.tsx`,
+`TopBar.tsx` and `App.tsx` are untouched, so the unit arithmetic, the keyboard,
+the focus model and the WebGL budget never had to be reasoned about. Two places
+know — the open dialog, because somebody has to pick the machine, and one
+branch of `socket.ts`, because a machine restarting re-attaches its panes and
+only a repaint can say what they show now.
+
+Everything else follows from those two sentences:
+
+- **A machine's ids are its own.** A remote project, worktree or session is
+  known here by the id that machine gave it, namespaced by a short key, so
+  every route addresses it through the ordinary proxy with no special case.
+  When this server minted ids of its own for them, the one route that
+  addresses a project rather than a worktree could not be routed at all.
+- **Linking is not transitive.** A linked machine contributes its *own*
+  projects, never the machines it is itself linked to. That is also what makes
+  two machines linked to each other terminate rather than recurse — in the
+  snapshot, and on the socket, where a peer's relay gets no relay of its own.
 - **A peer needs no public exposure.** No DNS, no TLS, no Caddy of its own, no
-  login. It is reached from the gateway, on the network the two share, which is
-  the topology this was built for: the machines are together and only you are
-  somewhere else. A proxy's cost is the *detour*, not the peer's round trip --
-  `dist(browser,gateway) + dist(gateway,peer) - dist(browser,peer)` -- and over
-  a LAN hop that is about a millisecond on terminal echo.
+  login. It is reached from the gateway over the network the two share, which
+  is the topology this was built for: the machines are together and only you
+  are somewhere else. A proxy's cost is the *detour*, not the peer's round
+  trip, and over a LAN hop that is about a millisecond on terminal echo.
 - **A peer is an unmodified instance.** It runs this same program and has no
-  idea anyone remote is asking. That is what lets one hook forward every `/api`
-  route instead of twenty-five routes each growing a remote branch, and one
-  relay carry the socket: the path that answers here answers there.
-- **Todos live with the worktree**, so RUN NEXT on a remote worktree is
-  dispatched by the peer's own dispatcher, with no browser open anywhere. They
-  are created against the peer for exactly that reason.
-- **The layout is the viewer's.** `ui` is read and written only on the server
-  that served the page; a peer's snapshot carries one and it is dropped at the
-  boundary.
-- **A machine that is off keeps its tab.** The UI prunes stored layout for
-  worktrees it cannot see, so "that machine is off" must never read as "those
-  worktrees are gone" -- it would cost panels and open files permanently. The
-  snapshot holds what a peer last said, and a project's id is derived from the
-  root and the base URL so it exists even when nothing has ever answered.
+  idea anyone is linked to it. That is what lets one hook forward every `/api`
+  route and one relay carry the socket: the path that answers here answers
+  there.
+- **Todos live with the worktree**, so RUN NEXT on a remote worktree is typed
+  by that machine's own dispatcher with no browser open anywhere. Measured by
+  killing the gateway two milliseconds after queueing one: the prompt was typed
+  757ms after the gateway had ceased to exist.
+- **The layout is yours.** `ui` is read and written only on the server that
+  served the page; a peer's copy is dropped at the boundary.
+- **A machine that is off keeps its tab**, with the worktrees it last had and
+  **no sessions**. The UI prunes stored layout for worktrees it cannot see, so
+  losing them costs panels and open files permanently — and liveness recalled
+  is worse than absent: it claims an agent is running, and that one is blocked
+  on you, on a machine that is switched off.
 - **Authentication is a token between servers, and there is no login.** A peer
   sets `SWB_TOKEN`, which is also what makes it safe for it to bind an address
-  other than loopback: on a peer the token is the only credential that crosses
-  the network, because `Origin` and `Sec-Fetch-Site` are unforgeable only inside
-  a browser and the caller a peer must keep out is not one. A browser is
-  believed solely from the peer's own machine. Your browser never talks to a
-  peer, so there is no CORS, no cookie, no preflight -- and Caddy keeps its
-  `basicauth` exactly as it is. A peer's own UI is therefore usable only from
-  the peer; you look at it through the gateway, and a peer must not have a
-  reverse proxy in front of it.
+  other than loopback. Your browser never talks to a peer, so there is no CORS,
+  no cookie, no preflight — and Caddy keeps its `basicauth` exactly as it is.
 
 Testing needs two instances:
 
 ```sh
 scripts/scratch.sh up          # the gateway
-scripts/scratch.sh up peer     # the machine a project lives on; prints its token
+scripts/scratch.sh up peer     # the machine to link; prints its token
 scripts/scratch.sh down peer   # each one goes down by name
 ```
 

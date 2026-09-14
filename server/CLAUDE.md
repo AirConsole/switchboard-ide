@@ -227,10 +227,12 @@ transcript is megabytes and this runs per worktree per poll.
 
 `idFor(prefix, path, host)` hashes the path. **Local ids hash the bare absolute
 path and must keep doing so**, byte for byte: those ids are recorded in
-`@swb_meta`, so changing the derivation orphans every running session. The
-gateway namespaces a peer's ids by a short key derived from its base URL, in
-`remote/scope.ts`, and the one caller that passes a `host` here is a remote
-project's *pointer* — because the same path on two machines hashes identically.
+`@swb_meta`, so changing the derivation orphans every running session. A linked
+machine's ids are namespaced in `remote/scope.ts` instead, by a short key
+derived from its base URL — not here, because the ids this function makes are
+the ones a machine gives its *own* projects, and a linked machine's arrive
+already made. The `host` parameter has no caller left; it is the seam that was
+named ahead of time, and the answer turned out to be one layer up.
 
 Anything destructive checks first and in the right order: `removeWorktree`
 refuses a dirty worktree *before* killing its sessions, so a refusal costs
@@ -455,140 +457,99 @@ browser naming a cross-site initiator is refused. Measured before that,
 `POST /api/worktrees/<id>/sleep` from a page you merely visited returned 200 —
 it cannot read the reply, and does not need to in order to act.
 
-## A project on another machine
+## A machine you have linked
 
-This server is the **gateway**: it forwards, and the browser talks to one
-origin. See the root `CLAUDE.md` for why that shape and not the other one.
+Linking another machine makes everything open there open here, and this server
+is the gateway: it forwards, and the browser talks to one origin. See the root
+`CLAUDE.md` for why that shape, and why linking rather than per-project.
 
-Two pieces, both small, and they are small for one reason -- **a peer runs this
+Two pieces do the work, and both are small for one reason -- **a peer runs this
 same program**, so the path that answers here answers there and the whole of the
 translation is the ids:
 
 - `remote/proxy.ts` is one `preHandler` hook, not a remote branch in each of
   twenty-five routes. Which machine a request is for is decided by the scoped id
-  *in the request*, wherever it sits: in the path, in `?host=`, or in a body
-  field. A route added later is forwarded without anyone remembering to.
-- `remote/relay.ts` is **one upstream socket per browser socket per peer**. That
-  is the load-bearing choice: the peer then sees one client per browser, so its
-  own `sizeOwner` / `inputOwner` arbitration decides between two viewers of a
-  remote terminal -- the same rule in the same place as for a local one, rather
-  than a second implementation of it here. It also keeps the peer's
-  `clientCount() > 0`, so the peer's git poll runs and its `invalidate`
-  broadcasts arrive; the gateway is pushed to, not polling.
+  *in the request*, so a route added later is forwarded without anyone
+  remembering to. `?host=` steers the three routes that name no resource yet --
+  browsing a machine's disk, its recents, and opening a project on it -- and is
+  **refused** anywhere else: unrestricted, `PATCH /api/ui?host=` replaced a
+  peer's stored layout and `POST /api/servers?host=` linked it to a machine of
+  the caller's choosing.
+- `remote/relay.ts` is **one upstream socket per browser socket per peer**. The
+  peer then sees one client per browser, so its own `sizeOwner` / `inputOwner`
+  arbitration decides between two viewers of a remote terminal -- the same rule
+  in the same place as for a local one. Verified against the real thing by
+  pitting a viewer connected through the gateway against one connected straight
+  at the peer: they arbitrate as equals, which a gateway-local arbiter could not
+  produce.
 
-  **The link holds what the browser is attached to, and re-claims it on every
+  **A gateway's own socket gets no relay.** Two machines linked to each other
+  otherwise melt down: A's relay opens a socket to B, B accepts it as an
+  ordinary client and gives it a relay, which opens one back. Measured at ~55
+  new sockets per second each way, self-sustaining once the sockets are each
+  other's clients, ending in `EMFILE` on both. Linking a machine to itself is
+  the same thing in one process, and is refused by instance id -- not by
+  address, since the address is what is being got wrong.
+
+  **The link holds what the browser is attached to and re-claims it on every
   reconnect.** A peer restarting is the ordinary event -- it is a deploy -- and
   the browser will not re-attach for us: it re-attaches in its own socket's
   `onopen`, and its socket never closed. Without this, one blip left every
-  remote pane dead for the life of the page: no output, and typing silently
-  discarded because the peer no longer had an attachment to own input. Measured
-  by killing the peer's process with tmux left running -- with the re-claim, a
-  second `attached` frame arrives and typing produces output again; without it,
-  none and nothing. A `detach` *removes* the record for the same reason, or a
-  pane closed while the peer was away would be re-claimed when it returned, and
-  a stale primary attachment would go on owning that session's geometry.
-
-  Links are also brought level with the registry whenever the snapshot is
-  invalidated, which is when a machine is added or forgotten. Both directions
-  matter: a machine added mid-session had no link until something attached to
-  it, so nothing it did reached the row until a reload; a machine forgotten kept
-  its socket for the life of the tab, still using a credential just revoked.
+  remote pane dead for the life of the page. A `detach` removes the record, or a
+  pane closed while the peer was away is re-claimed when it returns and a stale
+  primary goes on owning that session's geometry.
 
 Terminal bytes are forwarded with four header bytes rewritten and the payload
 untouched -- `streamId` is a `uint32` in a five-byte header, never a string id.
 The gateway hands out stream numbers from its own range, because a peer's and
-the local engine's both start at 1 and would collide in the browser's
-`streamToSession` map.
+the local engine's both start at 1.
 
-Three things measured rather than reasoned, each of which would have shipped:
+What `workspace.ts` contributes is `localTo`, and every line of it is a rule:
 
-- **A scoped id has to be URL-safe.** It was the base URL and `|`, which puts
-  `%2F` and `%3A` in a path segment -- and Caddy normalizes encoded slashes, so
-  the request arrives split into segments matching no route. The host key is now
-  short, opaque and derived (`h` + eight hex), and a scoped id needs no encoding
-  at all.
-- **"Looks like a scoped id" has to be narrow.** The proxy decided which machine
-  a request was for by looking for the separator in any string in the body. A
-  todo's prompt is a string: `rm -rf ~` routed an ordinary prompt to a machine
-  that does not exist. It now matches `h[0-9a-f]{8}~`, and only the fields that
-  carry ids are read at all.
-- **Rewriting ids by field name is only sound while no other type reuses those
-  names.** `Commit` has `hash`, and the file types have no id, which is what
-  makes one function able to serve every route. `test/scope.test.ts` asserts
-  which *types* carry an id rather than which names exist -- comparing names left
-  adding `id` to `Commit` green, and that is the case that would silently
-  rewrite a commit hash as though it addressed a worktree.
+- **A machine's own projects only**, never the machines it is itself linked to.
+  Non-transitive is what stops C's worktrees arriving through B under ids B
+  scoped for itself, and it is the other half of why two machines linked to each
+  other terminate.
+- **Its ids, kept.** A remote project is known by the peer's own id, scoped.
+  When this server minted one of its own, nothing about that id said "another
+  machine" and `POST /api/worktrees` -- the one route that addresses a project
+  -- was answered locally and refused, so creating a worktree on a remote
+  project was simply unreachable.
+- **A machine that did not answer keeps its projects and worktrees and loses its
+  sessions.** The UI prunes stored layout for worktrees it cannot see, so
+  dropping them costs panels and open files permanently; and liveness recalled
+  claims an agent is running, and that one is *blocked on you*, on a machine
+  that is off. Both memories -- `lastGood` in the process and `remoteCache` in
+  `state.json` -- go through the one function that strips them, because
+  returning either directly put the sessions back.
+- **The snapshot gets the same budget as any other read.** It had half, so the
+  read that paints the whole row gave up soonest -- and a timeout is
+  indistinguishable from a machine being off, so a *healthy* peer with a blocked
+  agent came back grey.
 
-One more about the proxy, because the id says nothing: **a remote project's id
-is our pointer's, and therefore bare.** That is deliberate -- it has to exist
-when the peer does not -- but it means `POST /api/worktrees`, the one route that
-addresses a project rather than a worktree, cannot be routed by looking at its
-`projectId`. It is resolved through the store instead (`remoteProject`), and the
-peer's own id for the project is *derived*: both sides hash the same absolute
-root, and ours differs only because it also hashes the base URL. Without that
-lookup the request was answered locally and refused, so creating a worktree on a
-remote project was simply unreachable.
+Three more, each measured rather than reasoned:
 
-**A peer answers a gateway with its own world only**, and that is a loop guard
-before it is an optimisation. Two instances pointed at each other is an expected
-configuration -- `selectProjects` exists to tell a peer's own project from its
-pointer back to us -- and without the guard one `GET /api/snapshot` recursed
-until the 5s timeouts fired at the leaves. Measured across two real instances
-peered both ways: **5.1 seconds and ~86 requests to the peer, against 125ms and
-one**. In-process, without git in the way, it reached 8,500 requests. It is
-self-sustaining, too: the browser refetches on every invalidate and the git poll
-fires every four seconds, so the gateway becomes unusable for local projects as
-well. Adding your own URL as a machine does it on one box. The header is
-`x-swb-peer-read`, and the work it skips was never wanted -- we keep only what a
-peer holds locally, so its view of third machines was computed and discarded.
+- **A peer answers a gateway with its own world only** (`x-swb-peer-read`), or
+  two machines linked to each other recurse until the timeouts fire at the
+  leaves: 5.1 seconds and ~86 requests against 125ms and one.
+- **A peer's errors arrive whole** -- message, `code` and `details`. The client
+  acts on the code: `path-missing` is what turns a failed open into the offer to
+  create it, and `stale-file` carries the `rev` that resolves a save an agent got
+  to first.
+- **A peer's `session-state` is forwarded for sessions the snapshot merged**,
+  not for the ones this browser is attached to. `applySessionState` updates any
+  session in the store, which is how an unattached tile's bullet changes colour
+  at all -- filtered on attachment, a remote worktree asleep with Claude still
+  running asked a question and the bar stayed grey.
 
-**A peer's errors arrive whole**: message, `code` and `details`. The client acts
-on the code, not the text -- `path-missing` and `not-a-repo` are what turn a
-failed open into the offer to create it, and `stale-file` carries the `rev` that
-is the only way to resolve a save an agent got to first. Dropping them left both
-recoveries unreachable on a remote machine, which is the case the feature exists
-for.
-
-Two more about holding a peer's answers:
-
-- **The cache of a peer's last good answer is reconciled, never returned
-  whole.** It is a memory of a machine, not a record of what is registered.
-  Returned verbatim it was authoritative about both: a project closed while its
-  peer was down came back on the next snapshot and could not be closed again,
-  and a project opened while it was down was invisible. Every pointer gets a
-  project; only worktrees we have actually read come with it.
-- **The cache is written only when it changes, and dropped when the last project
-  on that machine closes.** `snapshot()` is a GET that runs several times a
-  minute per tab; writing every time rewrote the file holding every peer's
-  credential on a pure read path, and `scheduleSave` has no maximum wait, so a
-  fast enough loop starves it and a just-queued todo is never written.
-- **A peer's `session-state` is forwarded only for sessions the snapshot
-  merged** -- not for the ones this browser happens to be attached to, which is
-  what it was and was wrong. `applySessionState` updates any session already in
-  the store, attached or not, and that is how an unattached tile's bullet
-  changes colour at all. The case it broke is the one this exists for: a remote
-  worktree asleep with Claude still running asks a permission question, no file
-  changes so the peer broadcasts no `invalidate`, and the only signal is the
-  frame that was being dropped -- so the bar stayed grey for an agent blocked on
-  you.
-
-And two about being the *other* machine:
-
-- **`worktrees()` skips a remote project.** Local git would not fail on its
-  root, it would *answer*, about whatever sits at that path here -- and the same
-  checkout path on two machines is the normal case, not a coincidence. The ids
-  would then collide byte for byte and `resolve()` would return whichever came
-  first. `createWorktree` refuses one for the same reason -- `worktreeRoot` for
-  a remote pointer is derived from a path on *that* machine, so `addWorktree`
-  would run against whatever repository sits there on this one. `closeProject`
-  does not refuse: it handles a remote project, skipping `killForProject`
-  (those sessions are the peer's, under the peer's ids) and forwarding the
-  sleep to the machine that is actually running them.
-- **The credential lives with the machine, never on a project.** `Project` is in
-  every snapshot the browser receives; `RemoteServer` is not. Several projects on
-  one peer would otherwise be several copies of one secret to keep in step.
-  `state.json` is written `mode: 0o600` because of it, and the mode is set on the
-  temp file so there is no instant where the contents exist under the umask.
+And one about being the *other* machine: **the credential lives with the
+machine, never on a project.** `Project` is in every snapshot the browser
+receives; `RemoteServer` is not. `state.json` is written `mode: 0o600` because
+of it, and the mode is set on the temp file so the contents never exist under
+the umask. Only local projects are stored at all, forced in `reviveProject` --
+which is what retired the guards `worktrees()` and `createWorktree` used to
+carry against a stored remote project sending local git at a path on another
+machine.
 
 ## Flags
 
