@@ -11,8 +11,8 @@ const req = (headers: Record<string, string>, ip = '127.0.0.1'): FastifyRequest 
 
 describe('an instance that is nobody’s peer', () => {
   /*
-   * `SWB_HOST` is a documented knob, so "bound to loopback" was an assumption
-   * and not a fact. Demonstrated end to end on `SWB_HOST=0.0.0.0` with no
+   * `--bind` is a documented knob, so "bound to loopback" was an assumption
+   * and not a fact. Demonstrated end to end on `--bind 0.0.0.0` with no
    * token: a socket from the LAN address carrying no Origin and no token was
    * accepted, the unasked `session-state` broadcast handed over a live session
    * id, and one `input` frame wrote a file as the user -- while `/api` on the
@@ -31,7 +31,7 @@ describe('an instance that is nobody’s peer', () => {
 
   /*
    * `Origin` is unforgeable only inside a browser, and `http://127.0.0.1:<port>`
-   * is always in the allow-list -- so on `SWB_HOST=0.0.0.0` a raw client from
+   * is always in the allow-list -- so on `--bind 0.0.0.0` a raw client from
    * the network forged it and was admitted, which is attach-and-type.
    */
   it('refuses a forged loopback Origin from off this machine', () => {

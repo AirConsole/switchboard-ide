@@ -154,7 +154,7 @@ export const allowRequest = (request: FastifyRequest): boolean => {
   /*
    * With no token there is no credential, so the connection's own address is
    * the only boundary there is -- and every header a caller could be judged by
-   * is one it writes itself. Measured on `SWB_HOST=0.0.0.0` with no token: a
+   * is one it writes itself. Measured on `--bind 0.0.0.0` with no token: a
    * request from the network carrying `Host: 127.0.0.1:<port>` -- a name this
    * server genuinely answers to -- walked straight past the rebinding gate and
    * read the whole snapshot.
@@ -197,10 +197,10 @@ export const allowSocket = (request: FastifyRequest): boolean => {
   /*
    * Not a peer. A missing `Origin` is not a browser -- curl, a health check, a
    * test -- and that used to be allowed outright on the reasoning that this
-   * instance is bound to loopback. It is not necessarily: `SWB_HOST` is a
+   * instance is bound to loopback. It is not necessarily: `--bind` is a
    * documented knob, and nothing enforced the assumption.
    *
-   * Demonstrated end to end on `SWB_HOST=0.0.0.0` with no token: a socket from
+   * Demonstrated end to end on `--bind 0.0.0.0` with no token: a socket from
    * the LAN address with no Origin and no token was accepted, the unasked
    * `session-state` broadcast handed over a live session id, and one `input`
    * frame wrote a file as the user. `/api` on that same instance refuses the
@@ -210,7 +210,7 @@ export const allowSocket = (request: FastifyRequest): boolean => {
   /*
    * Same rule as `/api`, and for the same reason: `Origin` is unforgeable only
    * inside a browser, and `http://127.0.0.1:<port>` is always in the list. On
-   * `SWB_HOST=0.0.0.0` with no token a raw client from the network forged
+   * `--bind 0.0.0.0` with no token a raw client from the network forged
    * exactly that and was admitted -- and an admitted socket may attach to a
    * session and type into it. Without a credential, the address is the
    * boundary.

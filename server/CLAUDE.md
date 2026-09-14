@@ -367,7 +367,7 @@ whole of it, and `config.ts`'s `publicOrigins` is the list it consults.
 the network must carry it. **Unset, this instance serves only this machine** —
 every request and every socket must come from a loopback address. That is not
 belt-and-braces: with no credential, every header a caller could be judged by is
-one the caller writes. Measured on `SWB_HOST=0.0.0.0` with no token, a request
+one the caller writes. Measured on `--bind 0.0.0.0` with no token, a request
 from the network carrying `Host: 127.0.0.1:<port>` — a name this server
 genuinely answers to — read the whole snapshot, and a socket forging
 `Origin: http://127.0.0.1:<port>` was admitted, which is attach-and-type. So
