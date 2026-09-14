@@ -12,6 +12,31 @@ const port = int(env.SWB_PORT, 8084)
 const isDev = env.NODE_ENV !== 'production'
 
 /**
+ * A repeatable command-line flag, as `--name value` or `--name=value`.
+ *
+ * The one thing here that is not an environment variable, because it is the one
+ * thing a *deployment* has to get right rather than a developer: it shows up in
+ * `ps`, it is impossible to inherit by accident from a parent shell, and a
+ * wrong one is visible in the command that started the process rather than in a
+ * environment somebody has to go and read.
+ */
+const flag = (name: string): string[] => {
+  const found: string[] = []
+  const argv = process.argv.slice(2)
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string
+    if (arg === `--${name}`) {
+      const next = argv[i + 1]
+      // `--host --port 9000` is a missing value, not a host called "--port".
+      if (next !== undefined && !next.startsWith('--')) found.push(next)
+    } else if (arg.startsWith(`--${name}=`)) {
+      found.push(arg.slice(name.length + 3))
+    }
+  }
+  return found
+}
+
+/**
  * Origins whose pages may open `/ws`.
  *
  * A WebSocket is exempt from CORS by design, so without this any page you
@@ -28,7 +53,16 @@ const isDev = env.NODE_ENV !== 'production'
  * this has to refuse.
  *
  * Behind a reverse proxy the browser's origin is the proxy's, which this
- * process has no way to derive, so a deployment must name it. `deploy.sh` does.
+ * process has no way to derive, so a deployment must name it: `--host`, which
+ * `deploy.sh` passes.
+ *
+ * **A bare name means both schemes.** `--host ide.example:84` allows
+ * `https://ide.example:84` and `http://ide.example:84`, because which one the
+ * browser sends depends on how the proxy terminates and that is not something
+ * the person typing the flag should have to know -- getting it wrong costs a
+ * page that loads over a row that never paints. Write the scheme yourself to
+ * pin one. Listing both is no weaker: anyone who can serve `http://<name>`
+ * already controls the name.
  */
 const publicOrigins = (): ReadonlySet<string> => {
   // Three spellings of this machine, because which one reaches the server is
@@ -42,21 +76,29 @@ const publicOrigins = (): ReadonlySet<string> => {
     const webPort = int(env.SWB_WEB_PORT, 5240)
     for (const h of loopback) allowed.push(`http://${h}:${webPort}`)
   }
-  for (const raw of (env.SWB_PUBLIC_ORIGIN ?? '').split(',')) {
-    // Trailing slash trimmed: an origin has none, but a value pasted from a
-    // browser's address bar does, and the two must not be different origins.
-    const origin = raw.trim().replace(/\/+$/, '')
-    if (origin !== '') allowed.push(origin)
+  for (const raw of flag('host').flatMap((value) => value.split(','))) {
+    const given = raw.trim().replace(/\/+$/, '')
+    if (given === '') continue
+    if (given.includes('://')) {
+      allowed.push(given)
+      continue
+    }
+    // A bare name. Both schemes; see above.
+    allowed.push(`https://${given}`, `http://${given}`)
   }
   return new Set(allowed)
 }
 
 export const config = {
   /**
-   * Caddy already fronts 127.0.0.1:8084 as andrin.ide.n-dream.com:84 with auth,
-   * so the app itself stays unauthenticated and bound to localhost.
+   * The address to listen on. Caddy fronts 127.0.0.1:8084 as
+   * andrin.ide.n-dream.com:84 with auth, so this stays loopback.
+   *
+   * Named `bind`, not `host`: `--host` is the *public* name a browser types,
+   * and one word meaning both the address we answer on and the name we answer
+   * to is how a security setting gets configured with the wrong value.
    */
-  host: env.SWB_HOST ?? '127.0.0.1',
+  bind: flag('bind')[0] ?? env.SWB_BIND ?? '127.0.0.1',
   port,
 
   /** Origins whose pages may open `/ws`. See `publicOrigins` above. */

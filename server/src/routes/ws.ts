@@ -131,7 +131,7 @@ export const registerWs = (
        */
       app.log.warn(
         { origin: request.headers.origin ?? null, allowed: [...config.publicOrigins] },
-        'refused a socket from an origin that is not ours -- is SWB_PUBLIC_ORIGIN set?',
+        'refused a socket from an origin that is not ours -- was --host passed?',
       )
       // 1008 is "policy violation", said out loud rather than dropped silently.
       socket.close(1008, 'origin not allowed')

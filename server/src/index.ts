@@ -156,9 +156,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
  * a server with no socket is not.
  */
 try {
-  await app.listen({ host: config.host, port: config.port })
+  await app.listen({ host: config.bind, port: config.port })
 } catch (err) {
-  app.log.error({ err }, `cannot listen on ${config.host}:${config.port}`)
+  app.log.error({ err }, `cannot listen on ${config.bind}:${config.port}`)
   process.exit(1)
 }
-app.log.info(`Switchboard on http://${config.host}:${config.port} (tmux socket ${tmuxSocketPath})`)
+app.log.info(`Switchboard on http://${config.bind}:${config.port} (tmux socket ${tmuxSocketPath})`)
