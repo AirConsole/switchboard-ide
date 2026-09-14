@@ -326,10 +326,20 @@ true: a panel that asks for *less* than the floor cannot settle for less still
 on the window takes `capacity` rather than what it asked for, or a phone would
 show a tree down one half of the screen and nothing down the other.
 
-A panel asks and settles. Files wants three units but takes two rather than
-cost you Claude's pane on a window with only four — a narrower editor beats no
-agent — and only when even two will not fit is Claude dropped, which is the
-phone rule.
+A panel asks, and **Claude is what gives way**. Files wants three units; on a
+window with only four it does not settle for two, because two is what puts the
+half you are reading under the floor — measured at 1500px, the editor came to
+**70 columns** beside Claude and **82** with Claude hidden. It used to settle,
+on the argument that a narrower editor beats no agent; a diff you cannot read at
+80 columns is not a narrower editor, it is a broken one, and the agent is still
+there the moment you close the panel. `wants > least` in `panesOf` is exactly
+"this panel would have to be squeezed", since `least` is what the squeeze would
+give it. A panel that asked for no more than a pane's floor — todo, terminals,
+the files tree by itself — still settles beside Claude as it did.
+
+Measured across the band, with a file open: 1400px and 1500px (four units) hide
+Claude and give the panel the window; 1687px and up (five) show both. Every one
+of them lands the editor at 82 columns.
 
 Two consequences to preserve. **Every tile starts on a unit boundary**, so
 scrolling to `unit * pitch` lands a tile flush at the left edge and no tile is
