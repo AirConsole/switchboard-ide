@@ -497,9 +497,10 @@ describe('removeWorktree, and the branch on the remote', () => {
 
 describe('todos', () => {
   let worktreeId: string
+  let projectId: string
 
   beforeEach(async () => {
-    await workspace.openProject(repo.path)
+    projectId = (await workspace.openProject(repo.path)).id
     worktreeId = (await workspace.worktrees())[0]!.id
   })
 
@@ -539,41 +540,72 @@ describe('todos', () => {
     vi.useFakeTimers()
     const first = await workspace.createTodo({ worktreeId, prompt: 'first' })
     const second = await workspace.createTodo({ worktreeId, prompt: 'second' })
-    workspace.updateTodo(first.id, { queued: true })
-    workspace.updateTodo(second.id, { queued: true })
+    await workspace.updateTodo(first.id, { queued: true })
+    await workspace.updateTodo(second.id, { queued: true })
     expect(store.todo(second.id)!.queuedAt!).toBeGreaterThan(store.todo(first.id)!.queuedAt!)
   })
 
-  it('clears the last error when a human queues it again', () => {
+  it('clears the last error when a human queues it again', async () => {
     // Queueing it again is the human saying "try that once more".
     store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0, lastError: 'it went wrong' })
-    workspace.updateTodo('t-1', { queued: true })
+    await workspace.updateTodo('t-1', { queued: true })
     expect(store.todo('t-1')?.lastError).toBeUndefined()
   })
 
-  it('takes a todo out of the queue without deleting it', () => {
+  it('takes a todo out of the queue without deleting it', async () => {
     store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0, queuedAt: 5 })
-    workspace.updateTodo('t-1', { queued: false })
+    await workspace.updateTodo('t-1', { queued: false })
     expect(store.todo('t-1')?.queuedAt).toBeUndefined()
     expect(store.todo('t-1')).toBeDefined()
   })
 
-  it('refuses to edit or delete one that is on its way into Claude', () => {
+  it('refuses to edit or delete one that is on its way into Claude', async () => {
     // Its prompt may already be in flight; editing it now would change
     // something that has effectively been sent.
     store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0, dispatchingAt: 1 })
-    expect(() => workspace.updateTodo('t-1', { prompt: 'y' })).toThrow(HttpError)
+    expect(await statusOf(workspace.updateTodo('t-1', { prompt: 'y' }))).toBe(409)
     expect(() => workspace.deleteTodo('t-1')).toThrow(HttpError)
     expect(store.todo('t-1')?.prompt).toBe('x')
   })
 
-  it('refuses an edit that would leave it with no prompt', () => {
+  it('refuses an edit that would leave it with no prompt', async () => {
     store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0 })
-    expect(() => workspace.updateTodo('t-1', { prompt: '  ' })).toThrow(HttpError)
+    expect(await statusOf(workspace.updateTodo('t-1', { prompt: '  ' }))).toBe(400)
   })
 
-  it('says so for a todo that is not there', () => {
-    expect(() => workspace.updateTodo('nope', { queued: true })).toThrow(HttpError)
+  it('moves a todo to another worktree', async () => {
+    const other = await workspace.createWorktree({ projectId, branch: 'elsewhere' })
+    store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0 })
+    await workspace.updateTodo('t-1', { worktreeId: other.id })
+    expect(store.todo('t-1')?.worktreeId).toBe(other.id)
+  })
+
+  it('gives a queued todo a new place at the end of the queue it moved into', async () => {
+    /*
+     * A place in a queue is only meaningful within one worktree. Keeping the
+     * old timestamp would let a todo moved in overtake everything already
+     * waiting there -- this one was queued at 5, before the one it joins.
+     */
+    const other = await workspace.createWorktree({ projectId, branch: 'elsewhere' })
+    store.addTodo({ id: 't-there', worktreeId: other.id, prompt: 'first', createdAt: 0 })
+    await workspace.updateTodo('t-there', { queued: true })
+    store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0, queuedAt: 5 })
+
+    await workspace.updateTodo('t-1', { worktreeId: other.id })
+
+    expect(store.todo('t-1')!.queuedAt!).toBeGreaterThan(store.todo('t-there')!.queuedAt!)
+  })
+
+  it('refuses a move to a worktree that is not there, leaving the todo where it was', async () => {
+    // Otherwise the todo is stranded somewhere nothing lists, and
+    // `removeTodosFor` never sees the id again.
+    store.addTodo({ id: 't-1', worktreeId, prompt: 'x', createdAt: 0 })
+    expect(await statusOf(workspace.updateTodo('t-1', { worktreeId: 'wt-nope' }))).toBe(404)
+    expect(store.todo('t-1')?.worktreeId).toBe(worktreeId)
+  })
+
+  it('says so for a todo that is not there', async () => {
+    expect(await statusOf(workspace.updateTodo('nope', { queued: true }))).toBe(404)
     expect(() => workspace.deleteTodo('nope')).toThrow(HttpError)
   })
 })

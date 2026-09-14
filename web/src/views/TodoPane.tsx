@@ -1,6 +1,30 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { Project, Worktree } from '@switchboard/shared'
 import { api } from '../api.js'
-import type { TodoView } from '../selectors.js'
+import { WorktreeTab } from '../components/WorktreeTab.js'
+import { useAnchoredMenu } from '../components/useAnchoredMenu.js'
+import type { TodoView, WorktreeStatus } from '../selectors.js'
+
+/** A worktree a todo can be moved to, with everything its tab needs to say. */
+export interface MoveTarget {
+  worktree: Worktree
+  status: WorktreeStatus
+  /** How much is already parked there -- the thing you want to know before adding to it. */
+  queued: number
+  sleeping: boolean
+}
+
+/**
+ * Where a todo can go, grouped by project the way the top bar groups worktrees.
+ *
+ * Grouped rather than flat because two projects can each have a `main`, and a
+ * list of bare names would then offer the same word twice. The heading is drawn
+ * only when there is more than one project to tell apart.
+ */
+export interface MoveGroup {
+  project: Project
+  targets: MoveTarget[]
+}
 
 /**
  * What a worktree is going to be asked to do next.
@@ -19,6 +43,11 @@ export interface TodoPaneProps {
   todos: TodoView[]
   /** Whether this worktree has a live Claude; a queue with none waits. */
   claudeRunning: boolean
+  /**
+   * Every worktree this todo could be moved to, including this one -- the pane
+   * drops itself, so callers do not each have to.
+   */
+  moveTo: MoveGroup[]
   /**
    * The worktree's last todo has gone to Claude and the list is empty.
    *
@@ -84,15 +113,22 @@ const TodoRow = ({
   view,
   queuedCount,
   claudeRunning,
+  moveTo,
   onError,
-  onDeleting,
+  onLeaving,
 }: {
   view: TodoView
   queuedCount: number
   claudeRunning: boolean
+  /** The other worktrees, already without this one. */
+  moveTo: MoveGroup[]
   onError: (message: string | null) => void
-  /** Say so before deleting, so a vanishing todo is not read as one that ran. */
-  onDeleting: (id: string) => void
+  /**
+   * Say so before it goes, so a vanishing todo is not read as one that ran.
+   * Deleting one and moving one to another worktree both look, from here,
+   * exactly like the server typing it into Claude and dropping it.
+   */
+  onLeaving: (id: string) => void
 }): React.ReactElement => {
   const { todo, position } = view
   /*
@@ -110,6 +146,7 @@ const TodoRow = ({
 
   const prompt = draft ?? todo.prompt
   const grow = useAutoGrow(prompt)
+  const move = useAnchoredMenu<HTMLButtonElement>()
 
   // The server agreed with what we sent: hand control back to the snapshot.
   useEffect(() => {
@@ -170,7 +207,7 @@ const TodoRow = ({
           className="todo__remove"
           onClick={() => {
             onError(null)
-            onDeleting(todo.id)
+            onLeaving(todo.id)
             void api.deleteTodo(todo.id).catch((err: unknown) => {
               onError(errorText(err))
             })
@@ -180,7 +217,74 @@ const TodoRow = ({
         >
           &times;
         </button>
+        {/*
+         * Where this piece of work actually belongs.
+         *
+         * Under RUN NEXT rather than beside it, because the two are not the
+         * same kind of thing: one hands the prompt to the agent it is already
+         * parked against, the other decides which agent that is. And quiet
+         * where RUN NEXT is loud -- a word and a caret, the grey ladder --
+         * since moving a todo is something you do once and RUN NEXT is what
+         * the panel is for.
+         */}
+        {moveTo.length > 0 && (
+          <button
+            ref={move.anchor}
+            className="todo__move"
+            onClick={move.toggle}
+            title="Move this todo to another worktree"
+            aria-expanded={move.at !== null}
+          >
+            Move to
+            <span className="todo__movecaret" aria-hidden="true">
+              {'\u25be'}
+            </span>
+          </button>
+        )}
       </div>
+      {move.at !== null && (
+        /*
+         * The same tabs the top bar draws, stacked -- the sleeping-worktrees
+         * dropdown's shape exactly, for the same reason it has it: a worktree
+         * met here has to be the object you know from the strip, saying the
+         * same things about itself. What is already queued there is on the tab,
+         * which is what you want to know before adding to it.
+         *
+         * The click that moves it is the tab's own; this closes the menu behind
+         * it, on the way out so the move has already been asked for.
+         */
+        <div
+          className="menu menu--tabs"
+          ref={move.menu}
+          style={{ left: move.at.left, top: move.at.top }}
+          onClick={move.close}
+        >
+          {moveTo.map((group) => (
+            <div className="menu__group" key={group.project.id}>
+              {/* Only worth saying when there is another project to tell it
+                  apart from: two projects can each have a `main`. */}
+              {moveTo.length > 1 && <span className="menu__label">{group.project.name}</span>}
+              {group.targets.map((target) => (
+                <WorktreeTab
+                  key={target.worktree.id}
+                  worktree={target.worktree}
+                  status={target.status}
+                  queued={target.queued}
+                  sleeping={target.sleeping}
+                  title={`Move this todo to ${target.worktree.name}`}
+                  onPick={() => {
+                    onError(null)
+                    onLeaving(todo.id)
+                    void api
+                      .patchTodo(todo.id, { worktreeId: target.worktree.id })
+                      .catch((err: unknown) => onError(errorText(err)))
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       <textarea
         className="todo__prompt"
         ref={grow}
@@ -292,10 +396,19 @@ export const TodoPane = ({
   worktreeId,
   todos,
   claudeRunning,
+  moveTo,
   onQueueDrained,
   focus,
 }: TodoPaneProps): React.ReactElement => {
   const [error, setError] = useState<string | null>(null)
+  // Moving a todo to where it already is is not a move, and a project left with
+  // nothing but this worktree is a heading over an empty list.
+  const elsewhere = moveTo
+    .map((group) => ({
+      ...group,
+      targets: group.targets.filter((target) => target.worktree.id !== worktreeId),
+    }))
+    .filter((group) => group.targets.length > 0)
   const queued = todos.filter((view) => view.position !== null)
   const queuedCount = queued.length
 
@@ -303,10 +416,12 @@ export const TodoPane = ({
    * Close the panel once the last todo has gone.
    *
    * "Gone" has to mean *sent*, which from here looks like a queued todo
-   * disappearing -- the server deletes one as it types it in. Two other ways to
-   * empty the queue must not close anything: taking a todo out of the queue
-   * leaves it in the list, and deleting one by hand is a click that says you
-   * are still working in here.
+   * disappearing -- the server deletes one as it types it in. Three other ways
+   * to empty the queue must not close anything: taking a todo out of the queue
+   * leaves it in the list, and deleting one by hand or moving the last one to
+   * another worktree are both clicks that say you are still working in here --
+   * measured, moving a queued todo away took the panel with it and handed the
+   * keyboard to a Claude that had been sent nothing.
    *
    * And an empty *queue* is not enough either: RUN NEXT on one of five todos
    * emptied the queue and took the panel away with four still written down, in
@@ -314,7 +429,8 @@ export const TodoPane = ({
    * goes when there is nothing left in it to look at.
    */
   const queuedIds = queued.map((view) => view.todo.id).join(',')
-  const deletedHere = useRef(new Set<string>())
+  /** Todos this browser sent away itself: deleted, or moved to another worktree. */
+  const leftHere = useRef(new Set<string>())
   const previous = useRef<string[]>([])
   useEffect(() => {
     const before = previous.current
@@ -322,7 +438,7 @@ export const TodoPane = ({
     previous.current = ids
     if (before.length === 0 || ids.length > 0 || todos.length > 0) return
     const gone = (id: string): boolean => !todos.some((view) => view.todo.id === id)
-    if (before.some((id) => gone(id) && !deletedHere.current.has(id))) onQueueDrained()
+    if (before.some((id) => gone(id) && !leftHere.current.has(id))) onQueueDrained()
     // `todos` is read for what is left, and changes with `queuedIds` anyway.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedIds, onQueueDrained])
@@ -345,8 +461,9 @@ export const TodoPane = ({
               view={view}
               queuedCount={queuedCount}
               claudeRunning={claudeRunning}
+              moveTo={elsewhere}
               onError={setError}
-              onDeleting={(id) => deletedHere.current.add(id)}
+              onLeaving={(id) => leftHere.current.add(id)}
             />
           ))
         )}

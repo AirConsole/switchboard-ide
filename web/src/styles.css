@@ -2592,12 +2592,53 @@ button {
   color: var(--graphite-dim);
 }
 
+/*
+ * What you can do to a todo: RUN NEXT and the ×, with Move to under them.
+ *
+ * A two-column grid rather than a flex row, so Move to lands in RUN NEXT's own
+ * column and ends exactly where the pill ends -- measured, a right-aligned
+ * second line spanning the whole column overhung it by 19px and sat under the
+ * ×, which reads as belonging to the delete rather than to the pill.
+ */
 .todo__controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
   grid-column: 2;
   grid-row: 1;
+}
+
+/*
+ * Move to: the quiet half of the pair.
+ *
+ * RUN NEXT hands the prompt to the agent this todo is already parked against;
+ * this decides which agent that is, which is something you do once. So it is a
+ * word and a caret on the grey ladder rather than a second pill -- two pills
+ * stacked would read as two equal choices, and they are not.
+ */
+.todo__move {
+  grid-column: 1;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--graphite);
+  background: none;
+  white-space: nowrap;
+}
+
+.todo__move:hover,
+.todo__move[aria-expanded='true'] {
+  color: var(--bone);
+}
+
+.todo__movecaret {
+  font-size: 9px;
+  line-height: 1;
 }
 
 /*
@@ -2748,6 +2789,28 @@ button {
      own dark ground -- so its edge is a rung above its own fill rather than
      tuned to one ground: --rule-bright is 1.22:1 above the sleeve inside it. */
   border-color: var(--rule-bright);
+}
+
+/*
+ * A project's worktrees inside a menu that lists more than one project's.
+ *
+ * The heading is the tab strip's project head laid flat: the same uppercase,
+ * letterspaced label, because a heading is not a name you read one character at
+ * a time. It is drawn only when there is another project to tell it apart
+ * from -- with one project every row belongs to it and the word is furniture.
+ */
+.menu__group {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu__label {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
 }
 
 /* A tab in the strip stands on the strip's floor, which is where its square

@@ -145,7 +145,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   /** `queued` is the RUN NEXT toggle. */
-  patchTodo: (id: string, patch: { prompt?: string; queued?: boolean }) =>
+  patchTodo: (id: string, patch: { prompt?: string; queued?: boolean; worktreeId?: string }) =>
     request<WorktreeTodo>(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTodo: (id: string) => request<{ ok: true }>(`/api/todos/${id}`, { method: 'DELETE' }),
 

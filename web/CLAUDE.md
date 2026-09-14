@@ -9,8 +9,10 @@ App.tsx              projects -> groups -> the row; every dialog; UI state write
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
 components/TopBar    the tab strip: project groups, tabs, zZ dropdown, usage bars
+components/WorktreeTab  one worktree as a tab: the strip, the zZ menu, Move to
+components/useAnchoredMenu  a menu hung under its trigger, kept on screen
 views/Overview       the row: spot arithmetic, scrolling, what fits
-views/TodoPane       a worktree's todos, and RUN NEXT
+views/TodoPane       a worktree's todos, RUN NEXT, and Move to
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/ChangesPane    what changed and what was committed; the patch renderer
 views/FilesPane      the panel: its three modes, the search box, and the editor
@@ -227,7 +229,8 @@ The pieces, and why each is the way it is:
   tab's title.
 - **The zZ dropdown is the same tabs, stacked.** A sleeping worktree is one of
   these tabs that happens not to be in the row, so it is drawn by the same
-  `tab()`: the sleeve under it, the state bar, the zZ, the name and its marks, the
+  `WorktreeTab` -- which is also what the todo panel's **Move to** list is made
+  of, for the same reason: the sleeve under it, the state bar, the zZ, the name and its marks, the
   hover panel — only fully round rather than square-shouldered, since nothing in
   a list stands on a floor — and **the same height**, 32px, which has to be said
   out loud in the menu because a row there has no 38px bar to derive it from. A
@@ -745,6 +748,25 @@ field bound straight to the snapshot loses keystrokes whenever any unrelated
 mutation in the app refreshes it mid-sentence. The draft holds until the server
 echoes back exactly what was sent. Verified by typing into a prompt while a
 `curl` created a todo on another worktree — the keystrokes and the caret survive.
+
+**Move to is under RUN NEXT, and quiet where RUN NEXT is loud.** They are not
+the same kind of thing: one hands the prompt to the agent this todo is already
+parked against, the other decides which agent that is, which you do once. So it
+is a word and a caret on the grey ladder rather than a second pill -- two pills
+stacked read as two equal choices. It sits in RUN NEXT's own grid column so the
+two end on the same pixel; right-aligning it across the whole control column
+overhung the pill by 19px and put it under the ×, which reads as belonging to
+the delete. Its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ
+dropdown, with a heading per project when more than one is open -- two projects
+can each have a `main`.
+
+**A moved todo is not a sent one.** From this pane a queued todo leaving looks
+identical whether the server typed it into Claude or you moved it elsewhere, and
+the panel closes on the first. So a move is reported to `leftHere` the way a
+delete is -- measured, moving the last queued todo away took the panel with it
+and handed the keyboard to a Claude that had been sent nothing. Moving it keeps
+it queued, and the server gives it a fresh place at the end of the queue it
+joins: a place in a queue is only meaningful within one worktree.
 
 The **form is at the foot of the panel**, under the queue: the list reads top to
 bottom in the order it will go and the box you type into is the next line of it,

@@ -11,10 +11,13 @@ import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktr
 import {
   claudeSession,
   orderWorktrees,
+  queuedTodoCount,
   removalAsks,
   removalQuestions,
   terminalSessions,
+  worktreeStatus,
 } from './selectors.js'
+import type { MoveGroup } from './views/TodoPane.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -198,6 +201,31 @@ export const App = (): React.ReactElement => {
 
   /** Every awake worktree, in the order the row shows them. */
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
+
+  /**
+   * Where a todo can be moved to: every worktree the IDE knows, in the top
+   * bar's own order.
+   *
+   * Sleeping ones included, and that is the point -- parking work against an
+   * agent you are not running today is most of what a todo is for, and the row
+   * only holds the awake ones.
+   */
+  const moveTo = useMemo<MoveGroup[]>(
+    () =>
+      groups.map((group) => ({
+        project: group.project,
+        targets: [
+          ...group.awake.map((worktree) => ({ worktree, sleeping: false })),
+          ...group.asleep.map((worktree) => ({ worktree, sleeping: true })),
+        ].map(({ worktree, sleeping }) => ({
+          worktree,
+          sleeping,
+          status: worktreeStatus(sessions, worktree.id),
+          queued: queuedTodoCount(todos, worktree.id),
+        })),
+      })),
+    [groups, sessions, todos],
+  )
 
   const setAwake = (ids: Iterable<string>): void => setUi({ awake: [...ids] })
 
@@ -672,6 +700,7 @@ export const App = (): React.ReactElement => {
         worktrees={rowWorktrees}
         projects={projects}
         todos={todos}
+        moveTo={moveTo}
         sessions={sessions}
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}

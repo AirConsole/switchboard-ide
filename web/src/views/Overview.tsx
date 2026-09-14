@@ -20,7 +20,7 @@ import {
   worktreeTodos,
   type TodoView,
 } from '../selectors.js'
-import { TodoBar, TodoPane } from './TodoPane.js'
+import { TodoBar, TodoPane, type MoveGroup } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
@@ -509,6 +509,8 @@ interface WorktreeTileProps {
   project: Project | undefined
   /** This worktree's todos, in list order, each with its queue position. */
   todos: TodoView[]
+  /** Where one of them can be moved to; the pane drops this worktree itself. */
+  moveTo: MoveGroup[]
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
@@ -598,6 +600,7 @@ const WorktreeTile = ({
   worktree,
   project,
   todos,
+  moveTo,
   panes,
   focus,
   focusPane,
@@ -918,6 +921,7 @@ const WorktreeTile = ({
                 worktreeId={worktree.id}
                 todos={todos}
                 claudeRunning={running}
+                moveTo={moveTo}
                 focus={focusPane === 'todo' ? focus : null}
                 /*
                  * Closed the way the layout closes a panel it could not keep,
@@ -998,6 +1002,8 @@ export interface OverviewProps {
   projects: Project[]
   /** Every todo, across every worktree; each tile takes its own. */
   todos: WorktreeTodo[]
+  /** Every worktree a todo could be moved to, grouped by project. */
+  moveTo: MoveGroup[]
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
@@ -1074,6 +1080,7 @@ export const Overview = ({
   worktrees,
   projects,
   todos,
+  moveTo,
   sessions,
   panels,
   activeTerminalByWorktree,
@@ -1779,6 +1786,7 @@ export const Overview = ({
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}
+                      moveTo={moveTo}
                       panes={slot.data.panes}
                       /*
                        * Non-null only for the worktree just navigated to, and a

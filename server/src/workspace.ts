@@ -447,17 +447,22 @@ export class Workspace {
   }
 
   /**
-   * Edit a todo, or move it in and out of the run queue.
+   * Edit a todo, move it in and out of the run queue, or move it to another
+   * worktree.
    *
    * `queued` is a boolean on the wire and a timestamp in the store: the client
    * says whether it wants the todo to run, and the server decides where in the
    * queue that puts it. Otherwise two browsers could disagree about the order.
    */
-  updateTodo(id: string, patch: { prompt?: string; queued?: boolean }): WorktreeTodo {
+  async updateTodo(
+    id: string,
+    patch: { prompt?: string; queued?: boolean; worktreeId?: string },
+  ): Promise<WorktreeTodo> {
     const todo = this.store.todo(id)
     if (!todo) throw new HttpError(404, 'no such todo')
     // Its prompt may already be on its way into Claude; editing it now would
-    // change something that has effectively been sent.
+    // change something that has effectively been sent -- and moving it would
+    // park it against an agent that is not the one receiving it.
     if (todo.dispatchingAt !== undefined) {
       throw new HttpError(409, 'that todo is being sent to Claude', 'todo-dispatching')
     }
@@ -467,10 +472,30 @@ export class Workspace {
       if (prompt === '') throw new HttpError(400, 'a todo needs a prompt')
       next.prompt = prompt
     }
+    /*
+     * Where the todo now lives. Resolved first, so a move to a worktree that is
+     * no longer there 404s rather than stranding the todo somewhere nothing
+     * lists -- `removeTodosFor` only ever sees ids that are still worktrees.
+     */
+    const destination = patch.worktreeId ?? todo.worktreeId
+    if (patch.worktreeId !== undefined && patch.worktreeId !== todo.worktreeId) {
+      await this.resolve(patch.worktreeId)
+      next.worktreeId = patch.worktreeId
+    }
+    /*
+     * A queued todo stays queued across a move -- moving it is saying "run that
+     * there instead", and silently dropping the one instruction it carries is
+     * worse than honouring it. But a place in a queue is only meaningful within
+     * one worktree, so it takes a new one at the end of the destination's:
+     * keeping the old timestamp would let a todo moved in overtake everything
+     * already waiting there.
+     */
     if (patch.queued !== undefined) {
-      next.queuedAt = patch.queued ? this.nextQueuedAt(todo.worktreeId) : undefined
+      next.queuedAt = patch.queued ? this.nextQueuedAt(destination) : undefined
       // Queueing it again is the human saying "try that once more".
       if (patch.queued) next.lastError = undefined
+    } else if (next.worktreeId !== undefined && todo.queuedAt !== undefined) {
+      next.queuedAt = this.nextQueuedAt(destination)
     }
     return this.store.patchTodo(id, next) ?? todo
   }
