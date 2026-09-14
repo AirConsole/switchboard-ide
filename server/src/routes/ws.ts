@@ -122,9 +122,18 @@ export const registerWs = (
     // attention is broadcast to everything in that set, session ids included,
     // and a refused client must not be handed one on its way out.
     if (!clientAllowed(request.headers.origin)) {
-      // 1008 is "policy violation". Said out loud rather than dropped silently,
-      // because the other thing that reaches here is our own page behind a proxy
-      // whose origin nobody set, and "it just does not connect" is a bad day.
+      /*
+       * Logged, and at warn, because the other thing that reaches here is our
+       * own page behind a proxy whose origin nobody configured -- and that
+       * failure is otherwise invisible: the page loads, every REST call works,
+       * and only the row never paints. Naming the origin that was refused
+       * turns "the IDE is broken" into one grep and one env var.
+       */
+      app.log.warn(
+        { origin: request.headers.origin ?? null, allowed: [...config.publicOrigins] },
+        'refused a socket from an origin that is not ours -- is SWB_PUBLIC_ORIGIN set?',
+      )
+      // 1008 is "policy violation", said out loud rather than dropped silently.
       socket.close(1008, 'origin not allowed')
       return
     }
