@@ -81,6 +81,15 @@ export const isOwnPage = (request: FastifyRequest): boolean => {
  * Measured against a scratch instance: `POST /api/worktrees/<id>/sleep` from a
  * cross-site page returned 200. It cannot *read* the reply, since no CORS
  * header is ever sent, but it does not need to in order to act.
+ *
+ * The residual is browser-version-shaped rather than absolute: Safari before
+ * 16.4 and Firefox before 90 send no Fetch Metadata at all, so from those the
+ * same cross-site POST still lands. Closing that needs an anti-CSRF credential,
+ * which this design deliberately does not have -- and allowing the absent
+ * header is what keeps curl, the health check and the tests working. `same-site`
+ * is refused as well as `cross-site` for the same reason in miniature: the spec
+ * ignores the port, so another local app on a different port of this machine is
+ * `same-site`, and that is exactly the caller to keep out.
  */
 const notCrossSite = (request: FastifyRequest): boolean => {
   const site = request.headers['sec-fetch-site']
@@ -95,7 +104,12 @@ const notCrossSite = (request: FastifyRequest): boolean => {
  */
 export const isLoopback = (request: FastifyRequest): boolean => {
   const ip = request.ip
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+  // The whole of 127/8, not just `.1`: a local client bound to an alias -- some
+  // proxies, a systemd socket unit, a container given a host-loopback alias --
+  // is genuinely local, and refusing it with an auth error rather than an
+  // address one is a confusing afternoon. Node renders a mapped peer in dotted
+  // form, so there is no hex `::ffff:7f00:1` spelling to handle.
+  return ip.startsWith('127.') || ip.startsWith('::ffff:127.') || ip === '::1'
 }
 
 /**
@@ -117,11 +131,18 @@ export const isLoopback = (request: FastifyRequest): boolean => {
 const hostAllowed = (request: FastifyRequest): boolean => {
   const header = request.headers.host
   if (header === undefined) return false
-  // `[::1]:8084` keeps its brackets; everything else splits on the last colon.
-  const name = header.startsWith('[')
-    ? (header.slice(0, header.indexOf(']') + 1) || header)
-    : (header.split(':')[0] ?? header)
-  return config.publicHosts.has(name) || config.publicHosts.has(header)
+  try {
+    /*
+     * Parsed rather than split. The split version accepted `localhost:99:99`,
+     * and needed a special case to keep the brackets on `[::1]` -- `new URL`
+     * does both correctly and refuses anything that is not a real authority.
+     * The second comparison it replaced (`has(header)`) was dead: this set only
+     * ever holds bare hostnames, so a value with a port never matched it.
+     */
+    return config.publicHosts.has(new URL(`http://${header}`).hostname)
+  } catch {
+    return false
+  }
 }
 
 export const allowRequest = (request: FastifyRequest): boolean => {

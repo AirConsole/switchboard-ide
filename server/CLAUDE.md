@@ -432,10 +432,16 @@ which `scripts/deploy.sh` sets. Unset, the loopback defaults still admit a
 browser on this machine, so a scratch instance needs nothing — and every socket
 through Caddy is refused, which is the failure to expect if it is forgotten.
 
-Two consequences worth stating plainly. A peer's own web UI works only from the
-peer itself; you look at a peer through the gateway. And **do not put a reverse
-proxy in front of a peer** — a proxy connects from loopback, so everything it
-forwards would look local. A peer needs none: the gateway reaches it directly.
+Three consequences worth stating plainly. A peer's own web UI works only from
+the peer itself -- its page is not even served elsewhere -- so you look at a
+peer through the gateway. **Do not put a reverse proxy in front of a peer**: a
+proxy connects from loopback, so everything it forwards would look local, and a
+peer needs none because the gateway reaches it directly. And **the token is the
+whole of a peer's security**, so it wants the properties that implies: high
+entropy (`scratch.sh` generates one; a memorable one is not), and `https://` for
+a peer across a network you do not own, since `PeerClient` sends it as a plain
+header. There is no attempt limit and no lockout -- a token is the credential
+for `POST /api/sessions`, which is arbitrary command execution on that machine.
 
 Rebinding was worth closing rather than documenting: on a token-less instance
 `/api` was fully *writable* by any page that kept a DNS record pointed at this
@@ -588,7 +594,8 @@ And two about being the *other* machine:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SWB_HOST` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
-| `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated. Decides which `Origin` may open `/ws` **and** which `Host` values `/api` answers to. Required behind a proxy. |
+| `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated and canonicalised. Decides which `Origin` may open `/ws` **and** which `Host` values `/api` answers to. Required behind a proxy. |
+| `NODE_ENV` | unset | `development` also trusts Vite's origin; anything else does not. `production` turns off the pretty logger. |
 | `SWB_TOKEN` | unset | Set to be somebody's peer. Unset, this server answers loopback only. |
 | `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |
 | `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |

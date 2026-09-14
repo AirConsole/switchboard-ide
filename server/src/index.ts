@@ -9,7 +9,7 @@ import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
-import { allowRequest } from './gate.js'
+import { allowRequest, isLoopback } from './gate.js'
 import { registerProxy } from './remote/proxy.js'
 import { PROTOCOL_HEADER } from './remote/peer.js'
 import { PROTOCOL_VERSION } from '@switchboard/shared'
@@ -84,8 +84,22 @@ app.addHook('onSend', async (_request, reply, payload) => {
 
 app.addHook('onRequest', async (request, reply) => {
   const route = request.routeOptions.url
-  // No route matched: nothing will run, and a 404 is the honest answer.
-  if (route === undefined || !route.startsWith('/api')) return
+  if (route === undefined || !route.startsWith('/api')) {
+    /*
+     * Not an API route: the built page and its assets. On a peer they are
+     * served to this machine only, which is what makes "serves only this
+     * machine" true of the process rather than only of `/api` and `/ws`. A
+     * peer's own UI is unusable from anywhere else anyway -- its fetches back
+     * here are refused -- so this serves nobody a page that could work, and it
+     * stops a peer bound to the network advertising an IDE at all.
+     *
+     * 404 rather than 401: there is nothing here to authenticate *to*.
+     */
+    if (config.token !== undefined && route !== undefined && !isLoopback(request)) {
+      await reply.status(404).send({ error: 'not found' })
+    }
+    return
+  }
   // `/api/health` says `{ok:true}` and nothing else, and it is what `deploy.sh`
   // and `scratch.sh` poll with curl -- neither a browser nor a gateway. An
   // exact match, not a prefix: `startsWith` also exempted `/api/healthz` and

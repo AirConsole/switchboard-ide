@@ -35,18 +35,48 @@ const publicOrigins = (): ReadonlySet<string> => {
   // the user's choice of URL and all three are the same server.
   const loopback = ['127.0.0.1', 'localhost', '[::1]']
   const allowed = loopback.map((h) => `http://${h}:${port}`)
-  // In dev the page is Vite's and it proxies `/ws` here, so the browser's origin
-  // is Vite's rather than ours. `changeOrigin` rewrites `Host` and leaves
-  // `Origin` alone, which is why this is needed and why it names the web port.
-  if (isDev) {
+  /*
+   * In dev the page is Vite's and it proxies `/ws` here, so the browser's
+   * origin is Vite's rather than ours. `changeOrigin` rewrites `Host` and
+   * leaves `Origin` alone, which is why this is needed and why it names the
+   * web port.
+   *
+   * Keyed on `NODE_ENV` being *explicitly* development, not on its absence.
+   * `isDev` is "not production", so a hand-started `node dist/index.js` --
+   * which is the documented way to run one for testing -- was a dev instance,
+   * and any other local app that happened to be served on 5240 could open
+   * `/ws`, read a session id off the broadcast and type into a terminal.
+   */
+  if (env.NODE_ENV === 'development') {
     const webPort = int(env.SWB_WEB_PORT, 5240)
     for (const h of loopback) allowed.push(`http://${h}:${webPort}`)
   }
   for (const raw of (env.SWB_PUBLIC_ORIGIN ?? '').split(',')) {
-    // Trailing slash trimmed: an origin has none, but a value pasted from a
-    // browser's address bar does, and the two must not be different origins.
-    const origin = raw.trim().replace(/\/+$/, '')
-    if (origin !== '') allowed.push(origin)
+    const trimmed = raw.trim()
+    if (trimmed === '') continue
+    try {
+      /*
+       * Canonicalised rather than trimmed, and this is the whole reason the
+       * two sets are derived from one function: `publicHosts` below ran every
+       * value through `new URL`, which lowercases and drops the port, the path
+       * and the query, while this kept the string verbatim. So
+       * `https://IDE.Example.com` allowed `/api` and refused `/ws` -- a
+       * half-broken deployment, which is worse than either end of it, because
+       * the page loads and only the row never paints. A browser's `Origin` is
+       * always the canonical form, so that is what has to be in here.
+       */
+      const url = new URL(trimmed)
+      /*
+       * The scheme is checked, and not as a formality. `box.local:8084` does
+       * not throw -- it parses as the *scheme* `box.local:` -- and `.origin`
+       * for any non-special scheme is the literal string `"null"`, which would
+       * then be pushed in here and blow up `new URL` downstream. Dropped rather
+       * than repaired: inventing a scheme is how you trust the wrong one.
+       */
+      if (url.protocol === 'http:' || url.protocol === 'https:') allowed.push(url.origin)
+    } catch {
+      // Not a URL at all.
+    }
   }
   return new Set(allowed)
 }
@@ -76,24 +106,9 @@ export const config = {
    * one thing. Port is ignored -- it is the name that is being lied about.
    */
   publicHosts: new Set(
-    [...publicOrigins()]
-      .map((origin) => {
-        try {
-          /*
-           * `new URL('box.local:8084')` does **not** throw -- it parses as the
-           * scheme `box.local:` with an empty hostname -- and an empty string
-           * in this set matches a `Host` of `:9391` or of nothing at all. So a
-           * scheme-less `SWB_PUBLIC_ORIGIN`, which is exactly the abbreviation
-           * people type, both failed to allow the name the operator meant and
-           * opened the rebinding gate. Measured. Dropped rather than repaired,
-           * because guessing a scheme is how you end up trusting the wrong one.
-           */
-          return new URL(origin).hostname
-        } catch {
-          return ''
-        }
-      })
-      .filter((host) => host !== ''),
+    // Every entry is already a canonical origin, so this cannot disagree with
+    // the set above -- which it did, and silently.
+    [...publicOrigins()].map((origin) => new URL(origin).hostname).filter((host) => host !== ''),
   ),
 
   /**
