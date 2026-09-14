@@ -170,7 +170,15 @@ and `ui` being one last-writer-wins document -- are all things a second origin
 in the row would have broken, and an iframe per window would have broken all
 five at once.
 
-The one component that knows is `OpenProjectDialog`, because somebody has to
+One line of `socket.ts` knows, and only just: **a second `attached` for a session
+already mapped is a re-attach, and repaints.** When a remote worktree's machine
+restarts, the gateway re-claims the attachment on our behalf and this socket
+never closes -- so nothing else would ever clear `painted`, and the pane went on
+showing the screen from before the restart while everything printed in the gap
+was dropped. Claude runs on the alternate screen, where a serialized repaint is
+the only thing worth anything. The stale stream number is dropped with it.
+
+The other component that knows is `OpenProjectDialog`, because somebody has to
 pick the machine: a `host` key goes to `browse`, `recents` and `openProject`,
 and the server decides what it means. Adding a machine takes its token, which
 goes to our own server and no further -- the browser never talks to a peer.

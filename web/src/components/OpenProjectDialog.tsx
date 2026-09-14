@@ -177,6 +177,14 @@ export const OpenProjectDialog = ({
   useEffect(() => {
     setListing(null)
     setRecents([])
+    // The path too, and it is the stronger vector of the two: the listing is
+    // only something to click, while this is what Open actually sends. A peer
+    // that is asleep takes the full timeout and then errors, and a path read
+    // from one machine sitting under another machine's chip with the button
+    // live opens it there -- and "the same checkout path on two machines is the
+    // normal case", so it usually succeeds, silently, on the wrong one.
+    setPath('')
+    setProposal(null)
     browse('', host)
   }, [host])
 
@@ -412,8 +420,18 @@ export const OpenProjectDialog = ({
                     aria-label={`Forget ${server.name}`}
                     disabled={busy}
                     onClick={() => {
-                      if (host === server.key) setHost(undefined)
-                      void api.forgetServer(server.baseUrl).then(loadServers).catch(() => {})
+                      // The refusal is the useful half -- a machine with
+                      // projects open says so rather than taking them with it.
+                      void api
+                        .forgetServer(server.baseUrl)
+                        .then(() => {
+                          if (host === server.key) setHost(undefined)
+                          setError(null)
+                          loadServers()
+                        })
+                        .catch((err: unknown) =>
+                          setError(err instanceof Error ? err.message : String(err)),
+                        )
                     }}
                   >
                     ×

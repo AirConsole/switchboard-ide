@@ -495,6 +495,26 @@ root, and ours differs only because it also hashes the base URL. Without that
 lookup the request was answered locally and refused, so creating a worktree on a
 remote project was simply unreachable.
 
+**A peer answers a gateway with its own world only**, and that is a loop guard
+before it is an optimisation. Two instances pointed at each other is an expected
+configuration -- `selectProjects` exists to tell a peer's own project from its
+pointer back to us -- and without the guard one `GET /api/snapshot` recursed
+until the 5s timeouts fired at the leaves. Measured across two real instances
+peered both ways: **5.1 seconds and ~86 requests to the peer, against 125ms and
+one**. In-process, without git in the way, it reached 8,500 requests. It is
+self-sustaining, too: the browser refetches on every invalidate and the git poll
+fires every four seconds, so the gateway becomes unusable for local projects as
+well. Adding your own URL as a machine does it on one box. The header is
+`x-swb-peer-read`, and the work it skips was never wanted -- we keep only what a
+peer holds locally, so its view of third machines was computed and discarded.
+
+**A peer's errors arrive whole**: message, `code` and `details`. The client acts
+on the code, not the text -- `path-missing` and `not-a-repo` are what turn a
+failed open into the offer to create it, and `stale-file` carries the `rev` that
+is the only way to resolve a save an agent got to first. Dropping them left both
+recoveries unreachable on a remote machine, which is the case the feature exists
+for.
+
 Two more about holding a peer's answers:
 
 - **The cache of a peer's last good answer is reconciled, never returned
@@ -503,6 +523,11 @@ Two more about holding a peer's answers:
   peer was down came back on the next snapshot and could not be closed again,
   and a project opened while it was down was invisible. Every pointer gets a
   project; only worktrees we have actually read come with it.
+- **The cache is written only when it changes, and dropped when the last project
+  on that machine closes.** `snapshot()` is a GET that runs several times a
+  minute per tab; writing every time rewrote the file holding every peer's
+  credential on a pure read path, and `scheduleSave` has no maximum wait, so a
+  fast enough loop starves it and a just-queued todo is never written.
 - **A peer's `session-state` is forwarded only for what this browser is attached
   to.** A peer broadcasts every session it runs, including projects nobody here
   opened. The browser discards those, so forwarding them was noise that grew

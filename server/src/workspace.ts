@@ -18,6 +18,7 @@ import type {
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { PeerClient, normalizeBaseUrl } from './remote/peer.js'
+import { hostKeyFor, unscopeId } from './remote/scope.js'
 import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
@@ -270,7 +271,23 @@ export class Workspace {
     return { worktree, project }
   }
 
-  async snapshot(): Promise<AppSnapshot> {
+  /**
+   * Everything this browser needs, merged across every machine.
+   *
+   * `localOnly` is what a peer answers with, and it is a loop guard as much as
+   * an optimisation. Without it two instances peered at each other -- which
+   * `selectProjects` says outright is an expected configuration -- turn one
+   * snapshot into a recursion that only unwinds when the 5s timeouts fire at
+   * the leaves: measured, **8,500 requests and five seconds of pegged CPU from
+   * a single `GET /api/snapshot`**, self-sustaining because the browser
+   * refetches on every invalidate and the git poll fires every four seconds.
+   * Adding your own URL as a machine does it on one box.
+   *
+   * The work skipped was never wanted anyway: `selectProjects` keeps only the
+   * projects a peer holds *locally*, so a peer's own view of third machines is
+   * computed and then discarded on arrival.
+   */
+  async snapshot(opts: { localOnly?: boolean } = {}): Promise<AppSnapshot> {
     const local: AppSnapshot = {
       projects: await this.describeProjects(),
       worktrees: await this.worktrees(),
@@ -278,7 +295,7 @@ export class Workspace {
       todos: this.store.todos,
       ui: this.store.ui,
     }
-    const remote = await this.remoteSlices()
+    const remote = opts.localOnly === true ? [] : await this.remoteSlices()
     return {
       projects: [...local.projects, ...remote.flatMap((r) => r.projects)],
       worktrees: [...local.worktrees, ...remote.flatMap((r) => r.worktrees)],
@@ -362,7 +379,13 @@ export class Workspace {
          * shut made the whole row sluggish, local worktrees included. Adding a
          * machine to browse it is a normal thing to do and must not cost that.
          */
-        if (mine.length === 0) return reconcile(undefined, [], peer.baseUrl)
+        if (mine.length === 0) {
+          // Nothing open on it any more, so what it last said is not worth
+          // keeping -- and kept, it would resurrect months-old worktrees the
+          // next time a project on that machine was opened while it was down.
+          this.store.clearRemoteCache(peer.baseUrl)
+          return reconcile(undefined, [], peer.baseUrl)
+        }
         try {
           const slice = selectProjects(await peer.snapshot(), mine, peer.baseUrl)
           this.lastGood.set(peer.baseUrl, slice)
@@ -371,11 +394,22 @@ export class Workspace {
           // costs the user something is the other one: a gateway that starts
           // before its peer is listening prunes the layout of every worktree on
           // it, permanently, before the peer has ever answered.
-          this.store.setRemoteCache({
+          /*
+           * Only when it has actually changed. `snapshot()` is a GET and runs
+           * several times a minute per tab; writing every time would rewrite
+           * the file holding every peer's credentials on a pure read path, and
+           * `scheduleSave` has no maximum wait -- so a fast enough snapshot
+           * loop starves the save, and a todo just queued is never written.
+           */
+          const entry = {
             baseUrl: peer.baseUrl,
             projects: slice.projects,
             worktrees: slice.worktrees,
-          })
+          }
+          const previous = this.store.remoteCache(peer.baseUrl)
+          if (JSON.stringify(previous) !== JSON.stringify(entry)) {
+            this.store.setRemoteCache(entry)
+          }
           return slice
         } catch {
           /*
@@ -513,13 +547,28 @@ export class Workspace {
     return server
   }
 
-  /** Forget a machine. Its projects go with it -- they address nothing now. */
+  /**
+   * Forget a machine.
+   *
+   * Refused while projects on it are still open, rather than closing them.
+   * Closing a project anywhere else in this app is a deliberate act with its
+   * own dialog, and this is a small x beside the chip you click to *select* a
+   * machine -- one misclick took every project on it, pruned their stored
+   * layout client-side, and left no way back but retyping the URL, the token
+   * and every path. Nothing here is worth that, and "close them first" costs
+   * one sentence.
+   */
   removeServer(baseUrl: string): void {
     const normalized = normalizeBaseUrl(baseUrl)
-    for (const project of this.store.projects) {
-      if (project.host.kind === 'remote' && project.host.baseUrl === normalized) {
-        this.store.removeProject(project.id)
-      }
+    const open = this.store.projects.filter(
+      (project) => project.host.kind === 'remote' && project.host.baseUrl === normalized,
+    )
+    if (open.length > 0) {
+      throw new HttpError(
+        409,
+        `close ${open.length === 1 ? 'the project' : `all ${open.length} projects`} on that machine first`,
+        'server-in-use',
+      )
     }
     this.store.removeServer(normalized)
     // Or the map keeps a slice for every machine ever registered, and a machine
@@ -584,6 +633,35 @@ export class Workspace {
     // at worst, which is the same aliasing `worktrees()` refuses to risk.
     if (opts.sleep === true && project?.host.kind === 'local') {
       await this.engine.killForProject(id)
+    }
+    /*
+     * A remote project's agents are the peer's to stop, and asking it is the
+     * whole of what "sleep" can mean here. Without this the box was ticked, the
+     * project went, and the peer's agents carried on running with nothing on
+     * screen owning them -- which is the state `closeProject` exists to avoid.
+     *
+     * Best-effort and never fatal: an unreachable machine must still let you
+     * remove a pointer that now addresses nothing.
+     */
+    if (opts.sleep === true && project?.host.kind === 'remote') {
+      const peer = this.peerFor(hostKeyFor(project.host.baseUrl))
+      if (peer) {
+        /*
+         * From what the machine last said, not from `worktrees()` -- that one
+         * skips remote projects on purpose, so it knows nothing about these.
+         */
+        const theirs = (
+          this.lastGood.get(project.host.baseUrl)?.worktrees ??
+          this.store.remoteCache(project.host.baseUrl)?.worktrees ??
+          []
+        )
+          .filter((worktree) => worktree.projectId === id)
+          .map((worktree) => unscopeId(worktree.id)?.id)
+          .filter((wid): wid is string => wid !== undefined)
+        await Promise.allSettled(
+          theirs.map((wid) => peer.request('POST', `/api/worktrees/${wid}/sleep`, {})),
+        )
+      }
     }
     // Remembered before it is removed, and only for a local project: a recent
     // is a path handed back to `openProject`, which is how a local one is

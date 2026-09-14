@@ -13,14 +13,22 @@ const { Workspace } = await import('../src/workspace.js')
 const { registerProxy } = await import('../src/remote/proxy.js')
 const { hostKeyFor } = await import('../src/remote/scope.js')
 const { PROTOCOL_VERSION } = await import('@switchboard/shared')
+const { HttpError } = await import('../src/http-error.js')
 
 /** Every path the peer was asked for, which is the thing under test. */
 const asked: { method: string; url: string; body: unknown }[] = []
 
 const peer = Fastify()
 peer.get('/api/server', async () => ({ name: 'peer', protocolVersion: PROTOCOL_VERSION }))
-peer.all('/api/*', async (request) => {
+peer.all('/api/*', async (request, reply) => {
   asked.push({ method: request.method, url: request.url, body: request.body })
+  if (request.url.includes('missing')) {
+    // Shaped exactly as the real error handler sends it: `details` spread at
+    // the top level beside `error` and `code`.
+    return reply
+      .status(404)
+      .send({ error: 'nothing at /srv/x', code: 'path-missing', path: '/srv/x', insideRepo: null })
+  }
   return { worktreeId: 'wt-peer', id: 'wt-peer' }
 })
 await peer.listen({ host: '127.0.0.1', port: 0 })
@@ -39,6 +47,17 @@ beforeAll(async () => {
   localProjectId = pointer.id
 
   app = Fastify()
+  // The same error handler `registerApi` installs, because what is under test
+  // is what reaches the client -- and Fastify's default one drops `details`.
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof HttpError) {
+      void reply
+        .status(error.status)
+        .send({ error: error.message, code: error.code, ...error.details })
+      return
+    }
+    void reply.status(500).send({ error: (error as Error).message })
+  })
   registerProxy(app, workspace)
   // Stand-ins for the real routes, so "handled locally" is observable.
   app.get('/api/worktrees/:id/tree', async () => ({ here: true }))
@@ -133,6 +152,23 @@ describe('which machine a request goes to', () => {
     // `decodeURIComponent('%zz')` throws; that was a 500 where the route says 404.
     const out = await call('/api/worktrees/%zz/tree')
     expect(out.status).not.toBe(500)
+  })
+
+  /*
+   * The client acts on `code` and `details`, not on the message: `path-missing`
+   * and `not-a-repo` are what turn a failed open into the "create this?" offer,
+   * and `stale-file` carries the `rev` that is the only way to resolve a save an
+   * agent got to first. Dropped, those recoveries were unreachable on a remote
+   * machine -- a red line and no way forward.
+   */
+  it('carries a peer\u2019s error code and details through, not just its message', async () => {
+    const out = await call(`/api/worktrees/${key}~wt-missing/tree`)
+    expect(out.status).toBe(404)
+    expect(out.body).toMatchObject({
+      error: 'nothing at /srv/x',
+      code: 'path-missing',
+      path: '/srv/x',
+    })
   })
 
   it('says which machine did not answer, not that this one broke', async () => {

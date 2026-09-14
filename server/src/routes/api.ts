@@ -9,6 +9,7 @@ import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
 import { hostKeyFor } from '../remote/scope.js'
+import { PEER_READ_HEADER } from '../remote/peer.js'
 import { usage } from '../usage.js'
 
 /**
@@ -188,7 +189,13 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     protocolVersion: PROTOCOL_VERSION,
   }))
 
-  app.get('/api/snapshot', async () => workspace.snapshot())
+  /*
+   * `localOnly` when another machine is the one asking. See `Workspace.snapshot`:
+   * without it, two instances pointed at each other recurse.
+   */
+  app.get('/api/snapshot', async (request) =>
+    workspace.snapshot({ localOnly: request.headers[PEER_READ_HEADER] !== undefined }),
+  )
 
   /*
    * Claude's own usage limits, cached for five minutes.

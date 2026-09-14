@@ -16,6 +16,15 @@ import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
  * sees. That is most of what a direct browser-to-peer design has to build.
  */
 
+/**
+ * Marks a read made *by* a gateway rather than by a browser.
+ *
+ * The peer answers such a read with its own world only, which is the whole of
+ * what we keep from it -- and is what stops two instances pointed at each other
+ * from recursing. See `Workspace.snapshot`.
+ */
+export const PEER_READ_HEADER = 'x-swb-peer-read'
+
 /** Normalized so it can be hashed into an id and compared character by character. */
 export const normalizeBaseUrl = (raw: string): string => {
   let url: URL
@@ -91,6 +100,7 @@ export class PeerClient {
         headers: {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...(this.token === undefined ? {} : { 'x-swb-token': this.token }),
+          [PEER_READ_HEADER]: '1',
         },
         ...(body === undefined ? {} : { body: JSON.stringify(unscopeTree(body)) }),
       })
@@ -101,15 +111,32 @@ export class PeerClient {
     }
     const text = await response.text()
     if (!response.ok) {
-      // The peer's own message, kept: it is this program, so "no such worktree"
-      // means the same thing here and is more use than "the peer said 404".
+      /*
+       * The peer's whole error, kept -- message, `code` **and** `details`.
+       *
+       * It is this program, so its errors mean here what they mean there, and
+       * the client is built to act on them: `path-missing` and `not-a-repo` are
+       * what turn a failed open into the "create this?" offer, and `stale-file`
+       * with its `rev` is the only way to resolve a save that an agent got to
+       * first. Dropping them left those recoveries unreachable on a remote
+       * machine -- a bare red line and no way forward, on exactly the case the
+       * feature exists for.
+       *
+       * `details` is spread at the top level by the error handler, so what is
+       * left after `error` and `code` is precisely what was put there.
+       */
       let message = text
+      let code: string | undefined
+      let details: Record<string, unknown> | undefined
       try {
-        message = (JSON.parse(text) as { error?: string }).error ?? text
+        const { error, code: peerCode, ...rest } = JSON.parse(text) as Record<string, unknown>
+        if (typeof error === 'string') message = error
+        if (typeof peerCode === 'string') code = peerCode
+        if (Object.keys(rest).length > 0) details = rest
       } catch {
         /* not JSON; the body is the message */
       }
-      throw new HttpError(response.status, message)
+      throw new HttpError(response.status, message, code, details)
     }
     if (text === '') return undefined as T
     return scopeTree(this.key, JSON.parse(text) as T)

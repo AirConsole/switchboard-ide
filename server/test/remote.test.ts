@@ -40,8 +40,16 @@ peer.addHook('onRequest', async (_request, reply) => {
 })
 peer.get('/api/server', async () => ({ name: 'peer', protocolVersion: PROTOCOL_VERSION }))
 let reads = 0
-peer.get('/api/snapshot', async () => {
+/** Set when the fake peer is asked without the gateway's own loop guard. */
+let unguardedReads = 0
+const slept: string[] = []
+peer.post('/api/worktrees/:id/sleep', async (request) => {
+  slept.push((request.params as { id: string }).id)
+  return { ok: true }
+})
+peer.get('/api/snapshot', async (request) => {
   reads++
+  if (request.headers['x-swb-peer-read'] === undefined) unguardedReads++
   return peerSnapshot
 })
 
@@ -259,6 +267,63 @@ describe('a project on another machine', () => {
    * prunes stored layout for worktrees it cannot see -- panels, open files and
    * the expanded tree, written back and gone for good.
    */
+  /*
+   * Two instances pointed at each other is an expected configuration -- see
+   * `selectProjects`, which exists to tell a peer's own project from its
+   * pointer back to us. Without a guard, one `GET /api/snapshot` recursed until
+   * the 5s timeouts fired at the leaves: measured at 8,500 requests and five
+   * seconds of pegged CPU, and self-sustaining, because the browser refetches
+   * on every invalidate and the git poll fires every four seconds.
+   *
+   * The guard is a header, and the work it skips was never wanted: we keep only
+   * the projects a peer holds locally, so its view of third machines is
+   * computed and then thrown away on arrival.
+   */
+  it('tells a peer not to go round again, on every read', async () => {
+    await addRemote()
+    unguardedReads = 0
+    await workspace.snapshot()
+    expect(reads).toBeGreaterThan(0)
+    expect(unguardedReads).toBe(0)
+  })
+
+  it('answers a gateway with its own world only', async () => {
+    await addRemote()
+    // What a peer returns when *we* are the peer being read.
+    const asPeer = await workspace.snapshot({ localOnly: true })
+    expect(asPeer.worktrees.filter((w) => w.id.includes('~'))).toHaveLength(0)
+    expect(asPeer.projects.filter((p) => p.host.kind === 'remote')).toHaveLength(0)
+  })
+
+  /*
+   * "Sleep" on a remote project can only mean asking the peer. Without this the
+   * box was ticked, the pointer went, and the peer's agents carried on running
+   * with nothing on screen owning them -- the state `closeProject` exists to
+   * avoid.
+   */
+  it('asks the peer to sleep a remote project\u2019s worktrees', async () => {
+    const pointer = await addRemote()
+    await workspace.snapshot()
+    slept.length = 0
+    await workspace.closeProject(pointer.id, { sleep: true })
+    expect(slept).toEqual(['wt-a'])
+  })
+
+  it('refuses to forget a machine while its projects are open', async () => {
+    await addRemote()
+    // One misclick on a small x would otherwise close every project on it,
+    // prune their layout and leave no way back but retyping everything.
+    expect(() => workspace.removeServer(peerUrl)).toThrow(/close the project/)
+    expect(store.server(peerUrl)).toBeDefined()
+  })
+
+  it('forgets a machine once nothing is open on it', async () => {
+    const pointer = await addRemote()
+    await workspace.closeProject(pointer.id)
+    workspace.removeServer(peerUrl)
+    expect(store.server(peerUrl)).toBeUndefined()
+  })
+
   it('remembers what a peer said across a restart of this server', async () => {
     await addRemote()
     expect((await workspace.snapshot()).worktrees).toHaveLength(1)
