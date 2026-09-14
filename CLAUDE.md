@@ -146,6 +146,12 @@ anywhere shows up.
 The server binds localhost and has no auth of its own. Reaching it from another
 machine is a reverse proxy's job.
 
+It also **installs as an app** -- a manifest and icons in `web/public/`, so
+Chrome's "Install page as app" gives it its own window, icon and place in the
+switcher. There is no service worker and there should not be one: it would cache
+the app shell and take "a web change reaches them on reload" with it. See
+`web/CLAUDE.md`.
+
 ## How the pieces fit
 
 ```

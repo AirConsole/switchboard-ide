@@ -1,0 +1,42 @@
+<!--
+  The same mark, drawn for a platform that will crop it. See icon.svg for what
+  the mark means and why the colours are literal.
+
+  Two differences, both required rather than stylistic.
+
+  No `rx`. A maskable icon's corners belong to the platform, which crops to a
+  circle, a squircle or a rounded square depending on the launcher. Rounding
+  them here leaves that mask cutting inside our own radius, which reads as a
+  double border.
+
+  The grid is smaller. Chrome's minimum safe area is a centred circle of 80%
+  diameter, so at 512 nothing may stray outside radius 204.8 of centre. The
+  binding constraint is a corner jack, at sqrt(2) * spacing + radius from the
+  centre: 1.414 * 110 + 36 = 191.6, which clears 204.8 with room to spare.
+  icon.svg's own geometry would not clear it; its rounded ground is a full
+  512 square, and that is the whole reason this second file exists.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#10141a" />
+  <g fill="#333c4b">
+    <circle cx="146" cy="146" r="36" />
+    <circle cx="256" cy="146" r="36" />
+    <circle cx="366" cy="146" r="36" />
+    <circle cx="146" cy="256" r="36" />
+    <circle cx="366" cy="256" r="36" />
+    <circle cx="146" cy="366" r="36" />
+    <circle cx="256" cy="366" r="36" />
+    <circle cx="366" cy="366" r="36" />
+  </g>
+  <g fill="#10141a">
+    <circle cx="146" cy="146" r="16" />
+    <circle cx="256" cy="146" r="16" />
+    <circle cx="366" cy="146" r="16" />
+    <circle cx="146" cy="256" r="16" />
+    <circle cx="366" cy="256" r="16" />
+    <circle cx="146" cy="366" r="16" />
+    <circle cx="256" cy="366" r="16" />
+    <circle cx="366" cy="366" r="16" />
+  </g>
+  <circle cx="256" cy="256" r="36" fill="#ffb454" />
+</svg>
