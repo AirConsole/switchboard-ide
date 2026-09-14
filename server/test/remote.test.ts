@@ -39,7 +39,11 @@ peer.addHook('onRequest', async (_request, reply) => {
   }
 })
 peer.get('/api/server', async () => ({ name: 'peer', protocolVersion: PROTOCOL_VERSION }))
-peer.get('/api/snapshot', async () => peerSnapshot)
+let reads = 0
+peer.get('/api/snapshot', async () => {
+  reads++
+  return peerSnapshot
+})
 
 await peer.listen({ host: '127.0.0.1', port: 0 })
 peerUrl = `http://127.0.0.1:${(peer.server.address() as AddressInfo).port}`
@@ -229,6 +233,47 @@ describe('a project on another machine', () => {
     expect(after.projects.map((p) => p.id)).toContain(second.id)
     // The one we did read keeps its worktrees; the new one has none to show.
     expect(after.worktrees.map((w) => w.projectId)).not.toContain(second.id)
+  })
+
+  /*
+   * A machine with nothing open on it contributes nothing to the merge, and
+   * asking it anyway costs the full request timeout on *every* snapshot --
+   * which is refetched on every invalidate. One laptop with its lid shut made
+   * the whole row sluggish, local worktrees included.
+   */
+  it('does not call a machine that has no project open on it', async () => {
+    await workspace.addServer({ baseUrl: peerUrl, token: 'tok' })
+    reads = 0
+    await workspace.snapshot()
+    expect(reads).toBe(0)
+
+    await workspace.openRemoteProject({ baseUrl: peerUrl, root: '/srv/ide' })
+    await workspace.snapshot()
+    expect(reads).toBe(1)
+  })
+
+  /*
+   * `lastGood` in memory only held the guarantee *after* one successful read,
+   * and the case that costs the user something is the other one: a gateway that
+   * starts before its peer is listening reports zero worktrees, and the UI
+   * prunes stored layout for worktrees it cannot see -- panels, open files and
+   * the expanded tree, written back and gone for good.
+   */
+  it('remembers what a peer said across a restart of this server', async () => {
+    await addRemote()
+    expect((await workspace.snapshot()).worktrees).toHaveLength(1)
+    await store.flush()
+
+    // A fresh process: same state file, nothing in memory, and the peer is off.
+    answering = false
+    const restarted = new StateStore()
+    await restarted.load()
+    const after = await new Workspace(restarted, engine).snapshot()
+
+    expect(after.worktrees.map((w) => w.id)).toEqual([`${hostKeyFor(peerUrl)}~wt-a`])
+    // Liveness is a live fact: a remembered session would claim an agent was
+    // running on a machine that is switched off.
+    expect(after.sessions).toHaveLength(0)
   })
 
   it('still shows the project when a peer has never answered', async () => {

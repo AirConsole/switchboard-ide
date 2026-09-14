@@ -142,6 +142,11 @@ export const OpenProjectDialog = ({
    * peer's disk -- with Open then targeting whichever the chip says.
    */
   const reads = useRef(0)
+  /** Its own generation: `browse` is called again on every click, and a shared
+   * counter then discarded the recents reply that was still on its way -- so
+   * one machine's closed projects sat under another machine's chip until you
+   * switched again. */
+  const recentReads = useRef(0)
 
   const browse = (next: string, on = host): void => {
     const read = ++reads.current
@@ -159,17 +164,32 @@ export const OpenProjectDialog = ({
       })
   }
 
-  useEffect(() => browse('', host), [host])
+  /*
+   * Emptied before the new machine answers, not after.
+   *
+   * Left up, they are another machine's directories under this machine's chip,
+   * and nothing about the screen says so -- a peer that is asleep takes the
+   * full request timeout, and the error path leaves the old listing where it
+   * was. Clicking one of those rows opened a path read from machine A on
+   * machine B, and with "create" that is a mkdir and a git init in the wrong
+   * place. Empty is honest; stale is not.
+   */
+  useEffect(() => {
+    setListing(null)
+    setRecents([])
+    browse('', host)
+  }, [host])
+
   // Not fatal if it fails: the picker below opens any project this can.
   useEffect(() => {
-    const read = reads.current
+    const read = ++recentReads.current
     void api
       .recents(host)
       .then((rows) => {
-        if (read === reads.current) setRecents(rows)
+        if (read === recentReads.current) setRecents(rows)
       })
       .catch(() => {
-        if (read === reads.current) setRecents([])
+        if (read === recentReads.current) setRecents([])
       })
   }, [host])
   const loadServers = (): void => {

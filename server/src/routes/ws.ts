@@ -184,6 +184,11 @@ export const registerWs = (
       // dead socket and hold its mirror subscriptions forever.
       engine.detachAll(sink)
       relay.dispose()
+      // Out of the set as well as disposed. Left in it, the next invalidate --
+      // which is constant -- called `sync()` on a dead relay, and `sync()`
+      // cheerfully opened fresh sockets to every peer that nothing would ever
+      // close. One per reload, per peer, for the life of the process.
+      relays.delete(relay)
       sinks.delete(sink)
     })
   })

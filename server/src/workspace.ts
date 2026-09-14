@@ -14,6 +14,7 @@ import type {
   Worktree,
   WorktreeTodo,
   RemoteServer,
+  RemoteCache,
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { PeerClient, normalizeBaseUrl } from './remote/peer.js'
@@ -62,6 +63,18 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * where it actually has them, so nothing is invented for a project we have
  * never successfully read.
  */
+/**
+ * What was written down last time, as a slice.
+ *
+ * Sessions and todos are empty on purpose: a remembered session would claim an
+ * agent is running on a machine that is off, and liveness is exactly the kind
+ * of fact that must be observed rather than recalled.
+ */
+const cachedSlice = (cached: RemoteCache | undefined): Omit<AppSnapshot, 'ui'> | undefined =>
+  cached === undefined
+    ? undefined
+    : { projects: cached.projects, worktrees: cached.worktrees, sessions: [], todos: [] }
+
 const reconcile = (
   cached: Omit<AppSnapshot, 'ui'> | undefined,
   pointers: readonly Project[],
@@ -342,9 +355,27 @@ export class Workspace {
     return Promise.all(
       this.peers().map(async (peer) => {
         const mine = pointers.get(peer.baseUrl) ?? []
+        /*
+         * A machine with nothing open on it contributes nothing to the merge,
+         * and asking it anyway costs the full timeout on *every* snapshot --
+         * which is refetched on every invalidate, so one laptop with its lid
+         * shut made the whole row sluggish, local worktrees included. Adding a
+         * machine to browse it is a normal thing to do and must not cost that.
+         */
+        if (mine.length === 0) return reconcile(undefined, [], peer.baseUrl)
         try {
           const slice = selectProjects(await peer.snapshot(), mine, peer.baseUrl)
           this.lastGood.set(peer.baseUrl, slice)
+          // Written through, so the guarantee survives this process. In memory
+          // alone it only held *after* one successful read, and the case that
+          // costs the user something is the other one: a gateway that starts
+          // before its peer is listening prunes the layout of every worktree on
+          // it, permanently, before the peer has ever answered.
+          this.store.setRemoteCache({
+            baseUrl: peer.baseUrl,
+            projects: slice.projects,
+            worktrees: slice.worktrees,
+          })
           return slice
         } catch {
           /*
@@ -357,7 +388,8 @@ export class Workspace {
            * project opened while it was down was invisible -- not even the empty
            * tab a never-seen peer gets.
            */
-          return reconcile(this.lastGood.get(peer.baseUrl), mine, peer.baseUrl)
+          const remembered = this.lastGood.get(peer.baseUrl) ?? cachedSlice(this.store.remoteCache(peer.baseUrl))
+          return reconcile(remembered, mine, peer.baseUrl)
         }
       }),
     )
@@ -493,6 +525,7 @@ export class Workspace {
     // Or the map keeps a slice for every machine ever registered, and a machine
     // re-added later would inherit the worktrees it had the last time.
     this.lastGood.delete(normalized)
+    this.store.clearRemoteCache(normalized)
     this.invalidate()
   }
 

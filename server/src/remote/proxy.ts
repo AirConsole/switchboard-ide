@@ -99,24 +99,36 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
   app.addHook('preHandler', async (request, reply) => {
     // The route that matched, not the URL text: the two disagree for every
     // percent-encoded or absolute-form spelling. See the gate in index.ts.
-    if (!(request.routeOptions.url ?? '').startsWith('/api')) return
+    const route = request.routeOptions.url ?? ''
+    if (!route.startsWith('/api')) return
+    /*
+     * The snapshot is the merge of every machine, not a question for one of
+     * them, and `workspace.ts` builds it. Forwarded whole it would have handed
+     * back the peer's entire world -- its own unregistered projects, and the
+     * `ui` blob that `PeerClient.snapshot` exists to strip at the boundary.
+     */
+    if (route === '/api/snapshot') return
     // An absolute-form target would be pasted straight onto the peer's base
     // URL. Nothing legitimate sends one to this server.
     if (!request.url.startsWith('/')) throw new HttpError(400, 'bad request target')
 
-    const inPath = keyInPath(request.url)
-    const inQuery = keyInQuery(request.query)
     /*
-     * The resource wins, and disagreeing with it is refused rather than
-     * silently resolved. `?host=B` beside a path id belonging to A used to be
-     * sent to B with A's bare id -- and because worktree ids hash the bare
-     * path, and the same checkout path on two machines is the normal case, B
-     * would often *answer*, about its own worktree.
+     * Every machine the request names, from all three places at once.
+     *
+     * Collected rather than taken in priority order, because silently
+     * resolving a disagreement is the thing that lands a request on another
+     * machine's identically-pathed worktree -- and worktree ids hash the bare
+     * path, so the wrong peer *answering* is the normal case, not a miss.
+     * `?host=B` beside a path id belonging to A used to be sent to B with A's
+     * bare id. Two names is a request nobody meant to make.
      */
-    if (inPath !== null && inQuery !== null && inPath !== inQuery) {
-      throw new HttpError(400, 'that request names two different servers')
-    }
-    const key = inPath ?? keyInBody(request.body) ?? inQuery
+    const named = new Set(
+      [keyInPath(request.url), keyInBody(request.body), keyInQuery(request.query)].filter(
+        (key): key is string => key !== null,
+      ),
+    )
+    if (named.size > 1) throw new HttpError(400, 'that request names two different servers')
+    const key = [...named][0] ?? null
 
     let peer: PeerClient | null = null
     let body = request.body

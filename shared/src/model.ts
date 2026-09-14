@@ -18,6 +18,24 @@ export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string 
  * in step, and `Project` is in every snapshot the browser receives. Nothing on
  * this type but `baseUrl` and `name` is ever sent to a client.
  */
+/**
+ * The last thing a machine said about the projects we hold on it.
+ *
+ * Worktrees are discovered and never stored -- that is the rule, and for a
+ * local project git is the truth so a stored copy could only disagree with it.
+ * A peer that is switched off offers no truth to discover, and the cost of
+ * having none is not a blank tile: the UI prunes stored layout for worktrees it
+ * cannot see, so one failed read on a cold start deletes a worktree's panels,
+ * its open files and its expanded tree, and writes that back. Sessions are
+ * deliberately not kept -- liveness is a live fact, and a remembered one would
+ * claim an agent was running on a machine that is off.
+ */
+export interface RemoteCache {
+  baseUrl: string
+  projects: Project[]
+  worktrees: Worktree[]
+}
+
 export interface RemoteServer {
   baseUrl: string
   /** What the peer calls itself, as of when it was added. */

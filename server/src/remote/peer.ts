@@ -18,7 +18,14 @@ import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
 
 /** Normalized so it can be hashed into an id and compared character by character. */
 export const normalizeBaseUrl = (raw: string): string => {
-  const url = new URL(raw.trim())
+  let url: URL
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    // `new URL('box.local:8084')` throws, and the field's own placeholder
+    // invites exactly that abbreviation. Its message is the one below.
+    throw new HttpError(400, 'a server is http:// or https://')
+  }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new HttpError(400, 'a server is http:// or https://')
   }
@@ -106,6 +113,16 @@ export class PeerClient {
     }
     if (text === '') return undefined as T
     return scopeTree(this.key, JSON.parse(text) as T)
+  }
+
+  /**
+   * Whether two clients would authenticate identically.
+   *
+   * Compared here rather than by exposing the token, so nothing outside this
+   * class has to hold one to ask.
+   */
+  sameCredential(other: PeerClient): boolean {
+    return this.baseUrl === other.baseUrl && this.token === other.token
   }
 
   /** What a socket to this peer must carry; see gate.ts on the peer's side. */

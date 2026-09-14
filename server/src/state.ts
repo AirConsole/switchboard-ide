@@ -3,6 +3,7 @@ import { basename, dirname } from 'node:path'
 import type {
   Project,
   RecentProject,
+  RemoteCache,
   RemoteServer,
   UiState,
   WorktreeTodo,
@@ -49,6 +50,8 @@ export interface PersistedState {
    * losing these silently locks you out of every remote project at once.
    */
   servers: RemoteServer[]
+  /** See `RemoteCache`: what each machine last said, so its absence is not a deletion. */
+  remoteCache: RemoteCache[]
   ui: UiState
 }
 
@@ -61,6 +64,7 @@ const emptyState = (): PersistedState => ({
   todos: [],
   recents: [],
   servers: [],
+  remoteCache: [],
   ui: defaultUiState(),
 })
 
@@ -85,6 +89,18 @@ const reviveServer = (value: unknown): RemoteServer | null => {
     name: typeof row.name === 'string' && row.name !== '' ? row.name : row.baseUrl,
     ...(typeof row.token === 'string' ? { token: row.token } : {}),
     addedAt: typeof row.addedAt === 'number' ? row.addedAt : Date.now(),
+  }
+}
+
+/** A stored peer cache, or nothing. Row by row, for the reason projects are. */
+const reviveRemoteCache = (value: unknown): RemoteCache | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Partial<RemoteCache>
+  if (typeof row.baseUrl !== 'string' || row.baseUrl === '') return null
+  return {
+    baseUrl: row.baseUrl,
+    projects: Array.isArray(row.projects) ? row.projects : [],
+    worktrees: Array.isArray(row.worktrees) ? row.worktrees : [],
   }
 }
 
@@ -194,6 +210,9 @@ export class StateStore {
           servers: (Array.isArray(candidate.servers) ? candidate.servers : [])
             .map(reviveServer)
             .filter((server): server is RemoteServer => server !== null),
+          remoteCache: (Array.isArray(candidate.remoteCache) ? candidate.remoteCache : [])
+            .map(reviveRemoteCache)
+            .filter((entry): entry is RemoteCache => entry !== null),
           ui: pickKnownUiKeys(candidate.ui),
         }
       }
@@ -253,6 +272,22 @@ export class StateStore {
 
   removeServer(baseUrl: string): void {
     this.state.servers = this.state.servers.filter((s) => s.baseUrl !== baseUrl)
+    this.scheduleSave()
+  }
+
+  remoteCache(baseUrl: string): RemoteCache | undefined {
+    return this.state.remoteCache.find((entry) => entry.baseUrl === baseUrl)
+  }
+
+  setRemoteCache(entry: RemoteCache): void {
+    const at = this.state.remoteCache.findIndex((e) => e.baseUrl === entry.baseUrl)
+    if (at === -1) this.state.remoteCache.push(entry)
+    else this.state.remoteCache[at] = entry
+    this.scheduleSave()
+  }
+
+  clearRemoteCache(baseUrl: string): void {
+    this.state.remoteCache = this.state.remoteCache.filter((e) => e.baseUrl !== baseUrl)
     this.scheduleSave()
   }
 

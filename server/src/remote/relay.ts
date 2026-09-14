@@ -52,6 +52,16 @@ class PeerLink {
    * an attachment to own input. Re-sent on every reconnect.
    */
   private readonly attached = new Map<string, AttachMsg>()
+  /**
+   * The session this browser last claimed input on, if any.
+   *
+   * Replayed with the attachments, for the same reason they are: input
+   * authority is claimed by a frame, and a peer that restarted has forgotten
+   * it. With two viewers of one remote session, whichever relay re-attached
+   * first would otherwise keep input and the other's keystrokes would be
+   * dropped in silence until the user clicked away and back.
+   */
+  private focused: string | null = null
   /** The peer's stream numbers, mapped to the ones this browser was given. */
   private readonly streams = new Map<number, number>()
   private closed = false
@@ -78,6 +88,7 @@ class PeerLink {
       // Everything this browser still has open, claimed again. The peer forgot
       // it when the connection went; the browser does not know it went.
       for (const attach of this.attached.values()) this.write(attach)
+      if (this.focused !== null) this.write({ t: 'focus', sessionId: this.focused })
       // Whatever happened while we were away is not in any snapshot we hold.
       this.host.onInvalidate()
     })
@@ -177,7 +188,11 @@ class PeerLink {
     // pane closed while the peer was away cannot be re-claimed when it returns.
     // A stale primary attachment would go on owning that session's geometry.
     if (forwarded.t === 'attach') this.attached.set(forwarded.sessionId, forwarded)
-    else if (forwarded.t === 'detach') this.attached.delete(forwarded.sessionId)
+    else if (forwarded.t === 'focus') this.focused = forwarded.sessionId
+    else if (forwarded.t === 'detach') {
+      this.attached.delete(forwarded.sessionId)
+      if (this.focused === forwarded.sessionId) this.focused = null
+    }
     else if (forwarded.t === 'resize') {
       const open = this.attached.get(forwarded.sessionId)
       // So a reconnect re-attaches at the size the pane is now, not the size it
@@ -187,9 +202,14 @@ class PeerLink {
     this.write(forwarded)
   }
 
+  usesSameCredentialAs(peer: PeerClient): boolean {
+    return this.peer.sameCredential(peer)
+  }
+
   dispose(): void {
     this.closed = true
     this.attached.clear()
+    this.focused = null
     this.socket?.close()
     this.socket = null
   }
@@ -206,6 +226,8 @@ export class Relay {
   private readonly links = new Map<string, PeerLink>()
   private peers: PeerClient[] = []
   private nextStream = GATEWAY_STREAM_BASE
+  /** Belt and braces with the caller's own bookkeeping: see `dispose`. */
+  private closed = false
 
   constructor(
     private readonly readPeers: () => PeerClient[],
@@ -228,6 +250,7 @@ export class Relay {
    * `PeerClient` and a sha1 per registered machine -- on every keystroke.
    */
   sync(): void {
+    if (this.closed) return
     this.peers = this.readPeers()
     const live = new Set(this.peers.map((peer) => peer.key))
     for (const [key, link] of this.links) {
@@ -240,7 +263,17 @@ export class Relay {
 
   private link(peer: PeerClient): PeerLink {
     const existing = this.links.get(peer.key)
-    if (existing) return existing
+    /*
+     * The key is a hash of the base URL, so it does not change when the token
+     * does -- and a link captures its credential at construction. Rotating a
+     * peer's token, or re-adding a machine to correct a typo, therefore fixed
+     * REST immediately (a fresh client per request) and left the socket
+     * retrying the old one until the 30s cap, forever. Remote terminals never
+     * attached and none of the peer's pushes arrived, with REST working
+     * perfectly, which is a bad thing to have to debug.
+     */
+    if (existing && existing.usesSameCredentialAs(peer)) return existing
+    existing?.dispose()
     const link = new PeerLink(peer, this.host, () => ++this.nextStream)
     this.links.set(peer.key, link)
     return link
@@ -259,6 +292,10 @@ export class Relay {
   }
 
   dispose(): void {
+    // Before the links go, so a `sync()` racing this cannot rebuild them. A
+    // disposed relay that still syncs re-opens every socket it just closed, and
+    // nothing is left holding it to close them again.
+    this.closed = true
     for (const link of this.links.values()) link.dispose()
     this.links.clear()
   }
