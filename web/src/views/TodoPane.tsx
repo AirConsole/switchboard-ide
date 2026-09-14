@@ -183,9 +183,11 @@ const TodoRow = ({
        * Square segments inside one rounded shell, seamed 2px in --sleeve. Round
        * pills are each their own object, so a column of them is a column of
        * objects that happen to be near each other; this is one object divided,
-       * which is the argument `.tabgroup` already makes about the strip. The
-       * empty segment at the foot is how the slab keeps meeting the bottom of a
-       * prompt taller than it -- see `.todo__filler`.
+       * which is the argument `.tabgroup` already makes about the strip.
+       *
+       * It is exactly as tall as the three, and does not run down to meet a
+       * taller prompt: an empty segment under DELETE is a fourth thing you can
+       * do to a todo, drawn and doing nothing.
        */}
       <div className="todo__controls">
         <button
@@ -244,17 +246,6 @@ const TodoRow = ({
         >
           Delete
         </button>
-        {/*
-         * Whatever the three leave, when the prompt beside them is the taller
-         * half. It is a box with no label rather than nothing at all, so the
-         * slab meets the bottom of the row the way the strip meets the bar.
-         *
-         * Its seam is drawn as a gradient rather than a border because a border
-         * paints at any height: with a one-line prompt this box is 0px tall and
-         * a border would leave a 2px line of sleeve along the foot of the slab,
-         * under a column that has nothing left to separate.
-         */}
-        <div className="todo__filler" aria-hidden="true" />
       </div>
       {move.at !== null && (
         /*

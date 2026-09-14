@@ -2660,9 +2660,10 @@ button {
  * divided. The shell holds every outer edge, so the first and last segments
  * wear its curve and no segment has a radius of its own.
  *
- * It stretches to the row: a prompt is often several lines and the three
- * segments are 78px, so the slab would otherwise stop short of the bottom of
- * its own row. `.todo__filler` is what takes up the rest.
+ * It is exactly as tall as the three segments and stops there. A prompt is
+ * often several lines, so beside a tall one the slab ends well above the foot
+ * of its own row -- which is right: an empty segment under DELETE is a fourth
+ * thing you can do to a todo, drawn and doing nothing.
  *
  * `min-width` rather than a width, and it is what keeps the column from being
  * ragged: every row comes out at 118px because no label reaches it, and a font
@@ -2673,7 +2674,6 @@ button {
 .todo__controls {
   display: flex;
   flex-direction: column;
-  align-self: stretch;
   min-width: 118px;
   grid-column: 2;
   grid-row: 1;
@@ -2772,21 +2772,6 @@ button {
 .todo__remove:hover {
   color: var(--danger);
   background: var(--level-object);
-}
-
-/*
- * Whatever the three segments leave.
- *
- * A box with no label rather than nothing at all, so the slab meets the bottom
- * of its row the way the strip meets its bar. Its seam is a gradient and not a
- * border because a border paints at any height: beside a one-line prompt this
- * box is 0px tall, and a border would draw 2px of sleeve along the foot of the
- * slab with nothing under it to separate.
- */
-.todo__filler {
-  flex: 1 1 auto;
-  min-height: 0;
-  background: linear-gradient(var(--sleeve) 0 2px, var(--level-object) 2px);
 }
 
 .todo__wait {

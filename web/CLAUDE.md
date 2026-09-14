@@ -800,13 +800,13 @@ lift on hover**, and that is measured rather than an oversight: `--danger` is
 cost either a second red or the colour on the only control here that destroys
 something.
 
-**The filler is a box with no label**, taking whatever the three segments leave
-so the slab meets the bottom of its row the way the strip meets its bar. Its seam
-is a gradient and not a border because **a border paints at any height**: beside
-a one-line prompt the box is 0px tall and a border drew 2px of sleeve along the
-foot of the slab with nothing under it to separate. Measured: prompt 25px ->
-filler 0 and the last segment's fill runs to the slab's edge; prompt 100px ->
-filler 28px with exactly two rows of `--sleeve` above it.
+**The slab is exactly as tall as its three segments and stops there.** Beside a
+prompt of several lines it ends well above the foot of its own row, and the space
+under it is the panel. It was tried the other way -- stretched to the row, with
+an empty segment taking up the slack so the slab met the bottom the way the strip
+meets its bar -- and an empty segment under DELETE reads as a fourth thing you
+can do to a todo, drawn and doing nothing. Measured: the slab is 72px against
+prompts of 25px and 100px alike.
 
 MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
 and it hangs off the segment's own bottom-left corner.
