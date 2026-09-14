@@ -694,6 +694,31 @@ button {
    */
   --tab-fill: var(--rule);
   background: var(--tab-fill);
+  /*
+   * The status is a bar down the leading edge, where an 11px bullet used to be:
+   * about four times the area, at the edge the eye lands on as it runs along a
+   * row, which is the one thing the top bar exists to make fast.
+   *
+   * It is not the fill, and that was the choice. The fill is the loudest
+   * channel on the strip -- amber over the sleeve is 9.70:1 where every other
+   * step here is 1.18 to 1.54 -- and it is already spoken for: it says which
+   * tab you are in. Taking it for status costs that twice over, because --bone
+   * on --signal is 1.38:1 and --bone on --done is 1.36:1, so a filled tab's
+   * text would have to flip to --ink, and the label's own 1.92:1 "you are in
+   * this one" step would have nowhere left to go. A bar keeps every one of
+   * those measurements as it was, and a severity stripe is not what selection
+   * looks like anywhere, so the two cannot be read for each other.
+   *
+   * An inset shadow rather than a pseudo-element: it is clipped by the pill's
+   * own 9px radius with nothing to keep in step, it needs no element inside a
+   * tab that is already a wrapper around two buttons, and the menu's stacked
+   * tabs inherit it from this one rule.
+   *
+   * Nothing running has no bar at all, where it used to have a hollow ring.
+   * Absence is the honest mark for it, and it is quieter than a ring -- which
+   * is right for the one state that is not asking for anything.
+   */
+  box-shadow: inset 4px 0 0 var(--tab-state, transparent);
 }
 
 /* The zZ tab stands for a count, not for a name, so it takes what it needs. */
@@ -709,7 +734,13 @@ button {
   gap: 7px;
   flex: 1;
   min-width: 0;
-  padding: 0 5px 0 9px;
+  /*
+   * 13px of leading inset: the bar's 4px plus the 9px the text has always kept
+   * from the tab's edge. Every tab carries it whether or not it has a bar, so
+   * the names stay on one left edge down the row -- which is what a row is
+   * scanned along.
+   */
+  padding: 0 5px 0 13px;
   /*
    * Chrome's other half of "which tab am I in": its unselected titles are dim
    * (#9aa0a6) and its selected one is bright (#e8eaed), and that difference is
@@ -726,7 +757,8 @@ button {
 }
 
 .tab--zz .tab__body {
-  padding: 0 9px;
+  /* Its own symmetrical inset, plus the same room for the bar. */
+  padding: 0 9px 0 13px;
 }
 
 /*
@@ -766,18 +798,6 @@ button {
  * running, and when nothing is the fill falls away and the ring is all that is
  * left -- so "nothing running" is a hollow dot rather than a colour of its own.
  */
-.tab__dot {
-  width: 11px;
-  height: 11px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--tab-state, transparent);
-  /* The ring the "nothing running" state falls back to is --graphite like the
-     rest of a tab's quiet channel: 5.89:1 on the sleeve against the dim grey's
-     4.42, and filled-versus-hollow is what tells the states apart anyway. */
-  box-shadow: inset 0 0 0 1px var(--tab-state, var(--graphite));
-}
-
 .tab__label {
   display: flex;
   align-items: center;

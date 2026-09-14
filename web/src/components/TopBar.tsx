@@ -60,7 +60,7 @@ const OpenProjectIcon = (): React.ReactElement => (
   </svg>
 )
 
-/** The tab class for a status: what colour its bullet is, if any. */
+/** The tab class for a status: what colour its leading bar is, if any. */
 const statusClass = (status: WorktreeStatus): string =>
   status === 'needs-you'
     ? 'tab--needs'
@@ -236,11 +236,11 @@ const Group = ({
             sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
           ].join('\n')}
         >
-          {/* The bullet is on every tab, asleep or not: sleeping does not mean
-              stopped -- Claude can be left running -- so a sleeper blocked on
-              you has to be able to say so from the bar. The zZ beside it is
-              the other fact. */}
-          <span className="tab__dot" aria-hidden="true" />
+          {/* The state is the bar down the tab's leading edge, drawn by `.tab`
+              itself rather than by anything in here -- see styles.css. It is on
+              every tab, asleep or not: sleeping does not mean stopped, Claude
+              can be left running, so a sleeper blocked on you has to be able to
+              say so from the bar. The zZ is the other fact. */}
           {sleeping && (
             <span className="tab__zz" aria-hidden="true">
               zZ
@@ -299,9 +299,8 @@ const Group = ({
               aria-label={`${asleep.length} sleeping worktrees, ${asleepStatus}`}
               aria-expanded={at !== null}
             >
-              {/* The most urgent of the worktrees behind it, on the same
-                  bullet every other tab uses. */}
-              <span className="tab__dot" aria-hidden="true" />
+              {/* The most urgent of the worktrees behind it, said with the same
+                  leading bar every other tab uses. */}
               {/* The count is part of the label, so it is set at the label's
                   size rather than the tab's. */}
               <span className="tab__zz" aria-hidden="true">
