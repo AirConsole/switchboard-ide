@@ -42,10 +42,11 @@ every tab now owns its own width at its left edge, its centre and its right,
 
 What is **not** copied is Chrome's colour. A tab group there picks a hue; here
 the sleeve is grey, and the only colour on a tab is its **state bar** — 4px down
-its leading edge: amber blocked on you, green done, grey working, and nothing at
-all when nothing is running. (A blocked tab's *label* is amber too, which is the
-one place the state reaches past that bar.) Identity is not what colour is for
-in this interface.
+its leading edge: amber blocked on you, green done, grey working, and dashed
+grey when nothing is running, which is the old hollow bullet's job done by solid
+against dashed. (A blocked tab's *label* is amber too, which is the one place the
+state reaches past that bar.) Identity is not what colour is for in this
+interface.
 
 The pieces, and why each is the way it is:
 
@@ -141,7 +142,11 @@ The pieces, and why each is the way it is:
   these tabs that happens not to be in the row, so it is drawn by the same
   `tab()`: the sleeve under it, the state bar, the zZ, the name and its marks, the
   hover panel — only fully round rather than square-shouldered, since nothing in
-  a list stands on a floor. It used to invent a row of its own, with the state
+  a list stands on a floor — and **the same height**, 32px, which has to be said
+  out loud in the menu because a row there has no 38px bar to derive it from. A
+  row left at its natural 15px is all radius: 9px top and bottom is its whole
+  left edge, so the state bar had no straight run to fill and came out a
+  crescent while the strip beside it drew a bar. It used to invent a row of its own, with the state
   spelled out in words and the prompt on a second line, which made one worktree
   look like two different objects depending on where you met it; both facts are
   still there, on the bar and in the title. The menu takes its width from its
