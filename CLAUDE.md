@@ -305,8 +305,14 @@ That is the whole of the design, and everything else follows from it:
   root and the base URL so it exists even when nothing has ever answered.
 - **Authentication is a token between servers, and there is no login.** A peer
   sets `SWB_TOKEN`, which is also what makes it safe for it to bind an address
-  other than loopback. Your browser never talks to a peer, so there is no CORS,
-  no cookie, no preflight -- and Caddy keeps its `basicauth` exactly as it is.
+  other than loopback: on a peer the token is the only credential that crosses
+  the network, because `Origin` and `Sec-Fetch-Site` are unforgeable only inside
+  a browser and the caller a peer must keep out is not one. A browser is
+  believed solely from the peer's own machine. Your browser never talks to a
+  peer, so there is no CORS, no cookie, no preflight -- and Caddy keeps its
+  `basicauth` exactly as it is. A peer's own UI is therefore usable only from
+  the peer; you look at it through the gateway, and a peer must not have a
+  reverse proxy in front of it.
 
 Testing needs two instances:
 

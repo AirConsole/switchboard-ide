@@ -51,12 +51,39 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * git (worktrees) and the session engine (terminals).
  */
 
-const emptySlice = (): Omit<AppSnapshot, 'ui'> => ({
-  projects: [],
-  worktrees: [],
-  sessions: [],
-  todos: [],
-})
+
+/**
+ * What to show for a peer that did not answer.
+ *
+ * Every pointer we hold gets a project, so a tab never disappears merely
+ * because a machine is off -- the UI prunes stored layout for worktrees it
+ * cannot see, and losing panels and open files is not a thing to do to someone
+ * whose laptop is shut. Worktrees, sessions and todos come from the cache only
+ * where it actually has them, so nothing is invented for a project we have
+ * never successfully read.
+ */
+const reconcile = (
+  cached: Omit<AppSnapshot, 'ui'> | undefined,
+  pointers: readonly Project[],
+  host: string,
+): Omit<AppSnapshot, 'ui'> => {
+  const remembered = new Map((cached?.projects ?? []).map((project) => [project.id, project]))
+  const projects = pointers.map((pointer) => ({
+    ...(remembered.get(pointer.id) ?? pointer),
+    id: pointer.id,
+    host: { kind: 'remote' as const, baseUrl: host },
+  }))
+  const live = new Set(projects.map((project) => project.id))
+  const worktrees = (cached?.worktrees ?? []).filter((worktree) => live.has(worktree.projectId))
+  const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
+  return {
+    projects,
+    worktrees,
+    sessions: (cached?.sessions ?? []).filter((session) => worktreeIds.has(session.worktreeId)),
+    todos: (cached?.todos ?? []).filter((todo) => worktreeIds.has(todo.worktreeId)),
+  }
+}
+
 
 /**
  * The part of a peer's world that belongs to the projects we registered there.
@@ -267,6 +294,28 @@ export class Workspace {
   }
 
   /**
+   * A remote project addressed by the id we publish for it, which is our
+   * pointer's and therefore bare.
+   *
+   * That bareness is deliberate -- the id has to exist when the peer does not
+   * -- but it means nothing about the id says "another machine", so the one
+   * route that addresses a project rather than a worktree (`POST
+   * /api/worktrees`, which carries `projectId`) cannot be routed by looking at
+   * it. This is that lookup. Without it, creating a worktree on a remote
+   * project was answered locally and refused: the feature was unreachable.
+   *
+   * The peer's own id for the project is *derived*, not remembered: both sides
+   * hash the same absolute root, and ours differs only because it also hashes
+   * the base URL.
+   */
+  remoteProject(projectId: string): { peer: PeerClient; peerProjectId: string } | null {
+    const project = this.store.project(projectId)
+    if (!project || project.host.kind !== 'remote') return null
+    const peer = this.peers().find((p) => p.baseUrl === (project.host as { baseUrl: string }).baseUrl)
+    return peer === undefined ? null : { peer, peerProjectId: projectIdFor(project.root) }
+  }
+
+  /**
    * What each peer contributes to the snapshot: the projects we registered
    * there, and everything belonging to them.
    *
@@ -300,21 +349,15 @@ export class Workspace {
         } catch {
           /*
            * Unreachable, refused, or a protocol mismatch. Hold what it last
-           * said -- and failing that, still show the projects themselves, with
-           * no worktrees under them. The one thing that must not happen is the
-           * tab vanishing: the UI prunes stored layout for worktrees it cannot
-           * see, so "that machine is off" reading as "those worktrees are gone"
-           * costs the user their panels and open files permanently.
+           * said, but **reconciled against the pointers we hold now** rather
+           * than returned whole. The cache is a memory of a machine, not a
+           * record of what is registered, and returning it verbatim made it
+           * authoritative about both: a project closed while its peer was down
+           * came back on the next snapshot and could not be closed again, and a
+           * project opened while it was down was invisible -- not even the empty
+           * tab a never-seen peer gets.
            */
-          return (
-            this.lastGood.get(peer.baseUrl) ?? {
-              ...emptySlice(),
-              projects: mine.map((pointer) => ({
-                ...pointer,
-                host: { kind: 'remote' as const, baseUrl: peer.baseUrl },
-              })),
-            }
-          )
+          return reconcile(this.lastGood.get(peer.baseUrl), mine, peer.baseUrl)
         }
       }),
     )
@@ -447,6 +490,9 @@ export class Workspace {
       }
     }
     this.store.removeServer(normalized)
+    // Or the map keeps a slice for every machine ever registered, and a machine
+    // re-added later would inherit the worktrees it had the last time.
+    this.lastGood.delete(normalized)
     this.invalidate()
   }
 

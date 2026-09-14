@@ -353,36 +353,59 @@ remote project would implement. Routes stay thin: parse, call, map `HttpError`.
 A kill emits no event of its own, so any route that ends a session must call
 `broadcastInvalidate()`; otherwise clients only find out on their next poll.
 
-## Who may open the socket
+## Who may reach this server
 
-`/ws` refuses a browser page whose `Origin` it does not know, and that check is
-the whole of the app's authentication. It exists because **a WebSocket is exempt
-from CORS**: a browser will open one to any origin, with no preflight and no
-`Access-Control-*` to satisfy. Binding `127.0.0.1` does not help, because the
-page runs in *your* browser, which is already inside — and Caddy does not help
-either, because it fronts the public name while the socket is reached on
-loopback.
+Two callers, no login, no cookie and no session between them — `gate.ts` is the
+whole of it, and `config.ts`'s `publicOrigins` is the list it consults.
 
-What that cost before the check, measured on master and recorded in
-`test/ws-origin.test.ts`: a page on any origin opened a socket, and
-`session-state` — carrying a live session id — arrived **unasked**, because
-every liveness and attention change is broadcast to every sink. With an id, a
-single `{"t":"input"}` frame types a prompt and a Return into a running Claude.
-That is command execution as you, from a page you merely looked at.
+- **Our own page**, in a browser.
+- **A gateway**, which is this same program on another machine reading a project
+  that lives here. Not a browser; it presents `SWB_TOKEN`.
 
-Three things about the rule, each of which is a trap if reversed:
+`SWB_TOKEN` is what a machine sets to *be* a peer. Unset — a normal instance —
+nothing changes and the bind address is the boundary, as it always was. Set,
+anything arriving over the network must carry the token, which is what makes it
+safe to bind an address other than loopback.
 
-- **The refusal happens before the sink joins `sinks`.** Closing a socket that
-  is already in the broadcast set is a race, not a fix — the frame it must not
-  see may already be on the wire.
-- **It is an allow-list, not `Origin` against `Host`.** DNS rebinding makes
-  those two agree: the attacker owns the name, re-points it at this address, and
-  both headers then read `evil.example`. A name we never published is exactly
-  what has to be refused, so the names are named.
-- **A missing `Origin` is allowed, and that is not a hole.** Browsers set it on
-  every socket and script cannot override it, so nothing that omits it is a
-  page. curl, the health check and the tests are what arrive that way, and they
-  are gated the way every `/api` route is.
+**The `/ws` check exists even on a normal instance**, and it closes a live hole:
+a WebSocket is exempt from CORS, so any page you visit can open one, and every
+liveness and attention change is broadcast to every connected sink with the
+session id in it. Read an id off that broadcast, send one `{"t":"input"}`, and
+that is a prompt and a Return typed into a running Claude. Neither the loopback
+bind nor Caddy is in that path: the page runs in *your* browser, which is
+already inside, and Caddy fronts the public name while the socket is reached on
+127.0.0.1. Measured, and recorded in `test/ws-origin.test.ts`: the socket
+opened, `clientCount()` went to 1, and a `session-state` frame arrived unasked.
+
+Four rules, each of which was wrong once and found by measurement:
+
+- **Key on the route Fastify matched, never on the URL text.** `request.url` is
+  the raw request target and the router matches the *decoded* path, so the two
+  disagree — and every spelling of that disagreement was a way through. Against
+  a real peer with a token set and none supplied: `GET /%61pi/snapshot` returned
+  the full snapshot, `/ap%69/…` likewise, an absolute-form target
+  (`GET http://evil/api/snapshot`) did not begin with `/api` at all, and
+  `POST /%61pi/sessions` **spawned a live shell** in one of its worktrees. That
+  is unauthenticated command execution from anywhere on the network, and
+  `routeOptions.url` — the string that actually answered — is the same however
+  the client spells it. The `/api/health` exemption is an exact match for the
+  same reason; `startsWith` also exempted `/api/healthz`.
+- **A browser-set header proves nothing about a non-browser.** `Sec-Fetch-Site`
+  and `Origin` are unforgeable only *inside* a browser, and the caller a peer
+  has to keep out is not one. Both were accepted on their own, and both were
+  defeated with one forged header: `curl -H 'Sec-Fetch-Site: none'` read the
+  whole API, and a raw socket sending `Origin: http://127.0.0.1:<port>` — always
+  in the allow-list — was admitted to `/ws`, where attach and input are full
+  terminal control. So on a peer the **token is the only credential that crosses
+  the network**, and a browser is believed solely from a loopback peer address,
+  which a header cannot forge. Fetch Metadata now only *narrows* traffic that
+  already came from this machine.
+- **The refusal happens before the sink joins `sinks`.** Closing a socket that is
+  already in the broadcast set is a race, not a fix.
+- **An allow-list, not `Origin` against `Host`.** DNS rebinding makes those two
+  agree — the attacker owns the name and re-points it here, so both read
+  `evil.example` — and a name we never published is exactly what has to be
+  refused.
 
 Behind a proxy this process only ever sees `127.0.0.1`, so it cannot derive the
 origin the page was served from and a deployment must say: `SWB_PUBLIC_ORIGIN`,
@@ -390,9 +413,13 @@ which `scripts/deploy.sh` sets. Unset, the loopback defaults still admit a
 browser on this machine, so a scratch instance needs nothing — and every socket
 through Caddy is refused, which is the failure to expect if it is forgotten.
 
-`/api` is still unauthenticated and still relies on the bind address and the
-proxy. Rebinding can therefore still *read* it; that is information disclosure
-rather than execution, and closing it is a `Host` allow-list, not this.
+Two consequences worth stating plainly. A peer's own web UI works only from the
+peer itself; you look at a peer through the gateway. And **do not put a reverse
+proxy in front of a peer** — a proxy connects from loopback, so everything it
+forwards would look local. A peer needs none: the gateway reaches it directly.
+
+Rebinding can still *read* `/api` on a non-peer; that is disclosure rather than
+execution, and closing it is a `Host` allow-list, not this.
 
 ## A project on another machine
 
@@ -414,6 +441,24 @@ translation is the ids:
   than a second implementation of it here. It also keeps the peer's
   `clientCount() > 0`, so the peer's git poll runs and its `invalidate`
   broadcasts arrive; the gateway is pushed to, not polling.
+
+  **The link holds what the browser is attached to, and re-claims it on every
+  reconnect.** A peer restarting is the ordinary event -- it is a deploy -- and
+  the browser will not re-attach for us: it re-attaches in its own socket's
+  `onopen`, and its socket never closed. Without this, one blip left every
+  remote pane dead for the life of the page: no output, and typing silently
+  discarded because the peer no longer had an attachment to own input. Measured
+  by killing the peer's process with tmux left running -- with the re-claim, a
+  second `attached` frame arrives and typing produces output again; without it,
+  none and nothing. A `detach` *removes* the record for the same reason, or a
+  pane closed while the peer was away would be re-claimed when it returned, and
+  a stale primary attachment would go on owning that session's geometry.
+
+  Links are also brought level with the registry whenever the snapshot is
+  invalidated, which is when a machine is added or forgotten. Both directions
+  matter: a machine added mid-session had no link until something attached to
+  it, so nothing it did reached the row until a reload; a machine forgotten kept
+  its socket for the life of the tab, still using a credential just revoked.
 
 Terminal bytes are forwarded with four header bytes rewritten and the payload
 untouched -- `streamId` is a `uint32` in a five-byte header, never a string id.
@@ -439,6 +484,29 @@ Three things measured rather than reasoned, each of which would have shipped:
   which *types* carry an id rather than which names exist -- comparing names left
   adding `id` to `Commit` green, and that is the case that would silently
   rewrite a commit hash as though it addressed a worktree.
+
+One more about the proxy, because the id says nothing: **a remote project's id
+is our pointer's, and therefore bare.** That is deliberate -- it has to exist
+when the peer does not -- but it means `POST /api/worktrees`, the one route that
+addresses a project rather than a worktree, cannot be routed by looking at its
+`projectId`. It is resolved through the store instead (`remoteProject`), and the
+peer's own id for the project is *derived*: both sides hash the same absolute
+root, and ours differs only because it also hashes the base URL. Without that
+lookup the request was answered locally and refused, so creating a worktree on a
+remote project was simply unreachable.
+
+Two more about holding a peer's answers:
+
+- **The cache of a peer's last good answer is reconciled, never returned
+  whole.** It is a memory of a machine, not a record of what is registered.
+  Returned verbatim it was authoritative about both: a project closed while its
+  peer was down came back on the next snapshot and could not be closed again,
+  and a project opened while it was down was invisible. Every pointer gets a
+  project; only worktrees we have actually read come with it.
+- **A peer's `session-state` is forwarded only for what this browser is attached
+  to.** A peer broadcasts every session it runs, including projects nobody here
+  opened. The browser discards those, so forwarding them was noise that grew
+  with the peer's session count.
 
 And two about being the *other* machine:
 

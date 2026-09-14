@@ -8,19 +8,32 @@ import { config } from './config.js'
  * There are exactly two kinds of caller, and no login, no cookie and no session
  * between them:
  *
- * - **Our own page**, in a browser. Recognised by Fetch Metadata, never by a
- *   cookie: `Sec-Fetch-Site` is set by the browser on every request including a
- *   same-origin GET, and script cannot forge it. That is what makes it usable
- *   where `Origin` is not -- a browser omits `Origin` entirely on a same-origin
- *   GET, so a check built on it would refuse the very page we serve.
  * - **A gateway**, which is this same program on another machine reading a
- *   project that lives here. It is not a browser, sends no Fetch Metadata, and
- *   presents `SWB_TOKEN` instead.
+ *   project that lives here. It is not a browser, and presents `SWB_TOKEN`.
+ * - **Our own page**, in a browser *on this machine*. Recognised by Fetch
+ *   Metadata **and** a loopback peer address, and the second half is not
+ *   decoration: `Sec-Fetch-Site` means something only because a browser is the
+ *   one setting it. Anything that is not a browser sets whatever it likes, so
+ *   `curl -H 'Sec-Fetch-Site: none'` walked straight past a token-gated `/api`
+ *   -- full snapshot, then `PUT .../file`, then `POST /api/sessions`, which is
+ *   unauthenticated command execution on the peer. Fetch Metadata can only
+ *   *narrow* browser traffic; it can never authenticate a non-browser.
+ *
+ * So the loopback address is what actually carries that second case, and Fetch
+ * Metadata narrows it further -- a page on this machine cannot be made to ask
+ * on some other site's behalf. A TCP peer address cannot be forged the way a
+ * header can.
  *
  * `SWB_TOKEN` is what a machine sets to *be* a peer. Unset, this behaves
- * exactly as it always has and the bind address is the boundary; set, a caller
- * that is neither of the two above is refused, which is what makes it safe to
- * bind something other than loopback.
+ * exactly as it always has and the bind address is the boundary. Set, anything
+ * arriving over the network must carry the token, which is what makes it safe
+ * to bind an address other than loopback -- and a peer's own UI is then usable
+ * only from the machine itself, which is the intended trade: you look at a peer
+ * through the gateway.
+ *
+ * One deployment caveat, for whoever puts a proxy in front of a peer: don't.
+ * A reverse proxy connects from loopback, so every request it forwards would
+ * look local. A peer needs no proxy -- the gateway reaches it directly.
  */
 
 /** Constant-time, and length-safe: `timingSafeEqual` throws on a length mismatch. */
@@ -55,5 +68,51 @@ export const isOwnPage = (request: FastifyRequest): boolean => {
   return site === 'same-origin' || site === 'none'
 }
 
+/**
+ * The connection came from this machine.
+ *
+ * `request.ip` is the socket's peer address: Fastify only believes
+ * `X-Forwarded-For` when `trustProxy` is on, and it is not.
+ */
+export const isLoopback = (request: FastifyRequest): boolean => {
+  const ip = request.ip
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+}
+
 export const allowRequest = (request: FastifyRequest): boolean =>
-  config.token === undefined || isOwnPage(request) || hasPeerToken(request)
+  config.token === undefined ||
+  hasPeerToken(request) ||
+  (isLoopback(request) && isOwnPage(request))
+
+/**
+ * Who may open the socket.
+ *
+ * Separate from `allowRequest` because the questions differ: `/api` is asked by
+ * our own page with no `Origin` at all (a browser omits it on a same-origin
+ * GET), while a WebSocket always carries one. So here the allow-list is real
+ * evidence -- against a browser.
+ *
+ * Against anything else it is worth nothing, and that is the half that bit:
+ * `http://127.0.0.1:<port>` is always in the list, so a raw client on the
+ * network sending that as its `Origin` was admitted, and an admitted socket may
+ * attach to a session and type into it. Measured against a peer bound to
+ * 0.0.0.0: accepted, before this. On a peer the token is therefore the only
+ * credential that crosses the network, and a browser is believed solely from
+ * this machine.
+ */
+export const allowSocket = (request: FastifyRequest): boolean => {
+  // A gateway reading this machine: not a browser, so no Origin, and the token
+  // is the whole of what it presents.
+  if (hasPeerToken(request)) return true
+
+  const origin = request.headers.origin
+  const ours = origin !== undefined && config.publicOrigins.has(origin)
+
+  if (config.token !== undefined) return ours && isLoopback(request)
+
+  // Not a peer: bound to loopback, and the allow-list is what stops a page you
+  // merely visited from opening a socket here. A missing Origin is not a
+  // browser -- curl, a health check, a test -- and is gated by the bind address
+  // the way every `/api` route is.
+  return origin === undefined || ours
+}

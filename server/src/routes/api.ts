@@ -244,7 +244,9 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     // Stripped on the way out: the caller is a browser, and the token it just
     // handed us is the one thing in this record it must not be handed back --
     // a reply is as good a place to read it from as any other.
-    return workspace.openRemoteProject(body)
+    const project = await workspace.openRemoteProject(body)
+    broadcastInvalidate()
+    return project
   })
 
   /**
@@ -266,6 +268,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       .object({ baseUrl: z.string().min(1), token: z.string().optional() })
       .parse(request.body)
     const server = await workspace.addServer(body)
+    // Other tabs, and this tab's own relay, have to learn there is a machine.
+    broadcastInvalidate()
     return { key: hostKeyFor(server.baseUrl), baseUrl: server.baseUrl, name: server.name }
   })
 

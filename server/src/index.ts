@@ -56,27 +56,33 @@ process.on('unhandledRejection', (reason) => {
  * The API's gate, which does nothing at all unless this instance is somebody's
  * peer (`SWB_TOKEN`). See gate.ts for the two callers it recognises.
  *
+ * **Keyed on the route Fastify matched, never on the URL text.** `request.url`
+ * is the raw request target and the router matches the decoded path, so the two
+ * disagree and every spelling of that disagreement was a way through: measured
+ * against a real peer with a token set and none supplied, `GET /%61pi/snapshot`
+ * returned the full snapshot, `/ap%69/...` likewise, an absolute-form target
+ * (`GET http://evil/api/snapshot`) did not start with `/api` at all, and
+ * `POST /%61pi/sessions` spawned a live shell in one of the peer's worktrees.
+ * `routeOptions.url` is what actually answered -- `/api/sessions` -- and it is
+ * the same string however the client spelled it.
+ *
  * Registered before the routes so a route added later is covered by it without
- * anyone remembering to, and scoped to `/api` because the static SPA and its
- * assets are what a browser asks for before it can ask for anything else. `/ws`
- * runs the same rule at its upgrade, where a hook cannot reach.
+ * anyone remembering to. `/ws` runs the same rule at its upgrade, where a hook
+ * cannot reach.
  */
 app.addHook('onRequest', async (request, reply) => {
-  if (!request.url.startsWith('/api')) return
-  // `/api/health` stays open: it says `{ok:true}` and nothing else, and it is
-  // what `deploy.sh` and `scratch.sh` poll with curl -- which is neither a
-  // browser nor a gateway, and would otherwise have to be handed the token to
-  // ask whether the process had come back up.
-  if (request.url.startsWith('/api/health')) return
+  const route = request.routeOptions.url
+  // No route matched: nothing will run, and a 404 is the honest answer.
+  if (route === undefined || !route.startsWith('/api')) return
+  // `/api/health` says `{ok:true}` and nothing else, and it is what `deploy.sh`
+  // and `scratch.sh` poll with curl -- neither a browser nor a gateway. An
+  // exact match, not a prefix: `startsWith` also exempted `/api/healthz` and
+  // anything else someone might later add under that stem.
+  if (route === '/api/health') return
   if (allowRequest(request)) return
   await reply.status(401).send({ error: 'not allowed' })
 })
 
-/*
- * Registered before the API, so a request naming another machine is forwarded
- * rather than answered here. Order is the whole of it: after, and every route
- * would first try to resolve a worktree id that means nothing locally.
- */
 registerProxy(app, workspace)
 
 const { broadcastInvalidate, clientCount } = registerWs(app, engine, workspace)

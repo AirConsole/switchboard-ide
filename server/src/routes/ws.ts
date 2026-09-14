@@ -6,7 +6,7 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
-import { hasPeerToken } from '../gate.js'
+import { allowSocket } from '../gate.js'
 import { Relay } from '../remote/relay.js'
 import type { Workspace } from '../workspace.js'
 
@@ -94,24 +94,14 @@ class SocketSink implements Sink {
  * one of ours. See `publicOrigins` in config.ts for why it is a list and not a
  * comparison against `Host`.
  */
-const clientAllowed = (request: FastifyRequest): boolean => {
-  // A gateway reading this machine: not a browser, so no Origin, and the token
-  // is the whole of what it presents.
-  if (hasPeerToken(request)) return true
-  const origin = request.headers.origin
-  // Once this instance is somebody's peer it is reachable off this machine, so
-  // "no Origin" stops meaning "a local script" and starts meaning "anything on
-  // the network". A peer admits browsers and token-holders, and nothing else.
-  if (config.token !== undefined && origin === undefined) return false
-  return origin === undefined || config.publicOrigins.has(origin)
-}
-
 export const registerWs = (
   app: FastifyInstance,
   engine: SessionEngine,
   workspace: Workspace,
 ): { broadcastInvalidate: () => void; clientCount: () => number } => {
   const sinks = new Set<SocketSink>()
+  /** Each browser's links to the other machines, so they can be kept level. */
+  const relays = new Set<Relay>()
 
   const broadcast = (msg: ServerMsg): void => {
     for (const sink of sinks) sink.sendJson(msg)
@@ -134,7 +124,7 @@ export const registerWs = (
     // Refused *before* the sink joins `sinks`: every session's liveness and
     // attention is broadcast to everything in that set, session ids included,
     // and a refused client must not be handed one on its way out.
-    if (!clientAllowed(request)) {
+    if (!allowSocket(request)) {
       // 1008 is "policy violation". Said out loud rather than dropped silently,
       // because the other thing that reaches here is our own page behind a proxy
       // whose origin nobody set, and "it just does not connect" is a bad day.
@@ -157,6 +147,7 @@ export const registerWs = (
       sendBinary: (data) => sink.sendBinary(data),
       onInvalidate: () => sink.sendJson({ t: 'invalidate' }),
     })
+    relays.add(relay)
 
     socket.on('message', (raw: Buffer | string) => {
       const msg = parseClientMsg(raw.toString())
@@ -198,7 +189,14 @@ export const registerWs = (
   })
 
   return {
-    broadcastInvalidate: () => broadcast({ t: 'invalidate' }),
+    broadcastInvalidate: () => {
+      // Registering or forgetting a machine is one of the things that
+      // invalidates the snapshot, so this is also where every browser's links
+      // are brought level with the registry -- opening one for a machine just
+      // added, closing one for a machine just forgotten.
+      for (const relay of relays) relay.sync()
+      broadcast({ t: 'invalidate' })
+    },
     /** So work nobody would see -- polling git, say -- can simply not happen. */
     clientCount: () => sinks.size,
   }

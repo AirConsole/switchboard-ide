@@ -200,6 +200,37 @@ describe('a project on another machine', () => {
     expect(during.worktrees.map((w) => w.id)).toEqual(before.worktrees.map((w) => w.id))
   })
 
+  /*
+   * The cache is a memory of a machine, not a record of what is registered.
+   * Returned whole, it was authoritative about both -- so a project closed
+   * while its peer was down came back on the next snapshot, and could not be
+   * closed again until the machine answered.
+   */
+  it('does not resurrect a project closed while its peer was down', async () => {
+    const pointer = await addRemote()
+    expect((await workspace.snapshot()).worktrees).toHaveLength(1)
+
+    answering = false
+    await workspace.closeProject(pointer.id)
+
+    const after = await workspace.snapshot()
+    expect(after.projects.map((p) => p.id)).not.toContain(pointer.id)
+    expect(after.worktrees).toHaveLength(0)
+  })
+
+  /* And the mirror image: a project opened while it was down must still show. */
+  it('shows a project opened while its peer was down', async () => {
+    await addRemote('/srv/ide')
+    await workspace.snapshot() // one good read, so there is a cache to hold
+
+    answering = false
+    const second = await workspace.openRemoteProject({ baseUrl: peerUrl, root: '/srv/other' })
+    const after = await workspace.snapshot()
+    expect(after.projects.map((p) => p.id)).toContain(second.id)
+    // The one we did read keeps its worktrees; the new one has none to show.
+    expect(after.worktrees.map((w) => w.projectId)).not.toContain(second.id)
+  })
+
   it('still shows the project when a peer has never answered', async () => {
     // A cold start with the peer down: nothing is remembered, and the tab has
     // to survive anyway or the project looks deleted rather than unreachable.

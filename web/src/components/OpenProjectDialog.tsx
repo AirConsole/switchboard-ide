@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RecentProject } from '@switchboard/shared'
 import { ApiError, api, type BrowseResult, type ServerRow } from '../api.js'
 import { useEscape } from './useEscape.js'
@@ -133,24 +133,44 @@ export const OpenProjectDialog = ({
   const [servers, setServers] = useState<ServerRow[]>([])
   const [adding, setAdding] = useState(false)
 
+  /*
+   * Which read is the current one.
+   *
+   * A machine that is slow to answer would otherwise overwrite a machine that
+   * was quick: switch away from a remote peer and the local listing lands
+   * first, the peer's lands second, and the chip says "This machine" over the
+   * peer's disk -- with Open then targeting whichever the chip says.
+   */
+  const reads = useRef(0)
+
   const browse = (next: string, on = host): void => {
+    const read = ++reads.current
     void api
       .browse(next, on)
       .then((result) => {
+        if (read !== reads.current) return
         setListing(result)
         setPath(result.path)
         setError(null)
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => {
+        if (read !== reads.current) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   useEffect(() => browse('', host), [host])
   // Not fatal if it fails: the picker below opens any project this can.
   useEffect(() => {
+    const read = reads.current
     void api
       .recents(host)
-      .then(setRecents)
-      .catch(() => setRecents([]))
+      .then((rows) => {
+        if (read === reads.current) setRecents(rows)
+      })
+      .catch(() => {
+        if (read === reads.current) setRecents([])
+      })
   }, [host])
   const loadServers = (): void => {
     void api
@@ -175,8 +195,18 @@ export const OpenProjectDialog = ({
       .then((server) => {
         setBusy(false)
         setAdding(false)
-        loadServers()
         setError(null)
+        /*
+         * Added to the list in the same render that selects it. Refreshing the
+         * list from the server instead left `host` naming a machine `servers`
+         * did not have yet, and `open()` reads `servers` to decide local versus
+         * remote -- so clicking a directory in that window opened the peer's
+         * path on *this* machine, and with "create" that is mkdir and git init
+         * in the wrong place.
+         */
+        setServers((rows) =>
+          rows.some((row) => row.key === server.key) ? rows : [...rows, server],
+        )
         setHost(server.key)
       })
       .catch((err: unknown) => {
@@ -201,7 +231,22 @@ export const OpenProjectDialog = ({
         : api
             .openProject(target, { create, commitExisting, host: server.key })
             .then((project) =>
-              api.openRemoteProject({ baseUrl: server.baseUrl, root: project.root, name: project.name }),
+              api
+                .openRemoteProject({
+                  baseUrl: server.baseUrl,
+                  root: project.root,
+                  name: project.name,
+                })
+                // The peer has it and we do not, which is a real state and one
+                // the user can act on -- adding it again will now succeed,
+                // because the peer's own open is idempotent.
+                .catch((err: unknown) => {
+                  throw new Error(
+                    `Opened on ${server.name}, but this machine could not record it: ${
+                      err instanceof Error ? err.message : String(err)
+                    }`,
+                  )
+                }),
             )
     void request
       .then(() => onOpened())
