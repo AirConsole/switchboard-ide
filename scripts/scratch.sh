@@ -14,13 +14,26 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-scratch.sh up      build scratch repos, start the server, print the URL
-scratch.sh down    kill the server and its tmux sessions, remove its files
-scratch.sh url     print this checkout's URL (the port differs per worktree)
-scratch.sh list    every scratch instance on this machine, and whether it lives
+scratch.sh up   [name]   build scratch repos, start the server, print the URL
+scratch.sh down [name]   kill the server and its tmux sessions, remove its files
+scratch.sh url  [name]   print that instance's URL (the port differs per worktree)
+scratch.sh list          every scratch instance on this machine, and whether it lives
 
   CLAUDE_CMD=vim scratch.sh up    use vim as the stand-in agent
   SWB_SCRATCH_PORT=9000 ...       pin the port instead of deriving one
+
+  A name gives this checkout a second, wholly separate instance -- its own
+  state dir, tmux socket, scratch repositories and port -- which is how two
+  instances that can see each other are tested. With no name, every path and
+  the port are exactly what they have always been.
+
+    scratch.sh up            # the gateway
+    scratch.sh up peer       # the machine a remote project lives on
+
+  A named instance is started as somebody's peer: it binds the loopback
+  address still, but sets SWB_TOKEN (printed by `up`, and kept in
+  $ROOT/token) so the gateway can authenticate to it the way a real one
+  would.
 USAGE
 }
 
@@ -31,8 +44,21 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # different projects can share a branch name.
 # printf rather than echo: `tr` would turn basename's trailing newline into a
 # separator character, and every directory would be named "<slug>-".
-SLUG="$(printf '%s' "$(basename "$REPO")" | tr -c 'A-Za-z0-9._-' '-')"
-HASH="$(printf '%s' "$REPO" | sha1sum | cut -c1-6)"
+# An optional second instance of the same checkout, named. Two of them is how a
+# remote project is tested: one is the gateway, the other the machine a project
+# lives on.
+NAME="${2:-}"
+case "$NAME" in *[!A-Za-z0-9._-]*)
+  echo "scratch.sh: an instance name may only hold letters, digits, . _ -" >&2
+  exit 1
+  ;;
+esac
+
+SLUG="$(printf '%s' "$(basename "$REPO")${NAME:+-$NAME}" | tr -c 'A-Za-z0-9._-' '-')"
+# Appended rather than joined with a separator, so with no name the hashed input
+# is the bare $REPO exactly as it has always been -- an instance already running
+# keeps its port, its state directory and its tmux socket.
+HASH="$(printf '%s' "$REPO$NAME" | sha1sum | cut -c1-6)"
 ROOT="${TMPDIR:-/tmp}/swb-scratch-$SLUG-$HASH"
 STATE="$ROOT/state"
 PORTFILE="$ROOT/port"
@@ -65,7 +91,16 @@ pick_port() {
 
 stored_port() { cat "$PORTFILE" 2>/dev/null || true; }
 
-api() { curl -fsS "http://127.0.0.1:$PORT$1" "${@:2}"; }
+TOKENFILE="$ROOT/token"
+stored_token() { cat "$TOKENFILE" 2>/dev/null || true; }
+
+# A named instance sets SWB_TOKEN, so every call has to carry it. curl is
+# neither a browser nor a gateway, and that is exactly what the token is for.
+api() {
+  local token
+  token="$(stored_token)"
+  curl -fsS "http://127.0.0.1:$PORT$1" ${token:+-H "x-swb-token: $token"} "${@:2}"
+}
 
 make_project() { # make_project <dir> <branch>...
   local dir="$1"
@@ -96,15 +131,26 @@ up)
     echo "server/dist is missing -- run pnpm build first" >&2
     exit 1
   fi
-  "$0" down >/dev/null 2>&1 || true
+  "$0" down ${NAME:+"$NAME"} >/dev/null 2>&1 || true
   mkdir -p "$STATE"
   PORT="${SWB_SCRATCH_PORT:-$(pick_port)}"
   echo "$PORT" >"$PORTFILE"
+  # A named instance is somebody's peer, so it gets the token that makes it
+  # answer one. The unnamed instance stays exactly as it was: no token, no gate.
+  if [ -n "$NAME" ]; then
+    (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n=/+' >"$TOKENFILE")
+  fi
   (
     cd "$REPO/server"
-    SWB_STATE_DIR="$STATE" SWB_PORT="$PORT" \
-      SWB_CLAUDE_CMD="${CLAUDE_CMD:-bash}" NODE_ENV=production \
-      nohup node dist/index.js >"$ROOT/server.log" 2>&1 &
+    export SWB_STATE_DIR="$STATE" SWB_PORT="$PORT" NODE_ENV=production
+    export SWB_CLAUDE_CMD="${CLAUDE_CMD:-bash}"
+    # `export` rather than an assignment prefix: `${NAME:+VAR=x}` expands into
+    # the command position, where bash reads it as a program to run and not as
+    # an assignment. Measured: "SWB_TOKEN=...: command not found".
+    if [ -n "$NAME" ]; then
+      export SWB_TOKEN="$(cat "$TOKENFILE")" SWB_SERVER_NAME="$NAME"
+    fi
+    nohup node dist/index.js >"$ROOT/server.log" 2>&1 &
     # From inside the subshell, so it is the node process rather than the shell.
     echo $! >"$PIDFILE"
   )
@@ -118,8 +164,9 @@ up)
   fi
   make_project "$ROOT/one" feature-x fourth two-terms
   make_project "$ROOT/two" alpha
-  echo "up on http://127.0.0.1:$PORT"
+  echo "up on http://127.0.0.1:$PORT${NAME:+  ($NAME)}"
   echo "  checkout: $REPO"
+  [ -n "$NAME" ] && echo "  token:    $(stored_token)"
   echo "  projects: one (main + 3 worktrees), two (main + 1)"
   echo "  log:      $ROOT/server.log"
   echo "  tmux:     tmux -S $STATE/tmux.sock ls"

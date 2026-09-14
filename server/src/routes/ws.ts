@@ -7,6 +7,8 @@ import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
 import { hasPeerToken } from '../gate.js'
+import { Relay } from '../remote/relay.js'
+import type { Workspace } from '../workspace.js'
 
 /**
  * One WebSocket carries every terminal in the app.
@@ -107,6 +109,7 @@ const clientAllowed = (request: FastifyRequest): boolean => {
 export const registerWs = (
   app: FastifyInstance,
   engine: SessionEngine,
+  workspace: Workspace,
 ): { broadcastInvalidate: () => void; clientCount: () => number } => {
   const sinks = new Set<SocketSink>()
 
@@ -142,12 +145,28 @@ export const registerWs = (
     const sink = new SocketSink(socket)
     sinks.add(sink)
 
+    /*
+     * This browser's own links to the other machines its windows live on.
+     *
+     * Per socket rather than per process, so a peer sees one client per browser
+     * and its own size and input arbitration decides between two viewers of a
+     * remote terminal -- the same rule, in the same place, as for a local one.
+     */
+    const relay = new Relay(() => workspace.peers(), {
+      sendJson: (msg) => sink.sendJson(msg),
+      sendBinary: (data) => sink.sendBinary(data),
+      onInvalidate: () => sink.sendJson({ t: 'invalidate' }),
+    })
+
     socket.on('message', (raw: Buffer | string) => {
       const msg = parseClientMsg(raw.toString())
       if (msg === null) {
         sink.sendJson({ t: 'error', message: 'malformed message' })
         return
       }
+      // A frame naming another machine never reaches the local engine, which
+      // would answer "no such session" about an id that was never its.
+      if (relay.handle(msg)) return
       switch (msg.t) {
         case 'attach':
           void engine.attach(sink, msg.sessionId, msg.cols, msg.rows, msg.primary)
@@ -173,6 +192,7 @@ export const registerWs = (
       // Detach from every session, or the engine would keep sending output to a
       // dead socket and hold its mirror subscriptions forever.
       engine.detachAll(sink)
+      relay.dispose()
       sinks.delete(sink)
     })
   })

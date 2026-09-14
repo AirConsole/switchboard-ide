@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { ID_FIELDS, scopeId, scopeTree, unscopeId, unscopeTree, withoutToken } from '../src/remote/scope.js'
+import {
+  ID_FIELDS,
+  hostKeyFor,
+  scopeId,
+  scopeTree,
+  unscopeId,
+  unscopeTree,
+  withoutToken,
+} from '../src/remote/scope.js'
 import type { Project } from '@switchboard/shared'
 
 describe('scoping a peer', () => {
@@ -11,11 +19,25 @@ describe('scoping a peer', () => {
     expect(unscopeId('wt-abc123')).toBeNull()
   })
 
-  it('splits from the right, because a base URL may contain the separator', () => {
-    // A peer behind a proxy subpath: the naive split takes the wrong half and
-    // every id it produces addresses nothing.
-    const scoped = scopeId('https://box/ide|v2', 'wt-abc123')
-    expect(unscopeId(scoped)).toEqual({ host: 'https://box/ide|v2', id: 'wt-abc123' })
+  /*
+   * A scoped id travels in a URL path, so it has to survive the proxies in
+   * front of this server byte for byte. This was the base URL and `|`, which
+   * put `%2F` and `%3A` into a path segment -- and Caddy normalizes encoded
+   * slashes, so the request arrived split into segments matching no route.
+   */
+  it('stays URL-safe: nothing in a scoped id needs encoding', () => {
+    const scoped = scopeId(hostKeyFor('https://box.example/ide'), 'wt-abc123')
+    expect(scoped).toMatch(/^h[0-9a-f]{8}~wt-abc123$/)
+    expect(encodeURIComponent(scoped)).toBe(scoped)
+    expect(unscopeId(scoped)).toEqual({
+      host: hostKeyFor('https://box.example/ide'),
+      id: 'wt-abc123',
+    })
+  })
+
+  it('gives two peers two keys, and one peer the same key every time', () => {
+    expect(hostKeyFor('http://a:1')).not.toBe(hostKeyFor('http://b:1'))
+    expect(hostKeyFor('http://a:1')).toBe(hostKeyFor('http://a:1'))
   })
 
   it('rewrites ids anywhere in a reply, and nothing else', () => {
@@ -24,15 +46,15 @@ describe('scoping a peer', () => {
       sessions: [{ id: 's-1', worktreeId: 'wt-1' }],
       commits: [{ hash: 'deadbeef', subject: 'id: not an id' }],
     }
-    const scoped = scopeTree('http://peer:8300', reply)
+    const scoped = scopeTree('h1234abcd', reply)
     expect(scoped.worktrees[0]).toMatchObject({
-      id: 'http://peer:8300|wt-1',
-      projectId: 'http://peer:8300|p-1',
+      id: 'h1234abcd~wt-1',
+      projectId: 'h1234abcd~p-1',
       path: '/p',
     })
     expect(scoped.sessions[0]).toEqual({
-      id: 'http://peer:8300|s-1',
-      worktreeId: 'http://peer:8300|wt-1',
+      id: 'h1234abcd~s-1',
+      worktreeId: 'h1234abcd~wt-1',
     })
     // A commit's hash is not an id, and prose that happens to say "id" is prose.
     expect(scoped.commits[0]).toEqual({ hash: 'deadbeef', subject: 'id: not an id' })
@@ -93,6 +115,23 @@ describe('scoping a peer', () => {
         expect(ID_FIELDS).toContain(field)
       }
     }
+  })
+
+  /*
+   * Which machine a request is for is decided by looking for a scoped id in it,
+   * so "looks like a scoped id" has to be narrow. It was `includes('~')` over
+   * every string in the body, and a todo's prompt is a string: `rm -rf ~` read
+   * as a peer reference and routed a perfectly ordinary prompt to a machine
+   * that does not exist.
+   */
+  it('does not mistake ordinary text for a peer reference', () => {
+    for (const text of ['rm -rf ~', '~/src/ide', 'use ~ for home', 'a~b', 'wt-abc~def']) {
+      expect(unscopeId(text)).toBeNull()
+    }
+    // And the real thing still reads, including an id with a separator after
+    // the host key, which only the first one may split.
+    expect(unscopeId('h1234abcd~wt-1')).toEqual({ host: 'h1234abcd', id: 'wt-1' })
+    expect(unscopeId('h1234abcd~wt~1')).toEqual({ host: 'h1234abcd', id: 'wt~1' })
   })
 
   it('never lets a peer credential reach the browser', () => {

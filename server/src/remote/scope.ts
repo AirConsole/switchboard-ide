@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Project } from '@switchboard/shared'
 
 /**
@@ -16,28 +17,54 @@ import type { Project } from '@switchboard/shared'
  */
 
 /**
- * Split from the **right**.
+ * `~`, and the choice is not cosmetic.
  *
- * A base URL may carry a path (a peer behind a proxy subpath) and so may
- * contain the separator; an id never can, being `wt-` or `p-` and ten hex
- * digits.
+ * A scoped id goes in a URL path (`/api/worktrees/<scoped>/changes`), so it has
+ * to survive every proxy in front of this server unchanged. `~` is unreserved
+ * in RFC 3986 and needs no encoding at all; the obvious alternatives do. This
+ * was `|` over a base URL, which meant `%2F` and `%3A` in a path segment --
+ * and Caddy normalizes percent-encoded slashes, so the route would arrive
+ * split into segments that match nothing.
  */
-const SEP = '|'
+const SEP = '~'
 
-/** The empty key is this machine, whose ids are left exactly as they were. */
+/**
+ * A peer, named by something short and opaque.
+ *
+ * Deliberately not the base URL: it would put a scheme, a colon and slashes
+ * into every id, and ids travel in paths. This is a hash of the base URL, so
+ * it is stable across restarts without being stored, and it says nothing about
+ * the peer to anyone reading a URL.
+ *
+ * The empty key is this machine, whose ids are left exactly as they were --
+ * they are recorded inside tmux's own metadata, so scoping one would orphan a
+ * running session.
+ */
 export type HostKey = string
+
+export const hostKeyFor = (baseUrl: string): HostKey =>
+  `h${createHash('sha1').update(baseUrl).digest('hex').slice(0, 8)}`
 
 export const scopeId = (host: HostKey, id: string): string =>
   host === '' ? id : `${host}${SEP}${id}`
 
-/** `null` when the id is one of ours. */
+/**
+ * `null` when the id is one of ours.
+ *
+ * The host key has to match its exact shape, not merely "there is a separator
+ * in here". Anything the client sends is run past this to decide which machine
+ * a request is for, and a todo's prompt is a string like any other: `rm -rf ~`
+ * would otherwise read as a scoped id and route the whole request to a peer
+ * that does not exist. Measured as a 404 on a perfectly ordinary prompt.
+ */
+const SCOPED = /^(h[0-9a-f]{8})~(.+)$/
+
 export const unscopeId = (scoped: string): { host: HostKey; id: string } | null => {
-  const cut = scoped.lastIndexOf(SEP)
-  if (cut === -1) return null
-  return { host: scoped.slice(0, cut), id: scoped.slice(cut + 1) }
+  const match = SCOPED.exec(scoped)
+  return match === null ? null : { host: match[1] as string, id: match[2] as string }
 }
 
-export const isScoped = (id: string): boolean => id.includes(SEP)
+export const isScoped = (id: string): boolean => SCOPED.test(id)
 
 /**
  * The field names that carry an id, and the reason this is a list.

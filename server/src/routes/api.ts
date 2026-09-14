@@ -8,6 +8,7 @@ import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
+import { withoutToken } from '../remote/scope.js'
 import { usage } from '../usage.js'
 
 /**
@@ -223,6 +224,35 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * because those processes outlive the browser and would otherwise be left
    * alive with nothing on screen owning them.
    */
+  /*
+   * Register a project that lives on another machine.
+   *
+   * Its own route rather than a flag on `POST /api/projects`, and the reason is
+   * the same one that keeps `worktrees()` away from a remote root: the local
+   * path exists on this route and does not on that one. Keeping them apart is
+   * what guarantees the remote path touches no disk -- there is no disk code on
+   * it to reach.
+   */
+  app.post('/api/projects/remote', async (request) => {
+    const body = z
+      .object({
+        baseUrl: z.string().min(1),
+        root: z.string().min(1),
+        name: z.string().optional(),
+        token: z.string().optional(),
+      })
+      .parse(request.body)
+    // Stripped on the way out: the caller is a browser, and the token it just
+    // handed us is the one thing in this record it must not be handed back --
+    // a reply is as good a place to read it from as any other.
+    return withoutToken(await workspace.openRemoteProject(body))
+  })
+
+  /** The machines this one holds a pointer to, for the open dialog's picker. */
+  app.get('/api/servers', async () =>
+    workspace.peers().map((peer) => ({ key: peer.key, baseUrl: peer.baseUrl })),
+  )
+
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }
     const { sleep } = closeProjectQuery.parse(request.query)

@@ -10,6 +10,7 @@ import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
 import { allowRequest } from './gate.js'
+import { registerProxy } from './remote/proxy.js'
 
 const app = Fastify({
   logger: {
@@ -71,7 +72,14 @@ app.addHook('onRequest', async (request, reply) => {
   await reply.status(401).send({ error: 'not allowed' })
 })
 
-const { broadcastInvalidate, clientCount } = registerWs(app, engine)
+/*
+ * Registered before the API, so a request naming another machine is forwarded
+ * rather than answered here. Order is the whole of it: after, and every route
+ * would first try to resolve a worktree id that means nothing locally.
+ */
+registerProxy(app, workspace)
+
+const { broadcastInvalidate, clientCount } = registerWs(app, engine, workspace)
 registerApi(app, { store, engine, workspace, broadcastInvalidate })
 
 // Session changes alter the snapshot (a session dying, for instance), so drop

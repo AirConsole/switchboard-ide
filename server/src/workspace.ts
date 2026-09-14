@@ -15,6 +15,7 @@ import type {
   WorktreeTodo,
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
+import { PeerClient, normalizeBaseUrl } from './remote/peer.js'
 import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
@@ -48,6 +49,64 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * Ties the three sources of truth together: the state store (projects + UI),
  * git (worktrees) and the session engine (terminals).
  */
+
+const emptySlice = (): Omit<AppSnapshot, 'ui'> => ({
+  projects: [],
+  worktrees: [],
+  sessions: [],
+  todos: [],
+})
+
+/**
+ * The part of a peer's world that belongs to the projects we registered there.
+ *
+ * Matched on `root`, and on the peer's *own* project rather than its pointer to
+ * a third machine: with two instances peered both ways, a peer holds both a
+ * local project at `/src/ide` and a pointer to ours at the same path, and
+ * picking whichever came first is a coin toss that swaps under you.
+ *
+ * **The project keeps our pointer's id, not the peer's.** That id is derived
+ * from the root and the base URL, so it exists whether or not the peer answers
+ * -- which is what lets an unreachable machine still have a tab, with its
+ * worktrees missing, instead of the project itself disappearing on a cold
+ * start. It is also the id the browser sends back to close the project, and
+ * that has to address the pointer, which is the only part of it we own.
+ *
+ * Ids arriving here are already scoped by `PeerClient`, so the roots compare as
+ * paths and everything else compares as scoped ids.
+ */
+const selectProjects = (
+  snapshot: Omit<AppSnapshot, 'ui'>,
+  pointers: readonly Project[],
+  host: string,
+): Omit<AppSnapshot, 'ui'> => {
+  const projects: Project[] = []
+  /** The peer's id for a project, mapped to ours. */
+  const asOurs = new Map<string, string>()
+  for (const pointer of pointers) {
+    const theirs = snapshot.projects.find(
+      (project) => project.root === pointer.root && project.host.kind === 'local',
+    )
+    projects.push({
+      ...(theirs ?? pointer),
+      id: pointer.id,
+      host: { kind: 'remote', baseUrl: host },
+    })
+    if (theirs) asOurs.set(theirs.id, pointer.id)
+  }
+
+  const worktrees = snapshot.worktrees
+    .filter((worktree) => asOurs.has(worktree.projectId))
+    .map((worktree) => ({ ...worktree, projectId: asOurs.get(worktree.projectId) as string }))
+  const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
+  return {
+    projects,
+    worktrees,
+    sessions: snapshot.sessions.filter((session) => worktreeIds.has(session.worktreeId)),
+    todos: snapshot.todos.filter((todo) => worktreeIds.has(todo.worktreeId)),
+  }
+}
+
 export class Workspace {
   /**
    * Short-lived cache over `git worktree list` + `git status`. The snapshot is
@@ -128,6 +187,15 @@ export class Workspace {
 
     const all: Worktree[] = []
     for (const project of this.store.projects) {
+      /*
+       * A remote project's worktrees belong to the peer, and asking git here
+       * would not fail -- it would *answer*, about whatever happens to sit at
+       * that path on this machine. The path is the peer's, and the same
+       * checkout path is the normal case rather than a coincidence, so the ids
+       * would collide byte for byte with the local project's and `resolve()`
+       * would return whichever came first. Skipped, not tried and caught.
+       */
+      if (project.host.kind !== 'local') continue
       try {
         const list = await listWorktrees(project.id, project.root)
         // Once per project, not once per worktree: they share a repository and
@@ -162,14 +230,97 @@ export class Workspace {
   }
 
   async snapshot(): Promise<AppSnapshot> {
-    return {
+    const local: AppSnapshot = {
       projects: await this.describeProjects(),
       worktrees: await this.worktrees(),
       sessions: this.engine.list(),
       todos: this.store.todos,
       ui: this.store.ui,
     }
+    const remote = await this.remoteSlices()
+    return {
+      projects: [...local.projects, ...remote.flatMap((r) => r.projects)],
+      worktrees: [...local.worktrees, ...remote.flatMap((r) => r.worktrees)],
+      sessions: [...local.sessions, ...remote.flatMap((r) => r.sessions)],
+      todos: [...local.todos, ...remote.flatMap((r) => r.todos)],
+      // The layout is the viewer's. A peer's `ui` never reaches here -- it is
+      // dropped in `PeerClient.snapshot` -- and ours is never sent to one.
+      ui: local.ui,
+    }
   }
+
+  /** Every peer we hold a pointer to, once each, however many projects name it. */
+  peers(): PeerClient[] {
+    const byHost = new Map<string, PeerClient>()
+    for (const project of this.store.projects) {
+      if (project.host.kind !== 'remote') continue
+      if (!byHost.has(project.host.baseUrl)) {
+        byHost.set(project.host.baseUrl, new PeerClient(project.host.baseUrl, project.host.token))
+      }
+    }
+    return [...byHost.values()]
+  }
+
+  /** By the short key that appears in a scoped id, not by base URL. */
+  peerFor(key: string): PeerClient | null {
+    return this.peers().find((peer) => peer.key === key) ?? null
+  }
+
+  /**
+   * What each peer contributes to the snapshot: the projects we registered
+   * there, and everything belonging to them.
+   *
+   * Only the projects we registered. A peer has its own open projects and its
+   * own pointers to third machines, and showing those would put a repository on
+   * your screen because somebody else opened it.
+   *
+   * A peer that does not answer contributes **nothing rather than an absence**,
+   * and the difference is the whole of the failure mode: the caller must not be
+   * able to tell "that machine is off" from "those worktrees are gone", because
+   * the UI prunes layout for worktrees it no longer sees. `lastGood` is what
+   * keeps a rebooting peer's windows on screen.
+   */
+  private async remoteSlices(): Promise<Omit<AppSnapshot, 'ui'>[]> {
+    const pointers = new Map<string, Project[]>()
+    for (const project of this.store.projects) {
+      if (project.host.kind !== 'remote') continue
+      pointers.set(project.host.baseUrl, [
+        ...(pointers.get(project.host.baseUrl) ?? []),
+        project,
+      ])
+    }
+
+    return Promise.all(
+      this.peers().map(async (peer) => {
+        const mine = pointers.get(peer.baseUrl) ?? []
+        try {
+          const slice = selectProjects(await peer.snapshot(), mine, peer.baseUrl)
+          this.lastGood.set(peer.baseUrl, slice)
+          return slice
+        } catch {
+          /*
+           * Unreachable, refused, or a protocol mismatch. Hold what it last
+           * said -- and failing that, still show the projects themselves, with
+           * no worktrees under them. The one thing that must not happen is the
+           * tab vanishing: the UI prunes stored layout for worktrees it cannot
+           * see, so "that machine is off" reading as "those worktrees are gone"
+           * costs the user their panels and open files permanently.
+           */
+          return (
+            this.lastGood.get(peer.baseUrl) ?? {
+              ...emptySlice(),
+              projects: mine.map((pointer) => ({
+                ...pointer,
+                host: { kind: 'remote' as const, baseUrl: peer.baseUrl },
+              })),
+            }
+          )
+        }
+      }),
+    )
+  }
+
+  private readonly lastGood = new Map<string, Omit<AppSnapshot, 'ui'>>()
 
   /**
    * Projects with their derived base ref attached, so the UI can name the ref a
@@ -177,10 +328,17 @@ export class Workspace {
    */
   private async describeProjects(): Promise<Project[]> {
     return Promise.all(
-      this.store.projects.map(async (project) => ({
-        ...project,
-        defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
-      })),
+      // Local only: a remote project is represented in the snapshot by the
+      // peer's own record, scoped, not by the pointer we keep to find it. Two
+      // records for one project would be two tabs that never agree, and
+      // `resolveDefaultBase` would be reading this machine's disk at the
+      // peer's path besides.
+      this.store.projects
+        .filter((project) => project.host.kind === 'local')
+        .map(async (project) => ({
+          ...project,
+          defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
+        })),
     )
   }
 
@@ -257,12 +415,60 @@ export class Workspace {
    * to leave the interface, so a half-stopped project would be exactly the
    * state nobody can see.
    */
+  /**
+   * Register a project that lives on another machine.
+   *
+   * This writes a record and performs **no I/O at all**, deliberately.
+   * Registering must not fail because a peer is momentarily down -- you would
+   * be unable to add the machine you are trying to reach precisely when you
+   * most want to -- and the snapshot is where being unreachable is handled,
+   * once, for every read.
+   *
+   * The path is checked and never repaired: `resolve()` or `expandHome()` would
+   * fold the peer's path against *this* machine's cwd and home, and the result
+   * would look like a path and address nothing.
+   */
+  async openRemoteProject(input: {
+    baseUrl: string
+    root: string
+    name?: string
+    token?: string
+  }): Promise<Project> {
+    const baseUrl = normalizeBaseUrl(input.baseUrl)
+    const root = input.root.trim()
+    if (!root.startsWith('/')) throw new HttpError(400, 'a remote path must be absolute')
+
+    // Namespaced by base URL, and this is the one caller that passes a host
+    // key: `/home/andrin/src/ide` on two machines hashes identically, so
+    // without it the pointer and the local project would be one id.
+    const id = projectIdFor(root, baseUrl)
+    if (this.store.project(id)) throw new HttpError(409, 'that project is already open')
+
+    const project: Project = {
+      id,
+      name: (input.name ?? '').trim() || basename(root),
+      host: { kind: 'remote', baseUrl, ...(input.token === undefined ? {} : { token: input.token }) },
+      root,
+      worktreeRoot: '',
+      addedAt: Date.now(),
+    }
+    this.store.addProject(project)
+    this.invalidate()
+    return project
+  }
+
   async closeProject(id: string, opts: { sleep?: boolean } = {}): Promise<void> {
     // Collected before the project goes, because afterwards its worktrees are
     // no longer listed and there is nothing left to match todos against.
     const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
     const project = this.store.project(id)
-    if (opts.sleep === true) await this.engine.killForProject(id)
+    // Only our own sessions are ours to kill. A remote project's run on the
+    // peer, under the peer's ids, and `killForProject` here would match
+    // nothing at best -- and the identically-pathed local project's sessions
+    // at worst, which is the same aliasing `worktrees()` refuses to risk.
+    if (opts.sleep === true && project?.host.kind === 'local') {
+      await this.engine.killForProject(id)
+    }
     // Remembered before it is removed, and only for a local project: a recent
     // is a path handed back to `openProject`, which is how a local one is
     // opened. A remote project will be reopened by base URL instead.
@@ -279,6 +485,17 @@ export class Workspace {
   }): Promise<Worktree> {
     const project = this.store.project(opts.projectId)
     if (!project) throw new HttpError(404, 'no such project')
+    /*
+     * A remote project's worktrees are made by the peer, through the proxy.
+     * Reaching here with one means the routing above it failed, and the cost of
+     * not saying so is specific: `worktreeRoot` for a remote pointer is derived
+     * from a path on *that* machine, so `ensureWorktreesIgnored` and
+     * `addWorktree` would run against whatever repository sits there on this
+     * one. A refusal is the cheap half of that.
+     */
+    if (project.host.kind !== 'local') {
+      throw new HttpError(400, 'that project lives on another machine')
+    }
     const branch = opts.branch.trim()
     if (!(await isValidBranchName(project.root, branch))) {
       throw new HttpError(400, `invalid branch name: ${branch}`)

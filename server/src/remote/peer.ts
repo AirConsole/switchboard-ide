@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, type AppSnapshot } from '@switchboard/shared'
 import { HttpError } from '../http-error.js'
-import { scopeTree, unscopeTree, type HostKey } from './scope.js'
+import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
 
 /**
  * One peer, spoken to over its ordinary API.
@@ -51,10 +51,15 @@ export class PeerUnreachable extends Error {
 }
 
 export class PeerClient {
+  /** Short, opaque, and derived -- so nothing has to store or reconcile it. */
+  readonly key: HostKey
+
   constructor(
-    readonly host: HostKey,
+    readonly baseUrl: string,
     private readonly token: string | undefined,
-  ) {}
+  ) {
+    this.key = hostKeyFor(baseUrl)
+  }
 
   /**
    * One request, with our ids translated out and the peer's translated in.
@@ -73,7 +78,7 @@ export class PeerClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     let response: Response
     try {
-      response = await fetch(`${this.host}${path}`, {
+      response = await fetch(`${this.baseUrl}${path}`, {
         method,
         signal: controller.signal,
         headers: {
@@ -83,7 +88,7 @@ export class PeerClient {
         ...(body === undefined ? {} : { body: JSON.stringify(unscopeTree(body)) }),
       })
     } catch (err) {
-      throw new PeerUnreachable(this.host, err instanceof Error ? err.message : String(err))
+      throw new PeerUnreachable(this.baseUrl, err instanceof Error ? err.message : String(err))
     } finally {
       clearTimeout(timer)
     }
@@ -100,7 +105,12 @@ export class PeerClient {
       throw new HttpError(response.status, message)
     }
     if (text === '') return undefined as T
-    return scopeTree(this.host, JSON.parse(text) as T)
+    return scopeTree(this.key, JSON.parse(text) as T)
+  }
+
+  /** What a socket to this peer must carry; see gate.ts on the peer's side. */
+  socketHeaders(): Record<string, string> {
+    return this.token === undefined ? {} : { 'x-swb-token': this.token }
   }
 
   /**
@@ -114,7 +124,7 @@ export class PeerClient {
     if (identity.protocolVersion !== PROTOCOL_VERSION) {
       throw new HttpError(
         502,
-        `${this.host} speaks protocol ${identity.protocolVersion}, this one speaks ${PROTOCOL_VERSION}`,
+        `${this.baseUrl} speaks protocol ${identity.protocolVersion}, this one speaks ${PROTOCOL_VERSION}`,
       )
     }
     return identity

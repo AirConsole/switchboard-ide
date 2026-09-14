@@ -38,7 +38,10 @@ let url: string
 
 beforeAll(async () => {
   await app.register(fastifyWebsocket)
-  clients = registerWs(app, engine).clientCount
+  // No peers registered: the relay has nothing to link to, which is exactly
+  // the shape of every instance that is not a gateway.
+  const workspace = { peers: () => [] } as unknown as Parameters<typeof registerWs>[2]
+  clients = registerWs(app, engine, workspace).clientCount
   await app.listen({ host: '127.0.0.1', port: 0 })
   url = `ws://127.0.0.1:${(app.server.address() as AddressInfo).port}/ws`
 })
