@@ -138,8 +138,6 @@ const selectProjects = (
   const projects: Project[] = []
   /** The peer's id for a project, mapped to ours. */
   const asOurs = new Map<string, string>()
-  /** Pointers the peer answered about but no longer holds a project for. */
-  const unanswered: Project[] = []
   for (const pointer of pointers) {
     const theirs = snapshot.projects.find(
       (project) => project.root === pointer.root && project.host.kind === 'local',
@@ -150,26 +148,32 @@ const selectProjects = (
       host: { kind: 'remote', baseUrl: host },
     })
     if (theirs) asOurs.set(theirs.id, pointer.id)
-    else unanswered.push(pointer)
   }
 
   const worktrees = snapshot.worktrees
     .filter((worktree) => asOurs.has(worktree.projectId))
     .map((worktree) => ({ ...worktree, projectId: asOurs.get(worktree.projectId) as string }))
   /*
-   * A project the peer answered about but no longer lists keeps the worktrees
-   * we last saw, exactly as an unreachable machine does.
+   * A project we cannot see worktrees for keeps the ones we last saw.
    *
-   * All the protection was on the exception path, and "answered, but empty" is
-   * the commoner shape of the same loss: someone closes the project in the
-   * peer's own UI, or one `listWorktrees` throws on an index.lock, and the
-   * reply is a clean 200 with nothing in it. The UI prunes stored layout for
-   * worktrees it cannot see, so that costs panels and open files permanently --
-   * and it would overwrite the memory of them in the same breath.
+   * Two shapes, and the second is the commoner one: the peer no longer lists
+   * the project at all (someone closed it over there), or it lists the project
+   * and **no worktrees** -- which is what a single `listWorktrees` throwing on
+   * an index.lock produces, because the peer catches per project and carries
+   * on. Either way the reply is a clean 200, so none of the unreachable-machine
+   * protection applies, while the UI prunes stored layout for every worktree it
+   * cannot see: panels, open files and expanded trees, written back and gone.
+   *
+   * A registered repository always has at least its main worktree, so "none"
+   * means the enumeration failed, never that they were removed. Keyed on the
+   * project rather than on the pointer, because the first shape is a subset of
+   * this one.
    */
-  for (const pointer of unanswered) {
+  const seen = new Set(worktrees.map((worktree) => worktree.projectId))
+  for (const project of projects) {
+    if (seen.has(project.id)) continue
     for (const worktree of remembered?.worktrees ?? []) {
-      if (worktree.projectId === pointer.id) worktrees.push(worktree)
+      if (worktree.projectId === project.id) worktrees.push(worktree)
     }
   }
   const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
@@ -430,6 +434,10 @@ export class Workspace {
           // Nothing open on it any more, so what it last said is not worth
           // keeping -- and kept, it would resurrect months-old worktrees the
           // next time a project on that machine was opened while it was down.
+          // Both memories, or the in-memory one shadows the cleared store
+          // entry for the life of the process and resurrects those worktrees
+          // the next time a project on that machine is opened while it is down.
+          this.lastGood.delete(peer.baseUrl)
           this.store.clearRemoteCache(peer.baseUrl)
           return reconcile(undefined, [], peer.baseUrl)
         }

@@ -5,9 +5,9 @@ import type { FastifyRequest } from 'fastify'
 process.env.SWB_TOKEN = 'the-secret'
 const { allowRequest, allowSocket, hasPeerToken } = await import('../src/gate.js')
 
-/** Only what the gate reads. */
+/** Only what the gate reads. A real request always carries a Host. */
 const req = (headers: Record<string, string>, ip = '127.0.0.1'): FastifyRequest =>
-  ({ headers, ip }) as unknown as FastifyRequest
+  ({ headers: { host: '127.0.0.1:8084', ...headers }, ip }) as unknown as FastifyRequest
 
 /** The port `config` derives its default allow-list from. */
 const OURS = 'http://127.0.0.1:8084'
@@ -86,5 +86,39 @@ describe('who may open a peer’s socket', () => {
     expect(allowSocket(req({ origin: 'https://evil.example' }, '127.0.0.1'))).toBe(false)
     // And a non-browser on the peer still needs the token.
     expect(allowSocket(req({}, '127.0.0.1'))).toBe(false)
+  })
+})
+
+describe('a name we never published', () => {
+  /*
+   * DNS rebinding: a page served from a name the attacker owns, the name then
+   * re-pointed at this address. The subtle half is that the rebound page is
+   * *same-origin* with us afterwards -- no `Origin`, no preflight, and
+   * `Sec-Fetch-Site: same-origin` -- so every check built on those agrees with
+   * it. `Host` is the one thing it cannot change.
+   *
+   * On a token-less instance, which is the ordinary one, this was the whole of
+   * the boundary: `POST /api/sessions` spawns a pty and a queued todo is typed
+   * into a live Claude with no browser open. That is the capability the `/ws`
+   * check closes, reached through `/api` instead.
+   */
+  it('refuses a request addressed to a name we do not answer to', () => {
+    for (const host of ['evil.example', 'evil.example:8084', 'attacker.test']) {
+      expect(allowRequest(req({ host, 'sec-fetch-site': 'same-origin' }))).toBe(false)
+    }
+  })
+
+  it('answers to loopback, by every spelling', () => {
+    for (const host of ['127.0.0.1:8084', 'localhost:8084', '[::1]:8084', '127.0.0.1']) {
+      expect(allowRequest(req({ host, 'sec-fetch-site': 'same-origin' }))).toBe(true)
+    }
+  })
+
+  it('lets a gateway address a peer by whatever name reaches it', () => {
+    // A peer has no reason to have published the name a gateway uses for it,
+    // and rebinding is not a thing that happens to a server. The token speaks.
+    expect(allowRequest(req({ host: 'box.local:8084', 'x-swb-token': 'the-secret' }, '10.0.0.7'))).toBe(
+      true,
+    )
   })
 })

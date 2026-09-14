@@ -378,6 +378,44 @@ describe('a project on another machine', () => {
     expect(after.worktrees.map((w) => w.id)).toEqual([`${hostKeyFor(peerUrl)}~wt-a`])
   })
 
+  /*
+   * The commoner shape, and the one the first version of this guard missed: the
+   * project is listed and its worktrees are not. That is what a single
+   * `listWorktrees` throwing on an index.lock produces, because the peer
+   * catches per project and carries on -- a clean 200 with the project present
+   * and nothing under it. A registered repository always has at least its main
+   * worktree, so "none" means the enumeration failed.
+   */
+  it('keeps what it knew when a peer lists the project but no worktrees', async () => {
+    await addRemote()
+    expect((await workspace.snapshot()).worktrees).toHaveLength(1)
+
+    peerSnapshot = { ...peerSnapshot, worktrees: [] }
+    const after = await workspace.snapshot()
+    expect(after.worktrees.map((w) => w.id)).toEqual([`${hostKeyFor(peerUrl)}~wt-a`])
+    // And the push filter goes on recognising that session, or a blocked agent
+    // over there stops lighting amber here.
+    expect(workspace.knowsSession(`${hostKeyFor(peerUrl)}~s-a`)).toBe(true)
+  })
+
+  /*
+   * Both memories, or the in-memory one shadows the cleared store entry for the
+   * life of the process.
+   */
+  it('does not resurrect worktrees after a machine\u2019s last project closes', async () => {
+    const pointer = await addRemote()
+    await workspace.snapshot()
+
+    await workspace.closeProject(pointer.id)
+    await workspace.snapshot()
+
+    answering = false
+    const reopened = await workspace.openRemoteProject({ baseUrl: peerUrl, root: '/srv/ide' })
+    const after = await workspace.snapshot()
+    expect(after.projects.map((p) => p.id)).toContain(reopened.id)
+    expect(after.worktrees).toHaveLength(0)
+  })
+
   it('still shows the project when a peer has never answered', async () => {
     // A cold start with the peer down: nothing is remembered, and the tab has
     // to survive anyway or the project looks deleted rather than unreachable.

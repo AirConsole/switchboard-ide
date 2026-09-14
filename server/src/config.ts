@@ -63,6 +63,29 @@ export const config = {
   publicOrigins: publicOrigins(),
 
   /**
+   * Host names this server answers to, which is what closes DNS rebinding.
+   *
+   * Rebinding is a page served from a name the attacker owns, the name then
+   * re-pointed at this address -- and the subtle half is that the rebound page
+   * is *same-origin* with us afterwards, so it sends no `Origin`, needs no
+   * preflight, and `Sec-Fetch-Site` reads `same-origin`. Every check built on
+   * those agrees with it. What it cannot forge is `Host`: the browser sends the
+   * name that was typed, and that name is one we never published.
+   *
+   * Derived from the same place as `publicOrigins`, so a deployment configures
+   * one thing. Port is ignored -- it is the name that is being lied about.
+   */
+  publicHosts: new Set(
+    [...publicOrigins()].map((origin) => {
+      try {
+        return new URL(origin).hostname
+      } catch {
+        return origin
+      }
+    }),
+  ),
+
+  /**
    * The shared secret that makes this instance reachable as somebody's peer.
    *
    * Unset -- the default, and what a normal instance stays -- nothing changes:

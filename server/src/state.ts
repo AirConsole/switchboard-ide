@@ -287,6 +287,11 @@ export class StateStore {
   }
 
   clearRemoteCache(baseUrl: string): void {
+    // Nothing to clear is not a change. `scheduleSave` resets its timer on
+    // every call with no maximum wait, and "registered with nothing open" is
+    // the normal state while browsing a machine in the open dialog -- so an
+    // unconditional write here starves the save it is trying not to starve.
+    if (!this.state.remoteCache.some((e) => e.baseUrl === baseUrl)) return
     this.state.remoteCache = this.state.remoteCache.filter((e) => e.baseUrl !== baseUrl)
     this.scheduleSave()
   }

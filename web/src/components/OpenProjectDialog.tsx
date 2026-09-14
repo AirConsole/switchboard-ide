@@ -259,6 +259,10 @@ export const OpenProjectDialog = ({
        * synchronously to close; the refresh path left it open.
        */
       setError('That machine is no longer registered here.')
+      // Unwound, like every other error path here. Left set, the chips, the
+      // Add button, the rows and Enter are all dead and the only way out of
+      // the dialog is Esc.
+      setBusy(false)
       return
     }
     // Two calls presented as one action, and they go to different machines: the

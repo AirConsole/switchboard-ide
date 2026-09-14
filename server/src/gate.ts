@@ -79,10 +79,40 @@ export const isLoopback = (request: FastifyRequest): boolean => {
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
 }
 
-export const allowRequest = (request: FastifyRequest): boolean =>
-  config.token === undefined ||
-  hasPeerToken(request) ||
-  (isLoopback(request) && isOwnPage(request))
+/**
+ * The name this request was addressed to is one we answer to.
+ *
+ * The anti-rebinding check, and the only one that works: a rebound page is
+ * same-origin with us, so it sends no `Origin`, triggers no preflight, and
+ * reports `Sec-Fetch-Site: same-origin`. `Host` is the one thing it cannot
+ * change -- it carries the name the user typed, which the attacker owns and we
+ * have never published.
+ *
+ * Without this, a token-less instance -- the ordinary one -- was fully writable
+ * by any page you happened to visit for as long as it kept a DNS record
+ * pointed here: `POST /api/sessions` spawns a pty, and a queued todo is typed
+ * into a live Claude by the dispatcher with no browser open at all. That is the
+ * same capability the `/ws` check in this change closes, reached through
+ * `/api` instead.
+ */
+const hostAllowed = (request: FastifyRequest): boolean => {
+  const header = request.headers.host
+  if (header === undefined) return false
+  // `[::1]:8084` keeps its brackets; everything else splits on the last colon.
+  const name = header.startsWith('[')
+    ? (header.slice(0, header.indexOf(']') + 1) || header)
+    : (header.split(':')[0] ?? header)
+  return config.publicHosts.has(name) || config.publicHosts.has(header)
+}
+
+export const allowRequest = (request: FastifyRequest): boolean => {
+  // A gateway is not a browser: it addresses a peer by whatever name reaches
+  // it, which this machine has no reason to have published. The token is what
+  // speaks for it, and rebinding is not a thing that happens to a server.
+  if (hasPeerToken(request)) return true
+  if (!hostAllowed(request)) return false
+  return config.token === undefined || (isLoopback(request) && isOwnPage(request))
+}
 
 /**
  * Who may open the socket.

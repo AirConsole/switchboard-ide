@@ -52,6 +52,33 @@ describe('talking to a peer', () => {
   })
 
   /*
+   * `content-length` is absent on a chunked reply, so a cap that trusts it is
+   * no cap at all -- and checking after `response.text()` checks something
+   * already in memory. Measured against a peer streaming 1MiB chunks with no
+   * length: resident memory went from 64MB to 3.25GB under a cap claiming
+   * 32MB, on a path taken again on every snapshot.
+   */
+  it('stops reading a chunked reply that will not stop', async () => {
+    const peer = await peerAt((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      const chunk = 'x'.repeat(1024 * 1024)
+      const pump = (): void => {
+        if (res.writableEnded) return
+        if (res.write(chunk)) setImmediate(pump)
+        else res.once('drain', pump)
+      }
+      pump()
+    })
+    const before = process.memoryUsage().rss
+    await expect(peer.request('GET', '/api/snapshot', undefined, 20_000)).rejects.toThrow(
+      /too much/,
+    )
+    // Well under the 32MB cap's worth of slack, and nowhere near the gigabytes
+    // an uncapped read reached.
+    expect(process.memoryUsage().rss - before).toBeLessThan(400 * 1024 * 1024)
+  })
+
+  /*
    * Compared on every reply, not only when the machine was added: the other
    * side is upgraded on its own schedule, and a skew is otherwise silent --
    * a field one side stopped sending reads as `undefined` on the other.

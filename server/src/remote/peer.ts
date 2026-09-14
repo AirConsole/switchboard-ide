@@ -79,11 +79,54 @@ export class PeerUnreachable extends Error {
 const MAX_REPLY_BYTES = 32 * 1024 * 1024
 
 const readCapped = async (response: Response): Promise<string> => {
-  const length = Number(response.headers.get('content-length') ?? '0')
-  if (length > MAX_REPLY_BYTES) throw new HttpError(502, 'that server sent too much')
-  const text = await response.text()
-  if (text.length > MAX_REPLY_BYTES) throw new HttpError(502, 'that server sent too much')
-  return text
+  const declared = Number(response.headers.get('content-length') ?? '0')
+  if (declared > MAX_REPLY_BYTES) {
+    await discard(response)
+    throw new HttpError(502, 'that server sent too much')
+  }
+  /*
+   * Counted as it arrives, not after.
+   *
+   * `response.text()` with a check afterwards is not a cap -- the whole body is
+   * already in memory by the time it runs, and `content-length` is absent
+   * entirely on a chunked reply. Measured against a peer streaming 1MiB chunks
+   * with no length: the abort fired at five seconds, by which time resident
+   * memory had gone from 64MB to **3.25GB**, under a cap that claims 32MB.
+   * That needs no hostile peer -- a mistyped address pointing at some
+   * large-bodied endpoint is read again on every snapshot.
+   */
+  const reader = response.body?.getReader()
+  if (reader === undefined) return ''
+  const decoder = new TextDecoder()
+  let text = ''
+  let seen = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    seen += value.byteLength
+    if (seen > MAX_REPLY_BYTES) {
+      await reader.cancel()
+      throw new HttpError(502, 'that server sent too much')
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+  return text + decoder.decode()
+}
+
+/**
+ * Let go of a reply we are not going to read.
+ *
+ * Throwing with the body unread leaves undici holding the connection until a
+ * finalizer runs. Measured on a version-skewed peer, which is exactly when this
+ * path is taken and taken repeatedly: 800 reads left 169 server-side
+ * connections and 255 open handles, against 2 and 4 when the versions matched.
+ */
+const discard = async (response: Response): Promise<void> => {
+  try {
+    await response.body?.cancel()
+  } catch {
+    /* already gone; nothing to release */
+  }
 }
 
 /**
@@ -164,7 +207,7 @@ export class PeerClient {
         },
         ...(body === undefined ? {} : { body: JSON.stringify(unscopeTree(body)) }),
       })
-      this.checkProtocol(response)
+      await this.checkProtocol(response)
       const text = await readCapped(response)
       if (!response.ok) throw peerError(response.status, text)
       if (text === '') return undefined as T
@@ -187,9 +230,12 @@ export class PeerClient {
    * request; measured before this, a peer bumped to 99 mid-session went on
    * merging as if nothing had happened.
    */
-  private checkProtocol(response: Response): void {
+  private async checkProtocol(response: Response): Promise<void> {
     const said = response.headers.get(PROTOCOL_HEADER)
     if (said === null || Number(said) === PROTOCOL_VERSION) return
+    // Released before we throw, or the connection is held until a finalizer
+    // runs -- and this is the path a peer mid-upgrade takes on every read.
+    await discard(response)
     throw new HttpError(
       502,
       `${this.baseUrl} speaks protocol ${said}, this one speaks ${PROTOCOL_VERSION}`,
