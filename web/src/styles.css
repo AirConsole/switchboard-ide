@@ -497,24 +497,22 @@ button {
  * sleeve's rounded corner or outside the sleeve altogether.
  */
 /*
- * The project is the group's first segment, not a bead in front of it.
+ * The project is the group's first segment, and its pane's tab.
  *
- * It used to be a 22px fully-round pill, vertically centred, 14px clear of
- * 32px square-shouldered tabs -- a different shape at a different height with a
- * gap after it, which is what "dangling" was. Now it is the tabs' own height,
- * flush against them, wearing the shell's left curve.
+ * It was a label with an × on it. The × closed the project -- the same glyph a
+ * worktree's tab uses to merely sleep it, one mis-click apart -- and that has
+ * moved into the pane this now walks you to. So it is a button, and it lights
+ * like any other tab when you are in what it points at.
  *
- * It wears the segments' own --level-object, and that is a correction. It was a
- * rung *below* them, on the argument that a heading should sit under the things
- * it heads -- but the head and the + are the two segments at the ends of the
- * slab, and at #171c24 they measured 1.14:1 against the bar behind them. They
- * dissolved into it, so the shape the slab is supposed to be lost both of its
- * ends and read as the tabs alone. At --level-object that is 1.53:1.
+ * It wears the segments' own --level-object rather than a rung below them: the
+ * head and the tabs are the ends of one slab, and at #171c24 the head measured
+ * 1.14:1 against the bar behind it and dissolved into it. What separates it
+ * from a tab is the type -- uppercase, letterspaced, label size -- not the fill.
  *
- * What separates it from a tab is no longer the fill: it is set at label size,
- * uppercase and letterspaced, because a heading is not a name you read one
- * character at a time. Its × stays with it -- closing a project is the
- * project's own action and belongs on the project's own segment.
+ * Its state bar carries only the SLEEPING worktrees, and only amber or green.
+ * An awake one says its own state on its own tab; this reports what has no tab,
+ * which is the job the zZ tab used to do. `.tab--working` and `.tab--off` are
+ * deliberately never applied here: a summary that is always lit is not one.
  */
 .tabgroup__pill {
   display: flex;
@@ -522,14 +520,43 @@ button {
   gap: 4px;
   flex: none;
   align-self: stretch;
-  padding: 0 4px 0 12px;
-  background: var(--level-object);
+  /* The bar's 4px plus the 9px the text has always kept from a segment's edge,
+     the same inset `.tab__body` uses. */
+  padding: 0 12px 0 13px;
+  background-color: var(--level-object);
+  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
+  background-size: 4px 100%;
+  background-repeat: no-repeat;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--graphite);
   white-space: nowrap;
-  cursor: default;
+}
+
+.tabgroup__pill--on {
+  background-color: var(--level-lit);
+  /* --graphite is 3.90:1 on --level-lit, under the floor -- the same wall every
+     surface that moves up here runs into. */
+  color: var(--bone);
+}
+
+.tabgroup__zz {
+  /* The head is uppercased; this is not. "zZ" is a mark rather than a word and
+     "ZZ" is a different one. */
+  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--graphite);
+}
+
+.tabgroup__pill--on .tabgroup__zz {
+  color: var(--quiet-on);
+}
+
+.tabgroup__pill:not(.tabgroup__pill--on):hover {
+  background-color: var(--level-hover);
+  color: var(--bone);
 }
 
 .tabgroup__name {
@@ -543,75 +570,18 @@ button {
  * --rule, under the 4.5 floor. The ladder is the point either way -- the name
  * is --bone at 11.31:1 and the × is the quiet thing beside it, at 5.89.
  */
-.tabgroup__close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  font-size: 13px;
-  line-height: 1;
-  color: var(--graphite);
-}
-
 /*
  * Colour alone on hover, and no ground with it: --danger measures 4.77:1 on the
  * pill's own --rule and only 3.90 on the --rule-bright a hover ring would put
  * behind it -- so lighting that ring would be the thing that made the warning
  * unreadable.
  */
-.tabgroup__close:hover {
-  color: var(--danger);
-}
-
 /*
  * Chrome's new-tab button, at the end of its own group's tabs.
  *
  * Per project rather than one for the bar: with several projects open, this is
  * the only unambiguous way to say which one a new worktree belongs to.
  */
-/*
- * And the + is the last segment, always wearing its noun.
- *
- * A bare + at the end of a run of tabs is Chrome's "one more tab", full stop --
- * so a *scoped* one gets read as the global one, and this bar already carries an
- * "Open project" at its left that it was being confused with. The word costs
- * about 60px per project, which is cheaper than the confusion; it used to be
- * spent only when a single project made the + unambiguous anyway, which is the
- * case that needed it least.
- */
-.tabgroup__add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  align-self: stretch;
-  padding: 0 11px;
-  background: var(--level-object);
-  font-size: 15px;
-  line-height: 1;
-  /* --graphite-dim measures 3.40:1 on --sleeve, well under the floor. */
-  color: var(--graphite);
-}
-
-/*
- * Lit, like the tab of the window you are in -- because that is what it is.
- * The new-worktree tile is the one cell in the row with no tab of its own, so
- * without this the strip claimed nobody was anywhere while you stood in it.
- */
-.tabgroup__add--on {
-  background: var(--level-lit);
-  color: var(--bone);
-}
-
-.tabgroup__add:hover {
-  /* With the pointer on it, the same step a tab takes: up toward --level-lit. */
-  background: var(--level-hover);
-  color: var(--bone);
-}
-
 /*
  * Claude's usage limits, at the right of the bar.
  *
@@ -828,11 +798,6 @@ button {
 }
 
 /* The zZ tab stands for a count, not for a name, so it takes what it needs. */
-.tab--zz {
-  flex: none;
-  max-width: none;
-}
-
 .tab__body {
   position: relative;
   display: flex;
@@ -860,11 +825,6 @@ button {
   font-size: 13px;
   white-space: nowrap;
   color: var(--graphite);
-}
-
-.tab--zz .tab__body {
-  /* Its own symmetrical inset, plus the same room for the bar. */
-  padding: 0 9px 0 13px;
 }
 
 /*
@@ -907,8 +867,7 @@ button {
 .tab--active .tab__dirty,
 .tab--active .tab__queued,
 .tab--active .tab__fork,
-.tab--active .tab__zz,
-.tab--active .tab__caret {
+.tab--active .tab__zz {
   color: var(--quiet-on);
 }
 
@@ -959,16 +918,6 @@ button {
   flex: none;
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: var(--graphite);
-}
-
-/* Bigger than the label it follows: it is the only thing on the tab saying
-   there is more behind it. U+25BE draws a small triangle inside its em box, so
-   the glyph still lands smaller than the 13px name beside it. */
-.tab__caret {
-  flex: none;
-  font-size: 17px;
-  line-height: 1;
   color: var(--graphite);
 }
 
@@ -1665,92 +1614,164 @@ button {
  * it sits in the grid as its own cell and is always present.
  */
 /*
- * The new-worktree tile: the form itself, one unit wide, at the end of each
- * project's run of windows.
+ * A project's own pane: its worktrees, a new one, and closing it.
  *
- * It wears the row's own furniture rather than a dialog's -- a bar across the
- * top like every other window, the same --level-panel ground, the same border
- * -- because it is a tile and not something laid over the tiles. What says it
- * is not a worktree is that the border is dashed: the one place in the row
- * where an outline means "nothing here yet".
+ * It wears the row's furniture rather than a dialog's -- a bar across the top
+ * like every window, the same ground, the same border -- because it is a tile
+ * and not something laid over the tiles. The dashed border is what says it is
+ * not a worktree: the one place in the row where an outline means "this is
+ * about the windows rather than one of them".
  */
-.tile--addpane {
+.tile--project {
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-style: dashed;
 }
 
-.addpane {
+.projpane {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
 }
 
-.addpane__bar {
+.projpane__bar {
   display: flex;
   align-items: center;
-  gap: 5px;
   flex: none;
   height: 35px;
   padding: 0 10px;
   font-family: var(--font-ui);
   font-size: 12px;
+  font-weight: 500;
+  color: var(--bone);
   white-space: nowrap;
   overflow: hidden;
 }
 
-.addpane__project {
-  color: var(--graphite-dim);
+.projpane__name {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.addpane__slash {
-  color: var(--graphite-dim);
-}
-
-.addpane__title {
-  color: var(--bone);
-  font-weight: 500;
-}
-
-.addpane__body {
+/*
+ * One scroller for the whole pane rather than one per list. Two lists, a form
+ * and a button do not fit a short window, and a pane with three scrollbars in
+ * it is worse than one that simply runs on.
+ */
+.projpane__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   flex: 1;
   min-height: 0;
-  padding: 16px 12px;
+  padding: 14px 12px 16px;
   overflow-y: auto;
 }
 
-.addpane__error {
+.projpane__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.projpane__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.projpane__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--graphite-dim);
+}
+
+.projpane__empty {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--graphite-dim);
+}
+
+/*
+ * The rows are the strip's own tabs, stacked. They keep every `.tab*` class,
+ * so only the container is different -- which is the whole reason a worktree
+ * met here and met in the strip reads as one object.
+ */
+.projpane__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /*
+   * Its own ceiling, because on first run `ui.awake` seeds from live sessions
+   * -- so a machine with twenty worktrees and nothing running would otherwise
+   * put twenty rows in a one-unit column and push the form off the bottom.
+   */
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.projpane__list .tab {
+  width: auto;
+  max-width: none;
+  min-height: 30px;
+}
+
+/*
+ * Closing is last, after everything you might actually be here to do, and it
+ * says what it does not touch -- the question the dialog then asks is about
+ * what is *running*, not about the directory.
+ */
+.projpane__section--close {
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.projpane__note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--graphite-dim);
+}
+
+/* --- the new-worktree form, a section of that pane ---------------------- */
+
+.addform {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.addform__error {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
   color: var(--danger);
 }
 
-.addpane__foot {
+.addform__foot {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: none;
-  padding: 10px 12px;
-  /* The one horizontal rule in the tile, so the button reads as the end of the
-     form rather than one more field. */
-  border-top: 1px solid var(--rule);
 }
 
 /*
  * Where it will land, which is the one thing about a new worktree you cannot
- * work out from the branch name alone. It takes whatever the button leaves and
+ * work out from the branch name. It takes whatever the button leaves and
  * ellipsises from the left, because the tail -- the directory being made -- is
  * the half worth reading.
  */
-.addpane__where {
+.addform__where {
   flex: 1;
   min-width: 0;
   direction: rtl;
@@ -2692,84 +2713,10 @@ button {
  * are short lists of things you pick one of, so they get the same treatment:
  * the tile's own ground, a hairline, and nothing else.
  */
-.menu {
-  /*
-   * Fixed, not absolute, and positioned from the trigger's own rect.
-   *
-   * The tab it hangs from lives in a horizontal scroller, and a scroller clips
-   * in both directions -- so an absolutely positioned menu was drawn at the
-   * right place and then cut off by the bar itself, present in the markup and
-   * invisible on screen. Fixed positioning is not clipped by an ancestor's
-   * overflow, which is the whole reason for it here.
-   */
-  position: fixed;
-  z-index: 20;
-  min-width: 180px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  border: 1px solid var(--rule-bright);
-  border-radius: var(--radius);
-  background: var(--level-raised);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
-  font-family: var(--font-ui);
-  font-size: 12px;
-}
-
-/*
- * The sleeping-worktrees dropdown: the same tabs, stacked.
- *
- * It used to invent a row of its own -- the state spelled out in words, the
- * prompt on a second line -- which made one worktree look like two different
- * objects depending on where you met it. The rows are `.tab`s now, so the
- * sleeve goes under them and everything a tab knows how to say it says here
- * too.
- */
-.menu--tabs {
-  gap: 2px;
-  /*
-   * No padding, for the reason `.tabgroup` has none: the rows are segments of
-   * one shape and the shell holds every outer edge. A sleeper met here and one
-   * met in the strip have to be the same object, so the dropdown is that slab
-   * stood on end.
-   */
-  padding: 0;
-  overflow: hidden;
-  /*
-   * As wide as its widest row, up to a cap. A tab in the strip is capped at
-   * 200px because the strip has to hold every awake worktree; this is a list
-   * with one job, and a sleeping worktree is the one you have least chance of
-   * recognising, so it gets the width to say its whole name.
-   */
-  width: max-content;
-  max-width: 420px;
-  background: var(--sleeve);
-  /* The menu floats over whatever is under the strip -- the page, or a window's
-     own dark ground -- so its edge is a rung above its own fill rather than
-     tuned to one ground: --rule-bright is 1.22:1 above the sleeve inside it. */
-  border-color: var(--rule-bright);
-}
-
 /* A tab in the strip stands on the strip's floor, which is where its square
    shoulders and its feet come from. Nothing here stands on anything: these are
    loose tabs in a list, so they take the fully round shape a hovered tab has,
    and they fill the menu rather than sharing a row. */
-.menu--tabs .tab {
-  width: auto;
-  max-width: none;
-  border-radius: 0;
-  /*
-   * The same height a tab has in the strip, where 35px falls out of the 38px
-   * bar less the 3px of sleeve above it. Declared here because a menu
-   * row has no bar to derive it from, and it has to be declared: a row is
-   * otherwise one 13px line, 15px tall, and 9px of radius top and bottom is
-   * then the whole of its left edge -- so the state bar had no straight section
-   * to fill and came out as a crescent while the strip beside it drew a bar.
-   * They are meant to be one object met in two places, so they are one height.
-   */
-  min-height: 35px;
-}
-
 /* -------------------------------------------------------------- the files -- */
 
 /*
