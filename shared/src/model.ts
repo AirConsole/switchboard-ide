@@ -3,10 +3,11 @@
 /**
  * Where a project's files and processes live.
  *
- * Only `local` is implemented. It is named now because it decides how ids are
- * derived, and worktree ids are recorded inside tmux -- so adding the remote
- * case later must not change the local derivation or every running session is
- * orphaned. See `idFor` in server/src/git/worktree.ts.
+ * Both are implemented. The distinction decides how ids are derived, and
+ * worktree ids are recorded inside tmux -- so the local derivation must never
+ * change or every running session is orphaned. A remote project's *pointer*
+ * hashes the base URL too, because the same path on two machines hashes
+ * identically. See `idFor` in server/src/git/worktree.ts.
  */
 export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string }
 
@@ -71,7 +72,9 @@ export interface Project {
  * remembered so the picker can offer it back.
  *
  * Only local projects have one: it is keyed by root path, which is what
- * `openProject` takes. A remote project will arrive by base URL instead.
+ * `openProject` takes. A remote project is found again by picking its machine
+ * in the open dialog and browsing that machine's disk -- there is no recent
+ * for it on either side, since the peer never closed its own copy.
  */
 export interface RecentProject {
   /** Absolute path to the repository root, as it was registered. */

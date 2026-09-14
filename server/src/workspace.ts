@@ -93,7 +93,19 @@ const reconcile = (
   return {
     projects,
     worktrees,
-    sessions: (cached?.sessions ?? []).filter((session) => worktreeIds.has(session.worktreeId)),
+    /*
+     * Never sessions. This runs only when a machine did not answer, and
+     * liveness and attention are live facts: remembered, they claim an agent is
+     * running -- and, worse, that one is *blocked on you* -- on a machine that
+     * is switched off. Measured before this: unplug a peer with an agent
+     * waiting and the amber stayed, indefinitely, for something that was not
+     * there. Amber and green are the two things the whole row is scanned for,
+     * so they are the two that must never be recalled.
+     *
+     * `cachedSlice` said this already; `lastGood` is the commoner path and did
+     * not, which is why it is decided here instead of at either source.
+     */
+    sessions: [],
     todos: (cached?.todos ?? []).filter((todo) => worktreeIds.has(todo.worktreeId)),
   }
 }
@@ -121,10 +133,13 @@ const selectProjects = (
   snapshot: Omit<AppSnapshot, 'ui'>,
   pointers: readonly Project[],
   host: string,
+  remembered?: Omit<AppSnapshot, 'ui'>,
 ): Omit<AppSnapshot, 'ui'> => {
   const projects: Project[] = []
   /** The peer's id for a project, mapped to ours. */
   const asOurs = new Map<string, string>()
+  /** Pointers the peer answered about but no longer holds a project for. */
+  const unanswered: Project[] = []
   for (const pointer of pointers) {
     const theirs = snapshot.projects.find(
       (project) => project.root === pointer.root && project.host.kind === 'local',
@@ -135,11 +150,28 @@ const selectProjects = (
       host: { kind: 'remote', baseUrl: host },
     })
     if (theirs) asOurs.set(theirs.id, pointer.id)
+    else unanswered.push(pointer)
   }
 
   const worktrees = snapshot.worktrees
     .filter((worktree) => asOurs.has(worktree.projectId))
     .map((worktree) => ({ ...worktree, projectId: asOurs.get(worktree.projectId) as string }))
+  /*
+   * A project the peer answered about but no longer lists keeps the worktrees
+   * we last saw, exactly as an unreachable machine does.
+   *
+   * All the protection was on the exception path, and "answered, but empty" is
+   * the commoner shape of the same loss: someone closes the project in the
+   * peer's own UI, or one `listWorktrees` throws on an index.lock, and the
+   * reply is a clean 200 with nothing in it. The UI prunes stored layout for
+   * worktrees it cannot see, so that costs panels and open files permanently --
+   * and it would overwrite the memory of them in the same breath.
+   */
+  for (const pointer of unanswered) {
+    for (const worktree of remembered?.worktrees ?? []) {
+      if (worktree.projectId === pointer.id) worktrees.push(worktree)
+    }
+  }
   const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
   return {
     projects,
@@ -318,6 +350,21 @@ export class Workspace {
     return this.store.servers.map((server) => new PeerClient(server.baseUrl, server.token))
   }
 
+  /**
+   * Whether a scoped session id is one the merged snapshot carries.
+   *
+   * What the relay uses to decide which of a peer's pushes are ours to pass on.
+   * Read from the last merge rather than by asking the peer: a push arrives
+   * between snapshots, and a session the snapshot has never mentioned is one
+   * whose project we did not open.
+   */
+  knowsSession(scopedId: string): boolean {
+    for (const slice of this.lastGood.values()) {
+      if (slice.sessions.some((session) => session.id === scopedId)) return true
+    }
+    return false
+  }
+
   /** By the short key that appears in a scoped id, not by base URL. */
   peerFor(key: string): PeerClient | null {
     return this.peers().find((peer) => peer.key === key) ?? null
@@ -387,7 +434,12 @@ export class Workspace {
           return reconcile(undefined, [], peer.baseUrl)
         }
         try {
-          const slice = selectProjects(await peer.snapshot(), mine, peer.baseUrl)
+          const slice = selectProjects(
+            await peer.snapshot(),
+            mine,
+            peer.baseUrl,
+            this.lastGood.get(peer.baseUrl) ?? cachedSlice(this.store.remoteCache(peer.baseUrl)),
+          )
           this.lastGood.set(peer.baseUrl, slice)
           // Written through, so the guarantee survives this process. In memory
           // alone it only held *after* one successful read, and the case that
@@ -665,7 +717,8 @@ export class Workspace {
     }
     // Remembered before it is removed, and only for a local project: a recent
     // is a path handed back to `openProject`, which is how a local one is
-    // opened. A remote project will be reopened by base URL instead.
+    // opened. A remote one is found again by picking its machine in the open
+    // dialog and browsing that machine's disk.
     if (project && project.host.kind === 'local') this.store.rememberRecent(project)
     this.store.removeProject(id)
     this.store.removeTodosFor(mine)

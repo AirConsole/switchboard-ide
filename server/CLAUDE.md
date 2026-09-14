@@ -528,10 +528,15 @@ Two more about holding a peer's answers:
   minute per tab; writing every time rewrote the file holding every peer's
   credential on a pure read path, and `scheduleSave` has no maximum wait, so a
   fast enough loop starves it and a just-queued todo is never written.
-- **A peer's `session-state` is forwarded only for what this browser is attached
-  to.** A peer broadcasts every session it runs, including projects nobody here
-  opened. The browser discards those, so forwarding them was noise that grew
-  with the peer's session count.
+- **A peer's `session-state` is forwarded only for sessions the snapshot
+  merged** -- not for the ones this browser happens to be attached to, which is
+  what it was and was wrong. `applySessionState` updates any session already in
+  the store, attached or not, and that is how an unattached tile's bullet
+  changes colour at all. The case it broke is the one this exists for: a remote
+  worktree asleep with Claude still running asks a permission question, no file
+  changes so the peer broadcasts no `invalidate`, and the only signal is the
+  frame that was being dropped -- so the bar stayed grey for an agent blocked on
+  you.
 
 And two about being the *other* machine:
 
@@ -539,7 +544,12 @@ And two about being the *other* machine:
   root, it would *answer*, about whatever sits at that path here -- and the same
   checkout path on two machines is the normal case, not a coincidence. The ids
   would then collide byte for byte and `resolve()` would return whichever came
-  first. `createWorktree` and `closeProject` refuse one for the same reason.
+  first. `createWorktree` refuses one for the same reason -- `worktreeRoot` for
+  a remote pointer is derived from a path on *that* machine, so `addWorktree`
+  would run against whatever repository sits there on this one. `closeProject`
+  does not refuse: it handles a remote project, skipping `killForProject`
+  (those sessions are the peer's, under the peer's ids) and forwarding the
+  sleep to the machine that is actually running them.
 - **The credential lives with the machine, never on a project.** `Project` is in
   every snapshot the browser receives; `RemoteServer` is not. Several projects on
   one peer would otherwise be several copies of one secret to keep in step.

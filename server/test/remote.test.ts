@@ -341,6 +341,43 @@ describe('a project on another machine', () => {
     expect(after.sessions).toHaveLength(0)
   })
 
+  /*
+   * Amber and green are the two things a row of agents is scanned for, so they
+   * are the two that must never be recalled. Measured before this: unplug a
+   * peer with an agent waiting on you and the bullet stayed amber, indefinitely,
+   * for something that was not running -- and clicking it 504s. `cachedSlice`
+   * said as much already; `lastGood` is the commoner path and did not.
+   */
+  it('never reports a session on a machine that did not answer', async () => {
+    await addRemote()
+    const before = await workspace.snapshot()
+    expect(before.sessions.map((s) => s.id)).toEqual([`${hostKeyFor(peerUrl)}~s-a`])
+
+    answering = false
+    const during = await workspace.snapshot()
+    // The worktrees stay -- losing those costs the user their layout -- but
+    // nothing claims an agent is alive, or blocked on them, on a machine
+    // that is off.
+    expect(during.worktrees).toHaveLength(1)
+    expect(during.sessions).toEqual([])
+  })
+
+  /*
+   * All the protection was on the exception path, and "answered, but empty" is
+   * the commoner shape of the same loss: someone closes the project in the
+   * peer's own UI, or one `listWorktrees` throws on an index.lock, and the
+   * reply is a clean 200 with nothing in it.
+   */
+  it('keeps what it knew when a peer answers without the project', async () => {
+    await addRemote()
+    expect((await workspace.snapshot()).worktrees).toHaveLength(1)
+
+    // The peer still answers; it simply no longer lists that project.
+    peerSnapshot = { ...peerSnapshot, projects: [], worktrees: [] }
+    const after = await workspace.snapshot()
+    expect(after.worktrees.map((w) => w.id)).toEqual([`${hostKeyFor(peerUrl)}~wt-a`])
+  })
+
   it('still shows the project when a peer has never answered', async () => {
     // A cold start with the peer down: nothing is remembered, and the tab has
     // to survive anyway or the project looks deleted rather than unreachable.

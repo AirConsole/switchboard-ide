@@ -146,6 +146,7 @@ export const registerWs = (
       sendJson: (msg) => sink.sendJson(msg),
       sendBinary: (data) => sink.sendBinary(data),
       onInvalidate: () => sink.sendJson({ t: 'invalidate' }),
+      knowsSession: (id) => workspace.knowsSession(id),
     })
     relays.add(relay)
 

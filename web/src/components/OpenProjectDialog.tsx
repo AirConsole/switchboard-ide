@@ -250,6 +250,17 @@ export const OpenProjectDialog = ({
     if (busy) return
     setBusy(true)
     const server = servers.find((row) => row.key === host)
+    if (host !== undefined && server === undefined) {
+      /*
+       * The chip says a machine the list no longer has -- another tab forgot it
+       * while this dialog was open. Falling through opened *that machine's*
+       * path here, and with "create" that is a mkdir and a git init in the
+       * wrong place. It is the same vector `addServer` adds the row
+       * synchronously to close; the refresh path left it open.
+       */
+      setError('That machine is no longer registered here.')
+      return
+    }
     // Two calls presented as one action, and they go to different machines: the
     // peer opens the project, because its git and its tmux are what will run
     // it, and then this server records the pointer so it survives a reload.

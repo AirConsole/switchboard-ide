@@ -11,6 +11,8 @@ import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
 import { allowRequest } from './gate.js'
 import { registerProxy } from './remote/proxy.js'
+import { PROTOCOL_HEADER } from './remote/peer.js'
+import { PROTOCOL_VERSION } from '@switchboard/shared'
 
 const app = Fastify({
   logger: {
@@ -70,6 +72,16 @@ process.on('unhandledRejection', (reason) => {
  * anyone remembering to. `/ws` runs the same rule at its upgrade, where a hook
  * cannot reach.
  */
+/*
+ * Every reply says which protocol this server speaks, so a gateway compares it
+ * on every read rather than only when the machine was added -- the other side
+ * is upgraded on its own schedule, and a version skew is otherwise silent.
+ */
+app.addHook('onSend', async (_request, reply, payload) => {
+  void reply.header(PROTOCOL_HEADER, String(PROTOCOL_VERSION))
+  return payload
+})
+
 app.addHook('onRequest', async (request, reply) => {
   const route = request.routeOptions.url
   // No route matched: nothing will run, and a 404 is the honest answer.

@@ -31,6 +31,9 @@ import { PeerUnreachable, type PeerClient } from './peer.js'
  * the merge of every machine rather than a question for one of them.
  */
 
+const READ_TIMEOUT_MS = 10_000
+const WRITE_TIMEOUT_MS = 120_000
+
 /** `decodeURIComponent` that answers rather than throwing on `%zz`. */
 const decode = (segment: string): string => {
   try {
@@ -45,28 +48,35 @@ const decode = (segment: string): string => {
 
 const pathOf = (url: string): string => url.split('?')[0] ?? ''
 
-/** The peer named by a scoped id in the path, if any. */
-const keyInPath = (url: string): string | null => {
-  for (const segment of pathOf(url).split('/')) {
-    const scoped = unscopeId(decode(segment))
-    if (scoped) return scoped.host
-  }
-  return null
-}
+/** Every peer named by a scoped id in the path. */
+const keysInPath = (url: string): string[] =>
+  pathOf(url)
+    .split('/')
+    .map((segment) => unscopeId(decode(segment))?.host)
+    .filter((host): host is string => host !== undefined)
 
-/** The peer named by a scoped id in a body field that carries ids. */
-const keyInBody = (body: unknown): string | null => {
-  if (typeof body !== 'object' || body === null) return null
-  // Only the fields that carry ids, never every string in the body. A todo's
-  // prompt is a string too, and deciding which machine a request is for by
-  // scanning free text is how `rm -rf ~` becomes a route to nowhere.
+/**
+ * Every peer named by a scoped id in a body field that carries ids.
+ *
+ * All of them, not the first: two ids from different machines in one body would
+ * otherwise go to whichever came first in `ID_FIELDS`, with the other reduced
+ * to a bare id and delivered to a machine it does not belong to -- and because
+ * ids hash the bare path, the wrong peer *answering* is the normal case.
+ *
+ * Only the fields that carry ids, never every string in the body. A todo's
+ * prompt is a string too, and deciding which machine a request is for by
+ * scanning free text is how `rm -rf ~` becomes a route to nowhere.
+ */
+const keysInBody = (body: unknown): string[] => {
+  if (typeof body !== 'object' || body === null) return []
+  const found: string[] = []
   for (const field of ID_FIELDS) {
     const value = (body as Record<string, unknown>)[field]
     if (typeof value !== 'string') continue
     const scoped = unscopeId(value)
-    if (scoped) return scoped.host
+    if (scoped) found.push(scoped.host)
   }
-  return null
+  return found
 }
 
 const keyInQuery = (query: unknown): string | null => {
@@ -122,11 +132,11 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
      * `?host=B` beside a path id belonging to A used to be sent to B with A's
      * bare id. Two names is a request nobody meant to make.
      */
-    const named = new Set(
-      [keyInPath(request.url), keyInBody(request.body), keyInQuery(request.query)].filter(
-        (key): key is string => key !== null,
-      ),
-    )
+    const named = new Set([
+      ...keysInPath(request.url),
+      ...keysInBody(request.body),
+      ...(keyInQuery(request.query) === null ? [] : [keyInQuery(request.query) as string]),
+    ])
     if (named.size > 1) throw new HttpError(400, 'that request names two different servers')
     const key = [...named][0] ?? null
 
@@ -148,12 +158,22 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
     }
 
     try {
+      const reads = request.method === 'GET' || request.method === 'DELETE'
       const result = await peer.request<unknown>(
         request.method,
         unscopeUrl(request.url),
         // `undefined` for a GET: a body on one is not merely pointless, it is
         // what makes `fetch` refuse outright.
-        request.method === 'GET' || request.method === 'DELETE' ? undefined : body,
+        reads ? undefined : body,
+        /*
+         * A mutation gets far longer than a read, because the wait is a
+         * different kind. `POST /api/worktrees` is a `git worktree add` -- a
+         * whole checkout -- plus starting an agent, and on a large repository
+         * that passes ten seconds routinely. Aborting here cancels nothing on
+         * the peer: it finishes the worktree while we answer "did not answer",
+         * and the retry then fails with "branch already exists".
+         */
+        reads ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS,
       )
       await reply.send(result ?? {})
     } catch (err) {

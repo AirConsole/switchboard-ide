@@ -37,6 +37,8 @@ export interface RelayHost {
   sendBinary(data: Uint8Array): void
   /** Something on the peer changed that invalidates the merged snapshot. */
   onInvalidate(): void
+  /** Whether this session is one the merged snapshot actually carries. */
+  knowsSession(scopedId: string): boolean
 }
 
 class PeerLink {
@@ -160,13 +162,23 @@ class PeerLink {
     }
     /*
      * A peer broadcasts the state of every session it is running, including
-     * ones belonging to projects nobody here opened. Only what this browser is
-     * actually attached to is passed on: the rest is another machine's business
-     * and the browser discards it anyway, so forwarding it was noise that grew
-     * with the peer's session count. Everything a worktree's tile needs for a
-     * session it is *not* attached to arrives in the snapshot.
+     * ones belonging to projects nobody here opened -- so this is filtered to
+     * sessions we actually merged, and **not** to sessions this browser is
+     * attached to, which is what it was and was wrong.
+     *
+     * The claim was that the browser discards the rest. It does not:
+     * `applySessionState` updates any session already in the store, and the
+     * store holds every remote session the snapshot merged, attached or not.
+     * That is how an unattached tile's bullet changes colour at all. The case
+     * it broke is the one this product exists for: a remote worktree asleep
+     * with Claude still running asks a permission question, no file changes so
+     * the peer's git poll broadcasts no `invalidate`, and the only signal is
+     * the `session-state` frame -- which was dropped. The bar stayed grey for
+     * an agent that was blocked on you.
      */
-    if (msg.t === 'session-state' && !this.attached.has(msg.sessionId)) return
+    if (msg.t === 'session-state' && !this.host.knowsSession(scopeId(this.peer.key, msg.sessionId))) {
+      return
+    }
     this.host.sendJson({
       ...msg,
       ...(msg.sessionId === undefined

@@ -42,6 +42,11 @@ class FakePeer {
     this.port = (this.wss.address() as AddressInfo).port
   }
 
+  /** An unsolicited broadcast, which is how attention actually travels. */
+  push(msg: unknown): void {
+    for (const client of this.wss?.clients ?? []) client.send(JSON.stringify(msg))
+  }
+
   async down(): Promise<void> {
     const wss = this.wss
     this.wss = null
@@ -60,12 +65,22 @@ let peer: FakePeer
 let relay: Relay
 const sent: ServerMsg[] = []
 
-const host = { sendJson: (m: ServerMsg) => sent.push(m), sendBinary: () => {}, onInvalidate: () => {} }
+/** Sessions the merged snapshot is pretending to carry, for the push filter. */
+let known = new Set<string>()
+const host = {
+  sendJson: (m: ServerMsg) => {
+    sent.push(m)
+  },
+  sendBinary: () => {},
+  onInvalidate: () => {},
+  knowsSession: (id: string) => known.has(id),
+}
 
 beforeEach(async () => {
   peer = new FakePeer()
   await peer.up()
   sent.length = 0
+  known = new Set()
 })
 
 afterEach(async () => {
@@ -153,6 +168,29 @@ describe('a browser’s links to other machines', () => {
     relay.handle({ t: 'attach', sessionId: `${hostKeyFor(`http://127.0.0.1:${peer.port}`)}~s-1`, cols: 80, rows: 24, primary: true })
     await settle(200)
     expect(attaches(peer)).toHaveLength(0)
+  })
+
+  /*
+   * A peer broadcasts every session it runs, including projects nobody here
+   * opened. The filter was "is this browser attached to it", which dropped the
+   * signal this product exists for: a remote worktree asleep with Claude still
+   * running asks a question, no file changes so no `invalidate` is broadcast,
+   * and the only thing that says so is the frame that was being thrown away.
+   */
+  it('passes on state for a session it merged but is not attached to', async () => {
+    const client = clientFor()
+    known = new Set([`${client.key}~s-idle`])
+    relay = new Relay(() => [client], host)
+    await settle(150)
+
+    peer.push({ t: 'session-state', sessionId: 's-idle', liveness: 'live', attention: 'needs-you', lastOutputAt: 0 })
+    peer.push({ t: 'session-state', sessionId: 's-elsewhere', liveness: 'live', attention: 'idle', lastOutputAt: 0 })
+    await settle(200)
+
+    const states = sent.filter((m) => m.t === 'session-state')
+    expect(states.map((m) => (m as { sessionId: string }).sessionId)).toEqual([
+      `${client.key}~s-idle`,
+    ])
   })
 
   /*
