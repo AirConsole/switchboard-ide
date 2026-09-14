@@ -54,7 +54,11 @@ describe('looksLikePrompt', () => {
     screen('✻ Baked for 2s · done 3:01 PM', '', ...lines)
 
   it('catches a tool-permission dialog', () => {
-    expect(looksLikePrompt(dialog('Do you want to run this command?', '❯ 1. Yes'))).toBe(true)
+    // A menu is its selected row *and* a sibling option: the mirror draws a
+    // submitted user message with a chevron too, so the row alone is not enough.
+    expect(
+      looksLikePrompt(dialog('Do you want to run this command?', '❯ 1. Yes', '  2. No')),
+    ).toBe(true)
   })
 
   it('catches a plan approval', () => {
@@ -68,7 +72,9 @@ describe('looksLikePrompt', () => {
      * them. The whole turn is read now, and this fixture is what says so.
      */
     const options = Array.from({ length: 11 }, (_, n) => `   some option prose, line ${n}`)
-    expect(looksLikePrompt(dialog('❯ 1. Yes', ...options, INPUT))).toBe(true)
+    expect(
+      looksLikePrompt(dialog('❯ 1. Yes', '  2. No, keep planning', ...options, INPUT)),
+    ).toBe(true)
   })
 
   it('ignores the same words above the last done marker', () => {
@@ -196,6 +202,69 @@ describe('looksLikePrompt', () => {
   })
 
 
+  it('does not read a numbered user prompt as a menu', () => {
+    /*
+     * The mirror draws a submitted user message as `❯ <text>` -- measured in
+     * this IDE's own window, where "❯ the name-and-app worktree currently looks
+     * like it needs attention" was the line above the work it started. So a
+     * prompt that opens with a numbered item is a chevron, a digit and a full
+     * stop, and `❯ N.` on its own called it a dialog. It sits at the top of the
+     * turn, so the window stayed amber for the whole of it.
+     */
+    const prompt = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '❯ 1. fix the parser 2. then the tests',
+      '',
+      '● Reading files',
+      INPUT,
+      HINT,
+    )
+    expect(looksLikePrompt(prompt)).toBe(false)
+  })
+
+  it('does not read a wrapped draft as a menu', () => {
+    /*
+     * Measured on Claude Code v2.1.270 at 90 columns: a draft too long for one
+     * line wraps inside the input box with its continuations indented by
+     * exactly two columns -- the same alignment a menu's unselected options
+     * have. So "the next line is indented two further" cannot be what
+     * identifies a menu, however much it looks like it on a dialog; the sibling
+     * has to carry a number. This fixture is here to fail that idea if it is
+     * tried again.
+     */
+    const draft = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '─────────────────────────────────────────',
+      '❯ 1. this is a deliberately long prompt whose only purpose is to wrap across',
+      '  several lines of the input box so that the continuation indent can be seen',
+      '─────────────────────────────────────────',
+      HINT,
+    )
+    expect(looksLikePrompt(draft)).toBe(false)
+  })
+
+  it('catches a plan approval, verbatim', () => {
+    /*
+     * Claude Code v2.1.270, captured from a real `--permission-mode plan`
+     * session. Three patterns hold it: the menu, "Would you like to proceed?"
+     * and "shift+tab to approve". The menu's options are adjacent here, which
+     * is what lets the sibling be looked for a few lines away rather than
+     * anywhere in the turn.
+     */
+    const plan = screen(
+      '  ──────────────────────────────────────────────────────────────',
+      "   Claude has written up a plan and is ready to execute. Would you like to proceed?",
+      '',
+      '   ❯ 1. Yes, and use auto mode',
+      '     2. Yes, manually approve edits',
+      '     3. Tell Claude what to change',
+      '        shift+tab to approve with this feedback',
+      '',
+      '   ctrl+g to edit in Vim · ~/.claude/plans/add-a-subtract-function.md',
+    )
+    expect(looksLikePrompt(plan)).toBe(true)
+  })
+
   it('does not read a bare chevron as a question', () => {
     // The idle input box draws one too, and a wrong "needs you" is worse than
     // a missing one.
@@ -289,7 +358,8 @@ describe('classify', () => {
   }
 
   it('calls a dead session idle whatever is on its screen', () => {
-    expect(classify({ ...base, dead: true, tailText: () => 'Do you want to proceed? ❯ 1. Yes' }))
+    const menu = screen('Do you want to proceed?', '❯ 1. Yes', '  2. No')
+    expect(classify({ ...base, dead: true, tailText: () => menu }))
       .toBe('idle')
   })
 
@@ -303,7 +373,12 @@ describe('classify', () => {
         ...base,
         lastOutputAt: now,
         tailText: () =>
-          screen('✻ Baked for 2s · done 3:01 PM', 'Do you want to proceed?', '❯ 1. Yes'),
+          screen(
+            '✻ Baked for 2s · done 3:01 PM',
+            'Do you want to proceed?',
+            '❯ 1. Yes',
+            '  2. No',
+          ),
       }),
     ).toBe('needs-you')
   })

@@ -98,6 +98,22 @@ is the point:
    patterns live in `PROMPT_FOOTERS` and are trusted only on the last three
    lines. `^1. Yes` was dropped outright: it is what Claude writes when
    *explaining* options, and it made a finished worktree read as waiting.
+
+   A menu is recognised by its **selected row plus a sibling option numbered
+   one away**, within a few lines either side — not by `❯ N.` alone. The
+   chevron was picked because Claude never prints one, but the mirror draws a
+   submitted *user message* as `❯ <text>`, so a prompt opening "1. fix the
+   parser, 2. then the tests" was a chevron, a digit and a full stop at the top
+   of the turn, and held the window amber for the whole of it. All three menus
+   measured on v2.1.270 — permission, plan approval, AskUserQuestion — put the
+   sibling on the very next line.
+
+   The gap this leaves is written up beside `INPUT_BOX`: an unnumbered dialog
+   carrying none of the footer wordings reads as *finished*, which is the green
+   light rather than a grey one, because its selected row is indistinguishable
+   from the input box. Two candidate fixes were measured and both cost more
+   than they save; the note records which, so the next person does not
+   re-derive them.
 2. **Is it working?** Recent output, `turn === 'in-turn'`, or the spinner's
    parenthesised timer — `(3m 34s · …)`, and the minute and hour forms are not
    decoration: the pattern was `\(\d+s` and so missed every turn longer than a

@@ -102,10 +102,20 @@ describe('readiness', () => {
 
   it('refuses a modal, whose Return is an answer rather than a submission', () => {
     /*
-     * Measured against a real Claude: the trust-folder dialog sits with
-     * "No, exit" selected, so a stray Return there quits the agent.
+     * Measured against a real Claude, v2.1.270, verbatim: the trust-folder
+     * dialog sits with "No, exit" selected, so a stray Return there quits the
+     * agent. Its options are not numbered, so what holds it up is the footer
+     * wording rather than the menu -- the fixture used to say `❯ 1. Yes`, which
+     * is not what that dialog has ever looked like.
      */
-    const dialog = ['✻ Baked for 2s · done 3:01 PM', 'Do you trust the files in this folder?', '❯ 1. Yes'].join('\n')
+    const dialog = [
+      '✻ Baked for 2s · done 3:01 PM',
+      ' Quick safety check: Is this a project you created or one you trust?',
+      ' ❯ No, exit',
+      '   Yes, I trust this folder',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    ].join('\n')
     expect(why({ ...resting, tail: dialog })).toBe('needs-you')
   })
 

@@ -228,7 +228,15 @@ describe('the dispatcher', () => {
      */
     store.addTodo(todo({ id: 't-1', queuedAt: 1 }))
     const { engine, typed } = fakeEngine({
-      screen: ['✻ Baked for 2s · done 3:01 PM', 'Do you trust the files in this folder?', '❯ 1. Yes'].join('\n'),
+      // v2.1.270, verbatim; its options are not numbered.
+      screen: [
+        '✻ Baked for 2s · done 3:01 PM',
+        ' Quick safety check: Is this a project you created or one you trust?',
+        ' ❯ No, exit',
+        '   Yes, I trust this folder',
+        '',
+        ' Enter to confirm · Esc to cancel',
+      ].join('\n'),
     })
     const dispatcher = await run(engine)
     expect(typed).toEqual([])
@@ -305,7 +313,12 @@ describe('the dispatcher', () => {
     const fake = fakeEngine({
       onPaste: () =>
         fake.setScreen(
-          ['✻ Baked for 2s · done 3:01 PM', 'Do you want to proceed?', '❯ 1. Yes'].join('\n'),
+          [
+            '✻ Baked for 2s · done 3:01 PM',
+            'Do you want to proceed?',
+            '❯ 1. Yes',
+            '  2. No',
+          ].join('\n'),
         ),
     })
     await run(fake.engine)

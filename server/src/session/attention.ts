@@ -65,12 +65,55 @@ const PROMPT_PATTERNS: RegExp[] = [
   // Plan approval, verbatim from the dialog ExitPlanMode raises.
   /Would you like to proceed\?/i,
   /shift\+tab to approve\b/i,
-  // A numbered choice menu, e.g. "❯ 1. Yes".
-  /❯\s*\d+\.\s/,
   /\(y\/n\)/i,
   /Waiting for your input/i,
   /Press\s+(?:enter|y)\b/i,
 ]
+
+/**
+ * A numbered choice menu's selected row, and one of its other options.
+ *
+ * `❯ N.` alone used to be the whole test, and it was wrong for a reason the
+ * chevron was supposed to rule out: the mirror draws a *submitted user message*
+ * as `❯ <text>` too, so a prompt that opens with a numbered item -- "1. fix the
+ * parser, 2. then the tests" -- is a chevron, a digit and a full stop, and it
+ * sits at the top of the turn, which held the window amber for the whole of it.
+ *
+ * So a menu has to be more than its selected row: it has to have another option
+ * beside it, numbered one away. Measured on Claude Code v2.1.270, all three of
+ * the menus this has to catch put that option on the very next line --
+ *
+ *   permission:  ` ❯ 1. Yes` / `   2. Yes, and switch to accept edits ...`
+ *   plan:        ` ❯ 1. Yes, and use auto mode` / `   2. Yes, manually approve`
+ *   question:    `❯ 1. Drop the phrase pattern` / `  2. Demote it to a footer`
+ *
+ * -- and a window of a few lines either side is what makes it tolerant of a
+ * description under an option (the plan dialog puts `shift+tab to approve with
+ * this feedback` under its third) and of the chevron sitting on the last option
+ * rather than the first, without becoming "a numbered line anywhere in the
+ * turn". That was tried, as `^1. Yes`, and Claude's own prose about options
+ * made a finished worktree read as waiting.
+ */
+const MENU_ROW = /^\s*❯\s*(\d+)\.\s/
+const OPTION_ROW = /^\s*(\d+)\.\s/
+
+/** How far either side of the selected row its siblings are looked for. */
+const MENU_SIBLING_ROWS = 4
+
+const hasChevronMenu = (turn: string): boolean => {
+  const lines = turn.split('\n')
+  for (let index = 0; index < lines.length; index++) {
+    const selected = MENU_ROW.exec(lines[index] ?? '')
+    if (!selected) continue
+    const chosen = Number(selected[1])
+    for (let near = index - MENU_SIBLING_ROWS; near <= index + MENU_SIBLING_ROWS; near++) {
+      if (near === index) continue
+      const option = OPTION_ROW.exec(lines[near] ?? '')
+      if (option && Math.abs(Number(option[1]) - chosen) === 1) return true
+    }
+  }
+  return false
+}
 
 /**
  * Patterns believed only on the last few lines, where a dialog's footer lives.
@@ -162,6 +205,7 @@ const thisTurn = (screen: string): string => {
  */
 export const looksLikePrompt = (screen: string): boolean => {
   const turn = thisTurn(screen)
+  if (hasChevronMenu(turn)) return true
   if (PROMPT_PATTERNS.some((re) => re.test(turn))) return true
   const footer = turn.split('\n').slice(-FOOTER_ROWS).join('\n')
   return PROMPT_FOOTERS.some((re) => re.test(footer))
@@ -175,6 +219,32 @@ export const looksLikePrompt = (screen: string): boolean => {
  * the furniture below it.
  */
 export const INPUT_BOX = /^\s*[❯>]\s?(.*)$/
+
+/*
+ * Known gap, left open deliberately: a dialog whose options are NOT numbered
+ * and which carries none of the footer wordings reads as *finished*, which is
+ * the green light rather than merely a grey one. `INPUT_BOX` matches a dialog's
+ * selected row (` ❯ Yes, I trust this folder`) exactly as readily as the real
+ * box, so `screenState` takes that row for the boundary and reports the done
+ * marker above it.
+ *
+ * Two things were measured trying to close it, and both say not to:
+ *
+ *   - "a menu row has a sibling indented two columns further" is true of every
+ *     dialog measured, and also of a draft too long for one line: at 90 columns
+ *     a wrapped draft continues at exactly +2. There is a test for that.
+ *   - "the input box is bracketed by `─` rules" is true in every capture, but
+ *     the queued-message display (`  ❯ and then deploy`) has no rule above it
+ *     either, so treating "no rule" as "menu" trades this gap for a false amber
+ *     on every queued prompt.
+ *
+ * And tightening `screenState` alone would change nothing: `busy` there is
+ * settled by the transcript, which says `between-turns` for a session sitting
+ * on a picker -- the turn really did end -- so the answer comes back idle
+ * regardless. Closing this needs `looksLikePrompt` to recognise an unnumbered
+ * menu, and nothing measured so far separates one from the input box. Every
+ * unnumbered dialog seen in the wild is held up by its footer instead.
+ */
 
 /**
  * Lines that are furniture rather than something Claude said.
