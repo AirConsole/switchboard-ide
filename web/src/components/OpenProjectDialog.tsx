@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RecentProject } from '@switchboard/shared'
-import { ApiError, api, type BrowseResult } from '../api.js'
+import { ApiError, api, type BrowseResult, type ServerRow } from '../api.js'
 import { useEscape } from './useEscape.js'
 
 export interface OpenProjectDialogProps {
@@ -54,6 +54,62 @@ const readStrings = (value: unknown): string[] =>
  * nothing but the path, and walking the tree back down to it is the whole of
  * that cost.
  */
+/**
+ * Address and token for a machine to add.
+ *
+ * The token is this server's credential for the peer, not the user's: it is
+ * handed over once and never comes back, which is why the field is emptied the
+ * moment it is submitted rather than left to be read off the screen.
+ */
+const AddServer = ({
+  busy,
+  onAdd,
+}: {
+  busy: boolean
+  onAdd: (baseUrl: string, token: string) => void
+}): React.ReactElement => {
+  const [baseUrl, setBaseUrl] = useState('')
+  const [token, setToken] = useState('')
+  const submit = (): void => {
+    if (baseUrl.trim() === '') return
+    onAdd(baseUrl.trim(), token)
+    setToken('')
+  }
+  return (
+    <div className="addserver">
+      <input
+        className="field__input"
+        placeholder="http://box.local:8084"
+        value={baseUrl}
+        spellCheck={false}
+        autoFocus
+        onChange={(event) => setBaseUrl(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+      />
+      <input
+        className="field__input"
+        placeholder="token"
+        type="password"
+        value={token}
+        spellCheck={false}
+        onChange={(event) => setToken(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+      />
+      <button className="btn" onClick={submit} disabled={busy || baseUrl.trim() === ''}>
+        Add
+      </button>
+      <span className="field__hint">
+        That machine&apos;s <code>SWB_TOKEN</code>. It is kept here and sent from this server; your
+        browser never talks to it.
+      </span>
+    </div>
+  )
+}
+
 export const OpenProjectDialog = ({
   onClose,
   onOpened,
@@ -66,10 +122,20 @@ export const OpenProjectDialog = ({
   const [commitExisting, setCommitExisting] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * Which machine the picker is looking at. `undefined` is this one.
+   *
+   * Nothing else in the dialog changes with it: the listing, the recents and
+   * opening all take it and the server decides what it means. The browser is
+   * still talking to one origin.
+   */
+  const [host, setHost] = useState<string | undefined>(undefined)
+  const [servers, setServers] = useState<ServerRow[]>([])
+  const [adding, setAdding] = useState(false)
 
-  const browse = (next: string): void => {
+  const browse = (next: string, on = host): void => {
     void api
-      .browse(next)
+      .browse(next, on)
       .then((result) => {
         setListing(result)
         setPath(result.path)
@@ -78,14 +144,46 @@ export const OpenProjectDialog = ({
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
   }
 
-  useEffect(() => browse(''), [])
+  useEffect(() => browse('', host), [host])
   // Not fatal if it fails: the picker below opens any project this can.
   useEffect(() => {
     void api
-      .recents()
+      .recents(host)
       .then(setRecents)
+      .catch(() => setRecents([]))
+  }, [host])
+  const loadServers = (): void => {
+    void api
+      .servers()
+      .then(setServers)
       .catch(() => {})
-  }, [])
+  }
+  useEffect(loadServers, [])
+
+  /**
+   * Add a machine, then look at it.
+   *
+   * The token is asked for here and goes no further than this server, which
+   * keeps it and speaks to the peer itself. Nothing about a peer is ever
+   * reached from the browser.
+   */
+  const addServer = (baseUrl: string, token: string): void => {
+    if (busy) return
+    setBusy(true)
+    void api
+      .addServer({ baseUrl, ...(token.trim() === '' ? {} : { token: token.trim() }) })
+      .then((server) => {
+        setBusy(false)
+        setAdding(false)
+        loadServers()
+        setError(null)
+        setHost(server.key)
+      })
+      .catch((err: unknown) => {
+        setBusy(false)
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
 
   const open = (target: string, create = false): void => {
     // The buttons are disabled while a request is in flight; Enter has to
@@ -93,8 +191,19 @@ export const OpenProjectDialog = ({
     // are swallowed when the dialog unmounts.
     if (busy) return
     setBusy(true)
-    void api
-      .openProject(target, { create, commitExisting })
+    const server = servers.find((row) => row.key === host)
+    // Two calls presented as one action, and they go to different machines: the
+    // peer opens the project, because its git and its tmux are what will run
+    // it, and then this server records the pointer so it survives a reload.
+    const request =
+      server === undefined
+        ? api.openProject(target, { create, commitExisting })
+        : api
+            .openProject(target, { create, commitExisting, host: server.key })
+            .then((project) =>
+              api.openRemoteProject({ baseUrl: server.baseUrl, root: project.root, name: project.name }),
+            )
+    void request
       .then(() => onOpened())
       .catch((err: unknown) => {
         setBusy(false)
@@ -207,6 +316,52 @@ export const OpenProjectDialog = ({
           <h2 className="dialog__title">Open project</h2>
         </div>
         <div className="dialog__body">
+          {/*
+            * Which machine, before which directory -- the listing below is that
+            * machine's disk, so choosing it second would mean browsing one and
+            * opening on another.
+            */}
+          <div className="field">
+            <span className="field__label">Machine</span>
+            <div className="chips">
+              <button
+                className={host === undefined ? 'chip chip--on' : 'chip'}
+                onClick={() => setHost(undefined)}
+                disabled={busy}
+              >
+                This machine
+              </button>
+              {servers.map((server) => (
+                <span key={server.key} className="chips__pair">
+                  <button
+                    className={host === server.key ? 'chip chip--on' : 'chip'}
+                    onClick={() => setHost(server.key)}
+                    disabled={busy}
+                    title={server.baseUrl}
+                  >
+                    {server.name}
+                  </button>
+                  <button
+                    className="chip chip--drop"
+                    title={`Forget ${server.baseUrl}`}
+                    aria-label={`Forget ${server.name}`}
+                    disabled={busy}
+                    onClick={() => {
+                      if (host === server.key) setHost(undefined)
+                      void api.forgetServer(server.baseUrl).then(loadServers).catch(() => {})
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button className="chip" onClick={() => setAdding(!adding)} disabled={busy}>
+                {adding ? 'Cancel' : '+ Add'}
+              </button>
+            </div>
+            {adding && <AddServer busy={busy} onAdd={addServer} />}
+          </div>
+
           {recents.length > 0 && (
             <div className="field">
               <span className="field__label">Recently closed</span>

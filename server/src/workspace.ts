@@ -13,6 +13,7 @@ import type {
   RecentProject,
   Worktree,
   WorktreeTodo,
+  RemoteServer,
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { PeerClient, normalizeBaseUrl } from './remote/peer.js'
@@ -249,16 +250,15 @@ export class Workspace {
     }
   }
 
-  /** Every peer we hold a pointer to, once each, however many projects name it. */
+  /**
+   * Every machine we can read from, once each.
+   *
+   * From the server registry rather than from the projects, because a machine
+   * is added before any project on it is opened -- that is how you get a
+   * listing of its disk to pick one from.
+   */
   peers(): PeerClient[] {
-    const byHost = new Map<string, PeerClient>()
-    for (const project of this.store.projects) {
-      if (project.host.kind !== 'remote') continue
-      if (!byHost.has(project.host.baseUrl)) {
-        byHost.set(project.host.baseUrl, new PeerClient(project.host.baseUrl, project.host.token))
-      }
-    }
-    return [...byHost.values()]
+    return this.store.servers.map((server) => new PeerClient(server.baseUrl, server.token))
   }
 
   /** By the short key that appears in a scoped id, not by base URL. */
@@ -416,6 +416,41 @@ export class Workspace {
    * state nobody can see.
    */
   /**
+   * Register a machine, and check we can actually speak to it.
+   *
+   * The one remote operation that *does* reach out before writing anything:
+   * adding a machine is a thing you do once, at a keyboard, and being told
+   * straight away that the address is wrong or the version does not match is
+   * the whole value of it. Opening a project on it later must not, which is
+   * why that is a separate call.
+   */
+  async addServer(input: { baseUrl: string; token?: string }): Promise<RemoteServer> {
+    const baseUrl = normalizeBaseUrl(input.baseUrl)
+    const identity = await new PeerClient(baseUrl, input.token).identify()
+    const server: RemoteServer = {
+      baseUrl,
+      name: identity.name,
+      ...(input.token === undefined || input.token === '' ? {} : { token: input.token }),
+      addedAt: Date.now(),
+    }
+    this.store.addServer(server)
+    this.invalidate()
+    return server
+  }
+
+  /** Forget a machine. Its projects go with it -- they address nothing now. */
+  removeServer(baseUrl: string): void {
+    const normalized = normalizeBaseUrl(baseUrl)
+    for (const project of this.store.projects) {
+      if (project.host.kind === 'remote' && project.host.baseUrl === normalized) {
+        this.store.removeProject(project.id)
+      }
+    }
+    this.store.removeServer(normalized)
+    this.invalidate()
+  }
+
+  /**
    * Register a project that lives on another machine.
    *
    * This writes a record and performs **no I/O at all**, deliberately.
@@ -432,9 +467,11 @@ export class Workspace {
     baseUrl: string
     root: string
     name?: string
-    token?: string
   }): Promise<Project> {
     const baseUrl = normalizeBaseUrl(input.baseUrl)
+    // The credential lives with the machine, so the machine has to be known
+    // before a project on it can be. `addServer` is what puts it there.
+    if (!this.store.server(baseUrl)) throw new HttpError(404, 'no such server')
     const root = input.root.trim()
     if (!root.startsWith('/')) throw new HttpError(400, 'a remote path must be absolute')
 
@@ -447,7 +484,7 @@ export class Workspace {
     const project: Project = {
       id,
       name: (input.name ?? '').trim() || basename(root),
-      host: { kind: 'remote', baseUrl, ...(input.token === undefined ? {} : { token: input.token }) },
+      host: { kind: 'remote', baseUrl },
       root,
       worktreeRoot: '',
       addedAt: Date.now(),

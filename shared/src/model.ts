@@ -8,7 +8,23 @@
  * case later must not change the local derivation or every running session is
  * orphaned. See `idFor` in server/src/git/worktree.ts.
  */
-export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string; token?: string }
+export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string }
+
+/**
+ * A machine this one can read projects from.
+ *
+ * The credential lives here, once per machine, and never on a project: several
+ * projects on one peer would otherwise be several copies of one secret to keep
+ * in step, and `Project` is in every snapshot the browser receives. Nothing on
+ * this type but `baseUrl` and `name` is ever sent to a client.
+ */
+export interface RemoteServer {
+  baseUrl: string
+  /** What the peer calls itself, as of when it was added. */
+  name: string
+  token?: string
+  addedAt: number
+}
 
 /** A registered git repository. Every registered project is open. */
 export interface Project {

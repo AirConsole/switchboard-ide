@@ -8,7 +8,7 @@ import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
-import { withoutToken } from '../remote/scope.js'
+import { hostKeyFor } from '../remote/scope.js'
 import { usage } from '../usage.js'
 
 /**
@@ -239,19 +239,42 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
         baseUrl: z.string().min(1),
         root: z.string().min(1),
         name: z.string().optional(),
-        token: z.string().optional(),
       })
       .parse(request.body)
     // Stripped on the way out: the caller is a browser, and the token it just
     // handed us is the one thing in this record it must not be handed back --
     // a reply is as good a place to read it from as any other.
-    return withoutToken(await workspace.openRemoteProject(body))
+    return workspace.openRemoteProject(body)
   })
 
-  /** The machines this one holds a pointer to, for the open dialog's picker. */
+  /**
+   * The machines this one can read from.
+   *
+   * Never the credential: this is the picker's list, and the token that reaches
+   * a peer is held here and sent server to server.
+   */
   app.get('/api/servers', async () =>
-    workspace.peers().map((peer) => ({ key: peer.key, baseUrl: peer.baseUrl })),
+    store.servers.map((server) => ({
+      key: hostKeyFor(server.baseUrl),
+      baseUrl: server.baseUrl,
+      name: server.name,
+    })),
   )
+
+  app.post('/api/servers', async (request) => {
+    const body = z
+      .object({ baseUrl: z.string().min(1), token: z.string().optional() })
+      .parse(request.body)
+    const server = await workspace.addServer(body)
+    return { key: hostKeyFor(server.baseUrl), baseUrl: server.baseUrl, name: server.name }
+  })
+
+  app.delete('/api/servers', async (request) => {
+    const body = z.object({ baseUrl: z.string().min(1) }).parse(request.body)
+    workspace.removeServer(body.baseUrl)
+    broadcastInvalidate()
+    return { ok: true }
+  })
 
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }

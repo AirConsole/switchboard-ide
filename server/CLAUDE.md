@@ -5,6 +5,8 @@ make one promise good: **a session survives the IDE.** The browser can close,
 this process can be restarted, and the agent keeps working.
 
 ```
+remote/         a project on another machine: scope.ts (ids), peer.ts (its API),
+                proxy.ts (forwarding /api), relay.ts (forwarding the socket)
 routes/api.ts   REST: projects, worktrees, sessions, changes, diffs, files, find
 routes/ws.ts    the single socket; JSON control frames + binary output frames
 workspace.ts    the one funnel for every project/worktree operation
@@ -392,12 +394,73 @@ through Caddy is refused, which is the failure to expect if it is forgotten.
 proxy. Rebinding can therefore still *read* it; that is information disclosure
 rather than execution, and closing it is a `Host` allow-list, not this.
 
+## A project on another machine
+
+This server is the **gateway**: it forwards, and the browser talks to one
+origin. See the root `CLAUDE.md` for why that shape and not the other one.
+
+Two pieces, both small, and they are small for one reason -- **a peer runs this
+same program**, so the path that answers here answers there and the whole of the
+translation is the ids:
+
+- `remote/proxy.ts` is one `preHandler` hook, not a remote branch in each of
+  twenty-five routes. Which machine a request is for is decided by the scoped id
+  *in the request*, wherever it sits: in the path, in `?host=`, or in a body
+  field. A route added later is forwarded without anyone remembering to.
+- `remote/relay.ts` is **one upstream socket per browser socket per peer**. That
+  is the load-bearing choice: the peer then sees one client per browser, so its
+  own `sizeOwner` / `inputOwner` arbitration decides between two viewers of a
+  remote terminal -- the same rule in the same place as for a local one, rather
+  than a second implementation of it here. It also keeps the peer's
+  `clientCount() > 0`, so the peer's git poll runs and its `invalidate`
+  broadcasts arrive; the gateway is pushed to, not polling.
+
+Terminal bytes are forwarded with four header bytes rewritten and the payload
+untouched -- `streamId` is a `uint32` in a five-byte header, never a string id.
+The gateway hands out stream numbers from its own range, because a peer's and
+the local engine's both start at 1 and would collide in the browser's
+`streamToSession` map.
+
+Three things measured rather than reasoned, each of which would have shipped:
+
+- **A scoped id has to be URL-safe.** It was the base URL and `|`, which puts
+  `%2F` and `%3A` in a path segment -- and Caddy normalizes encoded slashes, so
+  the request arrives split into segments matching no route. The host key is now
+  short, opaque and derived (`h` + eight hex), and a scoped id needs no encoding
+  at all.
+- **"Looks like a scoped id" has to be narrow.** The proxy decided which machine
+  a request was for by looking for the separator in any string in the body. A
+  todo's prompt is a string: `rm -rf ~` routed an ordinary prompt to a machine
+  that does not exist. It now matches `h[0-9a-f]{8}~`, and only the fields that
+  carry ids are read at all.
+- **Rewriting ids by field name is only sound while no other type reuses those
+  names.** `Commit` has `hash`, and the file types have no id, which is what
+  makes one function able to serve every route. `test/scope.test.ts` asserts
+  which *types* carry an id rather than which names exist -- comparing names left
+  adding `id` to `Commit` green, and that is the case that would silently
+  rewrite a commit hash as though it addressed a worktree.
+
+And two about being the *other* machine:
+
+- **`worktrees()` skips a remote project.** Local git would not fail on its
+  root, it would *answer*, about whatever sits at that path here -- and the same
+  checkout path on two machines is the normal case, not a coincidence. The ids
+  would then collide byte for byte and `resolve()` would return whichever came
+  first. `createWorktree` and `closeProject` refuse one for the same reason.
+- **The credential lives with the machine, never on a project.** `Project` is in
+  every snapshot the browser receives; `RemoteServer` is not. Several projects on
+  one peer would otherwise be several copies of one secret to keep in step.
+  `state.json` is written `mode: 0o600` because of it, and the mode is set on the
+  temp file so there is no instant where the contents exist under the umask.
+
 ## Env
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SWB_HOST` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
 | `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated. Required behind a proxy. |
+| `SWB_TOKEN` | unset | Set to be somebody's peer: every `/api` and `/ws` call must carry it. |
+| `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |
 | `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |
 | `SWB_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |
 | `SWB_TMUX_CONF` | `server/tmux.conf` | The config loaded with `-f`. |

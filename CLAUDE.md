@@ -165,7 +165,8 @@ browser ── one WebSocket (JSON control + binary output frames) ──> serve
    xterm.js per pane                     SessionEngine ──> node-pty ──> tmux
    fetch for everything else                    │          (private socket)
                                                 ├─ @xterm/headless mirror/session
-                                                └─ git worktree / status / diff
+                                                ├─ git worktree / status / diff
+                                                └─ peer (another machine's server)
 ```
 
 - `shared/` — the wire contract: the domain model and the WebSocket protocol.
@@ -178,8 +179,10 @@ browser ── one WebSocket (JSON control + binary output frames) ──> serve
 **Ids are derived from absolute paths, and the derivation must not change.**
 `idFor` in `server/src/git/worktree.ts` hashes the path; a worktree's id is
 recorded inside its tmux session's metadata, so changing how local ids are
-computed orphans every running session. A remote host will namespace its ids by
-base URL; local ids keep hashing the bare path, deliberately.
+computed orphans every running session. Local ids keep hashing the bare path,
+deliberately; a peer's are namespaced **on the server**, by a short key derived
+from its base URL, because `/home/andrin/src/ide` on two machines hashes
+identically.
 
 **One tmux client per session, owned by the server.** Browsers are never tmux
 clients, which removes the whole class of "tmux resized the window to the
@@ -265,13 +268,60 @@ Commit messages say what changed and why it was wrong before, and record what
 was measured. They are long here on purpose: most of the traps in this codebase
 were found once and would be re-introduced without a note saying so.
 
-Do not add abstractions for things that do not exist yet. Two seams are named
-ahead of time — `Project.host` and the id namespacing — and both are documented
-where they are.
+Do not add abstractions for things that do not exist yet. The two seams that
+were named ahead of time — `Project.host` and the id namespacing — are both
+used now, by the gateway described below.
+
+## Remote projects
+
+A project can live on another machine running this same IDE, and **this server
+is the gateway**. The browser still talks to one origin and never learns that a
+project is remote: `api.ts`, `store.ts`, `socket.ts` and the whole of the layout
+are untouched by the feature. Only the open dialog knows, because somebody has
+to pick the machine.
+
+That is the whole of the design, and everything else follows from it:
+
+- **A peer needs no public exposure.** No DNS, no TLS, no Caddy of its own, no
+  login. It is reached from the gateway, on the network the two share, which is
+  the topology this was built for: the machines are together and only you are
+  somewhere else. A proxy's cost is the *detour*, not the peer's round trip --
+  `dist(browser,gateway) + dist(gateway,peer) - dist(browser,peer)` -- and over
+  a LAN hop that is about a millisecond on terminal echo.
+- **A peer is an unmodified instance.** It runs this same program and has no
+  idea anyone remote is asking. That is what lets one hook forward every `/api`
+  route instead of twenty-five routes each growing a remote branch, and one
+  relay carry the socket: the path that answers here answers there.
+- **Todos live with the worktree**, so RUN NEXT on a remote worktree is
+  dispatched by the peer's own dispatcher, with no browser open anywhere. They
+  are created against the peer for exactly that reason.
+- **The layout is the viewer's.** `ui` is read and written only on the server
+  that served the page; a peer's snapshot carries one and it is dropped at the
+  boundary.
+- **A machine that is off keeps its tab.** The UI prunes stored layout for
+  worktrees it cannot see, so "that machine is off" must never read as "those
+  worktrees are gone" -- it would cost panels and open files permanently. The
+  snapshot holds what a peer last said, and a project's id is derived from the
+  root and the base URL so it exists even when nothing has ever answered.
+- **Authentication is a token between servers, and there is no login.** A peer
+  sets `SWB_TOKEN`, which is also what makes it safe for it to bind an address
+  other than loopback. Your browser never talks to a peer, so there is no CORS,
+  no cookie, no preflight -- and Caddy keeps its `basicauth` exactly as it is.
+
+Testing needs two instances:
+
+```sh
+scripts/scratch.sh up          # the gateway
+scripts/scratch.sh up peer     # the machine a project lives on; prints its token
+scripts/scratch.sh down peer   # each one goes down by name
+```
 
 ## Not built yet
 
-- Remote projects: a project on another Switchboard server, with this server as
-  the gateway. The seams are named in `server/CLAUDE.md`.
+- Installing and updating: there is no way to install this on a fresh box, so a
+  peer is a checkout someone built by hand.
+- Telling you *why* a machine is quiet: an unreachable peer's project keeps its
+  tab and shows the worktrees it last had, but nothing yet says which of those
+  it is.
 - Registering as a Claude Code IDE (`~/.claude/ide/<port>.lock`) so agents get
   `openDiff` and diagnostics against this IDE.

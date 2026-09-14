@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import type { Project } from '@switchboard/shared'
 
 /**
  * Ids a peer handed us, made unambiguous on this machine.
@@ -99,16 +98,3 @@ export const scopeTree = <T>(host: HostKey, value: T): T =>
 /** Every id in a request, made the peer's again. */
 export const unscopeTree = <T>(value: T): T =>
   walk(value, (id) => unscopeId(id)?.id ?? id) as T
-
-/**
- * A remote project's pointer, with the credential taken out.
- *
- * `Project.host` is persisted with the peer's token in it, and the snapshot
- * goes to the browser -- so this is the one place that decides the token never
- * does. Dropped rather than blanked: a key that is absent cannot be read back
- * and written out again by a client that round-trips what it was given.
- */
-export const withoutToken = (project: Project): Project =>
-  project.host.kind === 'remote'
-    ? { ...project, host: { kind: 'remote', baseUrl: project.host.baseUrl } }
-    : project

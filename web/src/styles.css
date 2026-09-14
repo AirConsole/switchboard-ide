@@ -3057,3 +3057,83 @@ button {
   color: var(--graphite-dim);
   cursor: default;
 }
+
+/* --------------------------------------------------------------- machines -- */
+
+/*
+ * Which machine the open dialog is looking at.
+ *
+ * Greyscale like everything else: amber and green answer "is an agent blocked
+ * on you" and "has one finished", and which machine a picker is pointed at is
+ * neither. The one that is on is said with brightness, the way the tab you are
+ * in is.
+ */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips__pair {
+  display: inline-flex;
+}
+
+.chip {
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--slab-raised);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--graphite);
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--rule-bright);
+}
+
+.chip--on {
+  border-color: var(--graphite);
+  color: var(--bone);
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Joined to the chip it belongs to, so the × cannot read as its own machine. */
+.chips__pair .chip:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.chip--drop {
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-inline: 7px;
+}
+
+.chip--drop:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.addserver {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 12ch) auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* The hint runs under all three, rather than squeezing a fourth column in. */
+.addserver .field__hint {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 520px) {
+  .addserver {
+    grid-template-columns: 1fr;
+  }
+}

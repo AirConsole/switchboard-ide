@@ -62,16 +62,63 @@ export interface BrowseResult {
   entries: { name: string; path: string; isRepo: boolean }[]
 }
 
+/** A machine this server can read from, as the picker sees it. */
+export interface ServerRow {
+  /** The short key that scopes its ids; what `host` takes everywhere. */
+  key: string
+  baseUrl: string
+  name: string
+}
+
 export const api = {
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
 
   /** Claude's usage limits. The server caches these for five minutes. */
   usage: () => request<Usage>('/api/usage'),
-  /** Closed projects, newest first; already filtered to ones still on disk. */
-  recents: () => request<RecentProject[]>('/api/recents'),
-  browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
-  openProject: (path: string, opts: { create?: boolean; commitExisting?: boolean } = {}) =>
-    request<Project>('/api/projects', {
+  /**
+   * Closed projects, newest first; already filtered to ones still on disk.
+   *
+   * `host` names a machine the server holds a pointer to, and everything about
+   * reaching it is the server's business -- this is still our own origin. That
+   * is the whole of what the browser knows about remote projects.
+   */
+  recents: (host?: string) =>
+    request<RecentProject[]>(`/api/recents${host === undefined ? '' : `?host=${host}`}`),
+  browse: (path: string, host?: string) =>
+    request<BrowseResult>(
+      `/api/browse?path=${encodeURIComponent(path)}${host === undefined ? '' : `&host=${host}`}`,
+    ),
+
+  /** The machines this server can read a project from. */
+  servers: () => request<ServerRow[]>('/api/servers'),
+  forgetServer: (baseUrl: string) =>
+    request<{ ok: true }>('/api/servers', {
+      method: 'DELETE',
+      body: JSON.stringify({ baseUrl }),
+    }),
+
+  /**
+   * Register a project that lives on another machine.
+   *
+   * Two steps presented as one action, and they go to different machines: the
+   * peer opens the project, because its git and its tmux are what will run it,
+   * and then this server records the pointer so it comes back after a reload.
+   */
+  addServer: (input: { baseUrl: string; token?: string }) =>
+    request<ServerRow>('/api/servers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  openRemoteProject: (input: { baseUrl: string; root: string; name?: string }) =>
+    request<Project>('/api/projects/remote', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  openProject: (
+    path: string,
+    opts: { create?: boolean; commitExisting?: boolean; host?: string } = {},
+  ) =>
+    request<Project>(`/api/projects${opts.host === undefined ? '' : `?host=${opts.host}`}`, {
       method: 'POST',
       body: JSON.stringify({
         path,

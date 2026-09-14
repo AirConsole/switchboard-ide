@@ -88,11 +88,15 @@ beforeEach(async () => {
   }
 })
 
-const addRemote = async (root = '/srv/ide') =>
-  workspace.openRemoteProject({ baseUrl: peerUrl, root, token: 'tok' })
+/** A machine is registered before a project on it can be; see `addServer`. */
+const addRemote = async (root = '/srv/ide') => {
+  if (!store.server(peerUrl)) await workspace.addServer({ baseUrl: peerUrl, token: 'tok' })
+  return workspace.openRemoteProject({ baseUrl: peerUrl, root })
+}
 
 describe('a project on another machine', () => {
-  it('registers without touching the network or the disk', async () => {
+  it('registers a project without touching the network or the disk', async () => {
+    await workspace.addServer({ baseUrl: peerUrl, token: 'tok' })
     answering = false
     // Registering must not fail because the peer is momentarily down: that is
     // exactly when you are trying to add it.
@@ -104,6 +108,24 @@ describe('a project on another machine', () => {
 
   it('refuses a path that is not absolute, rather than resolving it here', async () => {
     await expect(addRemote('srv/ide')).rejects.toThrow(/absolute/)
+  })
+
+  it('refuses a project on a machine it has never been told about', async () => {
+    await expect(
+      workspace.openRemoteProject({ baseUrl: peerUrl, root: '/srv/ide' }),
+    ).rejects.toThrow(/no such server/)
+  })
+
+  /*
+   * The credential lives with the machine, once, and never on a project --
+   * `Project` is in every snapshot the browser receives. The type forbids it
+   * now; this checks the registry does not leak it by another route.
+   */
+  it('never puts a credential anywhere a client can see', async () => {
+    await addRemote()
+    const snapshot = await workspace.snapshot()
+    expect(JSON.stringify(snapshot)).not.toContain('tok')
+    expect(store.server(peerUrl)?.token).toBe('tok')
   })
 
   /*
@@ -181,8 +203,9 @@ describe('a project on another machine', () => {
   it('still shows the project when a peer has never answered', async () => {
     // A cold start with the peer down: nothing is remembered, and the tab has
     // to survive anyway or the project looks deleted rather than unreachable.
+    await workspace.addServer({ baseUrl: peerUrl, token: 'tok' })
     answering = false
-    const pointer = await addRemote()
+    const pointer = await workspace.openRemoteProject({ baseUrl: peerUrl, root: '/srv/ide' })
     const snapshot = await workspace.snapshot()
     expect(snapshot.projects.map((p) => p.id)).toContain(pointer.id)
     expect(snapshot.worktrees).toHaveLength(0)

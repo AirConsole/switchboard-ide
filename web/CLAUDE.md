@@ -156,6 +156,25 @@ The pieces, and why each is the way it is:
   on the pill's own `--rule`, against 3.90 if the hover lit a `--rule-bright`
   ring behind it.
 
+## Remote projects are not this package's problem
+
+A project can live on another machine, and **nothing here knows**. `api.ts`
+still speaks to one origin, `socket.ts` still opens one socket, `store.ts` still
+merges one snapshot, and a worktree id is a worktree id. The server forwards and
+namespaces; see `server/CLAUDE.md`.
+
+That is deliberate and worth keeping. The subtle parts of this package -- the
+unit arithmetic, `useNearViewport` and the WebGL budget it protects, the
+document-level capture listeners every shortcut is built on, the focus model,
+and `ui` being one last-writer-wins document -- are all things a second origin
+in the row would have broken, and an iframe per window would have broken all
+five at once.
+
+The one component that knows is `OpenProjectDialog`, because somebody has to
+pick the machine: a `host` key goes to `browse`, `recents` and `openProject`,
+and the server decides what it means. Adding a machine takes its token, which
+goes to our own server and no further -- the browser never talks to a peer.
+
 ## The row is a grid of units
 
 `Overview.tsx` holds the only layout arithmetic:

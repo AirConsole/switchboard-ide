@@ -7,9 +7,7 @@ import {
   scopeTree,
   unscopeId,
   unscopeTree,
-  withoutToken,
 } from '../src/remote/scope.js'
-import type { Project } from '@switchboard/shared'
 
 describe('scoping a peer', () => {
   it('leaves a local id exactly as it was', () => {
@@ -132,18 +130,5 @@ describe('scoping a peer', () => {
     // the host key, which only the first one may split.
     expect(unscopeId('h1234abcd~wt-1')).toEqual({ host: 'h1234abcd', id: 'wt-1' })
     expect(unscopeId('h1234abcd~wt~1')).toEqual({ host: 'h1234abcd', id: 'wt~1' })
-  })
-
-  it('never lets a peer credential reach the browser', () => {
-    // The snapshot goes to the client, and `Project.host` is persisted with the
-    // token in it. Dropped rather than blanked, so a client that round-trips
-    // what it was given cannot write one back.
-    const project = {
-      id: 'p-1',
-      host: { kind: 'remote', baseUrl: 'http://peer:8300', token: 'hunter2' },
-    } as Project
-    const safe = withoutToken(project)
-    expect(JSON.stringify(safe)).not.toContain('hunter2')
-    expect(safe.host).toEqual({ kind: 'remote', baseUrl: 'http://peer:8300' })
   })
 })
