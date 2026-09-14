@@ -16,9 +16,12 @@
 :root {
   /* Ground: cool slate-ink rather than pure black, so terminal blacks read as
      content and the chrome recedes behind them. */
+  /*
+   * Ink, in the word's own sense: what you write with on a light ground -- the
+   * RUN NEXT button when it is on, and nothing else. It gave up the surface job
+   * to --level-ground, which holds the same value and says which it is.
+   */
   --ink: #10141a;
-  --slab: #171c24;
-  --slab-raised: #1d232d;
   --rule: #232a35;
   --rule-bright: #2f3846;
   /*
@@ -38,66 +41,69 @@
    * part that makes a strip legible: dark frame, dark unselected tabs, and the
    * one you are in the lightest thing there.
    *
-   * --tab-on stops here because --graphite, which everything quiet on a tab is
-   * written in and which lands on this ground on the tab you are in, measures
+   * --level-lit stops here because --graphite, which everything quiet on a tab
+   * is written in and which lands on this ground on the tab you are in, measures
    * 4.54:1 against it. One more rung is under the 4.5 floor.
    */
   /*
-   * The bar's own ground, separate from --ink, which is the page's.
+   * THE LADDER. Six levels, deepest first, and every surface in the app picks
+   * one -- it does not invent a value.
    *
-   * They used to be the same value, and that was the whole contrast problem:
-   * the sleeve measured 1.08:1 against it, so the trough that is supposed to
-   * say "these tabs are one project" was not visible at all -- and the project
-   * mark, having no enclosure to head, read as a bead floating before the tabs.
-   * Chrome, which this strip is modelled on, runs its frame against its toolbar
-   * at 1.33:1 and gives every group a hue besides; this interface will not
-   * spend hue on identity, so the ground has to do the work alone.
+   * They are named for depth rather than for whatever component first needed
+   * them, which is how there came to be twelve greys describing five rungs:
+   * --sleeve, --tab-head, --tab-rest and --rule-bright-as-a-fill were all
+   * levels that already existed under another name, and three of those pairs
+   * measured 1.010, 1.014 and 1.046 apart -- one colour with two spellings,
+   * which nobody can see and nobody keeps in sync. `grep -- --level-` now finds
+   * every surface at a given depth.
+   *
+   * The values are as they were. Respacing them was measured and rejected: the
+   * invisible steps are all at the dark end, because contrast is
+   * (L1+0.05)/(L2+0.05) and near black the constant swamps the luminance --
+   * --level-frame and --level-ground differ by 72% in luminance and measure
+   * 1.05:1. Widening those costs the light end, where an evenly stepped
+   * six-level scale puts --graphite at 4.41 and 3.17, under the floor on two
+   * levels instead of one. Nobody reads anything against the dark steps; the
+   * light ones are where the text is.
    */
-  --bar: #0a0d12;
+  --level-frame: #0a0d12;
+  --level-ground: #10141a;
+  --level-panel: #171c24;
+  --level-raised: #1d232d;
+  --level-object: #2b3341;
+  --level-lit: #3b4657;
   /*
-   * The sleeve and the project's head are *aliases*, not values of their own.
+   * And hover is an operation, not a level: part-way from where you are to
+   * where clicking takes you, so it cannot drift from either end.
    *
-   * They were #1e242f and #171d26 -- 1.014:1 from --slab-raised and 1.010:1
-   * from --slab. Two colours that close are one colour with two spellings: no
-   * eye resolves the step and no hand keeps them in sync, so they drift apart
-   * the first time either end is retuned and nobody can see that they have.
-   * Naming the level the strip is actually sitting on says the true thing, and
-   * `grep` finds every surface at that depth in one search.
-   *
-   * Folding them changed nothing visible and two measurements improved: the
-   * project head reads 1.35:1 against a segment where it read 1.33, and the
-   * seam between segments 1.24:1 where it read 1.23.
+   * 40% and not 50% because --graphite has to survive it -- the halfway mix
+   * lands on 4.48:1, just under the floor, and this lands on 4.62.
    */
-  --sleeve: var(--slab-raised);
-  --tab-head: var(--slab);
+  --level-hover: color-mix(in srgb, var(--level-lit) 40%, var(--level-object));
   /*
-   * The tabs' own ladder. Separate values rather than --rule and --rule-bright,
-   * which are borders and dividers all over the app and have no business moving
-   * when the strip is retuned -- and, unlike the two above, genuinely distinct:
-   * --tab-hover folded into --rule-bright would drop the hover step over a
-   * resting tab from 1.16:1 to 1.07, which is most of the hover.
-   */
-  --tab-rest: #2b3341;
-  --tab-hover: #323b49;
-  --tab-on: #3b4657;
-  /*
-   * What the quiet things on a tab are written in once it is the lit one.
-   *
-   * --graphite is 4.54:1 on the old --tab-on and 3.90:1 on this one, under the
-   * floor -- so a brighter tab is not free, it costs this second value. It
-   * measures 4.89:1 there.
+   * What quiet text is written in, per level. Five of the six take --graphite
+   * (7.94, 7.54, 6.98, 6.44, 5.19); on --level-lit it falls to 3.90 and this
+   * takes over at 4.89. That pairing is the real ceiling on the ladder: one
+   * quiet grey buys about five levels, so a seventh is not a colour decision,
+   * it is a third grey.
    */
   --quiet-on: #b3bac6;
+  /*
+   * The strip's own names for two of those levels, kept because the comments
+   * around the tab strip are written in them. Aliases, never values.
+   */
+  --sleeve: var(--level-raised);
+  --tab-head: var(--level-panel);
 
   /*
    * Three steps of text, and every one of them readable.
    *
    * Measured against the grounds below, the old greys were 4.71:1 (graphite)
-   * and 2.74:1 (graphite-dim) on --slab -- the dim one well under the 4.5:1
+   * and 2.74:1 (graphite-dim) on --level-panel -- the dim one well under the 4.5:1
    * text threshold and under even the 3:1 large-text one, which is why every
    * status label, branch name and note in the interface was hard to read. The
-   * ladder is now 13.4 : 7.0 : 5.2 on --slab, and nothing drops below 4.8 on
-   * any ground including --slab-raised, which the bar uses on hover.
+   * ladder is now 13.4 : 7.0 : 5.2 on --level-panel, and nothing drops below
+   * 4.8 on any ground including --level-raised, which the bar uses on hover.
    *
    * Still a ladder, though: quiet is a real job here, and these stay clearly
    * subordinate to --bone rather than all arriving at the same brightness.
@@ -119,7 +125,7 @@
    *
    * Not "nothing is running" -- that stays grey, because a worktree with no
    * agent has finished nothing. Matched to --signal's luminance (9.81 : 9.70
-   * on --slab) so the two read as peers: amber is the one that wants you, green
+   * on --level-panel) so the two read as peers: amber is the one that wants you, green
    * the one that is waiting to be read, and neither shouts over the other.
    */
   --done: #4ade80;
@@ -293,7 +299,7 @@ body {
 body {
   /* The ground the row of windows sits on: black, so the windows and the strip
      are the only lit things on it. */
-  background: var(--ink);
+  background: var(--level-ground);
   color: var(--bone);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -356,7 +362,7 @@ button {
    */
   background:
     linear-gradient(var(--rule), var(--rule)) bottom left / 100% 1px no-repeat,
-    var(--bar);
+    var(--level-frame);
   min-width: 0;
 }
 
@@ -446,9 +452,9 @@ button {
    */
   overflow: hidden;
   /*
-   * The trough the tabs sit in: a rung above the bar's --ink, and the ground an
-   * unselected tab is read against. The step that does the work is not this one
-   * -- it is the tab you are in, --tab-on, at 1.54:1 above it.
+   * The trough the tabs sit in: a rung above --level-frame, and the ground a
+   * seam is read against. The step that does the work is not this one -- it is
+   * the tab you are in, --level-lit, at 1.75:1 above it.
    */
   background: var(--sleeve);
 }
@@ -569,8 +575,8 @@ button {
 }
 
 .tabgroup__add:hover {
-  /* With the pointer on it, the same step a tab takes: up toward --tab-on. */
-  background: var(--tab-hover);
+  /* With the pointer on it, the same step a tab takes: up toward --level-lit. */
+  background: var(--level-hover);
   color: var(--bone);
 }
 
@@ -620,7 +626,7 @@ button {
 .usage__track {
   height: 3px;
   border-radius: 2px;
-  background: var(--rule-bright);
+  background: var(--level-object);
   overflow: hidden;
 }
 
@@ -645,7 +651,7 @@ button {
  * How long until this limit comes back.
  *
  * A step quieter than the percent beside it, because it answers the second
- * question rather than the first: --graphite-dim measures 5.24:1 on --slab,
+ * question rather than the first: --graphite-dim measures 5.24:1 on --level-panel,
  * which clears the floor, and the ladder is what says which number you are
  * meant to read first.
  */
@@ -659,7 +665,7 @@ button {
  * The last read failed, so these are the previous numbers. Dimmed rather than
  * removed: stale numbers beat none, and the tooltip says what went wrong.
  *
- * 0.8 and not less, because opacity is a contrast cut: --graphite over --slab
+ * 0.8 and not less, because opacity is a contrast cut: --graphite over --level-panel
  * measures 6.98:1, and dimming it to 0.5 would leave the labels at 2.74:1 --
  * under the 4.5 floor the rest of the interface keeps. 0.8 measures 4.93:1.
  */
@@ -692,7 +698,7 @@ button {
 
 .topbar__open:hover {
   color: var(--bone);
-  background: var(--slab-raised);
+  background: var(--level-raised);
 }
 
 /*
@@ -754,7 +760,7 @@ button {
    * but the difference between a shape and no shape -- and it leaves the tab
    * you are in 1.30:1 above it, which is the step that has to survive.
    */
-  --tab-fill: var(--tab-rest);
+  --tab-fill: var(--level-object);
   /*
    * The status is a bar down the leading edge, where an 11px bullet used to be:
    * about four times the area, at the edge the eye lands on as it runs along a
@@ -832,15 +838,15 @@ button {
 /*
  * The pointer lifts the fill a rung, and only the fill.
  *
- * --rule-bright is 1.22:1 above a resting tab and on the way to --tab-on, which
- * is where a hover should point. The label stays --graphite here on purpose:
+ * --level-hover is mixed 40% of the way from --level-object to --level-lit,
+ * which is where a hover should point. The label stays --graphite here on purpose:
  * the tab you are in is only 1.06:1 lighter than a hovered one, so if hovering
  * also lit the label there would be nothing left to tell the two apart. Bright
  * text is what "you are in this one" means, and it outranks an echo of the
  * pointer.
  */
 .tab:not(.tab--active):hover {
-  --tab-fill: var(--tab-hover);
+  --tab-fill: var(--level-hover);
 }
 
 /*
@@ -852,7 +858,7 @@ button {
  * which is exactly what Chrome's active tab does against its toolbar.
  */
 .tab--active {
-  --tab-fill: var(--tab-on);
+  --tab-fill: var(--level-lit);
 }
 
 .tab--active > .tab__body {
@@ -862,7 +868,7 @@ button {
 /*
  * Everything quiet on the lit segment comes up with its ground.
  *
- * --graphite cleared the old --tab-on at 4.54:1 and is 3.90:1 on this one. A
+ * --graphite cleared the old #333c4b at 4.54:1 and is 3.90:1 on --level-lit. A
  * brighter tab was never free; this is the price, and it is the whole price.
  */
 .tab--active .tab__close,
@@ -958,7 +964,7 @@ button {
 }
 
 .tab__close:hover {
-  background: var(--rule-bright);
+  background: var(--level-hover);
   color: var(--bone);
 }
 
@@ -1255,7 +1261,7 @@ button {
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: var(--slab);
+  background: var(--level-panel);
   border: 1px solid var(--rule);
   border-left: var(--rail) solid var(--rule-bright);
   border-radius: var(--radius);
@@ -1324,15 +1330,15 @@ button {
 }
 
 .tile__bar:hover {
-  background: var(--slab-raised);
+  background: var(--level-raised);
 }
 
 /*
  * The window you are in, at the top of it.
  *
  * The strip already says which worktree you are in by making its tab the light
- * one; this is the same sentence finished at the other end. --rule-bright is
- * 1.45:1 above every other window's bar and sits one rung under --tab-on, so
+ * one; this is the same sentence finished at the other end. --level-object is
+ * 1.35:1 above every other window's bar and sits two rungs under --level-lit, so
  * the bar and the tab read as the same lit surface at the two ends of the same
  * sentence.
  *
@@ -1342,11 +1348,19 @@ button {
  * the toggles are already --bone and --graphite and clear it as they are.
  */
 .tile--current .tile__bar {
-  background: var(--rule-bright);
+  background: var(--level-object);
 }
 
 .tile--current .tile__bar:hover {
-  background: var(--tab-on);
+  /*
+   * --level-hover, not --level-lit, and that is a fix rather than a rename.
+   * This pointed at --tab-on, and when --tab-on went up a rung for the tab
+   * strip it took this bar with it -- putting --graphite, which the project,
+   * the branch and the prompt in this bar are written in, on 3.90:1. Hover is
+   * the rung between an object and the lit one, which is what this always was,
+   * and --graphite clears it at 4.62.
+   */
+  background: var(--level-hover);
 }
 
 .tile--current .tile__project,
@@ -1524,7 +1538,7 @@ button {
 
 .tile__remove:hover {
   color: var(--danger);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 .tile__icon {
@@ -1642,7 +1656,7 @@ button {
   overflow: auto;
   padding: 8px 10px;
   border-left: 1px solid var(--rule-bright);
-  background: var(--slab-raised);
+  background: var(--level-raised);
   color: var(--graphite);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1724,7 +1738,7 @@ button {
 
 .tile__toggle:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /*
@@ -1790,7 +1804,7 @@ button {
 
 .termtab:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* The same underline as a lit panel toggle and a shown chip: one mark for "this
@@ -1831,7 +1845,7 @@ button {
 
 .termtab--add:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* ------------------------------------------------------- empty and errors -- */
@@ -1887,7 +1901,7 @@ button {
   padding: 7px 14px;
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
-  background: var(--slab-raised);
+  background: var(--level-raised);
   font-family: var(--font-ui);
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -1936,7 +1950,7 @@ button {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  background: var(--slab);
+  background: var(--level-panel);
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
   overflow: hidden;
@@ -2002,7 +2016,7 @@ button {
 
 .field__input {
   padding: 8px 10px;
-  background: var(--ink);
+  background: var(--level-ground);
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
   font-family: var(--font-mono);
@@ -2027,7 +2041,7 @@ button {
  *
  * Same size as `.field__hint`, since it is the same kind of line under the same
  * body copy -- only the colour changes, and it is the button's own: --danger
- * measures 5.64:1 on the dialog's --slab. Not amber, which means an agent is
+ * measures 5.64:1 on the dialog's --level-panel. Not amber, which means an agent is
  * blocked on you and nothing else, and not a box you tick: a working Claude and
  * a queue of todos go whatever you answer, so there is nothing here to decide.
  */
@@ -2051,7 +2065,7 @@ button {
 .picker {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--ink);
+  background: var(--level-ground);
   max-height: 300px;
   overflow-y: auto;
 }
@@ -2074,7 +2088,7 @@ button {
 }
 
 .picker__row:hover {
-  background: var(--slab-raised);
+  background: var(--level-raised);
 }
 
 .picker__tag {
@@ -2133,11 +2147,11 @@ button {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--ink);
+  background: var(--level-ground);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--rule-bright);
+  background: var(--level-object);
   border-radius: 5px;
 }
 
@@ -2220,12 +2234,12 @@ button {
 
 .git__row:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 .git__row--on {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
 /* Two letters, so it is sized for two letters -- an abbreviated hash gets its
@@ -2335,7 +2349,7 @@ button {
 
 .git__reload:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /*
@@ -2355,7 +2369,7 @@ button {
   gap: 8px;
   padding: 3px 0 3px 4px;
   border-left: 2px solid var(--rule-bright);
-  background: var(--slab);
+  background: var(--level-panel);
   font-size: 12px;
   color: var(--bone);
 }
@@ -2406,7 +2420,7 @@ button {
   gap: 6px;
   flex: none;
   padding: 10px;
-  background: var(--slab-raised);
+  background: var(--level-raised);
   /* At the foot of the panel, so the rule that separates it from the queue is
      above it. */
   border-top: 1px solid var(--rule-bright);
@@ -2416,7 +2430,7 @@ button {
   padding: 6px 8px;
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
-  background: var(--ink);
+  background: var(--level-ground);
 }
 
 .todo__newfoot {
@@ -2508,7 +2522,7 @@ button {
 .todo__prompt:focus {
   outline: none;
   border-color: var(--pulse);
-  background: var(--ink);
+  background: var(--level-ground);
   color: var(--bone);
 }
 
@@ -2547,7 +2561,7 @@ button {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--graphite);
-  background: var(--slab);
+  background: var(--level-panel);
   white-space: nowrap;
 }
 
@@ -2636,7 +2650,7 @@ button {
   padding: 4px;
   border: 1px solid var(--rule-bright);
   border-radius: var(--radius);
-  background: var(--slab-raised);
+  background: var(--level-raised);
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   font-family: var(--font-ui);
   font-size: 12px;
@@ -2794,7 +2808,7 @@ button {
 
 .files__mode:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 /* The same underline as a lit panel toggle and a shown chip: one mark for
@@ -2928,12 +2942,12 @@ button {
 
 .files__commit:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 .files__commit--on {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
 .files__hash {
@@ -2970,12 +2984,12 @@ button {
 
 .files__row:hover {
   color: var(--bone);
-  background: var(--slab);
+  background: var(--level-panel);
 }
 
 .files__row--on {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-lit);
 }
 
 /*
@@ -3082,7 +3096,7 @@ button {
   gap: 10px;
   padding: 4px 8px;
   border-left: 2px solid var(--rule-bright);
-  background: var(--slab);
+  background: var(--level-panel);
   color: var(--bone);
 }
 
@@ -3191,7 +3205,7 @@ button {
 
 .files__collapse:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* Brightness, not colour: amber means an agent is blocked on you, and an unsaved
@@ -3218,7 +3232,7 @@ button {
 .files__save:hover:not(:disabled),
 .files__reload:hover {
   color: var(--bone);
-  background: var(--rule-bright);
+  background: var(--level-hover);
 }
 
 /* Present whenever a file is open, so the first keystroke does not shove the
