@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#10141a" />
+    <title>Switchboard</title>
+    <!--
+      The only thing the service worker caches, shown only when the server is
+      unreachable. Self-contained on purpose: it cannot reference the app's CSS,
+      because the moment it did, the worker would have to cache that too and the
+      cache would have started eating the app.
+
+      Colours and the font stack are copied from styles.css rather than imported,
+      for the same reason. They are a handful of values on a page that says one
+      sentence; if they drift, nothing breaks.
+    -->
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 24px;
+        background: #10141a;
+        color: #dfe4ec;
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        text-align: center;
+      }
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        /* Not --signal and not --done. Amber means an agent is blocked on you and
+           green means one has come to rest; neither is true of a server that is
+           not answering, and spending either here would be a lie at a glance. */
+        background: #9fa6b2;
+      }
+      p {
+        margin: 0;
+        max-width: 32em;
+        color: #9fa6b2;
+        line-height: 1.5;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+        color: #dfe4ec;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dot"></div>
+    <p>
+      Switchboard is not answering. Your worktrees and their sessions are running in
+      <code>tmux</code> and are not affected by this — they outlive the server, and the
+      window comes back where you left it once it is up.
+    </p>
+  </body>
+</html>
