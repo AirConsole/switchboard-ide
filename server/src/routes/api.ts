@@ -272,8 +272,21 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.post('/api/servers', async (request) => {
     const body = z
-      .object({ baseUrl: z.string().min(1), token: z.string().optional() })
-      .parse(request.body)
+      .object({
+        baseUrl: z.string().min(1),
+        /*
+         * Required, not optional. A machine with no `SWB_TOKEN` answers `/api`
+         * only to loopback and its own published names -- which a gateway
+         * addressing it by hostname or LAN IP is not -- so a token-less peer
+         * cannot be read at all. Accepting one here offered a configuration
+         * that cannot work and then blamed the token, which is the one thing
+         * that was not the problem.
+         */
+        token: z.string().min(1, 'that machine needs its SWB_TOKEN'),
+      })
+      // Defaulted before parsing, so a *missing* token gets the sentence below
+      // rather than zod's "expected string, received undefined".
+      .parse({ token: '', ...(request.body as Record<string, unknown>) })
     const server = await workspace.addServer(body)
     // Other tabs, and this tab's own relay, have to learn there is a machine.
     broadcastInvalidate()

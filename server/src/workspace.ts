@@ -593,13 +593,13 @@ export class Workspace {
    * the whole value of it. Opening a project on it later must not, which is
    * why that is a separate call.
    */
-  async addServer(input: { baseUrl: string; token?: string }): Promise<RemoteServer> {
+  async addServer(input: { baseUrl: string; token: string }): Promise<RemoteServer> {
     const baseUrl = normalizeBaseUrl(input.baseUrl)
     const identity = await new PeerClient(baseUrl, input.token).identify()
     const server: RemoteServer = {
       baseUrl,
       name: identity.name,
-      ...(input.token === undefined || input.token === '' ? {} : { token: input.token }),
+      token: input.token,
       addedAt: Date.now(),
     }
     this.store.addServer(server)

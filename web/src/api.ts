@@ -104,7 +104,7 @@ export const api = {
    * peer opens the project, because its git and its tmux are what will run it,
    * and then this server records the pointer so it comes back after a reload.
    */
-  addServer: (input: { baseUrl: string; token?: string }) =>
+  addServer: (input: { baseUrl: string; token: string }) =>
     request<ServerRow>('/api/servers', {
       method: 'POST',
       body: JSON.stringify(input),

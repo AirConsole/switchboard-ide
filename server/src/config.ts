@@ -76,13 +76,24 @@ export const config = {
    * one thing. Port is ignored -- it is the name that is being lied about.
    */
   publicHosts: new Set(
-    [...publicOrigins()].map((origin) => {
-      try {
-        return new URL(origin).hostname
-      } catch {
-        return origin
-      }
-    }),
+    [...publicOrigins()]
+      .map((origin) => {
+        try {
+          /*
+           * `new URL('box.local:8084')` does **not** throw -- it parses as the
+           * scheme `box.local:` with an empty hostname -- and an empty string
+           * in this set matches a `Host` of `:9391` or of nothing at all. So a
+           * scheme-less `SWB_PUBLIC_ORIGIN`, which is exactly the abbreviation
+           * people type, both failed to allow the name the operator meant and
+           * opened the rebinding gate. Measured. Dropped rather than repaired,
+           * because guessing a scheme is how you end up trusting the wrong one.
+           */
+          return new URL(origin).hostname
+        } catch {
+          return ''
+        }
+      })
+      .filter((host) => host !== ''),
   ),
 
   /**

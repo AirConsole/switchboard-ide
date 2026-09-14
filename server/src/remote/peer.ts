@@ -34,8 +34,9 @@ export const normalizeBaseUrl = (raw: string): string => {
   try {
     url = new URL(raw.trim())
   } catch {
-    // `new URL('box.local:8084')` throws, and the field's own placeholder
-    // invites exactly that abbreviation. Its message is the one below.
+    // Only a genuinely malformed URL lands here. `box.local:8084` does *not*
+    // throw -- it parses as the scheme `box.local:` -- so the protocol check
+    // below is what actually catches the abbreviation the placeholder invites.
     throw new HttpError(400, 'a server is http:// or https://')
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -147,7 +148,13 @@ const peerError = (status: number, text: string): HttpError => {
   let code: string | undefined
   let details: Record<string, unknown> | undefined
   try {
-    const { error, code: peerCode, ...rest } = JSON.parse(text) as Record<string, unknown>
+    const parsed: unknown = JSON.parse(text)
+    // A bare JSON string or an array is not an error body; spreading one gives
+    // `{0:'o',1:'o'}` and hands that to the client as `details`.
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return new HttpError(status, text)
+    }
+    const { error, code: peerCode, ...rest } = parsed as Record<string, unknown>
     if (typeof error === 'string') message = error
     if (typeof peerCode === 'string') code = peerCode
     if (Object.keys(rest).length > 0) details = rest

@@ -66,6 +66,8 @@ class PeerLink {
   private focused: string | null = null
   /** The peer's stream numbers, mapped to the ones this browser was given. */
   private readonly streams = new Map<number, number>()
+  /** Which session each of the peer's stream numbers belongs to. */
+  private readonly streamSession = new Map<number, string>()
   private closed = false
   private backoffMs = 500
 
@@ -112,6 +114,7 @@ class PeerLink {
       // The peer will number its streams from scratch; ours stay as they are,
       // and the map is rebuilt by the `attached` frames the re-attach brings.
       this.streams.clear()
+      this.streamSession.clear()
       if (this.closed) return
       // A peer can be off for a week; there is no point hammering it. Capped
       // well above the local reconnect, which is only ever a deploy.
@@ -153,6 +156,7 @@ class PeerLink {
     if (msg.t === 'attached') {
       const ours = this.nextStreamId()
       this.streams.set(msg.streamId, ours)
+      this.streamSession.set(msg.streamId, msg.sessionId)
       this.host.sendJson({
         ...msg,
         streamId: ours,
@@ -204,6 +208,14 @@ class PeerLink {
     else if (forwarded.t === 'detach') {
       this.attached.delete(forwarded.sessionId)
       if (this.focused === forwarded.sessionId) this.focused = null
+      // And the stream number it was given, which nothing will carry again.
+      // Pruned only on socket close before, so a long-lived tab accumulated
+      // one entry per pane it had ever opened.
+      for (const [streamId, session] of this.streamSession) {
+        if (session !== forwarded.sessionId) continue
+        this.streams.delete(streamId)
+        this.streamSession.delete(streamId)
+      }
     }
     else if (forwarded.t === 'resize') {
       const open = this.attached.get(forwarded.sessionId)

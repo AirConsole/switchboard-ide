@@ -145,12 +145,19 @@ the checkout does not read as dirty because of them. Nothing depends on that
 location, though: worktrees are read from `git worktree list`, so one registered
 anywhere shows up.
 
-The server binds localhost and leaves `/api` to the reverse proxy in front of
-it. The one thing it checks itself is **who may open `/ws`**, because a
-WebSocket is exempt from CORS and neither the bind address nor Caddy is in that
-path: any page you visited could otherwise open one, read a session id off the
-broadcast and type into a running agent. Behind a proxy that check needs
-`SWB_PUBLIC_ORIGIN`, which `deploy.sh` sets. See `server/CLAUDE.md`.
+The server binds localhost and checks two things itself, both because neither
+the bind address nor Caddy is in the path that matters. **Who may open `/ws`**:
+a WebSocket is exempt from CORS, so any page you visited could otherwise open
+one, read a session id off the broadcast and type into a running agent. And
+**what name a request was addressed to**: a DNS-rebound page is same-origin with
+us afterwards, so `Host` is the only thing about it that is not the attacker's
+to choose. Both need `SWB_PUBLIC_ORIGIN` behind a proxy, which `deploy.sh` sets.
+
+Without `SWB_TOKEN` this instance serves **this machine only** -- there is no
+credential, so the connection's own address is the whole of the boundary.
+Setting `SWB_TOKEN` is what lets another machine read it, and therefore what
+makes binding anything but loopback a thing that can be made safe. See
+`server/CLAUDE.md`.
 
 It also **installs as an app** -- a manifest and icons in `web/public/`, so
 Chrome's "Install page as app" gives it its own window, icon and place in the

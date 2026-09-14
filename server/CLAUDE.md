@@ -377,7 +377,19 @@ already inside, and Caddy fronts the public name while the socket is reached on
 127.0.0.1. Measured, and recorded in `test/ws-origin.test.ts`: the socket
 opened, `clientCount()` went to 1, and a `session-state` frame arrived unasked.
 
-Four rules, each of which was wrong once and found by measurement:
+Five rules, each of which was wrong once and found by measurement:
+
+- **The name a request was addressed to has to be one we answer to.** This is
+  the anti-rebinding check and nothing else catches it: a rebound page is
+  *same-origin* with us, so it sends no `Origin`, needs no preflight, and
+  reports `Sec-Fetch-Site: same-origin`. `Host` is the one thing it cannot
+  change. `config.publicHosts` is derived from `SWB_PUBLIC_ORIGIN` plus
+  loopback; a gateway is exempt, because it addresses a peer by a name that
+  machine never published and the token speaks for it. A scheme-less
+  `SWB_PUBLIC_ORIGIN` used to land an empty string in that set -- `new
+  URL('box.local:8084')` does not throw, it parses as a *scheme* -- which both
+  failed to allow the name meant and let `Host: :8084` through. Empty hostnames
+  are dropped.
 
 - **Key on the route Fastify matched, never on the URL text.** `request.url` is
   the raw request target and the router matches the *decoded* path, so the two
@@ -561,8 +573,8 @@ And two about being the *other* machine:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SWB_HOST` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. |
-| `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated. Required behind a proxy. |
-| `SWB_TOKEN` | unset | Set to be somebody's peer: every `/api` and `/ws` call must carry it. |
+| `SWB_PUBLIC_ORIGIN` | unset | Origin(s) the page is served from, comma-separated. Decides which `Origin` may open `/ws` **and** which `Host` values `/api` answers to. Required behind a proxy. |
+| `SWB_TOKEN` | unset | Set to be somebody's peer. Unset, this server answers loopback only. |
 | `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |
 | `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |
 | `SWB_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |

@@ -69,6 +69,25 @@ export const isOwnPage = (request: FastifyRequest): boolean => {
 }
 
 /**
+ * Not some other site's page asking on its own account.
+ *
+ * The weaker half of `isOwnPage`, for the instance that has no token: a client
+ * sending no Fetch Metadata at all is not a browser (curl, the health check,
+ * the tests) and is judged by the bind address as it always was, while a
+ * browser that names a cross-site or same-site initiator is refused.
+ *
+ * Without it, a page you merely visited could reach `http://127.0.0.1:<port>`
+ * -- `hostAllowed` passes, because that genuinely is one of our names.
+ * Measured against a scratch instance: `POST /api/worktrees/<id>/sleep` from a
+ * cross-site page returned 200. It cannot *read* the reply, since no CORS
+ * header is ever sent, but it does not need to in order to act.
+ */
+const notCrossSite = (request: FastifyRequest): boolean => {
+  const site = request.headers['sec-fetch-site']
+  return site === undefined || site === 'same-origin' || site === 'none'
+}
+
+/**
  * The connection came from this machine.
  *
  * `request.ip` is the socket's peer address: Fastify only believes
@@ -111,7 +130,21 @@ export const allowRequest = (request: FastifyRequest): boolean => {
   // speaks for it, and rebinding is not a thing that happens to a server.
   if (hasPeerToken(request)) return true
   if (!hostAllowed(request)) return false
-  return config.token === undefined || (isLoopback(request) && isOwnPage(request))
+  /*
+   * With no token there is no credential, so the connection's own address is
+   * the only boundary there is -- and every header a caller could be judged by
+   * is one it writes itself. Measured on `SWB_HOST=0.0.0.0` with no token: a
+   * request from the network carrying `Host: 127.0.0.1:<port>` -- a name this
+   * server genuinely answers to -- walked straight past the rebinding gate and
+   * read the whole snapshot.
+   *
+   * So a token-less instance serves this machine only. Binding it elsewhere
+   * without setting `SWB_TOKEN` is not a configuration that can be made safe,
+   * and failing closed says so at the first request instead of quietly serving
+   * the network.
+   */
+  if (config.token === undefined) return isLoopback(request) && notCrossSite(request)
+  return isLoopback(request) && isOwnPage(request)
 }
 
 /**
@@ -140,9 +173,26 @@ export const allowSocket = (request: FastifyRequest): boolean => {
 
   if (config.token !== undefined) return ours && isLoopback(request)
 
-  // Not a peer: bound to loopback, and the allow-list is what stops a page you
-  // merely visited from opening a socket here. A missing Origin is not a
-  // browser -- curl, a health check, a test -- and is gated by the bind address
-  // the way every `/api` route is.
-  return origin === undefined || ours
+  /*
+   * Not a peer. A missing `Origin` is not a browser -- curl, a health check, a
+   * test -- and that used to be allowed outright on the reasoning that this
+   * instance is bound to loopback. It is not necessarily: `SWB_HOST` is a
+   * documented knob, and nothing enforced the assumption.
+   *
+   * Demonstrated end to end on `SWB_HOST=0.0.0.0` with no token: a socket from
+   * the LAN address with no Origin and no token was accepted, the unasked
+   * `session-state` broadcast handed over a live session id, and one `input`
+   * frame wrote a file as the user. `/api` on that same instance refuses the
+   * same caller, so the two halves disagreed. The bind address is only a
+   * boundary where it is actually loopback, so say so.
+   */
+  /*
+   * Same rule as `/api`, and for the same reason: `Origin` is unforgeable only
+   * inside a browser, and `http://127.0.0.1:<port>` is always in the list. On
+   * `SWB_HOST=0.0.0.0` with no token a raw client from the network forged
+   * exactly that and was admitted -- and an admitted socket may attach to a
+   * session and type into it. Without a credential, the address is the
+   * boundary.
+   */
+  return isLoopback(request) && (origin === undefined || ours)
 }

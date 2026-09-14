@@ -118,6 +118,15 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
      * `ui` blob that `PeerClient.snapshot` exists to strip at the boundary.
      */
     if (route === '/api/snapshot') return
+    /*
+     * And `/api/health`, which the gate lets through unauthenticated. Left
+     * proxyable, an anonymous caller could make a token-holding gateway open a
+     * credentialed request to a registered machine -- `GET /api/health?host=…`
+     * reached the hook and answered "no such server", which is a liveness
+     * oracle on a route that is meant to say nothing but `{ok:true}`. The two
+     * exemption lists have to agree.
+     */
+    if (route === '/api/health') return
     // An absolute-form target would be pasted straight onto the peer's base
     // URL. Nothing legitimate sends one to this server.
     if (!request.url.startsWith('/')) throw new HttpError(400, 'bad request target')
@@ -158,13 +167,16 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
     }
 
     try {
-      const reads = request.method === 'GET' || request.method === 'DELETE'
+      // GET alone. A proxied DELETE is `git worktree remove --force` plus
+      // killing its sessions and maybe deleting a branch -- the very shape the
+      // long timeout exists for, and aborting it cancels nothing on the peer.
+      const reads = request.method === 'GET'
       const result = await peer.request<unknown>(
         request.method,
         unscopeUrl(request.url),
-        // `undefined` for a GET: a body on one is not merely pointless, it is
-        // what makes `fetch` refuse outright.
-        reads ? undefined : body,
+        // `undefined` for a GET or a DELETE: `fetch` refuses a body on a GET
+        // outright, and no proxied DELETE carries one.
+        reads || request.method === 'DELETE' ? undefined : body,
         /*
          * A mutation gets far longer than a read, because the wait is a
          * different kind. `POST /api/worktrees` is a `git worktree add` -- a

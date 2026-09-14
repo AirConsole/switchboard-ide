@@ -71,7 +71,9 @@ const AddServer = ({
   const [baseUrl, setBaseUrl] = useState('')
   const [token, setToken] = useState('')
   const submit = (): void => {
-    if (baseUrl.trim() === '') return
+    // Both, because a machine with no token cannot be read: it answers only to
+    // loopback and its own published names, and a gateway is neither.
+    if (baseUrl.trim() === '' || token.trim() === '') return
     onAdd(baseUrl.trim(), token)
     setToken('')
   }
@@ -99,12 +101,16 @@ const AddServer = ({
           if (event.key === 'Enter') submit()
         }}
       />
-      <button className="btn" onClick={submit} disabled={busy || baseUrl.trim() === ''}>
+      <button
+        className="btn"
+        onClick={submit}
+        disabled={busy || baseUrl.trim() === '' || token.trim() === ''}
+      >
         Add
       </button>
       <span className="field__hint">
-        That machine&apos;s <code>SWB_TOKEN</code>. It is kept here and sent from this server; your
-        browser never talks to it.
+        That machine&apos;s <code>SWB_TOKEN</code>, which is what makes it readable as a machine at
+        all. It is kept here and sent from this server; your browser never talks to it.
       </span>
     </div>
   )
@@ -219,7 +225,7 @@ export const OpenProjectDialog = ({
     if (busy) return
     setBusy(true)
     void api
-      .addServer({ baseUrl, ...(token.trim() === '' ? {} : { token: token.trim() }) })
+      .addServer({ baseUrl, token: token.trim() })
       .then((server) => {
         setBusy(false)
         setAdding(false)
