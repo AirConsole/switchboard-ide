@@ -389,6 +389,44 @@ export const App = (): React.ReactElement => {
   }
 
   /**
+   * A worktree's last terminal has exited.
+   *
+   * The same close `closeTerminal` does, for the terminal that closed itself:
+   * the server drops a shell session as soon as its pane dies, and a panel with
+   * no terminals in it is a column holding a spot in the row for nothing. So
+   * typing `exit` narrows the window exactly as clicking the × does, and the
+   * keyboard goes back to that worktree's Claude -- the pane it was in no
+   * longer exists, and leaving focus on the document would take the arrow keys
+   * with it.
+   *
+   * Not while the worktree is on its way to sleep: sleeping kills its terminals
+   * too, and this would read that as the panel closing itself and forget the
+   * panel the worktree is supposed to wake up with. `awake` loses it on the
+   * click, before the sessions go.
+   */
+  const terminalsGone = useCallback(
+    (worktreeId: string): void => {
+      const ui = uiRef.current
+      if (ui.awake !== null && !ui.awake.includes(worktreeId)) return
+      setUi({
+        panels: {
+          ...ui.panels,
+          [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'terminals'),
+        },
+      })
+      // Written out rather than calling `reveal`, for the reason given below:
+      // both setters are stable, and `reveal` is a fresh function every render.
+      setActive({ id: worktreeId, pane: 'claude' })
+      setScrollTo((previous) => ({
+        id: worktreeId,
+        pane: 'claude',
+        nonce: (previous?.nonce ?? 0) + 1,
+      }))
+    },
+    [setUi],
+  )
+
+  /**
    * A worktree's todo queue has emptied itself into Claude.
    *
    * The panel was open to line work up; with the queue drained it is a list
@@ -759,6 +797,7 @@ export const App = (): React.ReactElement => {
         onExpandDir={expandDir}
         onFilesMode={filesMode}
         onCloseTerminal={closeTerminal}
+        onNoTerminalsLeft={terminalsGone}
       />
 
       {dialogs}

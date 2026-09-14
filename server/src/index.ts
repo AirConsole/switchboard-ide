@@ -58,6 +58,18 @@ registerApi(app, { store, engine, workspace, broadcastInvalidate })
 engine.onSessionChange(() => workspace.invalidate())
 
 /*
+ * A terminal that exited took its session with it, so the snapshot every client
+ * is holding now names a session that does not exist. Pushed rather than left
+ * to the next poll: the tab has to go on the keystroke that closed it, and a
+ * session-state message cannot say "gone" -- it patches a record the client is
+ * about to be told to forget.
+ */
+engine.onSessionGone(() => {
+  workspace.invalidate()
+  broadcastInvalidate()
+})
+
+/*
  * Hand queued todos to Claude as it comes to rest.
  *
  * Started unconditionally, and on its own clock: unlike the worktree poll

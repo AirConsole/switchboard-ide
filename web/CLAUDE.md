@@ -511,6 +511,22 @@ answer or the tile is laid out for a column it does not render:
   with a name. A diff is not something you collect the way you collect the files
   you are working in.
 
+**Not text, but the browser can draw it: draw it.** A `.png` picked in the tree
+opens as a picture rather than as the note saying it is not a text file. The
+server decides from the extension and before it reads a byte (`MEDIA_TYPES` in
+`server/src/files.ts`), answering `binary: true` with a `media` type; the bytes
+never travel as JSON, because an `<img src>` is exactly a GET the browser makes
+on its own -- `GET /api/worktrees/:id/raw`, whose URL carries the file's rev, so
+an image the agent regenerates is a *different* URL and repaints on the next
+poll instead of showing what the browser still has. That decision has to come
+**before** the size cap, which is a cap on text going through JSON and has
+nothing to say about a photograph: with the cap first, every image over 2MB
+answered "too large to open here". It is scaled down to the pane and never up --
+measured, a 1600x1200 png drawn at 652x489 and a 16px favicon at 16px -- and the
+line under it carries the real dimensions and the file size, which is the one
+thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
+table: it is text, it decodes, and editing it is the reason to open it.
+
 Nothing auto-selects any more. The commit list used to choose its newest for you,
 which was free when the pane was always there and is not now: it would open the
 second column on arrival and the narrow panel could never be seen. The other half
