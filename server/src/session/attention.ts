@@ -36,7 +36,9 @@ export const REPAINT_QUIET_MS = 500
  * They are *not* safe over the whole screen, which is where they used to be
  * read. Some of them are ordinary English -- `thisTurn` below has the measured
  * case -- and a screen is a scrollback, so every turn Claude has finished is
- * still on it. The `❯` glyph is the exception either way: it belongs to the
+ * still on it. That is also why `looksLikePrompt` will not consult any of them
+ * while the input box is on screen: the wording is Claude's as often as it is a
+ * dialog's, and the box is the thing that says which. The `❯` glyph is the exception either way: it belongs to the
  * input box and to a dialog's selected row, and Claude never prints it.
  *
  * `Do you (want to|trust)` used to head this list and is gone, because scoping
@@ -197,21 +199,6 @@ const thisTurn = (screen: string): string => {
 }
 
 /**
- * Whether Claude is showing something a person has to answer.
- *
- * Give it the whole visible screen: it reads the current turn's whole height,
- * where the strong patterns are safe, and consults the weak ones only near the
- * bottom.
- */
-export const looksLikePrompt = (screen: string): boolean => {
-  const turn = thisTurn(screen)
-  if (hasChevronMenu(turn)) return true
-  if (PROMPT_PATTERNS.some((re) => re.test(turn))) return true
-  const footer = turn.split('\n').slice(-FOOTER_ROWS).join('\n')
-  return PROMPT_FOOTERS.some((re) => re.test(footer))
-}
-
-/**
  * Claude Code's input box, as a line: the chevron and whatever is in it.
  *
  * The one piece of chrome that is always at the bottom when a session is not
@@ -245,6 +232,68 @@ export const INPUT_BOX = /^\s*[❯>]\s?(.*)$/
  * menu, and nothing measured so far separates one from the input box. Every
  * unnumbered dialog seen in the wild is held up by its footer instead.
  */
+
+/**
+ * The rule drawn directly above the input box, which is what says it is a box.
+ *
+ * Eight dashes rather than a whole line of them: the top rule carries the
+ * session's name in the middle of it (`──── switchboard-standalone-app ─`), so
+ * a "nothing but dashes" test does not see it.
+ */
+const BOX_RULE = /─{8,}/
+
+/**
+ * Is Claude's input box on the screen?
+ *
+ * The one measured thing that separates a modal from an agent at work:
+ * **Claude Code takes the input box away while a modal is up.** Captured on
+ * v2.1.270, the box is present on a session at rest and on one mid-turn with
+ * its queue showing, and absent on all three modals -- the permission dialog,
+ * the plan approval and an AskUserQuestion.
+ *
+ * It has to be the rule that identifies it, not the chevron, because the
+ * chevron is on four other things: every submitted user message, the queued
+ * message display, and a dialog's own selected row. Only the box has a rule
+ * drawn directly above it.
+ *
+ * Note which way this fails. If the rule ever stops being drawn, or changes
+ * character, this answers "no box" and every pattern below is simply believed
+ * again -- today's behaviour, false positives and all. It takes a *wrong yes*
+ * to lose a real dialog, and that needs a modal to draw its selected row
+ * directly under a horizontal rule, which none of the three measured does --
+ * or something matching `INPUT_BOX`'s other glyph, a bare `>`, to land under
+ * one. Ten tests fail if this is loosened to "any chevron", which is what that
+ * direction would look like.
+ */
+const inputBoxVisible = (screen: string): boolean => {
+  const lines = screen.split('\n')
+  return lines.some(
+    (line, index) => INPUT_BOX.test(line) && BOX_RULE.test(lines[index - 1] ?? ''),
+  )
+}
+
+/**
+ * Whether Claude is showing something a person has to answer.
+ *
+ * Give it the whole visible screen: it reads the current turn's whole height,
+ * where the strong patterns are safe, and consults the weak ones only near the
+ * bottom.
+ *
+ * Nothing on a screen that still has its input box counts. Most of the wordings
+ * below are ordinary English -- Claude writes "Press enter in that pane", it
+ * quotes `read -p "continue? (y/n)"`, a tool prints "use j/k to navigate" --
+ * and every one of those was a measured amber over an agent that was working.
+ * What they have in common is that the box was on screen the whole time, and
+ * what the real dialogs have in common is that it was not.
+ */
+export const looksLikePrompt = (screen: string): boolean => {
+  if (inputBoxVisible(screen)) return false
+  const turn = thisTurn(screen)
+  if (hasChevronMenu(turn)) return true
+  if (PROMPT_PATTERNS.some((re) => re.test(turn))) return true
+  const footer = turn.split('\n').slice(-FOOTER_ROWS).join('\n')
+  return PROMPT_FOOTERS.some((re) => re.test(footer))
+}
 
 /**
  * Lines that are furniture rather than something Claude said.

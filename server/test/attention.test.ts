@@ -202,6 +202,35 @@ describe('looksLikePrompt', () => {
   })
 
 
+  it('believes nothing while the input box is still on screen', () => {
+    /*
+     * The rule that retired four separate false positives at once, and the
+     * measurement behind it: Claude Code takes the input box away while a modal
+     * is up. Captured on v2.1.270 -- present on a session at rest and on one
+     * mid-turn with its queue showing, absent on the permission dialog, the
+     * plan approval and an AskUserQuestion.
+     *
+     * Each line of prose below was a measured amber over an agent that was
+     * working. They are all things Claude writes or quotes, and the reason they
+     * were believed is that the patterns were read without asking whether
+     * anyone could still type. The box is drawn the way the mirror renders it:
+     * a rule, the chevron, a rule. The rule is what identifies it -- the
+     * chevron alone is on every submitted user message too.
+     */
+    const RULE = '──────────────────────────────────────────────'
+    const working = (...body: string[]): string =>
+      screen('✻ Baked for 2s · done 3:01 PM', ...body, RULE, INPUT, RULE, '', HINT)
+
+    expect(looksLikePrompt(working('● The script asks: read -p "continue? (y/n)"'))).toBe(false)
+    expect(looksLikePrompt(working('● Press enter in that pane and it will pick up.'))).toBe(false)
+    expect(looksLikePrompt(working('● Would you like to proceed? I will assume yes.'))).toBe(false)
+    expect(looksLikePrompt(working('● Ran a command', '  ⎿  use j/k to navigate'))).toBe(false)
+    expect(looksLikePrompt(working('● Enter to confirm it, or Esc to cancel.'))).toBe(false)
+    // And the chevron cases, which the sibling rule already handled -- kept here
+    // because the gate is what holds them if that rule is ever loosened.
+    expect(looksLikePrompt(working('❯ 1. fix the parser 2. then the tests'))).toBe(false)
+  })
+
   it('does not read a numbered user prompt as a menu', () => {
     /*
      * The mirror draws a submitted user message as `❯ <text>` -- measured in

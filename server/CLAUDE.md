@@ -99,6 +99,19 @@ is the point:
    lines. `^1. Yes` was dropped outright: it is what Claude writes when
    *explaining* options, and it made a finished worktree read as waiting.
 
+   **Nothing is believed while the input box is on screen.** That is the one
+   measured thing separating a modal from an agent at work: Claude Code takes
+   the box away while a modal is up — captured on v2.1.270, present at rest and
+   mid-turn with a queue showing, absent on the permission dialog, the plan
+   approval and an AskUserQuestion. It is the `─` rule drawn directly above it
+   that identifies the box, never the chevron, which is also on every submitted
+   user message, on the queued-message display and on a dialog's own selected
+   row. This retired four false positives at once, all of them ordinary English
+   Claude writes or quotes: `read -p "continue? (y/n)"`, "Press enter in that
+   pane", "Would you like to proceed?", "use j/k to navigate". And it fails
+   safe: a rule that stops being drawn means "no box", which is only today's
+   behaviour again, while losing a real dialog would take a *wrong yes*.
+
    A menu is recognised by its **selected row plus a sibling option numbered
    one away**, within a few lines either side — not by `❯ N.` alone. The
    chevron was picked because Claude never prints one, but the mirror draws a
