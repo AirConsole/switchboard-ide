@@ -88,6 +88,16 @@
    * it is a third grey.
    */
   --quiet-on: #b3bac6;
+  /*
+   * One step above --level-lit, for a control hovered on the bar of the window
+   * you are in. There is no seventh level and this is not one: it is a 10% wash
+   * of --bone over the lit surface, 1.28:1 over it.
+   *
+   * It could not exist until the panel toggles went --bone. The quiet grey that
+   * used to be on them lands on 4.11:1 over a lift like this, under the floor,
+   * which is why that bar had no hover at all; --bone clears it at 5.83.
+   */
+  --level-lift: color-mix(in srgb, var(--bone) 10%, var(--level-lit));
 
   /*
    * The strip's own name for one of those levels, kept because the comments
@@ -1301,7 +1311,7 @@ button {
 .tile:hover {
   border-top-color: var(--rule-bright);
   border-right-color: var(--rule-bright);
-  border-bottom-color: var(--quiet-on);
+  border-bottom-color: var(--rule-bright);
 }
 
 /* State is carried by the left rail, matching the tabs. Only "waiting" is
@@ -1383,8 +1393,7 @@ button {
   background: var(--level-lit);
 }
 
-.tile--current .tile__bar:hover,
-.tile--current .tile__toggle:hover {
+.tile--current .tile__bar:hover {
   /*
    * Nothing fills on hover here, because there is nothing above lit to fill
    * with: a lift big enough to see -- 6% white, 1.19:1 -- puts --quiet-on back
@@ -1394,17 +1403,16 @@ button {
   background: var(--level-lit);
 }
 
+.tile--current .tile__toggle:hover {
+  /* The lift this bar could not afford while its labels were --quiet-on. */
+  background: var(--level-lift);
+}
+
 .tile--current .tile__project,
 .tile--current .tile__slash,
 .tile--current .tile__branch,
-.tile--current .tile__prompt,
-.tile--current .tile__toggle {
+.tile--current .tile__prompt {
   color: var(--quiet-on);
-}
-
-.tile--current .tile__toggle:hover,
-.tile--current .tile__toggle--on {
-  color: var(--bone);
 }
 
 /*
@@ -1754,11 +1762,20 @@ button {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
-  color: var(--graphite);
+  /*
+   * All three read --bone, open or not.
+   *
+   * Brightness used to say which panel was on screen, with the underline
+   * agreeing quietly underneath -- and that underline was --rule-bright, which
+   * measures 1.25:1 on a quiet bar and 1.24 on the lit one, so in practice it
+   * said nothing and the label carried it alone. Now it is the other way round:
+   * the three panel names are equally legible, and one white line under one of
+   * them says which you are looking at.
+   */
+  color: var(--bone);
 }
 
 .tile__toggle:hover {
-  color: var(--bone);
   background: var(--level-hover);
 }
 
@@ -1772,8 +1789,9 @@ button {
  * vocabulary the top bar already taught.
  */
 .tile__toggle--on {
-  color: var(--bone);
-  border-bottom-color: var(--rule-bright);
+  /* 11.59:1 on a quiet bar and 7.48 on the lit one, against the 1.25 and 1.24
+     of the --rule-bright it replaces. */
+  border-bottom-color: var(--bone);
 }
 
 /*
