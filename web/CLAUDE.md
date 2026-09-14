@@ -70,6 +70,18 @@ The pieces, and why each is the way it is:
   the default branch already has goes with the worktree rather than being put to
   a vote, and when neither is left to ask the removal dialog does not open at
   all — the sleep dialog's button drops its ellipsis and does it.
+- **The branch on the remote is asked the same question, separately.** A branch
+  that was pushed has a second copy, and `remoteBranch` / `remoteBranchMerged`
+  put it through the same rule: unmerged, it is its own checkbox; already on the
+  default branch, it goes with the worktree unasked. Two answers rather than one
+  because the halves disagree — a branch can be ahead locally and spent on the
+  remote (unpushed commits) or the reverse — and one box would delete whichever
+  half the reader was not thinking about. It is also the only answer on this
+  dialog that leaves the machine, which is why the server pushes the deletion
+  *before* it destroys anything local, and under `--force-with-lease`: mergedness
+  is read from `refs/remotes` and nothing here fetches, so the lease is what
+  stops "merged, delete it" throwing away a colleague's push. A failed lease
+  leaves the dialog open with git's own words and the worktree untouched.
 - **What is running is told, not asked.** `removalWarnings` covers what git
   knows nothing about: a Claude that is working or waiting on you, todos queued
   behind it, terminals still running. Each is one red line (`--danger`, the

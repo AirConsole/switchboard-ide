@@ -72,3 +72,47 @@ export const makeRepoWithCommit = async (prefix?: string): Promise<TempRepo> => 
   await repo.commit('Initial commit')
   return repo
 }
+
+/**
+ * A repository with a real remote: a bare origin on disk, `main` pushed to it.
+ *
+ * A fixture cannot answer what these tests ask. Whether a remote-tracking ref
+ * survives the branch being deleted on the remote, and whether a lease refuses
+ * a delete pushed from a stale clone, are facts about what git and a remote do
+ * to each other -- neither is visible in a repository that has no remote, and
+ * neither is what you would guess.
+ *
+ * `protocol.file.allow=always` in ISOLATED is what lets a path be a remote at
+ * all: git refuses `file://` for clones by default since CVE-2022-39253.
+ */
+export interface TempRemoteRepo extends TempRepo {
+  /** The bare repository `origin` points at. */
+  origin: string
+  /** A second clone of the same origin, for pushing behind this one's back. */
+  elsewhere: () => Promise<TempRepo>
+}
+
+export const makeRepoWithRemote = async (prefix = 'swb-remote-'): Promise<TempRemoteRepo> => {
+  const bare = await mkdtemp(join(tmpdir(), `${prefix}origin-`))
+  const repo = await makeRepoWithCommit(prefix)
+  await repo.git('init', '--bare', bare)
+  await repo.git('remote', 'add', 'origin', bare)
+  await repo.git('push', '-u', 'origin', 'main')
+  const clones: TempRepo[] = []
+  return {
+    ...repo,
+    origin: bare,
+    elsewhere: async () => {
+      const clone = await makeRepo(`${prefix}other-`)
+      await clone.git('remote', 'add', 'origin', bare)
+      await clone.git('fetch', 'origin')
+      clones.push(clone)
+      return clone
+    },
+    cleanup: async () => {
+      await Promise.all(clones.map((clone) => clone.cleanup()))
+      await rm(bare, { recursive: true, force: true })
+      await repo.cleanup()
+    },
+  }
+}

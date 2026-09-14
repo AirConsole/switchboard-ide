@@ -187,7 +187,56 @@ describe('removalQuestions', () => {
       discard: false,
       branch: false,
       branchGoesAnyway: true,
+      remoteBranch: false,
+      remoteBranchGoesAnyway: false,
     })
+  })
+
+  it('says nothing about a remote for a branch that was never pushed', () => {
+    // No `remoteBranch` is not "a remote branch we know nothing about": there
+    // is no ref, so there is nothing to offer to delete and nothing to delete
+    // unasked. Both halves have to be false or the dialog would either ask
+    // about a branch that does not exist or push a deletion of it.
+    const questions = removalQuestions(worktree({ id: 'a', dirty: 0, unmerged: 3 }))
+    expect(questions.remoteBranch).toBe(false)
+    expect(questions.remoteBranchGoesAnyway).toBe(false)
+  })
+
+  it('asks about the pushed copy while it has commits of its own', () => {
+    const questions = removalQuestions(
+      worktree({ id: 'a', dirty: 0, unmerged: 0, remoteBranch: 'origin/work' }),
+    )
+    expect(questions.remoteBranch).toBe(true)
+    expect(questions.remoteBranchGoesAnyway).toBe(false)
+    // The local branch is spent and goes unasked; the remote is a separate
+    // answer, and merging one does not decide the other.
+    expect(questions.branchGoesAnyway).toBe(true)
+  })
+
+  it('takes a merged remote branch with the worktree, unasked', () => {
+    const questions = removalQuestions(
+      worktree({
+        id: 'a',
+        dirty: 0,
+        // The local branch is *ahead* of what was pushed, so it is still a
+        // question while the pushed copy is already spent. This is the pair
+        // that a single checkbox for "the branch" would have got wrong.
+        unmerged: 2,
+        remoteBranch: 'origin/work',
+        remoteBranchMerged: true,
+      }),
+    )
+    expect(questions.remoteBranchGoesAnyway).toBe(true)
+    expect(questions.remoteBranch).toBe(false)
+    expect(questions.branch).toBe(true)
+  })
+
+  it('treats a server that did not say as not having said no', () => {
+    // Same reading as `unmerged`: `remoteBranchMerged` absent leaves the
+    // question standing rather than deleting on a remote we cannot vouch for.
+    const questions = removalQuestions(worktree({ id: 'a', remoteBranch: 'origin/work' }))
+    expect(questions.remoteBranch).toBe(true)
+    expect(questions.remoteBranchGoesAnyway).toBe(false)
   })
 
   it('asks about uncommitted work, which is what git refuses over', () => {
@@ -263,6 +312,16 @@ describe('removalAsks', () => {
   it('opens for a question git would raise', () => {
     expect(removalAsks(worktree({ id: 'a', dirty: 1, unmerged: 0 }), [], [])).toBe(true)
     expect(removalAsks(worktree({ id: 'a', dirty: 0, unmerged: 1 }), [], [])).toBe(true)
+    // An unmerged branch on a remote is a question too, and the only one whose
+    // answer leaves this machine -- without it the dialog is skipped and the
+    // straight-through delete decides it silently.
+    expect(
+      removalAsks(
+        worktree({ id: 'a', dirty: 0, unmerged: 0, remoteBranch: 'origin/work' }),
+        [],
+        [],
+      ),
+    ).toBe(true)
   })
 
   it('opens for something only the IDE knows about', () => {
