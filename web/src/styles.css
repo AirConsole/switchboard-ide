@@ -719,13 +719,12 @@ button {
    * curve, the inner edge stays vertical, and the menu's stacked tabs inherit
    * it from this one rule.
    *
-   * Nothing running has no bar at all, where it used to have a hollow ring.
-   * Absence is the honest mark for it, and it is quieter than a ring -- which
-   * is right for the one state that is not asking for anything.
+   * Nothing running keeps a mark of its own -- see `.tab--off`.
    */
-  background:
-    linear-gradient(to right, var(--tab-state, transparent) 0 4px, transparent 4px)
-    var(--tab-fill);
+  background-color: var(--tab-fill);
+  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
+  background-size: 4px 100%;
+  background-repeat: no-repeat;
 }
 
 /* The zZ tab stands for a count, not for a name, so it takes what it needs. */
@@ -927,7 +926,21 @@ button {
  * back to a ring. A worktree with no agent has finished nothing, which is why
  * this is not green.
  */
+/*
+ * Nothing running is a dashed bar, which is the old hollow bullet's job: solid
+ * against dashed is what told a working agent from a stopped one, the way
+ * filled against hollow used to.
+ *
+ * Absence was tried instead, on the argument that not running is the one state
+ * asking for nothing. It is wrong where it matters most: the zZ dropdown is
+ * mostly worktrees with nothing running, so every row lost its bar at once and
+ * the menu read as though the bar had not been built there -- reported from
+ * use, and the reason this is back. In the strip the same tabs are the quiet
+ * majority, and --graphite-dim dashed is the quietest thing that is still
+ * there.
+ */
 .tab--off {
+  background-image: repeating-linear-gradient(var(--graphite-dim) 0 3px, transparent 3px 6px);
 }
 
 /*
@@ -2551,6 +2564,16 @@ button {
   width: auto;
   max-width: none;
   border-radius: 9px;
+  /*
+   * The same height a tab has in the strip, where 32px falls out of the 38px
+   * bar less its 3px of sleeve above and below. Declared here because a menu
+   * row has no bar to derive it from, and it has to be declared: a row is
+   * otherwise one 13px line, 15px tall, and 9px of radius top and bottom is
+   * then the whole of its left edge -- so the state bar had no straight section
+   * to fill and came out as a crescent while the strip beside it drew a bar.
+   * They are meant to be one object met in two places, so they are one height.
+   */
+  min-height: 32px;
 }
 
 /* -------------------------------------------------------------- the files -- */
