@@ -42,8 +42,37 @@
    * written in and which lands on this ground on the tab you are in, measures
    * 4.54:1 against it. One more rung is under the 4.5 floor.
    */
-  --sleeve: #171c24;
-  --tab-on: #333c4b;
+  /*
+   * The bar's own ground, separate from --ink, which is the page's.
+   *
+   * They used to be the same value, and that was the whole contrast problem:
+   * the sleeve measured 1.08:1 against it, so the trough that is supposed to
+   * say "these tabs are one project" was not visible at all -- and the project
+   * mark, having no enclosure to head, read as a bead floating before the tabs.
+   * Chrome, which this strip is modelled on, runs its frame against its toolbar
+   * at 1.33:1 and gives every group a hue besides; this interface will not
+   * spend hue on identity, so the ground has to do the work alone.
+   */
+  --bar: #0a0d12;
+  --sleeve: #1e242f;
+  /*
+   * The tabs' own ladder. Separate tokens rather than --rule and --rule-bright,
+   * which are borders and dividers all over the app and have no business moving
+   * when the strip is retuned.
+   */
+  --tab-rest: #2b3341;
+  --tab-hover: #323b49;
+  --tab-on: #3b4657;
+  /* The project mark and the +: below the tabs rather than among them. */
+  --tab-head: #171d26;
+  /*
+   * What the quiet things on a tab are written in once it is the lit one.
+   *
+   * --graphite is 4.54:1 on the old --tab-on and 3.90:1 on this one, under the
+   * floor -- so a brighter tab is not free, it costs this second value. It
+   * measures 4.89:1 there.
+   */
+  --quiet-on: #b3bac6;
 
   /*
    * Three steps of text, and every one of them readable.
@@ -312,7 +341,7 @@ button {
    */
   background:
     linear-gradient(var(--rule), var(--rule)) bottom left / 100% 1px no-repeat,
-    var(--ink);
+    var(--bar);
   min-width: 0;
 }
 
@@ -371,12 +400,21 @@ button {
   flex: 0 1 auto;
   margin-top: 3px;
   /*
-   * 3px under the tabs as well as over them, since they are pills now and a
-   * round bottom flush with the sleeve's floor is a flat one. The sleeve itself
-   * still stands on that floor: it is the band that says which tabs are one
-   * project's, and it has no reason to float.
+   * No padding at all: the tabs fill the group edge to edge and the shell clips
+   * them, so the first segment wears the group's left curve and the + wears its
+   * right.
+   *
+   * This is the grouping, and it replaces a trough nobody could see. Round pills
+   * are each their own object, so a row of them is a row of objects that happen
+   * to be near each other; square segments inside one rounded shell are one
+   * object divided, and the container holds every outer edge. It is the
+   * strongest grouping available without colour, which is the channel this
+   * interface will not spend on identity.
+   *
+   * The sleeve is now only ever seen in the 2px seams -- which is all a trough
+   * was ever for.
    */
-  padding: 0 4px 3px;
+  padding: 0;
   /*
    * 2px between the tabs, which is what a filled pill needs and an unfilled one
    * did not: two of the same colour meeting edge to edge are one shape with a
@@ -385,7 +423,13 @@ button {
    * rules doing what a gap does.
    */
   gap: 2px;
-  border-radius: 8px 8px 0 0;
+  border-radius: 9px 9px 0 0;
+  /*
+   * What clips the end segments to the shell's curve. Safe over the menu, which
+   * is `position: fixed` and so is not clipped by an ancestor's overflow -- the
+   * same property that already rescued it from the strip's own scroller.
+   */
+  overflow: hidden;
   /*
    * The trough the tabs sit in: a rung above the bar's --ink, and the ground an
    * unselected tab is read against. The step that does the work is not this one
@@ -406,27 +450,33 @@ button {
  * 12px past its own edge, and this is what stops that curve landing on the
  * sleeve's rounded corner or outside the sleeve altogether.
  */
+/*
+ * The project is the group's first segment, not a bead in front of it.
+ *
+ * It used to be a 22px fully-round pill, vertically centred, 14px clear of
+ * 32px square-shouldered tabs -- a different shape at a different height with a
+ * gap after it, which is what "dangling" was. Now it is the tabs' own height,
+ * flush against them, wearing the shell's left curve.
+ *
+ * Down from the sleeve rather than up, which is the opposite of what it did
+ * before and is what keeps it from reading as a tab: 1.33:1 below a segment, so
+ * the run reads heading then items rather than five things you could click
+ * into. Set at label size, uppercase and letterspaced, because a heading is not
+ * a name you read one character at a time. Its × stays with it -- closing a
+ * project is the project's own action and belongs on the project's own segment.
+ */
 .tabgroup__pill {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: none;
-  align-self: center;
-  height: 22px;
-  margin-right: 14px;
-  padding: 0 3px 0 9px;
-  border-radius: 11px;
-  /*
-   * Up from the sleeve, not down: with the strip the Chrome way round the
-   * sleeve is dark and a darker pill on it is 1.15:1, which is no pill at all.
-   * --rule is 1.30:1 above it and 1.42:1 below the tab you are in, so it reads
-   * as an object in the trough without reading as the tab -- and the shape says
-   * the rest, 22px and fully round against a 31px tab with square shoulders.
-   */
-  background: var(--rule);
+  align-self: stretch;
+  padding: 0 4px 0 12px;
+  background: var(--tab-head);
   font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--bone);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
   white-space: nowrap;
   cursor: default;
 }
@@ -471,36 +521,29 @@ button {
  * Per project rather than one for the bar: with several projects open, this is
  * the only unambiguous way to say which one a new worktree belongs to.
  */
+/*
+ * And the + is the last segment, always wearing its noun.
+ *
+ * A bare + at the end of a run of tabs is Chrome's "one more tab", full stop --
+ * so a *scoped* one gets read as the global one, and this bar already carries an
+ * "Open project" at its left that it was being confused with. The word costs
+ * about 60px per project, which is cheaper than the confusion; it used to be
+ * spent only when a single project made the + unambiguous anyway, which is the
+ * case that needed it least.
+ */
 .tabgroup__add {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   flex: none;
-  align-self: center;
-  width: 22px;
-  height: 22px;
-  /* The same 14px the pill keeps on its other side, and for the same reason:
-     the last tab's foot has to land on sleeve, not on its corner. */
-  margin-left: 14px;
-  border-radius: 6px;
-  font-size: 15px;
+  align-self: stretch;
+  padding: 0 11px 0 9px;
+  background: var(--tab-head);
+  font-size: 11px;
   line-height: 1;
   /* --graphite-dim measures 3.40:1 on --sleeve, well under the floor. */
   color: var(--graphite);
-}
-
-/*
- * With one project open, the + says what it does.
- *
- * It is the only + on the bar then, and the strip has the room -- one project's
- * tabs never fill it. With several, each sleeve carries its own and the label
- * would be the same three words repeated across the bar, so they stay glyphs
- * and the tooltip names the project.
- */
-.tabgroup__add--labelled {
-  width: auto;
-  gap: 5px;
-  padding: 0 9px 0 7px;
 }
 
 .tabgroup__add-label {
@@ -512,7 +555,7 @@ button {
 
 .tabgroup__add:hover {
   /* With the pointer on it, the same step a tab takes: up toward --tab-on. */
-  background: var(--rule);
+  background: var(--tab-hover);
   color: var(--bone);
 }
 
@@ -678,8 +721,12 @@ button {
    * active tab were exactly that curve. Nothing runs into anything here now, so
    * the shape has nothing to say and the feet were a 12px trap over each
    * neighbour's click target that needed `pointer-events: none` to be safe.
+   *
+   * Square, and the group is what is round: see `.tabgroup`. A tab owns no
+   * outer edge of its own any more -- only the seam it shares with its
+   * neighbour -- so the corners belong to the shell.
    */
-  border-radius: 9px;
+  border-radius: 0;
   /*
    * The ground is the wrapper's, not the body's: the × is the body's sibling,
    * so a fill on the body stopped short of it and the active tab's ink ended
@@ -692,7 +739,7 @@ button {
    * but the difference between a shape and no shape -- and it leaves the tab
    * you are in 1.30:1 above it, which is the step that has to survive.
    */
-  --tab-fill: var(--rule);
+  --tab-fill: var(--tab-rest);
   /*
    * The status is a bar down the leading edge, where an 11px bullet used to be:
    * about four times the area, at the edge the eye lands on as it runs along a
@@ -778,7 +825,7 @@ button {
  * pointer.
  */
 .tab:not(.tab--active):hover {
-  --tab-fill: var(--rule-bright);
+  --tab-fill: var(--tab-hover);
 }
 
 /*
@@ -795,6 +842,21 @@ button {
 
 .tab--active > .tab__body {
   color: var(--bone);
+}
+
+/*
+ * Everything quiet on the lit segment comes up with its ground.
+ *
+ * --graphite cleared the old --tab-on at 4.54:1 and is 3.90:1 on this one. A
+ * brighter tab was never free; this is the price, and it is the whole price.
+ */
+.tab--active .tab__close,
+.tab--active .tab__dirty,
+.tab--active .tab__queued,
+.tab--active .tab__fork,
+.tab--active .tab__zz,
+.tab--active .tab__caret {
+  color: var(--quiet-on);
 }
 
 /*
@@ -961,6 +1023,42 @@ button {
 .tabstrip[data-tight='3'] .tab__queued,
 .tabstrip[data-tight='3'] .tab__dirty {
   display: none;
+}
+
+/*
+ * The + gives its word up before the tabs give up their names.
+ *
+ * Measured with four worktrees over two projects: every name fits from 1150px
+ * with the word and from 1050px without it, so the noun is worth exactly 100px
+ * of headroom -- 50 a project, which is what it looked like it would cost. Two
+ * rules rather than one because the strip runs out of room two different ways,
+ * and either is enough: too many tabs, which is what `data-tight` counts, or
+ * too little window, which it does not -- it is derived from the tab count and
+ * measured 0 at every width here.
+ *
+ * A + is only ambiguous while there is room to wonder about it. By the time
+ * this fires it is one glyph between two tabs inside a visible slab, which
+ * already scopes it to the project -- the word was buying clarity the shell now
+ * supplies.
+ */
+@media (max-width: 1200px) {
+  .tabgroup__add-label {
+    display: none;
+  }
+
+  .tabgroup__add {
+    padding: 0 9px;
+  }
+}
+
+.tabstrip[data-tight='2'] .tabgroup__add-label,
+.tabstrip[data-tight='3'] .tabgroup__add-label {
+  display: none;
+}
+
+.tabstrip[data-tight='2'] .tabgroup__add,
+.tabstrip[data-tight='3'] .tabgroup__add {
+  padding: 0 9px;
 }
 
 /* And the names give ground too, a step at a time, so more of them fit before
@@ -2540,7 +2638,14 @@ button {
  */
 .menu--tabs {
   gap: 2px;
-  padding: 4px;
+  /*
+   * No padding, for the reason `.tabgroup` has none: the rows are segments of
+   * one shape and the shell holds every outer edge. A sleeper met here and one
+   * met in the strip have to be the same object, so the dropdown is that slab
+   * stood on end.
+   */
+  padding: 0;
+  overflow: hidden;
   /*
    * As wide as its widest row, up to a cap. A tab in the strip is capped at
    * 200px because the strip has to hold every awake worktree; this is a list
@@ -2563,17 +2668,17 @@ button {
 .menu--tabs .tab {
   width: auto;
   max-width: none;
-  border-radius: 9px;
+  border-radius: 0;
   /*
-   * The same height a tab has in the strip, where 32px falls out of the 38px
-   * bar less its 3px of sleeve above and below. Declared here because a menu
+   * The same height a tab has in the strip, where 35px falls out of the 38px
+   * bar less the 3px of sleeve above it. Declared here because a menu
    * row has no bar to derive it from, and it has to be declared: a row is
    * otherwise one 13px line, 15px tall, and 9px of radius top and bottom is
    * then the whole of its left edge -- so the state bar had no straight section
    * to fill and came out as a crescent while the strip beside it drew a bar.
    * They are meant to be one object met in two places, so they are one height.
    */
-  min-height: 32px;
+  min-height: 35px;
 }
 
 /* -------------------------------------------------------------- the files -- */
