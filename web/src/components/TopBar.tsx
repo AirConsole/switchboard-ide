@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
-import { ForkIcon } from './ForkIcon.js'
+import { WorktreeTab, statusClass } from './WorktreeTab.js'
+import { useAnchoredMenu } from './useAnchoredMenu.js'
 import {
   claudeSession,
   mostUrgentStatus,
   queuedTodoCount,
   stateLabel,
   worktreeStatus,
-  type WorktreeStatus,
 } from '../selectors.js'
 
 export interface TopBarProps {
@@ -60,50 +60,6 @@ const OpenProjectIcon = (): React.ReactElement => (
   </svg>
 )
 
-/** The tab class for a status: what colour its leading bar is, if any. */
-const statusClass = (status: WorktreeStatus): string =>
-  status === 'needs-you'
-    ? 'tab--needs'
-    : status === 'working'
-      ? 'tab--working'
-      : status === 'idle'
-        ? 'tab--idle'
-        : 'tab--off'
-
-/**
- * What a tab says: its name and its dirty count.
- *
- * A fragment of spans rather than a box of its own, because a tab's body is
- * already the box.
- *
- * It does not name the branch. A worktree is nearly always on the branch it is
- * named after, so it was a second copy of the name most of the time and every
- * tab paid width for it; the dropdown used to make an exception, and does not
- * any more now that its rows are tabs. The window's own bar names the branch,
- * and so does a tab's title.
- */
-const WorktreeLabel = ({
-  worktree,
-  queued,
-}: {
-  worktree: Worktree
-  queued: number
-}): React.ReactElement => (
-  <>
-    <span className="tab__name">{worktree.name}</span>
-    {worktree.dirty ? (
-      <span className="tab__dirty">{worktree.dirty}&plusmn;</span>
-    ) : worktree.unmerged ? (
-      <ForkIcon className="tab__fork" />
-    ) : null}
-    {/* Said in the same quiet channel as the dirty count, because it is the same
-        kind of fact: how much work is parked here. Not in colour and not on the
-        bullet -- those already mean "blocked on you" and "done", and a third
-        meaning on either would make them argue. */}
-    {queued > 0 ? <span className="tab__queued">{queued} queued</span> : null}
-  </>
-)
-
 /**
  * One project: its name, its awake worktrees, its sleeping ones, and a way to
  * add another.
@@ -141,54 +97,8 @@ const Group = ({
   TopBarProps,
   'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal' | 'onSleep'
 >): React.ReactElement => {
-  /*
-   * Where to draw the dropdown, or null when it is closed.
-   *
-   * It has to be positioned against the viewport rather than against the tab it
-   * hangs from: the tab lives in a horizontal scroller, and a scroller clips
-   * what overflows it in *both* directions -- `overflow-x: auto` computes
-   * `overflow-y` to auto as well. So an absolutely positioned menu was there in
-   * the markup, at the right coordinates, and cut off entirely by the bar.
-   */
-  const [at, setAt] = useState<{ left: number; top: number } | null>(null)
-  const anchor = useRef<HTMLButtonElement | null>(null)
-  const menu = useRef<HTMLDivElement | null>(null)
+  const { at, anchor, menu, toggle, close } = useAnchoredMenu<HTMLButtonElement>()
   const { project, awake, asleep } = group
-
-  // A dropdown that only closes by pressing the thing that opened it is a
-  // dropdown you get stuck with.
-  useEffect(() => {
-    if (at === null) return
-    const dismiss = (event: Event): void => {
-      const target = event.target as Node
-      if (menu.current?.contains(target) || anchor.current?.contains(target)) return
-      setAt(null)
-    }
-    const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setAt(null)
-    }
-    /*
-     * The menu hangs from a rect measured when it was opened, and the strip it
-     * hangs from scrolls -- so a scroll or a resize with the menu open left it
-     * pointing at a tab that had moved. Re-measured rather than dismissed,
-     * because dismissing something you did not click is its own surprise.
-     */
-    const follow = (): void => {
-      const box = anchor.current?.getBoundingClientRect()
-      if (box) setAt({ left: box.left, top: box.bottom })
-    }
-    window.addEventListener('resize', follow)
-    // Capture, so a scroll of the strip itself is heard as well as the window's.
-    document.addEventListener('scroll', follow, true)
-    document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', key)
-    return () => {
-      window.removeEventListener('resize', follow)
-      document.removeEventListener('scroll', follow, true)
-      document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', key)
-    }
-  }, [at])
   const allAsleep = awake.length === 0 && asleep.length > 0
   /*
    * The collapsed tab stands for several worktrees, so it shows the most
@@ -201,68 +111,40 @@ const Group = ({
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
     const queued = queuedTodoCount(todos, worktree.id)
     return (
-      <span
+      <WorktreeTab
         key={worktree.id}
-        className={[
-          'tab',
-          sleeping ? 'tab--asleep' : 'tab--awake',
-          statusClass(worktreeStatus(sessions, worktree.id)),
-          // Where you are. A sleeping worktree is nowhere, whatever the row was
-          // last asked for -- it has no window to be in.
-          !sleeping && worktree.id === activeId ? 'tab--active' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-      >
-        <button
-          className="tab__body"
-          onClick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
-          title={[
-            worktree.path,
-            ...(worktree.branch && worktree.branch !== worktree.name
-              ? [`on ${worktree.branch}`]
-              : []),
-            stateLabel(claudeSession(sessions, worktree.id)),
-            ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
-            ...(worktree.dirty
-              ? [`${worktree.dirty} uncommitted change${worktree.dirty === 1 ? '' : 's'}`]
-              : []),
-            ...(worktree.unmerged
-              ? [
-                  `${worktree.unmerged} commit${worktree.unmerged === 1 ? '' : 's'} not on the default branch`,
-                ]
-              : []),
-            ...(queued > 0 ? [`${queued} queued to run next here`] : []),
-            sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
-          ].join('\n')}
-        >
-          {/* The state is the bar down the tab's leading edge, drawn by `.tab`
-              itself rather than by anything in here -- see styles.css. It is on
-              every tab, asleep or not: sleeping does not mean stopped, Claude
-              can be left running, so a sleeper blocked on you has to be able to
-              say so from the bar. The zZ is the other fact. */}
-          {sleeping && (
-            <span className="tab__zz" aria-hidden="true">
-              zZ
-            </span>
-          )}
-          <span className="tab__label">
-            <WorktreeLabel worktree={worktree} queued={queued} />
-          </span>
-        </button>
-        {/* Already asleep, so there is nothing to put away and no × to do it
-            with. Waking it is what its body is for. */}
-        {!sleeping && (
-          <button
-            className="tab__close"
-            onClick={() => onSleep(worktree.id)}
-            title={`Put ${worktree.name} away`}
-            aria-label={`Put ${worktree.name} away`}
-          >
-            &times;
-          </button>
-        )}
-      </span>
+        worktree={worktree}
+        status={worktreeStatus(sessions, worktree.id)}
+        queued={queued}
+        sleeping={sleeping}
+        // Where you are. A sleeping worktree is nowhere, whatever the row was
+        // last asked for -- it has no window to be in.
+        active={!sleeping && worktree.id === activeId}
+        title={[
+          worktree.path,
+          ...(worktree.branch && worktree.branch !== worktree.name
+            ? [`on ${worktree.branch}`]
+            : []),
+          stateLabel(claudeSession(sessions, worktree.id)),
+          ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+          ...(worktree.dirty
+            ? [`${worktree.dirty} uncommitted change${worktree.dirty === 1 ? '' : 's'}`]
+            : []),
+          ...(worktree.unmerged
+            ? [
+                `${worktree.unmerged} commit${worktree.unmerged === 1 ? '' : 's'} not on the default branch`,
+              ]
+            : []),
+          ...(queued > 0 ? [`${queued} queued to run next here`] : []),
+          sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
+        ].join('\n')}
+        onPick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
+        /* Already asleep, so there is nothing to put away and no × to do it
+           with. Waking it is what its body is for. */
+        onClose={
+          sleeping ? undefined : { title: `Put ${worktree.name} away`, run: () => onSleep(worktree.id) }
+        }
+      />
     )
   }
 
@@ -289,12 +171,7 @@ const Group = ({
             <button
               ref={anchor}
               className="tab__body"
-              onClick={() => {
-                const box = anchor.current?.getBoundingClientRect()
-                setAt((was) =>
-                  was !== null || box === undefined ? null : { left: box.left, top: box.bottom },
-                )
-              }}
+              onClick={toggle}
               title={`${asleep.length} sleeping — click to pick one to wake`}
               aria-label={`${asleep.length} sleeping worktrees, ${asleepStatus}`}
               aria-expanded={at !== null}
@@ -332,7 +209,7 @@ const Group = ({
               className="menu menu--tabs"
               ref={menu}
               style={{ left: at.left, top: at.top }}
-              onClick={() => setAt(null)}
+              onClick={close}
             >
               {asleep.map((worktree) => tab(worktree, true))}
             </div>

@@ -92,6 +92,8 @@ const patchTodoBody = z.object({
   prompt: z.string().min(1).max(PROMPT_MAX).optional(),
   /** RUN NEXT. True appends to the end of this worktree's queue. */
   queued: z.boolean().optional(),
+  /** Move it to another worktree: the work was parked against the wrong agent. */
+  worktreeId: z.string().min(1).optional(),
 })
 
 /*
@@ -367,7 +369,7 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.patch('/api/todos/:id', async (request) => {
     const { id } = request.params as { id: string }
     const patch = patchTodoBody.parse(request.body)
-    const todo = workspace.updateTodo(id, patch)
+    const todo = await workspace.updateTodo(id, patch)
     broadcastInvalidate()
     return todo
   })
