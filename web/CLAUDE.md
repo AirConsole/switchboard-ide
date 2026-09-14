@@ -193,19 +193,14 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
-- **The + is the group's last segment and it wears its noun.** A bare + at the
-  end of a run of tabs is Chrome's "one more tab", full stop — so a *scoped* one
-  gets read as the global one, and this bar already carries an **Open project**
-  at its far left that it was being confused with. It used to spend the word
-  only when a single project made the + unambiguous anyway, which is the case
-  that needed it least. Measured with four worktrees over two projects: every
-  name fits from 1150px with the word and from 1050px without it, so it is worth
-  exactly 100px of headroom — and it is dropped two ways, under
-  `@media (max-width: 1200px)` and at `data-tight` 2 and 3, because the strip
-  runs out of room by window *and* by tab count and `data-tight` only counts the
-  second (it measured 0 at every width here). By the time either fires the + is
-  one glyph between two tabs inside a visible slab, which scopes it anyway — the
-  word was buying clarity the shell now supplies.
+- **The + is the group's last segment, and a bare glyph.** It wore the noun
+  while it was the thing that opened the form, because a scoped + reads as
+  Chrome's global "one more tab" and this bar already carries an **Open project**
+  at its far left. The form is a tile at the end of that project's run of
+  windows now, so the + is *navigation*: it walks you there and hands over the
+  caret, and the tile it lands on says what it is in full. The word cost exactly
+  100px of headroom, measured — every name fit from 1150px with it and 1050px
+  without.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -310,13 +305,24 @@ and a two-pane tile is always two of them. At three units it is 90–107 columns
 from 1687px up, and 82 once the editor asks for exactly 80.
 
 **The files panel is one unit while it is only its tree**, and the new-worktree
-placeholder is one always. They are the two exceptions to "nothing may ask for
-one unit", and both are chrome rather than something you read code in: the floor
-of two exists to keep the 80-column promise, and that promise is about panes you
-read *code* in — a terminal, a diff, the editor. The placeholder holds a +, a
-label and a sentence, none of which is better for being 80 columns wide, and at
-two it was a whole empty pane parked at the end of a row you scroll precisely
-because there is never enough of it. A tree is chrome: names at a few levels of indent,
+tile is one always. They are the two exceptions to "nothing may ask for one
+unit", and both are chrome rather than something you read code in: the floor of
+two exists to keep the 80-column promise, and that promise is about panes you
+read *code* in — a terminal, a diff, the editor. The new-worktree tile holds two
+short fields and a button, none of which is better for being 80 columns wide.
+
+**That tile is the form itself, one per project, at the end of that project's
+run of windows** — see `NewWorktreePane`. It was a modal, and a modal is the
+wrong shape for it: a dialog interrupts to ask one question and goes away, where
+"and one more" is a standing offer, and the scrim hid the very windows you were
+naming a branch relative to. Sitting in the row it is a pane you can walk to —
+`PaneKind` includes `'add'`, cells are keyed by `addKey(projectId)`, and the
+Cmd+arrow stops are keyed by the cell rather than by a worktree, so the walk
+reaches it with no special case and the caret lands in the branch box. One per
+project is what lets it never ask which project it is for; the single tile at
+the far end of the row could not answer that once two were open, which is why it
+used to appear only when exactly one was. There is no Cancel, because there is
+nothing to cancel back to. A tree is chrome: names at a few levels of indent,
 its own floor 158px, against a unit that measures 336px at 2400px and 403px on a
 phone. So `panesOf` asks `filesContentOpen` before it asks `PANE_UNITS`, and a
 worktree browsing its files is three units where one reading a file is five —

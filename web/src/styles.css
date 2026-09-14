@@ -586,22 +586,14 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
   flex: none;
   align-self: stretch;
-  padding: 0 11px 0 9px;
+  padding: 0 11px;
   background: var(--level-object);
-  font-size: 11px;
+  font-size: 15px;
   line-height: 1;
   /* --graphite-dim measures 3.40:1 on --sleeve, well under the floor. */
   color: var(--graphite);
-}
-
-.tabgroup__add-label {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
 }
 
 .tabgroup__add:hover {
@@ -1074,42 +1066,6 @@ button {
 .tabstrip[data-tight='3'] .tab__queued,
 .tabstrip[data-tight='3'] .tab__dirty {
   display: none;
-}
-
-/*
- * The + gives its word up before the tabs give up their names.
- *
- * Measured with four worktrees over two projects: every name fits from 1150px
- * with the word and from 1050px without it, so the noun is worth exactly 100px
- * of headroom -- 50 a project, which is what it looked like it would cost. Two
- * rules rather than one because the strip runs out of room two different ways,
- * and either is enough: too many tabs, which is what `data-tight` counts, or
- * too little window, which it does not -- it is derived from the tab count and
- * measured 0 at every width here.
- *
- * A + is only ambiguous while there is room to wonder about it. By the time
- * this fires it is one glyph between two tabs inside a visible slab, which
- * already scopes it to the project -- the word was buying clarity the shell now
- * supplies.
- */
-@media (max-width: 1200px) {
-  .tabgroup__add-label {
-    display: none;
-  }
-
-  .tabgroup__add {
-    padding: 0 9px;
-  }
-}
-
-.tabstrip[data-tight='2'] .tabgroup__add-label,
-.tabstrip[data-tight='3'] .tabgroup__add-label {
-  display: none;
-}
-
-.tabstrip[data-tight='2'] .tabgroup__add,
-.tabstrip[data-tight='3'] .tabgroup__add {
-  padding: 0 9px;
 }
 
 /* And the names give ground too, a step at a time, so more of them fit before
@@ -1698,48 +1654,103 @@ button {
  * Creating a worktree is the primary action of this view, not a menu item, so
  * it sits in the grid as its own cell and is always present.
  */
-.tile--add {
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 100%;
+/*
+ * The new-worktree tile: the form itself, one unit wide, at the end of each
+ * project's run of windows.
+ *
+ * It wears the row's own furniture rather than a dialog's -- a bar across the
+ * top like every other window, the same --level-panel ground, the same border
+ * -- because it is a tile and not something laid over the tiles. What says it
+ * is not a worktree is that the border is dashed: the one place in the row
+ * where an outline means "nothing here yet".
+ */
+.tile--addpane {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  padding: 20px;
-  border: 1px dashed var(--rule-bright);
-  border-left: 1px dashed var(--rule-bright);
-  border-radius: var(--radius);
-  background: none;
-  text-align: center;
+  border-style: dashed;
 }
 
-.tile--add:hover {
-  border-color: var(--graphite);
+.addpane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
 }
 
-.tile--add:hover .tile--add__mark {
-  color: var(--bone);
-}
-
-.tile--add__mark {
+.addpane__bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 35px;
+  padding: 0 10px;
   font-family: var(--font-ui);
-  font-size: 20px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.addpane__project {
+  color: var(--graphite-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.addpane__slash {
   color: var(--graphite-dim);
 }
 
-.tile--add__label {
-  font-family: var(--font-ui);
-  font-size: 13px;
+.addpane__title {
   color: var(--bone);
+  font-weight: 500;
 }
 
-.tile--add__hint {
+.addpane__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+
+.addpane__error {
   margin: 0;
-  max-width: 34ch;
-  font-size: 13px;
-  color: var(--graphite-dim);
+  font-size: 12px;
   line-height: 1.5;
+  color: var(--danger);
+}
+
+.addpane__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 10px 12px;
+  /* The one horizontal rule in the tile, so the button reads as the end of the
+     form rather than one more field. */
+  border-top: 1px solid var(--rule);
+}
+
+/*
+ * Where it will land, which is the one thing about a new worktree you cannot
+ * work out from the branch name alone. It takes whatever the button leaves and
+ * ellipsises from the left, because the tail -- the directory being made -- is
+ * the half worth reading.
+ */
+.addpane__where {
+  flex: 1;
+  min-width: 0;
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--graphite-dim);
 }
 
 /*

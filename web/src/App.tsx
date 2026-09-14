@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
-import { NewWorktreeDialog } from './components/NewWorktreeDialog.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview, type PaneKind } from './views/Overview.js'
+import { addKey, Overview, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -30,7 +29,6 @@ export const App = (): React.ReactElement => {
     useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
-  const [addingTo, setAddingTo] = useState<Project | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const [closingProject, setClosingProject] = useState<string | null>(null)
   const [sleeping, setSleeping] = useState<string | null>(null)
@@ -527,7 +525,12 @@ export const App = (): React.ReactElement => {
       todos={todos}
       onOpenProject={() => setShowOpenProject(true)}
       onCloseProject={setClosingProject}
-      onNewWorktree={setAddingTo}
+      /*
+       * The + no longer opens anything: the form is a tile at the end of that
+       * project's run of windows, so this walks you to it and hands over the
+       * caret, the same as clicking a worktree's tab.
+       */
+      onNewWorktree={(project) => reveal(addKey(project.id), 'add')}
       onWake={wake}
       onReveal={reveal}
       onSleep={setSleeping}
@@ -545,23 +548,6 @@ export const App = (): React.ReactElement => {
           }}
           onOpened={() => {
             setShowOpenProject(false)
-            void refresh()
-          }}
-        />
-      )}
-      {addingTo && (
-        <NewWorktreeDialog
-          project={addingTo}
-          onClose={() => {
-            setAddingTo(null)
-            refocus()
-          }}
-          onCreated={(worktreeId) => {
-            setAddingTo(null)
-            // A worktree you just made is one you want to work in, so it starts
-            // awake -- and it is scrolled to, since the row may be long.
-            setAwake([...awake, worktreeId])
-            reveal(worktreeId)
             void refresh()
           }}
         />
@@ -693,10 +679,6 @@ export const App = (): React.ReactElement => {
         openFilesByWorktree={ui.openFilesByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
-        // With one project open there is no question which project a new
-        // worktree belongs to; with several there is, and the top bar's
-        // per-project + is the unambiguous way to say it.
-        addTo={projects.length === 1 ? (projects[0] ?? null) : null}
         scrollTo={scrollTo}
         active={active}
         onActivate={activate}
@@ -704,7 +686,13 @@ export const App = (): React.ReactElement => {
         onReveal={reveal}
         onTogglePanel={togglePanel}
         onQueueDrained={queueDrained}
-        onNewWorktree={() => setAddingTo(projects[0] ?? null)}
+        onCreated={(worktreeId) => {
+          // A worktree you just made is one you want to work in, so it starts
+          // awake -- and it is scrolled to, since the row may be long.
+          setAwake([...awake, worktreeId])
+          reveal(worktreeId)
+          void refresh()
+        }}
         onSelectTerminal={(worktreeId, sessionId) =>
           setUi({
             activeTerminalByWorktree: {
