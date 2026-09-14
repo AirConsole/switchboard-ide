@@ -62,30 +62,74 @@ interface.
 
 The pieces, and why each is the way it is:
 
+- **Every surface picks a level; none invents a value.** The ladder is six
+  rungs, deepest first — `--level-frame` (the top bar), `--level-ground` (the
+  page and the terminal), `--level-panel` (tiles and dialogs, and the project's
+  head), `--level-raised` (menus and the sleeve), `--level-object` (a thing at
+  rest on a surface: a tab, a segment, a scrollbar thumb) and `--level-lit` (the
+  one you are in, wherever you are — the tab, and a selected row in the files or
+  changes list, which is the same statement). `grep -- --level-` finds every
+  surface at a given depth. `--sleeve` and `--tab-head` survive as aliases
+  because the comments around the strip are written in them.
+
+  This replaced twelve grey tokens describing about five rungs. The names used
+  to say which component first needed the colour, so a new component needed a
+  new name: `--sleeve` and `--slab-raised` measured **1.014:1** apart,
+  `--tab-head` and `--slab` **1.010**, `--rule-bright` and `--tab-hover`
+  **1.046**. Two colours that close are one colour with two spellings — nobody
+  resolves the step, so nobody notices when the two ends drift.
+
+  **The values did not move, and respacing them was measured and rejected.**
+  Every invisible step is at the dark end, because contrast is
+  `(L₁+0.05)/(L₂+0.05)` and near black the constant swamps the luminance:
+  `--level-frame` and `--level-ground` differ by **72% in luminance** and
+  measure **1.05:1**. An evenly stepped six-level scale widens exactly the steps
+  nobody reads anything against, and pays for them at the light end, where it
+  puts `--graphite` on 4.41 and 3.17 — under the floor on two levels instead of
+  one.
+
+  **The ceiling is the quiet grey, not taste.** `--graphite` clears five of the
+  six levels (7.94, 7.54, 6.98, 6.44, 5.19) and fails on `--level-lit` at 3.90,
+  which is the entire reason `--quiet-on` exists. So each level carries the grey
+  its quiet text is set in, and a seventh level would not be a colour decision —
+  it would be a third grey.
+
+  **Hover is an operation, not a level**: `--level-hover` is
+  `color-mix(in srgb, var(--level-lit) 40%, var(--level-object))`, part-way from
+  where you are to where clicking takes you, so it cannot drift from either end.
+  40% and not 50% because `--graphite` has to survive it — the halfway mix lands
+  on 4.48:1, just under the floor, and this lands on **4.62**. It resolves to
+  `#313b4a`, which is the old `--tab-hover` to the pixel.
+
+  **`--rule` and `--rule-bright` are lines, and only lines.** `--rule-bright`
+  was the most-used token in the app at 45 uses, 16 of them fills — a border
+  name doing a surface job. Its fills went to the level each one actually is:
+  eight hovers to `--level-hover`, three selections to `--level-lit`, three
+  objects to `--level-object`, and two that turned out to be `height: 1px`
+  bands kept the name, because a rule drawn as a background is still a rule.
+
 - **The bar has its own ground, `--bar`, and that was the whole contrast
   problem.** It used to be `--ink`, the page's, and the sleeve measured
   **1.08:1** against it — so the trough that says "these tabs are one project"
   was not visible at all, and every complaint about the strip followed from it.
   Chrome runs its frame against its toolbar at 1.33:1 *and* gives each group a
-  hue. `--bar` is `#0a0d12` and `--sleeve` `#1e242f`, which is 1.25:1, and the
-  shell's shape carries the rest.
+  hue. `--level-frame` is `#0a0d12` and the sleeve is `--level-raised`, which is
+  1.23:1, and the shell's shape carries the rest.
 - **The project is the group's first segment**, not a bead in front of it. It
   was a 22px fully-round pill, vertically centred, 14px clear of 32px tabs — a
   different shape at a different height with a gap after it, which is exactly
   what "dangling" was. Now it is the tabs' own height, flush against them, and
-  `--tab-head` is a rung **down** from the sleeve rather than up: 1.33:1 below a
+  `--tab-head` is a rung **down** from the sleeve rather than up: 1.35:1 below a
   segment, so the run reads *heading, then items* rather than five things you
   could click into. Uppercase and letterspaced at label size, because a heading
   is not a name you read one character at a time. Its × stays on it — closing a
   project is the project's own action.
-- **The tabs have their own ladder** — `--tab-rest`, `--tab-hover`, `--tab-on`
-  — rather than borrowing `--rule` and `--rule-bright`, which are dividers all
-  over the app and have no business moving when the strip is retuned.
-- **The tab you are in is `--tab-on`**, the lightest thing on the strip, and one
+- **The tab you are in is `--level-lit`**, the lightest thing on the strip, and one
   rung higher than it was: 2.26:1 over the bar where it used to be 1.66. That
   rung is not free, and the price is one value. `--graphite` is what every quiet
   thing on a tab is written in — the ×, the dirty count — and it cleared the old
-  `--tab-on` at 4.54:1 and measures **3.90:1** on this one, under the floor. So
+  `--tab-on` at 4.54:1 and measures **3.90:1** on `--level-lit`, under the
+  floor. So
   `--quiet-on` (`#b3bac6`, 4.89:1) exists for exactly that ground and nothing
   else. Any future attempt to brighten the active tab pays the same toll; the
   ceiling on it has never been taste.
@@ -206,14 +250,14 @@ The pieces, and why each is the way it is:
   grey continuous with the toolbar under it — a hole cut in the frame onto the
   surface below (measured from Chrome: frame `#202124` against toolbar `#35363a`,
   1.58:1). What we keep is that direction, not the continuity: the page is
-  black, the tabs are pills, and `--tab-on` (`#333c4b`) is simply the lit one —
-  1.54:1 above `--sleeve`, the trough it floats in, and 1.66:1 above the bar,
+  black, and `--level-lit` (`#3b4657`) is simply the lit one —
+  1.75:1 above the sleeve it is seamed into, and 2.26:1 above the bar,
   against 1.17:1 when the tab you were in was the dark one. It stops there
   because `--graphite` — what everything quiet on a tab is written in, and it
   lands on this ground on that tab — is 4.54:1 against it; one more rung is
   under the floor.
-- **Hover lifts the fill a rung, and only the fill.** `--tab-hover` sits between
-  `--tab-rest` and `--tab-on`, which is where a hover should point, and clears
+- **Hover lifts the fill a rung, and only the fill.** `--level-hover` sits between
+  `--level-object` and `--level-lit`, which is where a hover should point, and clears
   `--graphite` at 4.61:1 — the tightest of the three tab grounds now that the
   active one has `--quiet-on` of its own. The label deliberately stays `--graphite`: the tab you are in is only
   1.06:1 lighter than a hovered one, so lighting the label on hover too would
@@ -224,7 +268,7 @@ The pieces, and why each is the way it is:
   difference does as much work as the tab's shape. Every tab here used to be
   `--bone`, so the *only* thing saying where you were was that 1.28:1 fill. The
   resting label is `--graphite` (6.98:1 on the sleeve) and the active tab's is
-  `--bone` (8.71:1 on `--tab-on`): 1.92:1 between the two labels, against 1.0
+  `--bone` (7.48:1 on `--level-lit`): 1.92:1 between the two labels, against 1.0
   before. What that channel used to carry — awake or asleep — costs nothing to
   give up, since every tab in the strip is awake except the one that says
   "zZ 3" in words.
@@ -234,7 +278,7 @@ The pieces, and why each is the way it is:
   one and where `--graphite` finally falls through the floor at 3.90. It used to
   be a single value across all three; raising the active tab is what bought the
   second, and it is the whole price of that rung. And the project head's ×
-  turns `--danger` with no ground under it: 5.59:1 on `--tab-head`.
+  turns `--danger` with no ground under it: 5.64:1 on `--tab-head`.
 
 ## The row is a grid of units
 
@@ -721,7 +765,7 @@ CodeMirror injects its own rules at a specificity a plain class rule can lose
 to.
 
 Every text colour clears 4.5:1 on every ground it lands on, including
-`--slab-raised`; the three greys are a ladder (13.4 : 7.0 : 5.2). Class names
+`--level-raised`; the three greys are a ladder (13.4 : 7.0 : 5.2). Class names
 describe the interface's parts (`.tile`, `.chip`, `.grid__spot`); user-visible
 text never does — it says worktree, window, terminal, Claude.
 
@@ -755,8 +799,8 @@ rewriting it was free, while an object is not, and this now fires on every focus
 move *within* a pane.
 
 **The window you are in says so at both ends.** The strip makes its tab the lit
-one; `.tile--current` gives that window's own bar `--rule-bright`, 1.45:1 above
-every other bar and one rung under `--tab-on`, so the tab and the bar read as
+one; `.tile--current` gives that window's own bar `--level-object`, 1.35:1 above
+every other bar and two rungs under `--level-lit`, so the tab and the bar read as
 the same lit surface at the two ends of the same sentence. Everything quiet in
 that bar goes up a rung with it — `--graphite-dim` is 3.62:1 on it, under the
 floor, so the project, the branch and the prompt are `--graphite` there
