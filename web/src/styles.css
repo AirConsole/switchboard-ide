@@ -693,7 +693,6 @@ button {
    * you are in 1.30:1 above it, which is the step that has to survive.
    */
   --tab-fill: var(--rule);
-  background: var(--tab-fill);
   /*
    * The status is a bar down the leading edge, where an 11px bullet used to be:
    * about four times the area, at the edge the eye lands on as it runs along a
@@ -709,16 +708,24 @@ button {
    * those measurements as it was, and a severity stripe is not what selection
    * looks like anywhere, so the two cannot be read for each other.
    *
-   * An inset shadow rather than a pseudo-element: it is clipped by the pill's
-   * own 9px radius with nothing to keep in step, it needs no element inside a
-   * tab that is already a wrapper around two buttons, and the menu's stacked
-   * tabs inherit it from this one rule.
+   * A background gradient with a hard stop, which is the only one of the three
+   * ways to draw this that gives a straight edge. `inset 4px 0 0` looks right
+   * in a mockup and is wrong on a pill: an inset shadow is the box minus a copy
+   * of itself shifted 4px, so *both* of the band's edges follow the 9px radius
+   * and it bends away along the top and bottom of the tab instead of ending in
+   * a line. A pseudo-element would need `overflow: hidden` on a tab that is a
+   * wrapper around two buttons. A background is painted inside the border box
+   * and clipped by the radius for free, so the outer edge takes the pill's
+   * curve, the inner edge stays vertical, and the menu's stacked tabs inherit
+   * it from this one rule.
    *
    * Nothing running has no bar at all, where it used to have a hollow ring.
    * Absence is the honest mark for it, and it is quieter than a ring -- which
    * is right for the one state that is not asking for anything.
    */
-  box-shadow: inset 4px 0 0 var(--tab-state, transparent);
+  background:
+    linear-gradient(to right, var(--tab-state, transparent) 0 4px, transparent 4px)
+    var(--tab-fill);
 }
 
 /* The zZ tab stands for a count, not for a name, so it takes what it needs. */

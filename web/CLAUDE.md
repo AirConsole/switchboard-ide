@@ -77,10 +77,16 @@ The pieces, and why each is the way it is:
   square shoulders on the active tab — which is the honest answer if the fill is
   ever wanted for status after all. The bar gets roughly four times the old
   bullet's area for none of it, and a severity stripe is nowhere a way of saying
-  "selected". It is an inset box-shadow on `.tab`, so the pill's 9px radius clips
-  it with nothing to keep in step and the menu's stacked tabs get it from the
-  same rule. Measured 1:1 off the rendered pixels: exactly 4px of `#ffb454` at
-  mid-height, 3px at the shoulders where the radius eats it.
+  "selected". It is drawn as a **background gradient with a hard stop**, which is
+  the only one of the three ways that gives a straight edge: an inset box-shadow
+  is the box minus a copy of itself shifted 4px, so *both* the band's edges take
+  the 9px radius and it bends away along the top and bottom of the pill instead
+  of ending in a line — it looks right in a mockup and wrong on a tab. A
+  background is painted inside the border box and clipped by the radius for
+  free, so the outer edge takes the curve and the inner edge stays vertical,
+  and the menu's stacked tabs get it from the same rule. Measured 1:1 off the
+  rendered pixels: the band's right edge lands on the same column for all 27
+  rows of the pill, and only its left edge moves with the curve.
 - **Removal only asks what it has to.** `removalQuestions` reads the same two
   counts the tab shows: uncommitted work is what makes git refuse without
   `--force`, and unmerged commits are what make deleting the branch a decision.
