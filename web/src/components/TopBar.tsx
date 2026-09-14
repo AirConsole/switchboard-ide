@@ -340,14 +340,18 @@ const Group = ({
         </>
       )}
 
+      {/* Always the noun, where it used to be a bare glyph unless this was the
+          only project. A + at the end of a run of tabs means "one more tab" in
+          every browser, so a scoped one was read as the global one -- and the
+          bar already has an Open project at its far left to be confused with. */}
       <button
-        className={alone ? 'tabgroup__add tabgroup__add--labelled' : 'tabgroup__add'}
+        className="tabgroup__add"
         onClick={() => onNewWorktree(project)}
         title={`New worktree in ${project.name}`}
         aria-label={`New worktree in ${project.name}`}
       >
         <span aria-hidden="true">+</span>
-        {alone && <span className="tabgroup__add-label">New worktree</span>}
+        <span className="tabgroup__add-label">Worktree</span>
       </button>
     </div>
   )

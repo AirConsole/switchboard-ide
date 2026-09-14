@@ -31,14 +31,26 @@ the reference — `chrome/browser/ui/tabs/tab_style.cc` gives a 10px top radius
 and a 2px separator 16px tall — scaled into the 38px bar.
 
 What is **not** copied is Chrome's *shape*. Its tabs stand on the toolbar and
-grow feet to run into it; these are **pills**, round at the bottom as well as
-the top, floating in the sleeve with 3px of it under them. The feet went with
-the ground they ran into: the page is black and the tab you are in is the lit
-one, so there is nothing to be continuous with — and they cost a 12px overhang
-across each neighbour's click target that needed `pointer-events: none` to be
-safe, and a `z-index` on two states to paint in the right order. Both are gone;
-every tab now owns its own width at its left edge, its centre and its right,
-`elementFromPoint`-measured.
+grow feet to run into it. The feet went with the ground they ran into: the page
+is black and the tab you are in is the lit one, so there is nothing to be
+continuous with — and they cost a 12px overhang across each neighbour's click
+target that needed `pointer-events: none` to be safe, and a `z-index` on two
+states to paint in the right order. Both are gone; every tab owns its own width
+at its left edge, its centre and its right, `elementFromPoint`-measured.
+
+**A project is one slab and the tabs are its segments.** They were pills for a
+while — round on every side, floating in the sleeve — and that is what made the
+grouping fail. Round pills are each their own object, so a row of them is a row
+of objects that happen to be near each other; **square segments inside one
+rounded shell are one object divided**, and the container holds every outer
+edge. So `.tab` is `border-radius: 0` and `.tabgroup` is `9px 9px 0 0` with
+`overflow: hidden` and no padding: the first segment wears the shell's left
+curve, the + wears its right, and the sleeve is seen only in the 2px seams,
+which is all a trough was ever for. It is the strongest grouping available
+without colour, which is the channel this interface will not spend on identity.
+Verified 1:1 off the rendered pixels: the slab's left edge curves in over six
+rows and the head segment is clipped by it, and a seam measures exactly two
+columns of `--sleeve` before the next segment's state bar.
 
 What is **not** copied is Chrome's colour. A tab group there picks a hue; here
 the sleeve is grey, and the only colour on a tab is its **state bar** — 4px down
@@ -50,22 +62,39 @@ interface.
 
 The pieces, and why each is the way it is:
 
-- **A project is a tab group** — a `--sleeve` sleeve, flush with the bar's foot
-  and inset 3px at the top, with the project's name in a pill. The pill *is* the
-  project's mark, so there is no separate square any more, and it is `--rule`:
-  a rung up from the trough it sits in, since a darker pill on a ground this
-  dark is 1.15:1 and no pill at all.
-- **The tab you are in is `--tab-on`**, the lightest thing on the strip and the
-  only tab carrying a fill, 1.54:1 above the trough it floats in. The bar's
-  bottom rule is still a background rather than a border, which is what let the
-  active tab paint over it when it had feet.
-- **Every tab carries a fill**, `--rule` at rest, 1.18:1 above the trough — a
-  small step, as all of them are here, but the difference between a shape and no
-  shape. They used to be the trough showing through, with only their label to
-  say a tab was there. A 2px gap in the sleeve keeps two of them from reading as
-  one shape with a seam, which is what retired Chrome's separator: a 1px mark
-  hung off each tab's left edge and hidden either side of the active and hovered
-  ones, three rules doing what a gap does.
+- **The bar has its own ground, `--bar`, and that was the whole contrast
+  problem.** It used to be `--ink`, the page's, and the sleeve measured
+  **1.08:1** against it — so the trough that says "these tabs are one project"
+  was not visible at all, and every complaint about the strip followed from it.
+  Chrome runs its frame against its toolbar at 1.33:1 *and* gives each group a
+  hue. `--bar` is `#0a0d12` and `--sleeve` `#1e242f`, which is 1.25:1, and the
+  shell's shape carries the rest.
+- **The project is the group's first segment**, not a bead in front of it. It
+  was a 22px fully-round pill, vertically centred, 14px clear of 32px tabs — a
+  different shape at a different height with a gap after it, which is exactly
+  what "dangling" was. Now it is the tabs' own height, flush against them, and
+  `--tab-head` is a rung **down** from the sleeve rather than up: 1.33:1 below a
+  segment, so the run reads *heading, then items* rather than five things you
+  could click into. Uppercase and letterspaced at label size, because a heading
+  is not a name you read one character at a time. Its × stays on it — closing a
+  project is the project's own action.
+- **The tabs have their own ladder** — `--tab-rest`, `--tab-hover`, `--tab-on`
+  — rather than borrowing `--rule` and `--rule-bright`, which are dividers all
+  over the app and have no business moving when the strip is retuned.
+- **The tab you are in is `--tab-on`**, the lightest thing on the strip, and one
+  rung higher than it was: 2.26:1 over the bar where it used to be 1.66. That
+  rung is not free, and the price is one value. `--graphite` is what every quiet
+  thing on a tab is written in — the ×, the dirty count — and it cleared the old
+  `--tab-on` at 4.54:1 and measures **3.90:1** on this one, under the floor. So
+  `--quiet-on` (`#b3bac6`, 4.89:1) exists for exactly that ground and nothing
+  else. Any future attempt to brighten the active tab pays the same toll; the
+  ceiling on it has never been taste.
+- **The 2px seam is the only sleeve you ever see.** It is what keeps two
+  segments of one fill from reading as one shape, and it is what retired
+  Chrome's separator: a 1px mark hung off each tab's left edge and hidden either
+  side of the active and hovered ones, three rules doing what a gap does. The
+  bar's bottom rule is still a background rather than a border, which is what
+  lets the slab paint over it.
 - **The status is a bar, not the fill**, and that was the question. The fill is
   the loudest channel on the strip — amber over the sleeve measures 9.70:1 where
   every other step here is 1.18 to 1.54 — and it is already spoken for: it says
@@ -76,9 +105,9 @@ The pieces, and why each is the way it is:
   for the active tab dies at 1.38:1 on exactly the amber tab it matters most on,
   and the only active signal that survives a coloured fill is **shape** —
   square shoulders on the active tab — which is the honest answer if the fill is
-  ever wanted for status after all. The bar gets roughly four times the old
-  bullet's area for none of it, and a severity stripe is nowhere a way of saying
-  "selected". It is drawn as a **background gradient with a hard stop**, which is
+  ever wanted for status after all — and since the tabs went square, that answer
+  is available for free. The bar gets roughly four times the old bullet's area
+  for none of it, and a severity stripe is nowhere a way of saying "selected". It is drawn as a **background gradient with a hard stop**, which is
   the only one of the three ways that gives a straight edge: an inset box-shadow
   is the box minus a copy of itself shifted 4px, so *both* the band's edges take
   the 9px radius and it bends away along the top and bottom of the pill instead
@@ -116,11 +145,19 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
-- **The + says what it does when it is the only one.** With one project open it
-  is `+ New worktree`, because it is the only + on the bar and one project's
-  tabs never fill the strip; with several, each sleeve carries its own and the
-  label would be the same three words repeated across the bar, so they stay
-  glyphs and the tooltip names the project.
+- **The + is the group's last segment and it wears its noun.** A bare + at the
+  end of a run of tabs is Chrome's "one more tab", full stop — so a *scoped* one
+  gets read as the global one, and this bar already carries an **Open project**
+  at its far left that it was being confused with. It used to spend the word
+  only when a single project made the + unambiguous anyway, which is the case
+  that needed it least. Measured with four worktrees over two projects: every
+  name fits from 1150px with the word and from 1050px without it, so it is worth
+  exactly 100px of headroom — and it is dropped two ways, under
+  `@media (max-width: 1200px)` and at `data-tight` 2 and 3, because the strip
+  runs out of room by window *and* by tab count and `data-tight` only counts the
+  second (it measured 0 at every width here). By the time either fires the + is
+  one glyph between two tabs inside a visible slab, which scopes it anyway — the
+  word was buying clarity the shell now supplies.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -175,9 +212,10 @@ The pieces, and why each is the way it is:
   because `--graphite` — what everything quiet on a tab is written in, and it
   lands on this ground on that tab — is 4.54:1 against it; one more rung is
   under the floor.
-- **Hover lifts the fill a rung, and only the fill.** `--rule-bright` is 1.22:1
-  above a resting tab, on the way to `--tab-on`, which is where a hover should
-  point. The label deliberately stays `--graphite`: the tab you are in is only
+- **Hover lifts the fill a rung, and only the fill.** `--tab-hover` sits between
+  `--tab-rest` and `--tab-on`, which is where a hover should point, and clears
+  `--graphite` at 4.61:1 — the tightest of the three tab grounds now that the
+  active one has `--quiet-on` of its own. The label deliberately stays `--graphite`: the tab you are in is only
   1.06:1 lighter than a hovered one, so lighting the label on hover too would
   leave nothing to tell them apart. Bright text is what "you are in this one"
   means, and it outranks an echo of the pointer.
@@ -190,12 +228,13 @@ The pieces, and why each is the way it is:
   before. What that channel used to carry — awake or asleep — costs nothing to
   give up, since every tab in the strip is awake except the one that says
   "zZ 3" in words.
-- **Contrast pins two more rules.** Everything quiet on a tab is `--graphite`,
-  one value that clears the floor on all three of a tab's grounds (6.98 sleeve,
-  5.89 hovered, 4.54 on the active tab, which is the light one and so the
-  tightest). And the pill's × turns `--danger` with no ground under it: 4.77:1
-  on the pill's own `--rule`, against 3.90 if the hover lit a `--rule-bright`
-  ring behind it.
+- **Contrast pins two more rules.** Everything quiet on a tab is `--graphite`
+  on every ground but one — 5.19:1 on a resting segment, 4.61 hovered, 6.91 on
+  the project's head — and `--quiet-on` on the lit segment, which is the light
+  one and where `--graphite` finally falls through the floor at 3.90. It used to
+  be a single value across all three; raising the active tab is what bought the
+  second, and it is the whole price of that rung. And the project head's ×
+  turns `--danger` with no ground under it: 5.59:1 on `--tab-head`.
 
 ## The row is a grid of units
 
