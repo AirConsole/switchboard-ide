@@ -271,32 +271,20 @@ export const OpenProjectDialog = ({
       setBusy(false)
       return
     }
-    // Two calls presented as one action, and they go to different machines: the
-    // peer opens the project, because its git and its tmux are what will run
-    // it, and then this server records the pointer so it survives a reload.
-    const request =
-      server === undefined
-        ? api.openProject(target, { create, commitExisting })
-        : api
-            .openProject(target, { create, commitExisting, host: server.key })
-            .then((project) =>
-              api
-                .openRemoteProject({
-                  baseUrl: server.baseUrl,
-                  root: project.root,
-                  name: project.name,
-                })
-                // The peer has it and we do not, which is a real state and one
-                // the user can act on -- adding it again will now succeed,
-                // because the peer's own open is idempotent.
-                .catch((err: unknown) => {
-                  throw new Error(
-                    `Opened on ${server.name}, but this machine could not record it: ${
-                      err instanceof Error ? err.message : String(err)
-                    }`,
-                  )
-                }),
-            )
+    /*
+     * One call, to the machine the project will live on.
+     *
+     * It used to be two -- open it there, then record a pointer here -- which
+     * meant a half-open state nobody asked for: the peer had the project and
+     * this machine did not. There is nothing to record now. A linked machine
+     * contributes everything it has open, so opening it there *is* opening it
+     * here, one snapshot later.
+     */
+    const request = api.openProject(target, {
+      create,
+      commitExisting,
+      ...(server === undefined ? {} : { host: server.key }),
+    })
     void request
       .then(() => onOpened())
       .catch((err: unknown) => {

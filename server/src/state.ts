@@ -111,10 +111,17 @@ const reviveProject = (value: unknown): Project | null => {
   if (typeof row.root !== 'string' || row.root === '') return null
   return {
     ...(row as Project),
-    // A project registered before hosts existed is a local one. Defaulting it
-    // here keeps the type honest about a field the stored file has never
-    // contained.
-    host: row.host ?? { kind: 'local' as const },
+    /*
+     * Always local, and this is the one place that says so.
+     *
+     * Only local projects are stored: a machine you have linked contributes
+     * *its* projects to the snapshot, under its own ids, and none of them is
+     * written here. Forcing it keeps that an invariant of the file rather than
+     * something every reader has to check -- `worktrees()` used to skip a
+     * remote row, and `createWorktree` used to refuse one, because a stored
+     * remote project would send local git at a path on another machine.
+     */
+    host: { kind: 'local' as const },
     worktreeRoot: defaultWorktreeRoot(row.root),
   }
 }

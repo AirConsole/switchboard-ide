@@ -43,8 +43,6 @@ beforeAll(async () => {
   await store.load()
   const workspace = new Workspace(store, { list: () => [] } as never)
   await workspace.addServer({ baseUrl: peerUrl, token: 'tok' })
-  const pointer = await workspace.openRemoteProject({ baseUrl: peerUrl, root: '/srv/ide' })
-  localProjectId = pointer.id
 
   app = Fastify()
   // The same error handler `registerApi` installs, because what is under test
@@ -67,8 +65,6 @@ beforeAll(async () => {
   app.post('/api/worktrees/:id/todos', async () => ({ here: true }))
   await app.ready()
 })
-
-let localProjectId = ''
 
 afterAll(async () => {
   await app.close()
@@ -103,17 +99,17 @@ describe('which machine a request goes to', () => {
   })
 
   /*
-   * A remote project's id is our pointer's and therefore bare, so nothing about
-   * it says "another machine". Without the store lookup this was answered here
-   * and refused, and creating a worktree on a remote project was unreachable.
+   * `POST /api/worktrees` needs no special case any more, and that is the point
+   * of linking: a remote project is known by the machine's own id, scoped, so
+   * the route that addresses a project routes itself. When the gateway minted
+   * an id of its own for it, nothing about that id said "another machine" --
+   * the request was answered locally and refused, and creating a worktree on a
+   * remote project was simply unreachable.
    */
-  it('routes a remote project by its pointer, and renames it for the peer', async () => {
-    const out = await call('/api/worktrees', 'POST', { projectId: localProjectId, branch: 'x' })
+  it('routes a remote project by its own scoped id', async () => {
+    const out = await call('/api/worktrees', 'POST', { projectId: `${key}~p-peer`, branch: 'x' })
     expect(out.asked[0]?.url).toBe('/api/worktrees')
-    // The peer calls that project something else: the same root, hashed without
-    // a base URL. Sending our id would address nothing there.
-    expect((out.asked[0]?.body as { projectId: string }).projectId).not.toBe(localProjectId)
-    expect((out.asked[0]?.body as { projectId: string }).projectId).toMatch(/^p-[0-9a-f]{10}$/)
+    expect((out.asked[0]?.body as { projectId: string }).projectId).toBe('p-peer')
   })
 
   it('sends `?host=` reads to that machine, without the parameter', async () => {

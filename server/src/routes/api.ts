@@ -232,31 +232,6 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * because those processes outlive the browser and would otherwise be left
    * alive with nothing on screen owning them.
    */
-  /*
-   * Register a project that lives on another machine.
-   *
-   * Its own route rather than a flag on `POST /api/projects`, and the reason is
-   * the same one that keeps `worktrees()` away from a remote root: the local
-   * path exists on this route and does not on that one. Keeping them apart is
-   * what guarantees the remote path touches no disk -- there is no disk code on
-   * it to reach.
-   */
-  app.post('/api/projects/remote', async (request) => {
-    const body = z
-      .object({
-        baseUrl: z.string().min(1),
-        root: z.string().min(1),
-        name: z.string().optional(),
-      })
-      .parse(request.body)
-    // Stripped on the way out: the caller is a browser, and the token it just
-    // handed us is the one thing in this record it must not be handed back --
-    // a reply is as good a place to read it from as any other.
-    const project = await workspace.openRemoteProject(body)
-    broadcastInvalidate()
-    return project
-  })
-
   /**
    * The machines this one can read from.
    *

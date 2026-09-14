@@ -23,9 +23,12 @@ import { PeerUnreachable, type PeerClient } from './peer.js'
  * 3. **`?host=`**, for the two reads that name no resource at all: browsing a
  *    machine's filesystem and listing what it recently closed.
  *
- * Plus one that looks like none of them: `POST /api/worktrees` carries a
- * *project* id, and a remote project's id is our pointer's and therefore bare.
- * That is resolved through the store instead -- see `remoteProject`.
+ * `POST /api/worktrees` needs no fourth way, and that is worth saying because
+ * it used to: a remote project's id is now the peer's own, scoped like every
+ * other id, so the route that addresses a project routes itself. When the
+ * gateway minted its own id for a remote project, nothing about that id said
+ * "another machine" and the request was answered locally and refused -- so
+ * creating a worktree on a remote project was simply unreachable.
  *
  * `/api/snapshot` is the one exception and is handled in `workspace.ts`: it is
  * the merge of every machine rather than a question for one of them.
@@ -162,22 +165,10 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
     if (named.size > 1) throw new HttpError(400, 'that request names two different servers')
     const key = [...named][0] ?? null
 
-    let peer: PeerClient | null = null
-    let body = request.body
-    if (key !== null) {
-      peer = workspace.peerFor(key)
-      if (peer === null) throw new HttpError(404, 'no such server')
-    } else {
-      // A project id is bare even when the project is remote, so the store is
-      // what knows. The peer calls the project something else -- the same root
-      // hashed without a base URL -- so the body has to say the peer's name.
-      const projectId = (request.body as { projectId?: unknown } | null)?.projectId
-      if (typeof projectId !== 'string') return
-      const remote = workspace.remoteProject(projectId)
-      if (remote === null) return
-      peer = remote.peer
-      body = { ...(request.body as Record<string, unknown>), projectId: remote.peerProjectId }
-    }
+    if (key === null) return
+    const peer = workspace.peerFor(key)
+    if (peer === null) throw new HttpError(404, 'no such server')
+    const body = request.body
 
     try {
       // GET alone. A proxied DELETE is `git worktree remove --force` plus

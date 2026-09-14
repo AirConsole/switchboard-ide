@@ -89,31 +89,26 @@ export const api = {
       `/api/browse?path=${encodeURIComponent(path)}${host === undefined ? '' : `&host=${host}`}`,
     ),
 
-  /** The machines this server can read a project from. */
+  /**
+   * The machines this one is linked to.
+   *
+   * Linking is the whole of the relationship: everything open on a linked
+   * machine is open here. There is nothing to subscribe to per project, and
+   * nothing here records one -- a remote project arrives in the snapshot under
+   * that machine's own id.
+   */
   servers: () => request<ServerRow[]>('/api/servers'),
+  addServer: (input: { baseUrl: string; token: string }) =>
+    request<ServerRow>('/api/servers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   forgetServer: (baseUrl: string) =>
     request<{ ok: true }>('/api/servers', {
       method: 'DELETE',
       body: JSON.stringify({ baseUrl }),
     }),
 
-  /**
-   * Register a project that lives on another machine.
-   *
-   * Two steps presented as one action, and they go to different machines: the
-   * peer opens the project, because its git and its tmux are what will run it,
-   * and then this server records the pointer so it comes back after a reload.
-   */
-  addServer: (input: { baseUrl: string; token: string }) =>
-    request<ServerRow>('/api/servers', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  openRemoteProject: (input: { baseUrl: string; root: string; name?: string }) =>
-    request<Project>('/api/projects/remote', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
   openProject: (
     path: string,
     opts: { create?: boolean; commitExisting?: boolean; host?: string } = {},

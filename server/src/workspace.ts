@@ -57,127 +57,28 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
 
 
 /**
- * What to show for a peer that did not answer.
+ * What a linked machine contributes to the merged snapshot.
  *
- * Every pointer we hold gets a project, so a tab never disappears merely
- * because a machine is off -- the UI prunes stored layout for worktrees it
- * cannot see, and losing panels and open files is not a thing to do to someone
- * whose laptop is shut. Worktrees, sessions and todos come from the cache only
- * where it actually has them, so nothing is invented for a project we have
- * never successfully read.
+ * **Everything it has open**, not a subset we subscribed to. Linking a machine
+ * says "what is running there is running here", which is what the row is for:
+ * an agent blocked on you is blocked on you wherever it is, and a model where
+ * you had to have registered that particular project first could not tell you.
+ *
+ * Its *local* projects only. A peer has its own links to third machines, and
+ * following those would make this transitive -- C's worktrees arriving through
+ * B, named by ids B scoped for itself. Non-transitive is also what makes two
+ * machines linked to each other terminate rather than recurse.
+ *
+ * Ids are already scoped by `PeerClient`, so nothing here has to rewrite them:
+ * a remote project is known by the peer's own id, which is what lets every
+ * route address it through the ordinary proxy.
  */
-/**
- * What was written down last time, as a slice.
- *
- * Sessions and todos are empty on purpose: a remembered session would claim an
- * agent is running on a machine that is off, and liveness is exactly the kind
- * of fact that must be observed rather than recalled.
- */
-const cachedSlice = (cached: RemoteCache | undefined): Omit<AppSnapshot, 'ui'> | undefined =>
-  cached === undefined
-    ? undefined
-    : { projects: cached.projects, worktrees: cached.worktrees, sessions: [], todos: [] }
-
-const reconcile = (
-  cached: Omit<AppSnapshot, 'ui'> | undefined,
-  pointers: readonly Project[],
-  host: string,
-): Omit<AppSnapshot, 'ui'> => {
-  const remembered = new Map((cached?.projects ?? []).map((project) => [project.id, project]))
-  const projects = pointers.map((pointer) => ({
-    ...(remembered.get(pointer.id) ?? pointer),
-    id: pointer.id,
-    host: { kind: 'remote' as const, baseUrl: host },
-  }))
-  const live = new Set(projects.map((project) => project.id))
-  const worktrees = (cached?.worktrees ?? []).filter((worktree) => live.has(worktree.projectId))
-  const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
-  return {
-    projects,
-    worktrees,
-    /*
-     * Never sessions. This runs only when a machine did not answer, and
-     * liveness and attention are live facts: remembered, they claim an agent is
-     * running -- and, worse, that one is *blocked on you* -- on a machine that
-     * is switched off. Measured before this: unplug a peer with an agent
-     * waiting and the amber stayed, indefinitely, for something that was not
-     * there. Amber and green are the two things the whole row is scanned for,
-     * so they are the two that must never be recalled.
-     *
-     * `cachedSlice` said this already; `lastGood` is the commoner path and did
-     * not, which is why it is decided here instead of at either source.
-     */
-    sessions: [],
-    todos: (cached?.todos ?? []).filter((todo) => worktreeIds.has(todo.worktreeId)),
-  }
-}
-
-
-/**
- * The part of a peer's world that belongs to the projects we registered there.
- *
- * Matched on `root`, and on the peer's *own* project rather than its pointer to
- * a third machine: with two instances peered both ways, a peer holds both a
- * local project at `/src/ide` and a pointer to ours at the same path, and
- * picking whichever came first is a coin toss that swaps under you.
- *
- * **The project keeps our pointer's id, not the peer's.** That id is derived
- * from the root and the base URL, so it exists whether or not the peer answers
- * -- which is what lets an unreachable machine still have a tab, with its
- * worktrees missing, instead of the project itself disappearing on a cold
- * start. It is also the id the browser sends back to close the project, and
- * that has to address the pointer, which is the only part of it we own.
- *
- * Ids arriving here are already scoped by `PeerClient`, so the roots compare as
- * paths and everything else compares as scoped ids.
- */
-const selectProjects = (
-  snapshot: Omit<AppSnapshot, 'ui'>,
-  pointers: readonly Project[],
-  host: string,
-  remembered?: Omit<AppSnapshot, 'ui'>,
-): Omit<AppSnapshot, 'ui'> => {
-  const projects: Project[] = []
-  /** The peer's id for a project, mapped to ours. */
-  const asOurs = new Map<string, string>()
-  for (const pointer of pointers) {
-    const theirs = snapshot.projects.find(
-      (project) => project.root === pointer.root && project.host.kind === 'local',
-    )
-    projects.push({
-      ...(theirs ?? pointer),
-      id: pointer.id,
-      host: { kind: 'remote', baseUrl: host },
-    })
-    if (theirs) asOurs.set(theirs.id, pointer.id)
-  }
-
-  const worktrees = snapshot.worktrees
-    .filter((worktree) => asOurs.has(worktree.projectId))
-    .map((worktree) => ({ ...worktree, projectId: asOurs.get(worktree.projectId) as string }))
-  /*
-   * A project we cannot see worktrees for keeps the ones we last saw.
-   *
-   * Two shapes, and the second is the commoner one: the peer no longer lists
-   * the project at all (someone closed it over there), or it lists the project
-   * and **no worktrees** -- which is what a single `listWorktrees` throwing on
-   * an index.lock produces, because the peer catches per project and carries
-   * on. Either way the reply is a clean 200, so none of the unreachable-machine
-   * protection applies, while the UI prunes stored layout for every worktree it
-   * cannot see: panels, open files and expanded trees, written back and gone.
-   *
-   * A registered repository always has at least its main worktree, so "none"
-   * means the enumeration failed, never that they were removed. Keyed on the
-   * project rather than on the pointer, because the first shape is a subset of
-   * this one.
-   */
-  const seen = new Set(worktrees.map((worktree) => worktree.projectId))
-  for (const project of projects) {
-    if (seen.has(project.id)) continue
-    for (const worktree of remembered?.worktrees ?? []) {
-      if (worktree.projectId === project.id) worktrees.push(worktree)
-    }
-  }
+const localTo = (snapshot: Omit<AppSnapshot, 'ui'>, baseUrl: string): Omit<AppSnapshot, 'ui'> => {
+  const projects = snapshot.projects
+    .filter((project) => project.host.kind === 'local')
+    .map((project) => ({ ...project, host: { kind: 'remote' as const, baseUrl } }))
+  const mine = new Set(projects.map((project) => project.id))
+  const worktrees = snapshot.worktrees.filter((worktree) => mine.has(worktree.projectId))
   const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
   return {
     projects,
@@ -186,6 +87,30 @@ const selectProjects = (
     todos: snapshot.todos.filter((todo) => worktreeIds.has(todo.worktreeId)),
   }
 }
+
+/**
+ * What to show for a machine that did not answer.
+ *
+ * Its projects and worktrees as we last saw them, and **no sessions**:
+ * liveness and attention are live facts, and remembered they claim an agent is
+ * running -- and, worse, that one is *blocked on you* -- on a machine that is
+ * switched off. Measured: unplug a peer with an agent waiting and the amber
+ * stayed indefinitely for something that was not there. Amber and green are
+ * the two things the row is scanned for, so they are the two that must never
+ * be recalled.
+ *
+ * Shown at all, rather than dropped, because the UI prunes stored layout for
+ * worktrees it cannot see -- so "that machine is off" reading as "those
+ * worktrees are gone" costs panels and open files permanently.
+ */
+const remembered = (
+  cached: { projects: Project[]; worktrees: Worktree[] } | undefined,
+): Omit<AppSnapshot, 'ui'> => ({
+  projects: cached?.projects ?? [],
+  worktrees: cached?.worktrees ?? [],
+  sessions: [],
+  todos: [],
+})
 
 export class Workspace {
   /**
@@ -270,15 +195,6 @@ export class Workspace {
 
     const all: Worktree[] = []
     for (const project of this.store.projects) {
-      /*
-       * A remote project's worktrees belong to the peer, and asking git here
-       * would not fail -- it would *answer*, about whatever happens to sit at
-       * that path on this machine. The path is the peer's, and the same
-       * checkout path is the normal case rather than a coincidence, so the ids
-       * would collide byte for byte with the local project's and `resolve()`
-       * would return whichever came first. Skipped, not tried and caught.
-       */
-      if (project.host.kind !== 'local') continue
       try {
         const list = await listWorktrees(project.id, project.root)
         // Once per project, not once per worktree: they share a repository and
@@ -386,28 +302,6 @@ export class Workspace {
   }
 
   /**
-   * A remote project addressed by the id we publish for it, which is our
-   * pointer's and therefore bare.
-   *
-   * That bareness is deliberate -- the id has to exist when the peer does not
-   * -- but it means nothing about the id says "another machine", so the one
-   * route that addresses a project rather than a worktree (`POST
-   * /api/worktrees`, which carries `projectId`) cannot be routed by looking at
-   * it. This is that lookup. Without it, creating a worktree on a remote
-   * project was answered locally and refused: the feature was unreachable.
-   *
-   * The peer's own id for the project is *derived*, not remembered: both sides
-   * hash the same absolute root, and ours differs only because it also hashes
-   * the base URL.
-   */
-  remoteProject(projectId: string): { peer: PeerClient; peerProjectId: string } | null {
-    const project = this.store.project(projectId)
-    if (!project || project.host.kind !== 'remote') return null
-    const peer = this.peers().find((p) => p.baseUrl === (project.host as { baseUrl: string }).baseUrl)
-    return peer === undefined ? null : { peer, peerProjectId: projectIdFor(project.root) }
-  }
-
-  /**
    * What each peer contributes to the snapshot: the projects we registered
    * there, and everything belonging to them.
    *
@@ -421,80 +315,48 @@ export class Workspace {
    * the UI prunes layout for worktrees it no longer sees. `lastGood` is what
    * keeps a rebooting peer's windows on screen.
    */
+  /**
+   * What every linked machine is running, merged in.
+   *
+   * One read per machine, in parallel, and a machine that does not answer
+   * contributes what it last said rather than nothing -- see `remembered`.
+   * There is no per-project subscription to reconcile against any more: a
+   * machine is linked or it is not, and linking means all of it.
+   */
   private async remoteSlices(): Promise<Omit<AppSnapshot, 'ui'>[]> {
-    const pointers = new Map<string, Project[]>()
-    for (const project of this.store.projects) {
-      if (project.host.kind !== 'remote') continue
-      pointers.set(project.host.baseUrl, [
-        ...(pointers.get(project.host.baseUrl) ?? []),
-        project,
-      ])
-    }
-
     return Promise.all(
       this.peers().map(async (peer) => {
-        const mine = pointers.get(peer.baseUrl) ?? []
-        /*
-         * A machine with nothing open on it contributes nothing to the merge,
-         * and asking it anyway costs the full timeout on *every* snapshot --
-         * which is refetched on every invalidate, so one laptop with its lid
-         * shut made the whole row sluggish, local worktrees included. Adding a
-         * machine to browse it is a normal thing to do and must not cost that.
-         */
-        if (mine.length === 0) {
-          // Nothing open on it any more, so what it last said is not worth
-          // keeping -- and kept, it would resurrect months-old worktrees the
-          // next time a project on that machine was opened while it was down.
-          // Both memories, or the in-memory one shadows the cleared store
-          // entry for the life of the process and resurrects those worktrees
-          // the next time a project on that machine is opened while it is down.
-          this.lastGood.delete(peer.baseUrl)
-          this.store.clearRemoteCache(peer.baseUrl)
-          return reconcile(undefined, [], peer.baseUrl)
-        }
         try {
-          const slice = selectProjects(
-            await peer.snapshot(),
-            mine,
-            peer.baseUrl,
-            this.lastGood.get(peer.baseUrl) ?? cachedSlice(this.store.remoteCache(peer.baseUrl)),
-          )
+          const slice = localTo(await peer.snapshot(), peer.baseUrl)
           this.lastGood.set(peer.baseUrl, slice)
-          // Written through, so the guarantee survives this process. In memory
-          // alone it only held *after* one successful read, and the case that
-          // costs the user something is the other one: a gateway that starts
-          // before its peer is listening prunes the layout of every worktree on
-          // it, permanently, before the peer has ever answered.
           /*
-           * Only when it has actually changed. `snapshot()` is a GET and runs
-           * several times a minute per tab; writing every time would rewrite
-           * the file holding every peer's credentials on a pure read path, and
-           * `scheduleSave` has no maximum wait -- so a fast enough snapshot
-           * loop starves the save, and a todo just queued is never written.
+           * Written through, so the guarantee survives this process. In memory
+           * alone it only held *after* one successful read, and the case that
+           * costs the user something is the other one: a gateway that starts
+           * before its peer is listening reports zero worktrees, and the UI
+           * prunes the layout of every worktree on it, permanently.
+           *
+           * Only on a change: `snapshot()` is a GET that runs several times a
+           * minute per tab, and `scheduleSave` has no maximum wait, so writing
+           * every time starves the save a just-queued todo depends on.
            */
           const entry = {
             baseUrl: peer.baseUrl,
             projects: slice.projects,
             worktrees: slice.worktrees,
           }
-          const previous = this.store.remoteCache(peer.baseUrl)
-          if (JSON.stringify(previous) !== JSON.stringify(entry)) {
+          if (JSON.stringify(this.store.remoteCache(peer.baseUrl)) !== JSON.stringify(entry)) {
             this.store.setRemoteCache(entry)
           }
           return slice
         } catch {
+          // Unreachable, refused, or a protocol mismatch.
           /*
-           * Unreachable, refused, or a protocol mismatch. Hold what it last
-           * said, but **reconciled against the pointers we hold now** rather
-           * than returned whole. The cache is a memory of a machine, not a
-           * record of what is registered, and returning it verbatim made it
-           * authoritative about both: a project closed while its peer was down
-           * came back on the next snapshot and could not be closed again, and a
-           * project opened while it was down was invisible -- not even the empty
-           * tab a never-seen peer gets.
+           * Through `remembered` whichever memory answers, because it is the
+           * one that strips the sessions -- returning `lastGood` directly put
+           * them back, and a test written for exactly that caught it here.
            */
-          const remembered = this.lastGood.get(peer.baseUrl) ?? cachedSlice(this.store.remoteCache(peer.baseUrl))
-          return reconcile(remembered, mine, peer.baseUrl)
+          return remembered(this.lastGood.get(peer.baseUrl) ?? this.store.remoteCache(peer.baseUrl))
         }
       }),
     )
@@ -619,126 +481,39 @@ export class Workspace {
   }
 
   /**
-   * Forget a machine.
+   * Unlink a machine: stop asking it anything.
    *
-   * Refused while projects on it are still open, rather than closing them.
-   * Closing a project anywhere else in this app is a deliberate act with its
-   * own dialog, and this is a small x beside the chip you click to *select* a
-   * machine -- one misclick took every project on it, pruned their stored
-   * layout client-side, and left no way back but retyping the URL, the token
-   * and every path. Nothing here is worth that, and "close them first" costs
-   * one sentence.
+   * Nothing of that machine's is closed, because nothing of it was ever ours --
+   * its projects simply stop appearing here, and are still open there. That is
+   * what makes this safe to do from a small x, where the old model had to
+   * refuse while projects were open because forgetting the link would have
+   * taken local pointer records with it.
    */
   removeServer(baseUrl: string): void {
     const normalized = normalizeBaseUrl(baseUrl)
-    const open = this.store.projects.filter(
-      (project) => project.host.kind === 'remote' && project.host.baseUrl === normalized,
-    )
-    if (open.length > 0) {
-      throw new HttpError(
-        409,
-        `close ${open.length === 1 ? 'the project' : `all ${open.length} projects`} on that machine first`,
-        'server-in-use',
-      )
-    }
     this.store.removeServer(normalized)
-    // Or the map keeps a slice for every machine ever registered, and a machine
-    // re-added later would inherit the worktrees it had the last time.
+    // Or the memory of it outlives the link and reappears if it is re-added.
     this.lastGood.delete(normalized)
     this.store.clearRemoteCache(normalized)
     this.invalidate()
   }
 
-  /**
-   * Register a project that lives on another machine.
-   *
-   * This writes a record and performs **no I/O at all**, deliberately.
-   * Registering must not fail because a peer is momentarily down -- you would
-   * be unable to add the machine you are trying to reach precisely when you
-   * most want to -- and the snapshot is where being unreachable is handled,
-   * once, for every read.
-   *
-   * The path is checked and never repaired: `resolve()` or `expandHome()` would
-   * fold the peer's path against *this* machine's cwd and home, and the result
-   * would look like a path and address nothing.
-   */
-  async openRemoteProject(input: {
-    baseUrl: string
-    root: string
-    name?: string
-  }): Promise<Project> {
-    const baseUrl = normalizeBaseUrl(input.baseUrl)
-    // The credential lives with the machine, so the machine has to be known
-    // before a project on it can be. `addServer` is what puts it there.
-    if (!this.store.server(baseUrl)) throw new HttpError(404, 'no such server')
-    const root = input.root.trim()
-    if (!root.startsWith('/')) throw new HttpError(400, 'a remote path must be absolute')
-
-    // Namespaced by base URL, and this is the one caller that passes a host
-    // key: `/home/andrin/src/ide` on two machines hashes identically, so
-    // without it the pointer and the local project would be one id.
-    const id = projectIdFor(root, baseUrl)
-    if (this.store.project(id)) throw new HttpError(409, 'that project is already open')
-
-    const project: Project = {
-      id,
-      name: (input.name ?? '').trim() || basename(root),
-      host: { kind: 'remote', baseUrl },
-      root,
-      worktreeRoot: '',
-      addedAt: Date.now(),
-    }
-    this.store.addProject(project)
-    this.invalidate()
-    return project
-  }
-
   async closeProject(id: string, opts: { sleep?: boolean } = {}): Promise<void> {
+    /*
+     * Local projects only, now that a remote one is closed on the machine it
+     * lives on: its id is that machine's own, so the proxy sends this very
+     * request there and the peer runs this very method. Which is the whole
+     * point of linking -- there is no pointer of ours to remove, and "close" on
+     * a remote project means what it says rather than "stop showing it here".
+     */
     // Collected before the project goes, because afterwards its worktrees are
     // no longer listed and there is nothing left to match todos against.
     const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
     const project = this.store.project(id)
-    // Only our own sessions are ours to kill. A remote project's run on the
-    // peer, under the peer's ids, and `killForProject` here would match
-    // nothing at best -- and the identically-pathed local project's sessions
-    // at worst, which is the same aliasing `worktrees()` refuses to risk.
-    if (opts.sleep === true && project?.host.kind === 'local') {
-      await this.engine.killForProject(id)
-    }
-    /*
-     * A remote project's agents are the peer's to stop, and asking it is the
-     * whole of what "sleep" can mean here. Without this the box was ticked, the
-     * project went, and the peer's agents carried on running with nothing on
-     * screen owning them -- which is the state `closeProject` exists to avoid.
-     *
-     * Best-effort and never fatal: an unreachable machine must still let you
-     * remove a pointer that now addresses nothing.
-     */
-    if (opts.sleep === true && project?.host.kind === 'remote') {
-      const peer = this.peerFor(hostKeyFor(project.host.baseUrl))
-      if (peer) {
-        /*
-         * From what the machine last said, not from `worktrees()` -- that one
-         * skips remote projects on purpose, so it knows nothing about these.
-         */
-        const theirs = (
-          this.lastGood.get(project.host.baseUrl)?.worktrees ??
-          this.store.remoteCache(project.host.baseUrl)?.worktrees ??
-          []
-        )
-          .filter((worktree) => worktree.projectId === id)
-          .map((worktree) => unscopeId(worktree.id)?.id)
-          .filter((wid): wid is string => wid !== undefined)
-        await Promise.allSettled(
-          theirs.map((wid) => peer.request('POST', `/api/worktrees/${wid}/sleep`, {})),
-        )
-      }
-    }
-    // Remembered before it is removed, and only for a local project: a recent
-    // is a path handed back to `openProject`, which is how a local one is
-    // opened. A remote one is found again by picking its machine in the open
-    // dialog and browsing that machine's disk.
-    if (project && project.host.kind === 'local') this.store.rememberRecent(project)
+    if (opts.sleep === true) await this.engine.killForProject(id)
+    // Remembered before it is removed: a recent is a path handed back to
+    // `openProject`, which is how one is opened.
+    if (project) this.store.rememberRecent(project)
     this.store.removeProject(id)
     this.store.removeTodosFor(mine)
     this.invalidate()
@@ -751,17 +526,6 @@ export class Workspace {
   }): Promise<Worktree> {
     const project = this.store.project(opts.projectId)
     if (!project) throw new HttpError(404, 'no such project')
-    /*
-     * A remote project's worktrees are made by the peer, through the proxy.
-     * Reaching here with one means the routing above it failed, and the cost of
-     * not saying so is specific: `worktreeRoot` for a remote pointer is derived
-     * from a path on *that* machine, so `ensureWorktreesIgnored` and
-     * `addWorktree` would run against whatever repository sits there on this
-     * one. A refusal is the cheap half of that.
-     */
-    if (project.host.kind !== 'local') {
-      throw new HttpError(400, 'that project lives on another machine')
-    }
     const branch = opts.branch.trim()
     if (!(await isValidBranchName(project.root, branch))) {
       throw new HttpError(400, `invalid branch name: ${branch}`)
