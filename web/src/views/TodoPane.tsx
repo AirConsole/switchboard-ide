@@ -183,9 +183,18 @@ const TodoRow = ({
 
   return (
     <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'}>
+      {/*
+       * The three things you can do to a todo, in a column.
+       *
+       * One shape each and one under the other, because they are siblings: a
+       * pill, a bare × and a quiet word were three different kinds of control
+       * for three things at the same level, and the × in particular sat beside
+       * RUN NEXT as though it were part of it. Stretched to the widest of the
+       * three so the column has one edge rather than a ragged one.
+       */}
       <div className="todo__controls">
         <button
-          className={queued ? 'todo__next todo__next--on' : 'todo__next'}
+          className={queued ? 'todo__act todo__next todo__next--on' : 'todo__act todo__next'}
           aria-pressed={queued}
           onClick={() => {
             onError(null)
@@ -203,8 +212,28 @@ const TodoRow = ({
               the only thing in the queue. */}
           Run next{queued && queuedCount > 1 ? ` (${position})` : ''}
         </button>
+        {/*
+         * Where this piece of work actually belongs: RUN NEXT hands the prompt
+         * to the agent this todo is already parked against, and this decides
+         * which agent that is. The caret is what says it opens a list rather
+         * than doing something on the spot.
+         */}
+        {moveTo.length > 0 && (
+          <button
+            ref={move.anchor}
+            className="todo__act todo__move"
+            onClick={move.toggle}
+            title="Move this todo to another worktree"
+            aria-expanded={move.at !== null}
+          >
+            Move to
+            <span className="todo__caret" aria-hidden="true">
+              {'\u25be'}
+            </span>
+          </button>
+        )}
         <button
-          className="todo__remove"
+          className="todo__act todo__remove"
           onClick={() => {
             onError(null)
             onLeaving(todo.id)
@@ -213,34 +242,9 @@ const TodoRow = ({
             })
           }}
           title="Delete this todo"
-          aria-label="Delete todo"
         >
-          &times;
+          Delete
         </button>
-        {/*
-         * Where this piece of work actually belongs.
-         *
-         * Under RUN NEXT rather than beside it, because the two are not the
-         * same kind of thing: one hands the prompt to the agent it is already
-         * parked against, the other decides which agent that is. And quiet
-         * where RUN NEXT is loud -- a word and a caret, the grey ladder --
-         * since moving a todo is something you do once and RUN NEXT is what
-         * the panel is for.
-         */}
-        {moveTo.length > 0 && (
-          <button
-            ref={move.anchor}
-            className="todo__move"
-            onClick={move.toggle}
-            title="Move this todo to another worktree"
-            aria-expanded={move.at !== null}
-          >
-            Move to
-            <span className="todo__movecaret" aria-hidden="true">
-              {'\u25be'}
-            </span>
-          </button>
-        )}
       </div>
       {move.at !== null && (
         /*

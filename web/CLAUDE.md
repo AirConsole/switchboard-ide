@@ -749,16 +749,23 @@ mutation in the app refreshes it mid-sentence. The draft holds until the server
 echoes back exactly what was sent. Verified by typing into a prompt while a
 `curl` created a todo on another worktree — the keystrokes and the caret survive.
 
-**Move to is under RUN NEXT, and quiet where RUN NEXT is loud.** They are not
-the same kind of thing: one hands the prompt to the agent this todo is already
-parked against, the other decides which agent that is, which you do once. So it
-is a word and a caret on the grey ladder rather than a second pill -- two pills
-stacked read as two equal choices. It sits in RUN NEXT's own grid column so the
-two end on the same pixel; right-aligning it across the whole control column
-overhung the pill by 19px and put it under the ×, which reads as belonging to
-the delete. Its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ
-dropdown, with a heading per project when more than one is open -- two projects
-can each have a `main`.
+**The three things you can do to a todo are one column of three.** RUN NEXT,
+MOVE TO and DELETE, one under the other, one shape and one width. They were a
+pill, a bare × beside it and a quiet word underneath -- three kinds of control
+for three things at the same level, and the × read as part of RUN NEXT rather
+than as its own action. `justify-items: stretch` is what gives the column a
+single right edge; three pills at their natural widths is the ragged thing the ×
+already was. The row is 86px tall where it was 63, which is what a stack costs
+and is the only cost: nothing else in the panel moved.
+
+Weight, not colour, still separates them -- amber means Claude is blocked on you
+and green that it has come to rest, and none of the three is either -- so the one
+state any of them can be in, RUN NEXT lit, is the pill filled in reverse. DELETE
+is the only red in the panel and only on hover (`--danger`, 6.49:1 here). MOVE TO
+carries a caret, which is what says it opens a list rather than acting on the
+spot; its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
+with a heading per project when more than one is open -- two projects can each
+have a `main`.
 
 **A moved todo is not a sent one.** From this pane a queued todo leaving looks
 identical whether the server typed it into Claude or you moved it elsewhere, and
