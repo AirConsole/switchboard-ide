@@ -39,6 +39,12 @@ export const NewWorktreeForm = ({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const branchRef = useRef<HTMLInputElement>(null)
+  /*
+   * What this name would do: check out a branch that is already there, or cut a
+   * new one. `null` while nobody has typed anything or the answer is still in
+   * flight, so the line under the field is empty rather than guessing.
+   */
+  const [fate, setFate] = useState<{ valid: boolean; exists: boolean } | null>(null)
 
   /*
    * Arriving at a project means naming the next worktree often enough that the
@@ -50,6 +56,40 @@ export const NewWorktreeForm = ({
   useEffect(() => {
     if (focus !== null) branchRef.current?.focus()
   }, [focus])
+
+  /*
+   * Asked a beat after you stop typing rather than per keystroke: it is one
+   * `show-ref` on the server, but a name is typed a character at a time and
+   * every one of those would be a request that is already stale.
+   *
+   * The guard is the branch itself rather than a counter -- a reply that is not
+   * about what is in the field now is not worth showing, whichever order they
+   * come back in.
+   */
+  useEffect(() => {
+    const name = branch.trim()
+    if (name === '') {
+      setFate(null)
+      return
+    }
+    let live = true
+    const id = setTimeout(() => {
+      void api
+        .describeBranch(project.id, name)
+        .then((answer) => {
+          if (live) setFate(answer)
+        })
+        .catch(() => {
+          // A question we could not ask is not an answer: say nothing rather
+          // than claim the branch is new.
+          if (live) setFate(null)
+        })
+    }, 250)
+    return () => {
+      live = false
+      clearTimeout(id)
+    }
+  }, [branch, project.id])
 
   const submit = (): void => {
     // The button is disabled while a request is in flight; key repeat has to
@@ -81,6 +121,8 @@ export const NewWorktreeForm = ({
   }
 
   const directory = `${project.worktreeRoot}/${branch.trim().replace(/\//g, '-') || '…'}`
+  // What the server will branch from when the name is new.
+  const base = project.defaultBase ?? 'HEAD'
 
   return (
     <div className="addform">
@@ -104,11 +146,24 @@ export const NewWorktreeForm = ({
           Create
         </button>
       </div>
-      {/* Where it will land, which is the one thing about a new worktree you
-          cannot work out from the branch name. */}
+      {/*
+        * What the name means, and where it will land -- the two things you
+        * cannot work out from the field itself. An existing branch is checked
+        * out rather than cut from the default, which is the case that used to
+        * be implied by a "Branch from" box left empty.
+        */}
       <span className="addform__where" title={directory}>
         {directory}
       </span>
+      {fate !== null && (
+        <span className={fate.exists ? 'addform__fate addform__fate--on' : 'addform__fate'}>
+          {fate.exists
+            ? `“${branch.trim()}” exists — it is checked out here, not branched from ${base}`
+            : !fate.valid
+              ? 'git will not take that as a branch name'
+              : `New branch, from ${base}`}
+        </span>
+      )}
       {error && <p className="addform__error">{error}</p>}
     </div>
   )

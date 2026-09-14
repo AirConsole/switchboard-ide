@@ -306,6 +306,42 @@ describe('createWorktree', () => {
   })
 })
 
+describe('describeBranch', () => {
+  /*
+   * The form asks this on every pause in typing so it can say which of the two
+   * things `git worktree add` does it is about to do -- check out a branch that
+   * is already there, or cut a new one from the default. Getting "exists" wrong
+   * means telling someone they are making a fresh branch when they are about to
+   * check out work that is already on one.
+   */
+  it('knows an existing branch from a new name', async () => {
+    const projectId = (await workspace.openProject(repo.path)).id
+    await repo.git('branch', 'already-here')
+
+    expect(await workspace.describeBranch(projectId, 'already-here')).toEqual({
+      valid: true,
+      exists: true,
+    })
+    expect(await workspace.describeBranch(projectId, 'brand-new')).toEqual({
+      valid: true,
+      exists: false,
+    })
+  })
+
+  it('does not call a name git would refuse valid', async () => {
+    const projectId = (await workspace.openProject(repo.path)).id
+    // Same rules `createWorktree` enforces, asked before rather than after.
+    expect(await workspace.describeBranch(projectId, 'has space')).toEqual({
+      valid: false,
+      exists: false,
+    })
+    expect(await workspace.describeBranch(projectId, '   ')).toEqual({
+      valid: false,
+      exists: false,
+    })
+  })
+})
+
 describe('removeWorktree', () => {
   let projectId: string
   let worktreeId: string

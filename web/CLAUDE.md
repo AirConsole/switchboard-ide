@@ -331,6 +331,28 @@ to do often enough. It has to hold the keyboard somewhere regardless: the
 stepper reads where it is from `activeElement`, so a pane that refuses focus is
 one the walk can never leave.
 
+**The field says which of the two things it is about to do.** `git worktree add`
+either checks out a branch that is already there or cuts a new one from the
+default, and the name alone does not say which — "Branch from" used to imply it
+by sitting there empty, and removing that box removed the only hint. So
+`GET /api/projects/:id/branch` answers a beat after you stop typing (one
+`show-ref` behind `describeBranch`; the staleness guard is the branch itself
+rather than a counter, so a reply that is not about what is in the field now is
+dropped whichever order they arrive in, and a failed request says nothing rather
+than claiming the branch is new). The line under the field reads *"fourth"
+exists — it is checked out here, not branched from HEAD*, or *New branch, from
+HEAD*.
+
+The surprising answer goes **bright**, not amber. `--signal` was the first
+reach and it was wrong: amber means an agent is blocked on you and nothing
+else, and a form saying what a button will do is not a state you scan a row of
+agents for. `--graphite-dim` to `--bone` is the 1.92:1 step that already means
+"read this one".
+
+**The project's name is 19px**, not a tile bar's 12. This pane is the only cell
+in the row whose bar is not a toolbar — there is nothing beside the name to keep
+small for — and it is the thing you scroll the row looking for.
+
 **Its foot does not scroll.** The lists grow — a project can have twenty
 worktrees — and a form you have to scroll to is a form you stop using, so the
 new-worktree field and Close project are pinned under the part that moves. That

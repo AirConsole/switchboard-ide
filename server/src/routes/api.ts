@@ -56,6 +56,7 @@ const removeWorktreeQuery = z.object({
   deleteBranch: queryFlag,
   deleteRemoteBranch: queryFlag,
 })
+const branchQuery = z.object({ name: z.string() })
 const closeProjectQuery = z.object({
   /** Stop everything the project is running on the way out. */
   sleep: queryFlag,
@@ -224,6 +225,17 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.patch('/api/ui', async (request) => {
     const patch = uiPatchBody.parse(request.body)
     return store.patchUi(patch)
+  })
+
+  /*
+   * Whether a branch name is already taken, so the form can say which of the
+   * two things `git worktree add` does it is about to do. Read-only and cheap:
+   * one `show-ref` per keystroke-after-a-pause.
+   */
+  app.get('/api/projects/:id/branch', async (request) => {
+    const { id } = request.params as { id: string }
+    const { name } = branchQuery.parse(request.query)
+    return workspace.describeBranch(id, name)
   })
 
   app.post('/api/worktrees', async (request) => {
