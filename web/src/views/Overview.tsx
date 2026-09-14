@@ -27,6 +27,7 @@ import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
+import { NewWorktreePane } from '../components/NewWorktreePane.js'
 import { useNearViewport } from './useNearViewport.js'
 
 /**
@@ -323,9 +324,19 @@ const FILES_TREE_UNITS = 1
  * only worktrees, so that stepping right can take you into the thing you were
  * about to type in rather than past it.
  */
-export type PaneKind = 'claude' | PanelName
+export type PaneKind = 'claude' | PanelName | 'add'
 
 export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktreeId}:${pane}`
+
+/**
+ * The row id of a project's new-worktree tile.
+ *
+ * Every cell in the row is keyed by something `scrollTo`, `active` and the
+ * Cmd+arrow walk can name, and those used to be worktree ids alone. The add
+ * tile is a stop now, so it needs one too -- prefixed, because a project id and
+ * a worktree id come from the same hash and must not collide.
+ */
+export const addKey = (projectId: string): string => `add:${projectId}`
 
 /**
  * Whether Cmd is down right now.
@@ -936,17 +947,7 @@ const WorktreeTile = ({
   )
 }
 
-const AddTile = ({ onClick }: { onClick: () => void }): React.ReactElement => (
-  <button className="tile--add" onClick={onClick}>
-    <span className="tile--add__mark" aria-hidden="true">
-      +
-    </span>
-    <span className="tile--add__label">New worktree</span>
-    <p className="tile--add__hint">
-      Branches off and checks out its own directory, with Claude running in it.
-    </p>
-  </button>
-)
+
 
 /**
  * Whether anything between `from` and the row would rather have this wheel.
@@ -1020,7 +1021,6 @@ export interface OverviewProps {
    * it added to -- the top bar's per-project `+` is unambiguous and is there
    * either way.
    */
-  addTo: Project | null
   /**
    * A request to bring a worktree's tile into view: its id, plus a counter so
    * that asking twice for the same one is two requests. Set when you click a
@@ -1038,13 +1038,14 @@ export interface OverviewProps {
   active: { id: string; pane: PaneKind } | null
   /** Anything in this pane took focus, so this is where you are now. */
   onActivate: (worktreeId: string, pane: PaneKind) => void
+  /** A worktree was just made in one of the row's new-worktree tiles. */
+  onCreated: (worktreeId: string) => void
   onStart: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** A worktree's queue emptied itself into Claude; close its todo panel. */
   onQueueDrained: (worktreeId: string) => void
-  onNewWorktree: () => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
   /** Closing the last one closes the panel too, so it needs the worktree. */
@@ -1080,15 +1081,14 @@ export const Overview = ({
   openFilesByWorktree,
   expandedByWorktree,
   filesModeByWorktree,
-  addTo,
   scrollTo,
   active,
   onActivate,
+  onCreated,
   onStart,
   onReveal,
   onTogglePanel,
   onQueueDrained,
-  onNewWorktree,
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
@@ -1268,9 +1268,21 @@ export const Overview = ({
     cells.push({ key, worktree, panes, at: next, units: span })
     next += span
   }
-  for (const worktree of worktrees) push(worktree.id, worktree, panesOf(worktree, units))
-  if (addTo !== null) {
-    push(ADD_KEY, null, [{ kind: 'add', key: ADD_KEY, units: Math.min(PANE_UNITS.add, units) }])
+  /*
+   * Each project's windows, then that project's own new-worktree tile.
+   *
+   * The row arrives grouped by project already, so the tile lands at the end of
+   * the run it belongs to and never has to ask which project it is for -- which
+   * is what the single tile at the far end of the row could not answer once
+   * more than one project was open, and why it used to appear only when exactly
+   * one was.
+   */
+  for (const project of projects) {
+    for (const worktree of worktrees.filter((w) => w.projectId === project.id)) {
+      push(worktree.id, worktree, panesOf(worktree, units))
+    }
+    const key = addKey(project.id)
+    push(key, null, [{ kind: 'add', key, units: Math.min(PANE_UNITS.add, units) }])
   }
   const totalUnits = next
 
@@ -1408,14 +1420,14 @@ export const Overview = ({
    * one with a panel two, and a window too narrow to hold Claude one again.
    */
   const stops = cells.flatMap((cell) =>
-    cell.worktree === null
-      ? []
-      : cell.panes.map((pane) => ({
-          worktree: cell.worktree as Worktree,
-          kind: pane.kind as PaneKind,
-          at: cell.at,
-          units: cell.units,
-        })),
+    cell.panes.map((pane) => ({
+      // The cell's own key: a worktree id, or `add:<projectId>` for the tile at
+      // the end of a project's run. The walk does not care which.
+      id: cell.key,
+      kind: pane.kind as PaneKind,
+      at: cell.at,
+      units: cell.units,
+    })),
   )
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
@@ -1460,11 +1472,11 @@ export const Overview = ({
       let here =
         held === undefined || held === null
           ? -1
-          : stops.findIndex((stop) => paneKey(stop.worktree.id, stop.kind) === held)
+          : stops.findIndex((stop) => paneKey(stop.id, stop.kind) === held)
 
       if (here === -1) {
         const at = stops.findIndex(
-          (stop) => stop.worktree.id === active?.id && stop.kind === active.pane,
+          (stop) => stop.id === active?.id && stop.kind === active.pane,
         )
         const seen = stops[at]
         const tile = seen ? { at: seen.at, units: seen.units } : null
@@ -1481,7 +1493,7 @@ export const Overview = ({
         here =
           owner === undefined
             ? 0
-            : stops.findIndex((stop) => stop.worktree.id === owner.worktree.id)
+            : stops.findIndex((stop) => stop.id === owner.id)
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
       /*
@@ -1495,7 +1507,7 @@ export const Overview = ({
       // Through the same request the top bar makes, rather than scrolling from
       // here: arriving somewhere is one thing, and it also hands over the
       // keyboard.
-      if (to) onReveal(to.worktree.id, to.kind)
+      if (to) onReveal(to.id, to.kind)
     }
     document.addEventListener('keydown', step, true)
     return () => document.removeEventListener('keydown', step, true)
@@ -1536,11 +1548,11 @@ export const Overview = ({
    */
   const keysLit = useMetaHeld()
   const at = keysLit
-    ? stops.findIndex((stop) => stop.worktree.id === active?.id && stop.kind === active.pane)
+    ? stops.findIndex((stop) => stop.id === active?.id && stop.kind === active?.pane)
     : -1
   const landing = {
-    left: at > 0 ? stops[at - 1]?.worktree.id : undefined,
-    right: at === -1 ? undefined : stops[at + 1]?.worktree.id,
+    left: at > 0 ? stops[at - 1]?.id : undefined,
+    right: at === -1 ? undefined : stops[at + 1]?.id,
   }
 
   useEffect(() => {
@@ -1557,9 +1569,15 @@ export const Overview = ({
       const held = (document.activeElement as HTMLElement | null)
         ?.closest('[data-pane]')
         ?.getAttribute('data-pane')
-      const here =
-        stops.find((stop) => paneKey(stop.worktree.id, stop.kind) === held)?.worktree ??
-        cells.find((cell) => cell.worktree?.id === active?.id)?.worktree
+      /*
+       * The worktree the keyboard is in, and `undefined` when that is the
+       * new-worktree tile -- which has no panels to open, so the key does
+       * nothing there rather than acting on whichever window was last active.
+       */
+      const holding = stops.find((stop) => paneKey(stop.id, stop.kind) === held)
+      const here = holding
+        ? cells.find((cell) => cell.key === holding.id)?.worktree
+        : cells.find((cell) => cell.worktree?.id === active?.id)?.worktree
       if (!here) return
 
       event.preventDefault()
@@ -1742,7 +1760,20 @@ export const Overview = ({
                  */}
                 <div className="slot__inner" style={{ width: slot.width }}>
                   {worktree === null ? (
-                    <AddTile onClick={onNewWorktree} />
+                    <div
+                      className="tile tile--addpane"
+                      data-pane={paneKey(slot.key, 'add')}
+                      onFocus={() => {
+                        onActivate(slot.key, 'add')
+                        if (!slot.leaving) revealTile(slot.data)
+                      }}
+                    >
+                      <NewWorktreePane
+                        project={projectById.get(slot.key.slice('add:'.length))!}
+                        focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
+                        onCreated={onCreated}
+                      />
+                    </div>
                   ) : (
                     <WorktreeTile
                       worktree={worktree}
