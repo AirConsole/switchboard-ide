@@ -576,6 +576,7 @@ interface WorktreeTileProps {
   onSelectTerminal: (sessionId: string) => void
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
+  onNoTerminalsLeft: () => void
   onOpenPath: (path: string) => void
   onCloseFile: (path: string) => void
   /** Null closes the pane; the hook calls it that way when a hash goes stale. */
@@ -623,6 +624,7 @@ const WorktreeTile = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onNoTerminalsLeft,
   onOpenPath,
   onCloseFile,
   onSelectCommit,
@@ -858,6 +860,7 @@ const WorktreeTile = ({
                 onSelect={onSelectTerminal}
                 onNew={onNewTerminal}
                 onClose={onCloseTerminal}
+                onNoneLeft={onNoTerminalsLeft}
               />
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
@@ -1054,6 +1057,7 @@ export interface OverviewProps {
   onQueueDrained: (worktreeId: string) => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
+  onNoTerminalsLeft: (worktreeId: string) => void
   /** Closing the last one closes the panel too, so it needs the worktree. */
   onCloseTerminal: (worktreeId: string, sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
@@ -1099,6 +1103,7 @@ export const Overview = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onNoTerminalsLeft,
   onOpenPath,
   onCloseFile,
   onToggleDir,
@@ -1824,6 +1829,7 @@ export const Overview = ({
                       onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
+                      onNoTerminalsLeft={() => onNoTerminalsLeft(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
                       onCloseFile={(path) => onCloseFile(worktree.id, path)}
