@@ -21,7 +21,7 @@ import {
   worktreeTodos,
   type TodoView,
 } from '../selectors.js'
-import { TodoBar, TodoPane, type MoveGroup } from './TodoPane.js'
+import { TodoBar, TodoPane, type MoveTarget } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
@@ -51,6 +51,9 @@ const EMPTY_DIRS: string[] = []
 
 /** Likewise for a worktree with no file open; see EMPTY_DIRS. */
 const EMPTY_FILES: string[] = []
+
+/** And for a project whose worktrees have not been read yet; see EMPTY_DIRS. */
+const EMPTY_MOVE: MoveTarget[] = []
 
 /**
  * Is the whole of a tile on screen already?
@@ -510,7 +513,7 @@ interface WorktreeTileProps {
   /** This worktree's todos, in list order, each with its queue position. */
   todos: TodoView[]
   /** Where one of them can be moved to; the pane drops this worktree itself. */
-  moveTo: MoveGroup[]
+  moveTo: MoveTarget[]
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
@@ -1002,8 +1005,8 @@ export interface OverviewProps {
   projects: Project[]
   /** Every todo, across every worktree; each tile takes its own. */
   todos: WorktreeTodo[]
-  /** Every worktree a todo could be moved to, grouped by project. */
-  moveTo: MoveGroup[]
+  /** Each project's own worktrees, as the places a todo of theirs can go. */
+  moveTo: Record<string, MoveTarget[]>
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
@@ -1822,7 +1825,7 @@ export const Overview = ({
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}
-                      moveTo={moveTo}
+                      moveTo={moveTo[worktree.projectId] ?? EMPTY_MOVE}
                       panes={slot.data.panes}
                       /*
                        * Non-null only for the worktree just navigated to, and a

@@ -2634,75 +2634,142 @@ button {
 }
 
 /*
- * What you can do to a todo: one column, one shape, one width.
+ * What you can do to a todo: the tab strip's own object, stood on end.
  *
- * They were a pill, a bare × beside it and a quiet word underneath -- three
- * kinds of control for three things at the same level, and the × read as part
- * of RUN NEXT rather than as its own action. `justify-items: stretch` is what
- * gives the column a single right edge: the three labels are different lengths,
- * and three pills of three widths is the ragged thing the × was.
+ * Square segments inside one rounded shell, and the sleeve seen only in the
+ * 2px seams -- `.tabgroup`'s argument, which is that round pills are each their
+ * own object and a column of them is a column of objects that happen to be near
+ * each other, while square segments inside one rounded shell are one object
+ * divided. The shell holds every outer edge, so the first and last segments
+ * wear its curve and no segment has a radius of its own.
+ *
+ * It stretches to the row: a prompt is often several lines and the three
+ * segments are 78px, so the slab would otherwise stop short of the bottom of
+ * its own row. `.todo__filler` is what takes up the rest.
+ *
+ * `min-width` rather than a width, and it is what keeps the column from being
+ * ragged: every row comes out at 118px because no label reaches it, and a font
+ * wider than the one this was measured on grows the slab instead of clipping a
+ * label. The queue position is why that matters -- it is the one part of a
+ * label that appears and disappears.
  */
 .todo__controls {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 118px;
   grid-column: 2;
   grid-row: 1;
-  justify-items: stretch;
+  border-radius: var(--radius);
+  /* What clips the end segments to the shell's curve. */
+  overflow: hidden;
+  /* The slab's own ground, which is also what an empty segment is made of. */
+  background: var(--level-object);
 }
 
 /*
- * One of the three.
+ * One segment.
  *
- * Weight, not colour: amber means Claude is blocked on you and green that it
- * has come to rest, and none of the three is either. So the state they can be
- * in -- RUN NEXT, lit -- is said by filling the pill in reverse, which nothing
- * else in the panel wears.
+ * Left-aligned on the tab's own 13px leading inset rather than centred, so the
+ * three read down one edge -- which is what a column is scanned along -- and
+ * so a mark down the leading edge could appear later without moving a label.
  */
 .todo__act {
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border: 1px solid var(--rule-bright);
-  border-radius: 999px;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px 0 13px;
+  border: 0;
+  border-radius: 0;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
+  text-align: left;
   color: var(--graphite);
-  background: var(--level-panel);
+  background: var(--level-object);
   white-space: nowrap;
 }
 
-.todo__act:hover {
-  color: var(--bone);
-  border-color: var(--graphite-dim);
+/* The seam, and the only place the sleeve is seen: 1.32:1 against a segment,
+   which is small, as every step on this ladder is, and the difference between a
+   shape and no shape. */
+.todo__act + .todo__act {
+  border-top: 2px solid var(--sleeve);
 }
 
+.todo__act:hover {
+  background: var(--level-hover);
+  color: var(--bone);
+}
+
+/*
+ * Queued, filled in reverse.
+ *
+ * The loudest thing the panel can say, and it is spent here on purpose: a queue
+ * marker has to be findable from across a row of windows. Weight, not colour --
+ * amber means Claude is blocked on you and green that it has come to rest, and
+ * a queued todo is neither.
+ */
 .todo__next--on {
   color: var(--ink);
   background: var(--bone);
-  border-color: var(--bone);
 }
 
 .todo__next--on:hover {
   color: var(--ink);
   background: var(--graphite);
-  border-color: var(--graphite);
 }
 
-/* The caret is what says Move to opens a list rather than acting on the spot. */
+/* The queue position, at the segment's far edge where the caret is: a number
+   appearing must not push its own label along. */
+.todo__at {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The caret, at the size the zZ tab draws it. It is the one mark that says a
+ * control opens a list rather than acting on the spot, so it is the same mark
+ * in both places -- at 9px it was a speck next to an 11px label.
+ */
 .todo__caret {
-  font-size: 9px;
+  flex: none;
+  margin-left: auto;
+  font-size: 17px;
   line-height: 1;
 }
 
-/* The one control here that destroys something, and the only red in the panel.
-   `--danger` is 6.49:1 on this ground. */
+/*
+ * The only red in the panel, and only while the pointer is on it.
+ *
+ * This is the one segment that does not lift, and the reason is measured:
+ * --danger is 4.88:1 on --level-object and 4.14:1 on --level-hover, under the
+ * floor. Lifting it would mean either a red that clears the lighter ground --
+ * a second red for one control -- or the word going --bone on hover, which is
+ * what the other two do and would take the colour off the only control here
+ * that destroys something.
+ */
 .todo__remove:hover {
   color: var(--danger);
-  border-color: var(--danger);
+  background: var(--level-object);
+}
+
+/*
+ * Whatever the three segments leave.
+ *
+ * A box with no label rather than nothing at all, so the slab meets the bottom
+ * of its row the way the strip meets its bar. Its seam is a gradient and not a
+ * border because a border paints at any height: beside a one-line prompt this
+ * box is 0px tall, and a border would draw 2px of sleeve along the foot of the
+ * slab with nothing under it to separate.
+ */
+.todo__filler {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: linear-gradient(var(--sleeve) 0 2px, var(--level-object) 2px);
 }
 
 .todo__wait {
@@ -2800,28 +2867,6 @@ button {
      own dark ground -- so its edge is a rung above its own fill rather than
      tuned to one ground: --rule-bright is 1.22:1 above the sleeve inside it. */
   border-color: var(--rule-bright);
-}
-
-/*
- * A project's worktrees inside a menu that lists more than one project's.
- *
- * The heading is the tab strip's project head laid flat: the same uppercase,
- * letterspaced label, because a heading is not a name you read one character at
- * a time. It is drawn only when there is another project to tell it apart
- * from -- with one project every row belongs to it and the word is furniture.
- */
-.menu__group {
-  display: flex;
-  flex-direction: column;
-}
-
-.menu__label {
-  padding: 6px 10px 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--graphite);
 }
 
 /* A tab in the strip stands on the strip's floor, which is where its square

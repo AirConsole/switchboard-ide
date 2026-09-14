@@ -17,7 +17,7 @@ import {
   terminalSessions,
   worktreeStatus,
 } from './selectors.js'
-import type { MoveGroup } from './views/TodoPane.js'
+import type { MoveTarget } from './views/TodoPane.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -203,27 +203,30 @@ export const App = (): React.ReactElement => {
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
 
   /**
-   * Where a todo can be moved to: every worktree the IDE knows, in the top
-   * bar's own order.
+   * Where a todo can be moved to, per project: that project's own worktrees, in
+   * the top bar's own order.
    *
-   * Sleeping ones included, and that is the point -- parking work against an
-   * agent you are not running today is most of what a todo is for, and the row
-   * only holds the awake ones.
+   * By project because a todo is work on a repository, and another repository's
+   * worktrees are not somewhere it could be done. Sleeping ones are in, and
+   * that is the point -- parking work against an agent you are not running
+   * today is most of what a todo is for, and the row only holds the awake ones.
    */
-  const moveTo = useMemo<MoveGroup[]>(
+  const moveTo = useMemo<Record<string, MoveTarget[]>>(
     () =>
-      groups.map((group) => ({
-        project: group.project,
-        targets: [
-          ...group.awake.map((worktree) => ({ worktree, sleeping: false })),
-          ...group.asleep.map((worktree) => ({ worktree, sleeping: true })),
-        ].map(({ worktree, sleeping }) => ({
-          worktree,
-          sleeping,
-          status: worktreeStatus(sessions, worktree.id),
-          queued: queuedTodoCount(todos, worktree.id),
-        })),
-      })),
+      Object.fromEntries(
+        groups.map((group) => [
+          group.project.id,
+          [
+            ...group.awake.map((worktree) => ({ worktree, sleeping: false })),
+            ...group.asleep.map((worktree) => ({ worktree, sleeping: true })),
+          ].map(({ worktree, sleeping }) => ({
+            worktree,
+            sleeping,
+            status: worktreeStatus(sessions, worktree.id),
+            queued: queuedTodoCount(todos, worktree.id),
+          })),
+        ]),
+      ),
     [groups, sessions, todos],
   )
 

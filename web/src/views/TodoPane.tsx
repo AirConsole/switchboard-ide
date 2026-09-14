@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Project, Worktree } from '@switchboard/shared'
+import type { Worktree } from '@switchboard/shared'
 import { api } from '../api.js'
 import { WorktreeTab } from '../components/WorktreeTab.js'
 import { useAnchoredMenu } from '../components/useAnchoredMenu.js'
@@ -12,18 +12,6 @@ export interface MoveTarget {
   /** How much is already parked there -- the thing you want to know before adding to it. */
   queued: number
   sleeping: boolean
-}
-
-/**
- * Where a todo can go, grouped by project the way the top bar groups worktrees.
- *
- * Grouped rather than flat because two projects can each have a `main`, and a
- * list of bare names would then offer the same word twice. The heading is drawn
- * only when there is more than one project to tell apart.
- */
-export interface MoveGroup {
-  project: Project
-  targets: MoveTarget[]
 }
 
 /**
@@ -44,10 +32,15 @@ export interface TodoPaneProps {
   /** Whether this worktree has a live Claude; a queue with none waits. */
   claudeRunning: boolean
   /**
-   * Every worktree this todo could be moved to, including this one -- the pane
-   * drops itself, so callers do not each have to.
+   * Where a todo here can go: this project's own worktrees, this one included --
+   * the pane drops itself, so callers do not each have to.
+   *
+   * This project's and no other. A todo is work on a repository, and another
+   * repository's worktrees are not somewhere it could be done; offering them
+   * made the list longer with the answers you would never pick, and made it
+   * need a heading per project to tell two `main`s apart.
    */
-  moveTo: MoveGroup[]
+  moveTo: MoveTarget[]
   /**
    * The worktree's last todo has gone to Claude and the list is empty.
    *
@@ -120,8 +113,8 @@ const TodoRow = ({
   view: TodoView
   queuedCount: number
   claudeRunning: boolean
-  /** The other worktrees, already without this one. */
-  moveTo: MoveGroup[]
+  /** This project's other worktrees, already without this one. */
+  moveTo: MoveTarget[]
   onError: (message: string | null) => void
   /**
    * Say so before it goes, so a vanishing todo is not read as one that ran.
@@ -184,13 +177,15 @@ const TodoRow = ({
   return (
     <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'}>
       {/*
-       * The three things you can do to a todo, in a column.
+       * The three things you can do to a todo: the tab strip's own object,
+       * stood on end.
        *
-       * One shape each and one under the other, because they are siblings: a
-       * pill, a bare × and a quiet word were three different kinds of control
-       * for three things at the same level, and the × in particular sat beside
-       * RUN NEXT as though it were part of it. Stretched to the widest of the
-       * three so the column has one edge rather than a ragged one.
+       * Square segments inside one rounded shell, seamed 2px in --sleeve. Round
+       * pills are each their own object, so a column of them is a column of
+       * objects that happen to be near each other; this is one object divided,
+       * which is the argument `.tabgroup` already makes about the strip. The
+       * empty segment at the foot is how the slab keeps meeting the bottom of a
+       * prompt taller than it -- see `.todo__filler`.
        */}
       <div className="todo__controls">
         <button
@@ -208,9 +203,13 @@ const TodoRow = ({
               : 'Queue this to be typed into Claude here once it comes to rest.'
           }
         >
-          {/* The number is a queue position, so it means nothing when this is
-              the only thing in the queue. */}
-          Run next{queued && queuedCount > 1 ? ` (${position})` : ''}
+          Run next
+          {/* At the segment's far edge, where the caret is, rather than after
+              the word: the three labels read down one left edge, and a number
+              appearing must not push its own label along. It is a queue
+              position, so it means nothing when this is the only thing in the
+              queue. */}
+          {queued && queuedCount > 1 && <span className="todo__at">{position}</span>}
         </button>
         {/*
          * Where this piece of work actually belongs: RUN NEXT hands the prompt
@@ -245,6 +244,17 @@ const TodoRow = ({
         >
           Delete
         </button>
+        {/*
+         * Whatever the three leave, when the prompt beside them is the taller
+         * half. It is a box with no label rather than nothing at all, so the
+         * slab meets the bottom of the row the way the strip meets the bar.
+         *
+         * Its seam is drawn as a gradient rather than a border because a border
+         * paints at any height: with a one-line prompt this box is 0px tall and
+         * a border would leave a 2px line of sleeve along the foot of the slab,
+         * under a column that has nothing left to separate.
+         */}
+        <div className="todo__filler" aria-hidden="true" />
       </div>
       {move.at !== null && (
         /*
@@ -252,7 +262,9 @@ const TodoRow = ({
          * dropdown's shape exactly, for the same reason it has it: a worktree
          * met here has to be the object you know from the strip, saying the
          * same things about itself. What is already queued there is on the tab,
-         * which is what you want to know before adding to it.
+         * which is what you want to know before adding to it. Every row is one
+         * of this project's own worktrees, so nothing has to say which project
+         * it belongs to.
          *
          * The click that moves it is the tab's own; this closes the menu behind
          * it, on the way out so the move has already been asked for.
@@ -263,29 +275,22 @@ const TodoRow = ({
           style={{ left: move.at.left, top: move.at.top }}
           onClick={move.close}
         >
-          {moveTo.map((group) => (
-            <div className="menu__group" key={group.project.id}>
-              {/* Only worth saying when there is another project to tell it
-                  apart from: two projects can each have a `main`. */}
-              {moveTo.length > 1 && <span className="menu__label">{group.project.name}</span>}
-              {group.targets.map((target) => (
-                <WorktreeTab
-                  key={target.worktree.id}
-                  worktree={target.worktree}
-                  status={target.status}
-                  queued={target.queued}
-                  sleeping={target.sleeping}
-                  title={`Move this todo to ${target.worktree.name}`}
-                  onPick={() => {
-                    onError(null)
-                    onLeaving(todo.id)
-                    void api
-                      .patchTodo(todo.id, { worktreeId: target.worktree.id })
-                      .catch((err: unknown) => onError(errorText(err)))
-                  }}
-                />
-              ))}
-            </div>
+          {moveTo.map((target) => (
+            <WorktreeTab
+              key={target.worktree.id}
+              worktree={target.worktree}
+              status={target.status}
+              queued={target.queued}
+              sleeping={target.sleeping}
+              title={`Move this todo to ${target.worktree.name}`}
+              onPick={() => {
+                onError(null)
+                onLeaving(todo.id)
+                void api
+                  .patchTodo(todo.id, { worktreeId: target.worktree.id })
+                  .catch((err: unknown) => onError(errorText(err)))
+              }}
+            />
           ))}
         </div>
       )}
@@ -405,14 +410,9 @@ export const TodoPane = ({
   focus,
 }: TodoPaneProps): React.ReactElement => {
   const [error, setError] = useState<string | null>(null)
-  // Moving a todo to where it already is is not a move, and a project left with
-  // nothing but this worktree is a heading over an empty list.
-  const elsewhere = moveTo
-    .map((group) => ({
-      ...group,
-      targets: group.targets.filter((target) => target.worktree.id !== worktreeId),
-    }))
-    .filter((group) => group.targets.length > 0)
+  // Moving a todo to where it already is is not a move; a project with one
+  // worktree leaves nothing here, and the button does not draw.
+  const elsewhere = moveTo.filter((target) => target.worktree.id !== worktreeId)
   const queued = todos.filter((view) => view.position !== null)
   const queuedCount = queued.length
 
