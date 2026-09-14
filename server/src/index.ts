@@ -86,6 +86,15 @@ app.addHook('onRequest', async (request, reply) => {
   const route = request.routeOptions.url
   if (route === undefined || !route.startsWith('/api')) {
     /*
+     * `/ws` runs its own rule at the upgrade, where this hook cannot reach --
+     * and it is the one non-`/api` route a *gateway* must be able to open over
+     * the network. Falling into the loopback branch below answered a
+     * token-bearing gateway with 404 instead of a socket, which is every remote
+     * terminal dead. Measured; the unit tests could not see it, because they
+     * ask `allowSocket` rather than the server.
+     */
+    if (route === '/ws') return
+    /*
      * Not an API route: the built page and its assets. On a peer they are
      * served to this machine only, which is what makes "serves only this
      * machine" true of the process rather than only of `/api` and `/ws`. A
@@ -95,7 +104,10 @@ app.addHook('onRequest', async (request, reply) => {
      *
      * 404 rather than 401: there is nothing here to authenticate *to*.
      */
-    if (config.token !== undefined && route !== undefined && !isLoopback(request)) {
+    // No `route !== undefined` guard: an unmatched path falls to the SPA
+    // catch-all below, which would have served the page to the network by the
+    // back door. A 404 is what such a path deserves from off-machine anyway.
+    if (config.token !== undefined && !isLoopback(request)) {
       await reply.status(404).send({ error: 'not found' })
     }
     return
