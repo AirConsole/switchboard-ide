@@ -683,13 +683,14 @@ omitted and came back 401 through the proxy, so there was no manifest and
 therefore no install by any route -- see the `crossorigin` attribute on the link
 in `index.html`, which is the whole fix.
 
-Deleting the file was not enough, which is why `main.tsx` still mentions it. A
-registered worker outlives its script, and `/sw.js` now falls through to the SPA
+Removing one, if it ever comes back, takes more than deleting the file. A
+registered worker outlives its script, and `/sw.js` falls through to the SPA
 handler, which answers `index.html` with a 200 -- so a browser's update check
 gets HTML where it wanted JavaScript, fails, and goes on running the worker it
-already has. `main.tsx` unregisters it and drops its cache instead. That block
-can go once every browser that loaded the app in that window has loaded it
-again.
+already has, indefinitely. `main.tsx` carried an unregister for exactly that
+reason while the one this app briefly shipped was being cleared, and lost it
+once every client had loaded the app again. Anyone withdrawing a worker needs
+to ship that block, not just the deletion.
 
 If a worker is ever wanted back, the constraint that made the last one safe
 still holds: it must never cache the app. This IDE deploys by rebuilding
