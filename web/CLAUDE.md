@@ -799,12 +799,24 @@ rewriting it was free, while an object is not, and this now fires on every focus
 move *within* a pane.
 
 **The window you are in says so at both ends.** The strip makes its tab the lit
-one; `.tile--current` gives that window's own bar `--level-object`, 1.35:1 above
-every other bar and two rungs under `--level-lit`, so the tab and the bar read as
-the same lit surface at the two ends of the same sentence. Everything quiet in
-that bar goes up a rung with it — `--graphite-dim` is 3.62:1 on it, under the
-floor, so the project, the branch and the prompt are `--graphite` there
-(4.83:1). Its border is not touched: on a black page a darker edge has nothing
+one; `.tile--current` gives that window's own bar the **same** `--level-lit`,
+1.79:1 above every other bar — not a rung near it, the identical surface, which
+is what makes the tab and the bar one sentence rather than two. It drifted
+twice: the tab went up for the strip's redesign and this stayed, then the ladder
+moved it again, and the gap grew 1.07 → 1.24 → 1.33 while this paragraph went on
+promising they matched.
+
+Wearing the lit surface across a whole **toolbar** costs more than wearing it
+across a tab, and that cost is the interesting part. `--graphite` is 3.90:1 on it
+and `--graphite-dim` 2.92, so every quiet thing in that bar — project, slash,
+branch, prompt, and the panel toggles — is `--quiet-on` (4.89), while `--bone`,
+which the worktree's own name is in, needs nothing at 7.48. **Nothing fills on
+hover there**, because there is nothing above lit to fill with: a lift big enough
+to see (6% white, 1.19:1) puts `--quiet-on` back under the floor at 4.11, so the
+pointer is said by the label going `--bone`, which survives any lift. `--danger`
+would have been the one colour with no lighter rung to reach for, at 3.15:1 — it
+turned out not to be needed, because the only red in that bar was `.tile__remove`
+and nothing has rendered that since the trashcan moved into the sleep dialog. Its border is not touched: on a black page a darker edge has nothing
 to be darker than, and a lighter one reads as a focus ring drawn over the
 ground. It is driven by `active`, not by `scrollTo`: where you *are*, which
 clicking into a window sets without the row moving, rather than where you last
