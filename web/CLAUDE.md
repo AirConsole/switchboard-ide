@@ -670,11 +670,18 @@ up as a section that is subtly wrong.
 `web/public/` holds the manifest and the icons; Vite copies that directory into
 `dist/` verbatim, and the server serves it with no route of its own.
 
-**There is no service worker, and the app actively removes the one it briefly
-had.** One was added to earn Chrome's omnibox install icon -- the only install
-affordance that still requires a fetch handler -- and then dropped, because the
-⋮ menu installs from the manifest alone and a worker is sticky machinery to keep
-correct for a click.
+**There is no service worker, and none is needed -- including for the address-bar
+install.** One was added on the strength of Chrome's own installability post,
+which says the ⋮ menu stopped requiring a fetch handler in desktop 112 but that
+"the install prompt algorithm still requires" one. That post also says it was an
+area Chrome was working to change, and by Chrome 149 it had: the app installs
+from the address bar with nothing registered, observed directly. Treat the
+requirement as gone and do not re-add a worker to chase it.
+
+The worker was never what was broken. The manifest was fetched with credentials
+omitted and came back 401 through the proxy, so there was no manifest and
+therefore no install by any route -- see the `crossorigin` attribute on the link
+in `index.html`, which is the whole fix.
 
 Deleting the file was not enough, which is why `main.tsx` still mentions it. A
 registered worker outlives its script, and `/sw.js` now falls through to the SPA

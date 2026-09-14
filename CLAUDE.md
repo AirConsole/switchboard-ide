@@ -148,9 +148,9 @@ machine is a reverse proxy's job.
 
 It also **installs as an app** -- a manifest and icons in `web/public/`, so
 Chrome's "Install page as app" gives it its own window, icon and place in the
-switcher. There is no service worker: one would have to
-cache nothing at all to be safe here, and the ⋮ menu installs the app without
-one. See `web/CLAUDE.md`.
+switcher. There is no service worker and none is needed:
+Chrome installs it from the manifest alone, address bar included. See
+`web/CLAUDE.md`.
 
 ## How the pieces fit
 
