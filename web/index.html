@@ -10,7 +10,12 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>Switchboard</title>
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- crossorigin, and it is not optional here: a manifest is fetched with
+         credentials *omitted* by default, so behind the basic auth Caddy puts in
+         front of this it comes back 401 and the app is simply not installable.
+         Nothing else on the page has this problem, because every other subresource
+         is a same-origin fetch that does send credentials. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <!-- Duplicated from the manifest's theme_color rather than read from it:
          Safari does not take the tab and status bar tint from a manifest, and
          Chrome prefers the manifest in an installed window but this meta in a

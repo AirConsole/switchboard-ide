@@ -106,6 +106,15 @@ describe('index.html head', () => {
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"')
   })
 
+  it('asks for the manifest with credentials', () => {
+    // A manifest is fetched with credentials omitted unless this says otherwise,
+    // and the live instance is behind HTTP basic auth: without it the fetch is
+    // a 401 and the app cannot be installed at all. Measured against the proxy,
+    // which answers 401 for /manifest.webmanifest and 200 for everything the
+    // page loads as an ordinary same-origin subresource.
+    expect(html).toContain('rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials"')
+  })
+
   it('repeats theme_color as a meta, and says the same thing', () => {
     // Safari does not read theme_color from a manifest. If these two disagree
     // the chrome changes colour depending on how the page was opened.

@@ -670,29 +670,25 @@ up as a section that is subtly wrong.
 `web/public/` holds the manifest and the icons; Vite copies that directory into
 `dist/` verbatim, and the server serves it with no route of its own.
 
-**There is a service worker, and it caches nothing but an offline notice.**
-Installing from the ⋮ menu has not needed one since desktop 112, but the omnibox
-install icon and `beforeinstallprompt` still do, and the handler may not be
-empty — so the worker exists to be that handler and nothing else.
+**There is no service worker, and the app actively removes the one it briefly
+had.** One was added to earn Chrome's omnibox install icon -- the only install
+affordance that still requires a fetch handler -- and then dropped, because the
+⋮ menu installs from the manifest alone and a worker is sticky machinery to keep
+correct for a click.
 
-What it must never become is a cache of the app. This IDE deploys by rebuilding
+Deleting the file was not enough, which is why `main.tsx` still mentions it. A
+registered worker outlives its script, and `/sw.js` now falls through to the SPA
+handler, which answers `index.html` with a 200 -- so a browser's update check
+gets HTML where it wanted JavaScript, fails, and goes on running the worker it
+already has. `main.tsx` unregisters it and drops its cache instead. That block
+can go once every browser that loaded the app in that window has loaded it
+again.
+
+If a worker is ever wanted back, the constraint that made the last one safe
+still holds: it must never cache the app. This IDE deploys by rebuilding
 `web/dist` and restarting, and "a web change reaches them on reload" is the
-promise that rests on it; a worker holding the app shell would break that
-silently, serving yesterday's JavaScript to someone who had reloaded and would
-swear they had. So: only navigations are intercepted at all, they go to the
-network every time, and the cache is reached only when that fetch rejects.
-Everything else — `/assets`, `/api` — is never given a `respondWith` and so is
-fetched exactly as it would be with no worker installed. `/ws` is untouched by
-construction, since a worker never sees a WebSocket.
-
-`skipWaiting()` and `clients.claim()` are both deliberate: the usual patience
-waits for every client to close, and this is an IDE people leave open for days,
-so a waiting worker is one that never activates.
-
-Measured, and worth re-measuring after any change to `sw.js`: with the worker
-active and controlling the page, editing the title and rebuilding put the new
-title on screen at the next reload. If that ever stops being true, the worker
-has started caching the app.
+promise resting on it -- a worker holding the app shell breaks that silently,
+serving yesterday's JavaScript to someone who reloaded and would swear they had.
 
 The manifest is JSON and cannot explain itself, so:
 
