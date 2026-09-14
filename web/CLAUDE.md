@@ -749,21 +749,46 @@ mutation in the app refreshes it mid-sentence. The draft holds until the server
 echoes back exactly what was sent. Verified by typing into a prompt while a
 `curl` created a todo on another worktree — the keystrokes and the caret survive.
 
-**The three things you can do to a todo are one column of three.** RUN NEXT,
-MOVE TO and DELETE, one under the other, one shape and one width. They were a
-pill, a bare × beside it and a quiet word underneath -- three kinds of control
-for three things at the same level, and the × read as part of RUN NEXT rather
-than as its own action. `justify-items: stretch` is what gives the column a
-single right edge; three pills at their natural widths is the ragged thing the ×
-already was. The row is 86px tall where it was 63, which is what a stack costs
-and is the only cost: nothing else in the panel moved.
+**The three things you can do to a todo are the tab strip's object, stood on
+end.** RUN NEXT, MOVE TO and DELETE as square segments inside one rounded shell,
+seamed 2px in `--sleeve` -- `.tabgroup`'s own argument, that round pills are each
+their own object while square segments inside one shell are one object divided,
+and the shell holds every outer edge. They were a pill, a bare × beside it and a
+quiet word underneath, then three stacked pills; a column of pills is still a
+column of separate objects, and none of it had anything to do with the strip
+above it.
+
+Three details carry it. Labels are **left-aligned on the tab's own 13px leading
+inset** rather than centred, so the three read down one edge and a mark could
+appear down a segment's leading edge later without moving a label; the queue
+position sits at the far edge with the caret for the same reason, since a number
+that appears and disappears must not push its own label along. The caret is the
+zZ tab's, **17px** -- it is the one mark that says a control opens a list rather
+than acting on the spot, so it is the same mark in both places, and at 9px it was
+a speck beside an 11px label. And the column is `min-width: 118px` rather than a
+fixed width: every row comes out at 118 because no label reaches it, and a wider
+font grows the slab instead of clipping a label.
 
 Weight, not colour, still separates them -- amber means Claude is blocked on you
-and green that it has come to rest, and none of the three is either -- so the one
-state any of them can be in, RUN NEXT lit, is the pill filled in reverse. DELETE
-is the only red in the panel and only on hover (`--danger`, 6.49:1 here). MOVE TO
-carries a caret, which is what says it opens a list rather than acting on the
-spot; its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown.
+and green that it has come to rest, and none of the three is either -- so queued
+is RUN NEXT filled in reverse, `--ink` on `--bone` at 14.46:1, which is the
+loudest thing the panel can say and is spent here because a queue marker has to
+be findable across a row of windows. **DELETE is the one segment that does not
+lift on hover**, and that is measured rather than an oversight: `--danger` is
+4.88:1 on `--level-object` and 4.14:1 on `--level-hover`, so lifting it would
+cost either a second red or the colour on the only control here that destroys
+something.
+
+**The filler is a box with no label**, taking whatever the three segments leave
+so the slab meets the bottom of its row the way the strip meets its bar. Its seam
+is a gradient and not a border because **a border paints at any height**: beside
+a one-line prompt the box is 0px tall and a border drew 2px of sleeve along the
+foot of the slab with nothing under it to separate. Measured: prompt 25px ->
+filler 0 and the last segment's fill runs to the slab's edge; prompt 100px ->
+filler 28px with exactly two rows of `--sleeve` above it.
+
+MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
+and it hangs off the segment's own bottom-left corner.
 
 **Its list is this project's worktrees and no others.** A todo is work on a
 repository, and another repository's worktrees are not somewhere it could be

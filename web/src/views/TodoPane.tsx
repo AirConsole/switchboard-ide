@@ -177,13 +177,15 @@ const TodoRow = ({
   return (
     <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'}>
       {/*
-       * The three things you can do to a todo, in a column.
+       * The three things you can do to a todo: the tab strip's own object,
+       * stood on end.
        *
-       * One shape each and one under the other, because they are siblings: a
-       * pill, a bare × and a quiet word were three different kinds of control
-       * for three things at the same level, and the × in particular sat beside
-       * RUN NEXT as though it were part of it. Stretched to the widest of the
-       * three so the column has one edge rather than a ragged one.
+       * Square segments inside one rounded shell, seamed 2px in --sleeve. Round
+       * pills are each their own object, so a column of them is a column of
+       * objects that happen to be near each other; this is one object divided,
+       * which is the argument `.tabgroup` already makes about the strip. The
+       * empty segment at the foot is how the slab keeps meeting the bottom of a
+       * prompt taller than it -- see `.todo__filler`.
        */}
       <div className="todo__controls">
         <button
@@ -201,9 +203,13 @@ const TodoRow = ({
               : 'Queue this to be typed into Claude here once it comes to rest.'
           }
         >
-          {/* The number is a queue position, so it means nothing when this is
-              the only thing in the queue. */}
-          Run next{queued && queuedCount > 1 ? ` (${position})` : ''}
+          Run next
+          {/* At the segment's far edge, where the caret is, rather than after
+              the word: the three labels read down one left edge, and a number
+              appearing must not push its own label along. It is a queue
+              position, so it means nothing when this is the only thing in the
+              queue. */}
+          {queued && queuedCount > 1 && <span className="todo__at">{position}</span>}
         </button>
         {/*
          * Where this piece of work actually belongs: RUN NEXT hands the prompt
@@ -238,6 +244,17 @@ const TodoRow = ({
         >
           Delete
         </button>
+        {/*
+         * Whatever the three leave, when the prompt beside them is the taller
+         * half. It is a box with no label rather than nothing at all, so the
+         * slab meets the bottom of the row the way the strip meets the bar.
+         *
+         * Its seam is drawn as a gradient rather than a border because a border
+         * paints at any height: with a one-line prompt this box is 0px tall and
+         * a border would leave a 2px line of sleeve along the foot of the slab,
+         * under a column that has nothing left to separate.
+         */}
+        <div className="todo__filler" aria-hidden="true" />
       </div>
       {move.at !== null && (
         /*
@@ -246,8 +263,6 @@ const TodoRow = ({
          * met here has to be the object you know from the strip, saying the
          * same things about itself. What is already queued there is on the tab,
          * which is what you want to know before adding to it. Every row is one
-         * of this project's own worktrees, so nothing has to say which project
-         * it belongs to. Every row is one
          * of this project's own worktrees, so nothing has to say which project
          * it belongs to.
          *
