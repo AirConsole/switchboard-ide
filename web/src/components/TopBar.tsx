@@ -160,10 +160,10 @@ const Group = ({
         }\nClick for this project's worktrees, a new one, and closing it`}
       >
         <span className="tabgroup__name">{project.name}</span>
-        {/* The one thing the zZ tab said that a colour cannot: how many
-            worktrees exist that you cannot see. Said in the quiet channel, the
-            way a tab says its dirty count. */}
-        {asleep.length > 0 && <span className="tabgroup__zz">zZ {asleep.length}</span>}
+        {/* That there is something behind this project you cannot see. The
+            count sat here for a day and was noise: how many is a thing you find
+            out by looking, and the pane is one click away. */}
+        {asleep.length > 0 && <span className="tabgroup__zz">zZ</span>}
       </button>
 
       {awake.map((worktree) => tab(worktree, false))}

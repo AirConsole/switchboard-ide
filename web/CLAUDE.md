@@ -206,9 +206,10 @@ The pieces, and why each is the way it is:
   it went: sleeping does not mean stopped, so a sleeper blocked on you still has
   to reach the top bar. An awake worktree says its own state on its own tab, so
   the head reports what has no tab. `tab--working` and `tab--off` are never
-  applied to it — a summary that is always lit is not a summary. The count
-  survives separately as a quiet `zZ 2`, because how many worktrees you cannot
-  see is the one fact a colour cannot carry.
+  applied to it — a summary that is always lit is not a summary. A quiet `zZ`
+  beside the name says there is something behind this project you cannot see;
+  it carried the count for a day and that was noise, since how many is a thing
+  you find out by looking and the pane is one click away.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -324,11 +325,23 @@ a question.
 
 It is a pane you can walk to: `PaneKind` includes `'project'`, cells are keyed
 by `projectKey(projectId)`, and the Cmd+arrow stops are keyed by the cell rather
-than by a worktree, so the walk reaches it with no special case. **It takes the
-arrival focus itself**, on a `tabIndex={-1}` container rather than handing it to
-the branch box — arriving means "show me this project", not "type a branch
-name". It has to take it at all, though: the stepper reads where it is from
-`activeElement`, so a pane that refuses focus is one the walk can never leave.
+than by a worktree, so the walk reaches it with no special case. Arriving puts
+the caret in **the branch box** — naming the next worktree is what you come here
+to do often enough. It has to hold the keyboard somewhere regardless: the
+stepper reads where it is from `activeElement`, so a pane that refuses focus is
+one the walk can never leave.
+
+**Its foot does not scroll.** The lists grow — a project can have twenty
+worktrees — and a form you have to scroll to is a form you stop using, so the
+new-worktree field and Close project are pinned under the part that moves. That
+form is **one field**: "Branch from" was left empty every time, since the
+remote's default (or HEAD without one) is what you want unless you are doing
+something unusual and something unusual is what a terminal is for; and "Start
+Claude here" was checked every time, because a worktree with no agent in it is a
+directory. The server still takes both parameters — this stops asking. Close
+project is shaped like a tab, which is what the pane's other controls are, and
+turns `--danger` under the pointer: the red the project's × used to turn, said
+on the thing itself.
 
 The lists are `WorktreeRow`, the same component the strip's tabs are, keeping
 every `.tab*` class — only the container differs. A worktree met in the pane and
