@@ -5,7 +5,7 @@ import { TopBar } from './components/TopBar.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { addKey, Overview, type PaneKind } from './views/Overview.js'
+import { Overview, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -552,13 +552,12 @@ export const App = (): React.ReactElement => {
       sessions={sessions}
       todos={todos}
       onOpenProject={() => setShowOpenProject(true)}
-      onCloseProject={setClosingProject}
       /*
-       * The + no longer opens anything: the form is a tile at the end of that
-       * project's run of windows, so this walks you to it and hands over the
-       * caret, the same as clicking a worktree's tab.
+       * The project's name is its pane's tab: this walks you there and hands
+       * over the caret, the same as clicking a worktree's tab. Closing the
+       * project is in that pane now rather than on a × up here.
        */
-      onNewWorktree={(project) => reveal(addKey(project.id), 'add')}
+      onRevealProject={(project) => reveal(projectKey(project.id), 'project')}
       onWake={wake}
       onReveal={reveal}
       onSleep={setSleeping}
@@ -601,6 +600,22 @@ export const App = (): React.ReactElement => {
                 worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
               )
               setAwake([...awake].filter((id) => !mine.has(id)))
+            }
+            /*
+             * If you were standing in something that project owned, move into
+             * whatever is left. Closing is a button *inside* that project's own
+             * pane now, so `active` reliably names a cell that is about to go --
+             * and an `active` pointing at nothing leaves the keyboard on the
+             * document and blanks the Cmd legend. The same reasoning as
+             * `forgetWorktree`, one level up.
+             */
+            const mine = new Set(
+              worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
+            )
+            if (active !== null && (active.id === projectKey(closingProject) || mine.has(active.id))) {
+              const left = groups.find((g) => g.project.id !== closingProject)
+              if (left === undefined) setActive(null)
+              else reveal(projectKey(left.project.id), 'project')
             }
             setClosingProject(null)
             void api.closeProject(closingProject, { sleep }).then(refresh).catch(fail)
@@ -708,6 +723,10 @@ export const App = (): React.ReactElement => {
         openFilesByWorktree={ui.openFilesByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
+        groups={groups}
+        onWake={wake}
+        onSleep={setSleeping}
+        onCloseProject={setClosingProject}
         scrollTo={scrollTo}
         active={active}
         onActivate={activate}

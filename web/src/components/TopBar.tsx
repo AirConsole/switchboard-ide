@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react'
 import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
-import { WorktreeTab, statusClass } from './WorktreeTab.js'
-import { useAnchoredMenu } from './useAnchoredMenu.js'
-import { addKey } from '../views/Overview.js'
+import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
+import { projectKey } from '../views/Overview.js'
 import {
   claudeSession,
   mostUrgentStatus,
@@ -20,8 +19,8 @@ export interface TopBarProps {
   /** Every todo, so a tab can say how much is queued behind it. */
   todos: WorktreeTodo[]
   onOpenProject: () => void
-  onCloseProject: (projectId: string) => void
-  onNewWorktree: (project: Project) => void
+  /** Walk to this project's own pane in the row. */
+  onRevealProject: (project: Project) => void
   onWake: (worktreeId: string) => void
   /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
@@ -76,8 +75,7 @@ const Group = ({
   sessions,
   todos,
   activeId,
-  onCloseProject,
-  onNewWorktree,
+  onRevealProject,
   onWake,
   onReveal,
   onSleep,
@@ -87,16 +85,18 @@ const Group = ({
   todos: WorktreeTodo[]
 } & Pick<
   TopBarProps,
-  'activeId' | 'onCloseProject' | 'onNewWorktree' | 'onWake' | 'onReveal' | 'onSleep'
+  'activeId' | 'onRevealProject' | 'onWake' | 'onReveal' | 'onSleep'
 >): React.ReactElement => {
-  const { at, anchor, menu, toggle, close } = useAnchoredMenu<HTMLButtonElement>()
   const { project, awake, asleep } = group
-  const allAsleep = awake.length === 0 && asleep.length > 0
   /*
-   * The collapsed tab stands for several worktrees, so it shows the most
-   * urgent of them. Sleeping does not mean stopped -- Claude can be left
-   * running -- so one of them being blocked on you has to reach the top bar
-   * from behind a dropdown.
+   * What the head's state bar says, and only two states can say anything.
+   *
+   * It stands for the worktrees with no tab of their own -- the sleeping ones.
+   * Sleeping does not mean stopped, Claude can be left running, so one of them
+   * being blocked on you still has to reach the top bar; that was the zZ tab's
+   * job and this is what took it over. Amber and green only: the two states a
+   * row of agents is scanned for. Working and not-running say nothing here,
+   * because a summary that is always lit is not a summary.
    */
   const asleepStatus = mostUrgentStatus(asleep.map((w) => worktreeStatus(sessions, w.id)))
 
@@ -112,24 +112,7 @@ const Group = ({
         // Where you are. A sleeping worktree is nowhere, whatever the row was
         // last asked for -- it has no window to be in.
         active={!sleeping && worktree.id === activeId}
-        title={[
-          worktree.path,
-          ...(worktree.branch && worktree.branch !== worktree.name
-            ? [`on ${worktree.branch}`]
-            : []),
-          stateLabel(claudeSession(sessions, worktree.id)),
-          ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
-          ...(worktree.dirty
-            ? [`${worktree.dirty} uncommitted change${worktree.dirty === 1 ? '' : 's'}`]
-            : []),
-          ...(worktree.unmerged
-            ? [
-                `${worktree.unmerged} commit${worktree.unmerged === 1 ? '' : 's'} not on the default branch`,
-              ]
-            : []),
-          ...(queued > 0 ? [`${queued} queued to run next here`] : []),
-          sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
-        ].join('\n')}
+        title={worktreeTitle(worktree, sessions, queued, sleeping)}
         onPick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
         /* Already asleep, so there is nothing to put away and no × to do it
            with. Waking it is what its body is for. */
@@ -139,97 +122,51 @@ const Group = ({
       />
     )
   }
+  const asleepSignal =
+    asleepStatus === 'needs-you'
+      ? 'tab--needs'
+      : asleepStatus === 'idle'
+        ? 'tab--idle'
+        : ''
 
   return (
     <div className="tabgroup">
-      <span className="tabgroup__pill" title={project.root}>
-        <span className="tabgroup__name">{project.name}</span>
-        <button
-          className="tabgroup__close"
-          onClick={() => onCloseProject(project.id)}
-          title={`Close ${project.name}, and choose what happens to what it is running`}
-          aria-label={`Close project ${project.name}`}
-        >
-          &times;
-        </button>
-      </span>
-
-      {awake.map((worktree) => tab(worktree, false))}
-      {allAsleep && asleep.map((worktree) => tab(worktree, true))}
-
-      {!allAsleep && asleep.length > 0 && (
-        <>
-          <span className={['tab', 'tab--zz', 'tab--asleep', statusClass(asleepStatus)].join(' ')}>
-            <button
-              ref={anchor}
-              className="tab__body"
-              onClick={toggle}
-              title={`${asleep.length} sleeping — click to pick one to wake`}
-              aria-label={`${asleep.length} sleeping worktrees, ${asleepStatus}`}
-              aria-expanded={at !== null}
-            >
-              {/* The most urgent of the worktrees behind it, said with the same
-                  leading bar every other tab uses. */}
-              {/* The count is part of the label, so it is set at the label's
-                  size rather than the tab's. */}
-              <span className="tab__zz" aria-hidden="true">
-                zZ {asleep.length}
-              </span>
-              <span className="tab__caret" aria-hidden="true">
-                {'▾'}
-              </span>
-            </button>
-          </span>
-          {at !== null && (
-            /*
-             * The same tabs, stacked.
-             *
-             * A sleeping worktree is one of these tabs that happens not to be
-             * in the row, so it is drawn by the same `tab()` -- the sleeve
-             * under it, the bullet, the zZ, the name and its marks, the hover
-             * panel. The list used to invent a row of its own, with the state
-             * spelled out in words and the prompt on a second line, and that
-             * made the same worktree look like two different objects depending
-             * on where you met it. Both facts are still on the tab: the bullet
-             * carries the state and the title carries the prompt, exactly as
-             * they do in the bar.
-             *
-             * The click that wakes one is the tab's own; this closes the menu
-             * behind it, and does it on the way out so `onWake` has already run.
-             */
-            <div
-              className="menu menu--tabs"
-              ref={menu}
-              style={{ left: at.left, top: at.top }}
-              onClick={close}
-            >
-              {asleep.map((worktree) => tab(worktree, true))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Back to a bare glyph. It wore the noun while it was the thing that
-          opened the form, and a scoped + reads as Chrome's global "one more
-          tab" -- but the form is a tile at the end of this project's run now,
-          so this is navigation rather than a create, and the tile it walks you
-          to says what it is in full. */}
       {/*
-        * The + is this project's new-worktree tile the way a tab is a
-        * worktree's window, so it lights the same way when you are in it.
-        * That tile is the only cell in the row with no tab of its own, and
-        * without this the strip said nobody was anywhere while you stood in it.
+        * The project's name is its pane's tab.
+        *
+        * It used to be a label with an × on it that closed the project -- the
+        * same glyph a worktree's tab uses to merely sleep, one mis-click apart.
+        * Closing lives in the pane now; this walks you there and lights while
+        * you are in it, exactly as a worktree's tab does for its window.
+        *
+        * The state bar aggregates only the SLEEPING worktrees, and only in
+        * amber and green. An awake one already says its own state on its own
+        * tab, so the head reports what has no tab -- which is the job the zZ
+        * tab used to do, and the one thing that could not be lost when it went.
+        * Grey and dashed are left off deliberately: this is a summary, and the
+        * two colours are the only states a row of agents is scanned for.
         */}
       <button
-        className={
-          activeId === addKey(project.id) ? 'tabgroup__add tabgroup__add--on' : 'tabgroup__add'
-        }
-        onClick={() => onNewWorktree(project)}
-        title={`New worktree in ${project.name}`}
-        aria-label={`New worktree in ${project.name}`}
+        className={[
+          'tabgroup__pill',
+          activeId === projectKey(project.id) ? 'tabgroup__pill--on' : '',
+          asleepSignal,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        onClick={() => onRevealProject(project)}
+        title={`${project.root}\n${
+          asleep.length === 0 ? 'Nothing asleep' : `${asleep.length} asleep`
+        }\nClick for this project's worktrees, a new one, and closing it`}
       >
-        <span aria-hidden="true">+</span>
+        <span className="tabgroup__name">{project.name}</span>
+        {/* The one thing the zZ tab said that a colour cannot: how many
+            worktrees exist that you cannot see. Said in the quiet channel, the
+            way a tab says its dirty count. */}
+        {asleep.length > 0 && <span className="tabgroup__zz">zZ {asleep.length}</span>}
       </button>
+
+      {awake.map((worktree) => tab(worktree, false))}
     </div>
   )
 }
@@ -390,8 +327,7 @@ export const TopBar = ({
   todos,
   activeId,
   onOpenProject,
-  onCloseProject,
-  onNewWorktree,
+  onRevealProject,
   onWake,
   onReveal,
   onSleep,
@@ -423,8 +359,7 @@ export const TopBar = ({
           sessions={sessions}
           todos={todos}
           activeId={activeId}
-          onCloseProject={onCloseProject}
-          onNewWorktree={onNewWorktree}
+          onRevealProject={onRevealProject}
           onWake={onWake}
           onReveal={onReveal}
           onSleep={onSleep}

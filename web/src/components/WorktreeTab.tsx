@@ -1,6 +1,6 @@
-import type { Worktree } from '@switchboard/shared'
+import type { Session, Worktree } from '@switchboard/shared'
 import { ForkIcon } from './ForkIcon.js'
-import type { WorktreeStatus } from '../selectors.js'
+import { claudeSession, stateLabel, type WorktreeStatus } from '../selectors.js'
 
 /** The tab class for a status: what colour its leading bar is, if any. */
 export const statusClass = (status: WorktreeStatus): string =>
@@ -57,6 +57,36 @@ const WorktreeLabel = ({
  * its leading bar, the zZ, the dirty count, the fork, what is queued behind it
  * -- it says wherever it is drawn.
  */
+/**
+ * The hover panel a worktree's row carries, wherever it is drawn.
+ *
+ * Built here rather than at each call site because the strip and the project
+ * pane must say the same things about the same worktree -- it is one object met
+ * in two places, and a panel that differed would be the tell that it is not.
+ */
+export const worktreeTitle = (
+  worktree: Worktree,
+  sessions: Session[],
+  queued: number,
+  sleeping: boolean,
+): string =>
+  [
+    worktree.path,
+    ...(worktree.branch && worktree.branch !== worktree.name ? [`on ${worktree.branch}`] : []),
+    stateLabel(claudeSession(sessions, worktree.id)),
+    ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+    ...(worktree.dirty
+      ? [`${worktree.dirty} uncommitted change${worktree.dirty === 1 ? '' : 's'}`]
+      : []),
+    ...(worktree.unmerged
+      ? [
+          `${worktree.unmerged} commit${worktree.unmerged === 1 ? '' : 's'} not on the default branch`,
+        ]
+      : []),
+    ...(queued > 0 ? [`${queued} queued to run next here`] : []),
+    sleeping ? 'Asleep — click to wake it' : 'Click to bring its window into view',
+  ].join('\n')
+
 export const WorktreeTab = ({
   worktree,
   status,
