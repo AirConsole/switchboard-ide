@@ -3,36 +3,24 @@ import Fastify, { type FastifyInstance } from 'fastify'
 
 /* `config` reads the environment at import time. See state.test.ts. */
 process.env.SWB_TOKEN = 'the-secret'
-const { allowRequest, isLoopback } = await import('../src/gate.js')
+const { registerGate } = await import('../src/gate.js')
 
 let app: FastifyInstance
 
 beforeAll(async () => {
   app = Fastify()
   /*
-   * The gate exactly as index.ts registers it. Keyed on the route Fastify
-   * matched, never on the URL text.
+   * The real gate, installed -- not a copy of it.
+   *
+   * This file previously transcribed the hook by hand, and the copy dropped the
+   * condition the server actually had. It then asserted a *stricter* rule than
+   * production, passed, and left the gap it was written to catch standing
+   * through a review looking straight at it. A test that re-implements the
+   * thing under test measures the re-implementation.
    */
-  app.addHook('onRequest', async (request, reply) => {
-    const route = request.routeOptions.url
-    if (route === undefined || !route.startsWith('/api')) {
-      if (route === '/ws') return
-      if (!isLoopback(request)) await reply.status(404).send({ error: 'not found' })
-      return
-    }
-    if (route === '/api/health') return
-    if (allowRequest(request)) return
-    await reply.status(401).send({ error: 'not allowed' })
-  })
-  /*
-   * The static tree and `/ws`, which are what the hook does when the route is
-   * not an API one. Registered here because the bug this catches was in that
-   * branch and not in the predicates the other gate tests ask.
-   */
+  registerGate(app)
+  // `/ws` and the SPA: what the hook does when the route is not an API one.
   app.get('/ws', async () => ({ upgraded: true }))
-  // The SPA the way index.ts serves it: a catch-all handler rather than a
-  // route, so an unmatched path has no `routeOptions.url` -- which is the case
-  // that slipped past the gating once.
   app.setNotFoundHandler(async (request, reply) => {
     if (request.url.startsWith('/api') || request.url.startsWith('/ws')) {
       return reply.status(404).send({ error: 'not found' })

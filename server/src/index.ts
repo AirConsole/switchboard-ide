@@ -9,7 +9,7 @@ import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
-import { allowRequest, isLoopback } from './gate.js'
+import { registerGate } from './gate.js'
 import { registerProxy } from './remote/proxy.js'
 import { PROTOCOL_HEADER } from './remote/peer.js'
 import { PROTOCOL_VERSION } from '@switchboard/shared'
@@ -55,24 +55,6 @@ process.on('unhandledRejection', (reason) => {
 })
 
 /*
- * The API's gate, which does nothing at all unless this instance is somebody's
- * peer (`SWB_TOKEN`). See gate.ts for the two callers it recognises.
- *
- * **Keyed on the route Fastify matched, never on the URL text.** `request.url`
- * is the raw request target and the router matches the decoded path, so the two
- * disagree and every spelling of that disagreement was a way through: measured
- * against a real peer with a token set and none supplied, `GET /%61pi/snapshot`
- * returned the full snapshot, `/ap%69/...` likewise, an absolute-form target
- * (`GET http://evil/api/snapshot`) did not start with `/api` at all, and
- * `POST /%61pi/sessions` spawned a live shell in one of the peer's worktrees.
- * `routeOptions.url` is what actually answered -- `/api/sessions` -- and it is
- * the same string however the client spelled it.
- *
- * Registered before the routes so a route added later is covered by it without
- * anyone remembering to. `/ws` runs the same rule at its upgrade, where a hook
- * cannot reach.
- */
-/*
  * Every reply says which protocol this server speaks, so a gateway compares it
  * on every read rather than only when the machine was added -- the other side
  * is upgraded on its own schedule, and a version skew is otherwise silent.
@@ -82,44 +64,7 @@ app.addHook('onSend', async (_request, reply, payload) => {
   return payload
 })
 
-app.addHook('onRequest', async (request, reply) => {
-  const route = request.routeOptions.url
-  if (route === undefined || !route.startsWith('/api')) {
-    /*
-     * `/ws` runs its own rule at the upgrade, where this hook cannot reach --
-     * and it is the one non-`/api` route a *gateway* must be able to open over
-     * the network. Falling into the loopback branch below answered a
-     * token-bearing gateway with 404 instead of a socket, which is every remote
-     * terminal dead. Measured; the unit tests could not see it, because they
-     * ask `allowSocket` rather than the server.
-     */
-    if (route === '/ws') return
-    /*
-     * Not an API route: the built page and its assets. On a peer they are
-     * served to this machine only, which is what makes "serves only this
-     * machine" true of the process rather than only of `/api` and `/ws`. A
-     * peer's own UI is unusable from anywhere else anyway -- its fetches back
-     * here are refused -- so this serves nobody a page that could work, and it
-     * stops a peer bound to the network advertising an IDE at all.
-     *
-     * 404 rather than 401: there is nothing here to authenticate *to*.
-     */
-    // No `route !== undefined` guard: an unmatched path falls to the SPA
-    // catch-all below, which would have served the page to the network by the
-    // back door. A 404 is what such a path deserves from off-machine anyway.
-    if (config.token !== undefined && !isLoopback(request)) {
-      await reply.status(404).send({ error: 'not found' })
-    }
-    return
-  }
-  // `/api/health` says `{ok:true}` and nothing else, and it is what `deploy.sh`
-  // and `scratch.sh` poll with curl -- neither a browser nor a gateway. An
-  // exact match, not a prefix: `startsWith` also exempted `/api/healthz` and
-  // anything else someone might later add under that stem.
-  if (route === '/api/health') return
-  if (allowRequest(request)) return
-  await reply.status(401).send({ error: 'not allowed' })
-})
+registerGate(app)
 
 registerProxy(app, workspace)
 

@@ -3,7 +3,8 @@ import type { FastifyRequest } from 'fastify'
 
 /* No SWB_TOKEN: the ordinary instance, which is nobody's peer. */
 delete process.env.SWB_TOKEN
-const { allowRequest, allowSocket } = await import('../src/gate.js')
+const { allowRequest, allowSocket, registerGate } = await import('../src/gate.js')
+const Fastify = (await import('fastify')).default
 
 const req = (headers: Record<string, string>, ip = '127.0.0.1'): FastifyRequest =>
   ({ headers: { host: '127.0.0.1:8084', ...headers }, ip }) as unknown as FastifyRequest
@@ -67,5 +68,34 @@ describe('an instance that is nobody’s peer', () => {
 
   it('still refuses a name we never published', () => {
     expect(allowRequest(req({ host: 'evil.example' }))).toBe(false)
+  })
+})
+
+describe('the page, on an instance that is nobody\u2019s peer', () => {
+  /*
+   * The page rule used to be gated on *having a token*, so an ordinary
+   * instance bound off loopback served the whole app, its assets and vite's
+   * source maps to the network -- while refusing every API call behind it.
+   * The page half open and the API half closed, with two CLAUDE.md files
+   * claiming otherwise. Not a data leak, since the page cannot work without
+   * the API; but it advertises an IDE here, and a security claim that is only
+   * sometimes true is worse than not making it.
+   */
+  it('is served to this machine only, token or no token', async () => {
+    const app = Fastify()
+    registerGate(app)
+    app.setNotFoundHandler(async (_request, reply) => reply.send({ page: true }))
+    await app.ready()
+
+    const here = await app.inject({ method: 'GET', url: '/', headers: { host: '127.0.0.1:8084' } })
+    expect(here.statusCode).toBe(200)
+    const away = await app.inject({
+      method: 'GET',
+      url: '/',
+      remoteAddress: '10.0.0.7',
+      headers: { host: '127.0.0.1:8084' },
+    })
+    expect(away.statusCode).toBe(404)
+    await app.close()
   })
 })

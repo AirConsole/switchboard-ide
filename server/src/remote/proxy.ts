@@ -82,7 +82,20 @@ const keysInBody = (body: unknown): string[] => {
 const keyInQuery = (query: unknown): string | null => {
   if (typeof query !== 'object' || query === null) return null
   const host = (query as Record<string, unknown>).host
-  return typeof host === 'string' && host !== '' ? host : null
+  if (host === undefined) return null
+  /*
+   * Anything but one string is refused, not ignored. Fastify yields an *array*
+   * for a repeated key, and returning null for it meant `?host=A&host=A` was
+   * answered by this machine instead of A -- measured, `POST /api/projects`
+   * with `create` then made the directory and the repository here rather than
+   * there, which is the one mistake the open dialog carries three guards
+   * against. Every other ambiguity in this hook fails closed; this one failed
+   * open.
+   */
+  if (typeof host !== 'string' || host === '') {
+    throw new HttpError(400, 'that request names a server more than once')
+  }
+  return host
 }
 
 /**

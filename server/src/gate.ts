@@ -1,4 +1,4 @@
-import type { FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { timingSafeEqual } from 'node:crypto'
 import { config } from './config.js'
 
@@ -216,4 +216,67 @@ export const allowSocket = (request: FastifyRequest): boolean => {
    * boundary.
    */
   return isLoopback(request) && (origin === undefined || ours)
+}
+
+/**
+ * Whether the built page and its assets may be served to this caller.
+ *
+ * Loopback, always -- not only when this instance is somebody's peer, which is
+ * what it used to say. A token-less instance bound off loopback then served the
+ * whole app, its assets and vite's source maps to the network while refusing
+ * every API call behind it: the page half open and the API half closed, and two
+ * CLAUDE.md files claiming otherwise. It is not a data leak, because the page
+ * cannot work without the API -- but it advertises an IDE here, and a security
+ * claim that is only sometimes true is worse than not making it.
+ */
+const allowPage = (request: FastifyRequest): boolean => isLoopback(request)
+
+/**
+ * The gate, installed rather than described.
+ *
+ * Registered from here rather than written out in index.ts because a test that
+ * hand-copies this logic can diverge from it -- and did: `gate-routing.test.ts`
+ * transcribed the page rule *without* its `config.token` condition, so it
+ * asserted a stricter rule than the server had and the gap above survived a
+ * review that was looking straight at it. There is one copy now, and the test
+ * installs this same function.
+ */
+export const registerGate = (app: FastifyInstance): void => {
+  app.addHook('onRequest', async (request, reply) => {
+    /*
+     * Keyed on the route Fastify matched, never on the URL text. `request.url`
+     * is the raw request target and the router matches the *decoded* path, so
+     * the two disagree -- and every spelling of that disagreement was a way
+     * through: measured against a real peer with a token set and none
+     * supplied, `GET /%61pi/snapshot` returned the full snapshot and
+     * `POST /%61pi/sessions` spawned a live shell in one of its worktrees.
+     */
+    const route = request.routeOptions.url
+    if (route === undefined || !route.startsWith('/api')) {
+      /*
+       * `/ws` runs its own rule at the upgrade, where a hook cannot reach --
+       * and it is the one non-`/api` route a *gateway* must be able to open
+       * over the network. Falling into the page branch answered a
+       * token-bearing gateway with 404 instead of a socket, which is every
+       * remote terminal dead.
+       */
+      if (route === '/ws') return
+      /*
+       * No `route !== undefined` guard: an unmatched path falls to the SPA
+       * catch-all, which would serve the page to the network by the back door.
+       * 404 rather than 401: there is nothing here to authenticate *to*.
+       */
+      if (!allowPage(request)) await reply.status(404).send({ error: 'not found' })
+      return
+    }
+    /*
+     * `/api/health` says `{ok:true}` and nothing else, and it is what
+     * `deploy.sh` and `scratch.sh` poll with curl -- neither a browser nor a
+     * gateway. An exact match, not a prefix: `startsWith` also exempted
+     * `/api/healthz` and anything else someone might later add under that stem.
+     */
+    if (route === '/api/health') return
+    if (allowRequest(request)) return
+    await reply.status(401).send({ error: 'not allowed' })
+  })
 }
