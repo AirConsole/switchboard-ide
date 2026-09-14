@@ -116,9 +116,10 @@ machine is a reverse proxy's job.
 
 It also **installs as an app** -- a manifest and icons in `web/public/`, so
 Chrome's "Install page as app" gives it its own window, icon and place in the
-switcher. There is no service worker and there should not be one: it would cache
-the app shell and take "a web change reaches them on reload" with it. See
-`web/CLAUDE.md`.
+switcher. Its service worker caches nothing but an offline
+notice -- it exists only because Chrome will not offer the install icon without
+one -- and it must stay that way, or it would take "a web change reaches them on
+reload" with it. See `web/CLAUDE.md`.
 
 ## How the pieces fit
 
