@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 
@@ -169,6 +170,18 @@ export const config = {
    * instances share a host and would be one name twice.
    */
   serverName: env.SWB_SERVER_NAME ?? hostname(),
+
+  /**
+   * A value this process can use to recognise itself.
+   *
+   * Not the name, which two machines can share, and not the address, which is
+   * the thing being compared. Linking a machine to itself is otherwise
+   * accepted and is a meltdown: its relay opens a socket to itself, which is
+   * accepted as a client and given a relay, which opens another -- 1,447
+   * sockets in five seconds, measured. Per start, because nothing needs it to
+   * survive one.
+   */
+  instanceId: randomUUID(),
 
   /*
    * Holds `state.json` and the tmux socket, so it is the one path that must not

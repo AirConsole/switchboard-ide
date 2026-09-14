@@ -17,7 +17,8 @@ import type {
   RemoteCache,
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
-import { PeerClient, normalizeBaseUrl } from './remote/peer.js'
+import { config } from './config.js'
+import { PeerClient, PeerUnreachable, normalizeBaseUrl } from './remote/peer.js'
 import { hostKeyFor, unscopeId } from './remote/scope.js'
 import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
@@ -468,7 +469,26 @@ export class Workspace {
    */
   async addServer(input: { baseUrl: string; token: string }): Promise<RemoteServer> {
     const baseUrl = normalizeBaseUrl(input.baseUrl)
-    const identity = await new PeerClient(baseUrl, input.token).identify()
+    const identity = await new PeerClient(baseUrl, input.token).identify().catch((err: unknown) => {
+      /*
+       * 504, not 500. The proxy goes to trouble to make this distinction --
+       * "that machine did not answer" rather than "this one is broken" -- and
+       * the one place a human types an address was the place that did not,
+       * because `PeerUnreachable` is not an `HttpError` and Fastify defaults.
+       */
+      if (err instanceof PeerUnreachable) throw new HttpError(504, err.message, 'unreachable')
+      throw err
+    })
+    /*
+     * Not this machine. Linking one to itself is accepted at every other step
+     * and is a meltdown: the relay opens a socket to itself, which is accepted
+     * as a client and given a relay of its own -- 1,447 sockets in five
+     * seconds, measured. Compared by instance id rather than by address,
+     * because the address is exactly what is being got wrong.
+     */
+    if (identity.instanceId !== undefined && identity.instanceId === config.instanceId) {
+      throw new HttpError(400, 'that is this machine', 'server-is-self')
+    }
     const server: RemoteServer = {
       baseUrl,
       name: identity.name,

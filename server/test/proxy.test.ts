@@ -62,6 +62,10 @@ beforeAll(async () => {
   app.post('/api/worktrees', async () => ({ here: true }))
   app.get('/api/snapshot', async () => ({ here: true }))
   app.get('/api/browse', async () => ({ here: true }))
+  app.post('/api/projects', async () => ({ here: true }))
+  // The two the allow-list exists to keep local.
+  app.patch('/api/ui', async () => ({ here: true }))
+  app.post('/api/servers', async () => ({ here: true }))
   app.post('/api/worktrees/:id/todos', async () => ({ here: true }))
   await app.ready()
 })
@@ -123,9 +127,34 @@ describe('which machine a request goes to', () => {
    * path, so the wrong peer *answering* is the normal case, not a miss.
    */
   it('refuses a request that names two machines', async () => {
-    const out = await call(`/api/worktrees/${key}~wt-peer/tree?host=hdeadbeef`)
+    // On a route that takes `?host=` at all -- see the next test for one that
+    // does not.
+    const out = await call(`/api/projects?host=hdeadbeef`, 'POST', {
+      path: '/x',
+      projectId: `${key}~p-peer`,
+    })
     expect(out.status).toBe(400)
     expect(out.asked).toEqual([])
+  })
+
+  /*
+   * `?host=` steers three routes. It used to steer every one, which was
+   * measured as destructive: `PATCH /api/ui?host=B` replaced B's stored layout
+   * -- the panels and open files of the person sitting at B -- and
+   * `POST /api/servers?host=B` linked B to a machine of the caller's choosing.
+   * Refused rather than ignored: it named a machine, and quietly sending the
+   * request elsewhere is how a mistake becomes an afternoon.
+   */
+  it('refuses a server on a route that does not take one', async () => {
+    const cases: [string, 'GET' | 'POST'][] = [
+      [`/api/worktrees/${key}~wt-peer/tree?host=${key}`, 'GET'],
+      [`/api/servers?host=${key}`, 'POST'],
+    ]
+    for (const [url, method] of cases) {
+      const out = await call(url, method, method === 'POST' ? {} : undefined)
+      expect([url, out.status]).toEqual([url, 400])
+      expect(out.asked).toEqual([])
+    }
   })
 
   it('never forwards the snapshot, which is the merge of every machine', async () => {

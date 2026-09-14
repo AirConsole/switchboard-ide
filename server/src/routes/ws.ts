@@ -6,7 +6,7 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
-import { allowSocket } from '../gate.js'
+import { allowSocket, hasPeerToken } from '../gate.js'
 import { Relay } from '../remote/relay.js'
 import type { Workspace } from '../workspace.js'
 
@@ -156,13 +156,33 @@ export const registerWs = (
      * and its own size and input arbitration decides between two viewers of a
      * remote terminal -- the same rule, in the same place, as for a local one.
      */
-    const relay = new Relay(() => workspace.peers(), {
-      sendJson: (msg) => sink.sendJson(msg),
-      sendBinary: (data) => sink.sendBinary(data),
-      onInvalidate: () => sink.sendJson({ t: 'invalidate' }),
-      knowsSession: (id) => workspace.knowsSession(id),
-    })
-    relays.add(relay)
+    /*
+     * A gateway's relay socket gets no relay of its own.
+     *
+     * Without this, two machines linked to each other melt down: A's relay
+     * opens a socket to B, B accepts it as an ordinary client and gives it a
+     * relay, which opens a socket back to A, which does the same. Measured at
+     * **~55 new sockets per second in each direction**, and self-sustaining --
+     * killing the only browser did not stop it, because by then the sockets
+     * were each other's clients. Both machines run out of file descriptors and
+     * stay there. Linking a machine to *itself* is the same mechanism in one
+     * process: 1,447 sockets in five seconds.
+     *
+     * This is the `/ws` half of what `x-swb-peer-read` does for the snapshot:
+     * a read made *by* a gateway is answered with this machine's own world and
+     * nothing further. A peer is recognised the same way it is anywhere else,
+     * by the token -- and it has no use for a relay, because it is the thing
+     * being relayed to.
+     */
+    const relay = hasPeerToken(request)
+      ? null
+      : new Relay(() => workspace.peers(), {
+          sendJson: (msg) => sink.sendJson(msg),
+          sendBinary: (data) => sink.sendBinary(data),
+          onInvalidate: () => sink.sendJson({ t: 'invalidate' }),
+          knowsSession: (id) => workspace.knowsSession(id),
+        })
+    if (relay) relays.add(relay)
 
     socket.on('message', (raw: Buffer | string) => {
       const msg = parseClientMsg(raw.toString())
@@ -172,7 +192,7 @@ export const registerWs = (
       }
       // A frame naming another machine never reaches the local engine, which
       // would answer "no such session" about an id that was never its.
-      if (relay.handle(msg)) return
+      if (relay?.handle(msg) === true) return
       switch (msg.t) {
         case 'attach':
           void engine.attach(sink, msg.sessionId, msg.cols, msg.rows, msg.primary)
@@ -198,12 +218,14 @@ export const registerWs = (
       // Detach from every session, or the engine would keep sending output to a
       // dead socket and hold its mirror subscriptions forever.
       engine.detachAll(sink)
-      relay.dispose()
-      // Out of the set as well as disposed. Left in it, the next invalidate --
-      // which is constant -- called `sync()` on a dead relay, and `sync()`
-      // cheerfully opened fresh sockets to every peer that nothing would ever
-      // close. One per reload, per peer, for the life of the process.
-      relays.delete(relay)
+      if (relay) {
+        relay.dispose()
+        // Out of the set as well as disposed. Left in it, the next invalidate
+        // -- which is constant -- called `sync()` on a dead relay, and `sync()`
+        // cheerfully opened fresh sockets to every peer that nothing would ever
+        // close. One per reload, per peer, for the life of the process.
+        relays.delete(relay)
+      }
       sinks.delete(sink)
     })
   })

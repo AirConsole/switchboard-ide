@@ -28,6 +28,23 @@ export const PEER_READ_HEADER = 'x-swb-peer-read'
 /** Carries `PROTOCOL_VERSION` on every reply, so every read compares it. */
 export const PROTOCOL_HEADER = 'x-swb-protocol'
 
+/**
+ * How long a machine has to describe itself.
+ *
+ * The same budget as any other proxied read, and it used to be half of it --
+ * which had the read that paints the whole row giving up soonest. A peer's
+ * snapshot runs `git status`, an unmerged count and a transcript tail per
+ * worktree, work the root CLAUDE.md says outright "is not free", so a dozen
+ * worktrees on a large repository crosses five seconds as a matter of course.
+ *
+ * What that cost is worse than slowness: a timeout is indistinguishable here
+ * from a machine that is off, so a *healthy* peer with an agent blocked on you
+ * came back with no sessions at all and the row went grey. `remembered()`
+ * guards against recalling liveness; this is the symmetric error, and the row
+ * is scanned for exactly these two colours.
+ */
+const SNAPSHOT_TIMEOUT_MS = 10_000
+
 /** Normalized so it can be hashed into an id and compared character by character. */
 export const normalizeBaseUrl = (raw: string): string => {
   let url: URL
@@ -53,6 +70,8 @@ export const normalizeBaseUrl = (raw: string): string => {
 export interface PeerIdentity {
   name: string
   protocolVersion: number
+  /** Absent from a machine older than this field; see `addServer`. */
+  instanceId?: string
 }
 
 /**
@@ -291,7 +310,7 @@ export class PeerClient {
    * written back. It is dropped here, at the boundary, rather than anywhere
    * that would have to remember to.
    */
-  async snapshot(timeoutMs = 5_000): Promise<Omit<AppSnapshot, 'ui'>> {
+  async snapshot(timeoutMs = SNAPSHOT_TIMEOUT_MS): Promise<Omit<AppSnapshot, 'ui'>> {
     const snapshot = await this.request<AppSnapshot>('GET', '/api/snapshot', undefined, timeoutMs)
     return {
       projects: snapshot.projects,

@@ -188,6 +188,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/server', async () => ({
     name: config.serverName,
     protocolVersion: PROTOCOL_VERSION,
+    // So a gateway can tell this machine from itself, whatever address it used.
+    instanceId: config.instanceId,
   }))
 
   /*

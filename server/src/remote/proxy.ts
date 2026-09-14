@@ -82,6 +82,29 @@ const keysInBody = (body: unknown): string[] => {
   return found
 }
 
+/**
+ * The only routes `?host=` may steer.
+ *
+ * Everything else that belongs to another machine says so in its own id, and
+ * routes itself. `?host=` exists for the two reads that name no resource --
+ * browsing a machine's disk and listing what it recently closed -- and for the
+ * one write that creates the resource it would otherwise name.
+ *
+ * An allow-list, because the alternative was measured and it is destructive:
+ * `PATCH /api/ui?host=B` replaced **B's stored layout** -- its panels, open
+ * files and expanded trees, for the person sitting at B -- and
+ * `POST /api/servers?host=B` linked B to a machine of the caller's choosing,
+ * with a token the caller supplied. Neither is reachable from the dialog, and
+ * both are one URL. `ui` in particular is the thing `PeerClient.snapshot`
+ * strips at the boundary because "the layout is the viewer's"; enforcing that
+ * on the read side only was half a rule.
+ */
+const HOST_STEERABLE: ReadonlySet<string> = new Set([
+  '/api/browse',
+  '/api/recents',
+  '/api/projects',
+])
+
 const keyInQuery = (query: unknown): string | null => {
   if (typeof query !== 'object' || query === null) return null
   const host = (query as Record<string, unknown>).host
@@ -157,10 +180,21 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
      * `?host=B` beside a path id belonging to A used to be sent to B with A's
      * bare id. Two names is a request nobody meant to make.
      */
+    /*
+     * Evaluated on every route, used on three. A `?host=` on a route that does
+     * not take one is refused rather than ignored: it named a machine, and
+     * quietly sending the request somewhere else -- even somewhere safe -- is
+     * how a caller's mistake becomes an afternoon.
+     */
+    const asked = keyInQuery(request.query)
+    if (asked !== null && !HOST_STEERABLE.has(route)) {
+      throw new HttpError(400, 'that route does not take a server')
+    }
+    const steered = asked
     const named = new Set([
       ...keysInPath(request.url),
       ...keysInBody(request.body),
-      ...(keyInQuery(request.query) === null ? [] : [keyInQuery(request.query) as string]),
+      ...(steered === null ? [] : [steered]),
     ])
     if (named.size > 1) throw new HttpError(400, 'that request names two different servers')
     const key = [...named][0] ?? null
