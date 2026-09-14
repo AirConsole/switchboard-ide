@@ -1,0 +1,279 @@
+import { describe, expect, it } from 'vitest'
+import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import {
+  claudeSession,
+  isRunning,
+  mostUrgentStatus,
+  orderWorktrees,
+  queuedTodoCount,
+  removalAsks,
+  removalQuestions,
+  removalWarnings,
+  stateLabel,
+  terminalSessions,
+  worktreeStatus,
+  worktreeTodos,
+} from '../src/selectors.js'
+
+const session = (over: Partial<Session> & Pick<Session, 'id' | 'worktreeId' | 'kind'>): Session => ({
+  tmuxName: `swb-${over.id}`,
+  title: 'x',
+  cols: 80,
+  rows: 24,
+  liveness: 'live',
+  attention: 'idle',
+  lastOutputAt: 0,
+  createdAt: 0,
+  attachCommand: 'tmux attach',
+  ...over,
+})
+
+const worktree = (over: Partial<Worktree> & Pick<Worktree, 'id'>): Worktree => ({
+  projectId: 'p-1',
+  name: over.id,
+  branch: 'work',
+  path: `/repo/${over.id}`,
+  isMain: false,
+  ...over,
+})
+
+const todo = (over: Partial<WorktreeTodo> & Pick<WorktreeTodo, 'id' | 'worktreeId'>): WorktreeTodo => ({
+  prompt: 'do the thing',
+  createdAt: 0,
+  ...over,
+})
+
+describe('picking sessions out of a worktree', () => {
+  const sessions = [
+    session({ id: 's1', worktreeId: 'a', kind: 'claude' }),
+    session({ id: 's2', worktreeId: 'a', kind: 'shell' }),
+    session({ id: 's3', worktreeId: 'a', kind: 'shell' }),
+    session({ id: 's4', worktreeId: 'b', kind: 'claude' }),
+  ]
+
+  it('finds the worktree’s one Claude', () => {
+    expect(claudeSession(sessions, 'a')?.id).toBe('s1')
+    expect(claudeSession(sessions, 'nope')).toBeUndefined()
+  })
+
+  it('finds its terminals, in order, and none of another worktree’s', () => {
+    expect(terminalSessions(sessions, 'a').map((s) => s.id)).toEqual(['s2', 's3'])
+    expect(terminalSessions(sessions, 'b')).toEqual([])
+  })
+})
+
+describe('worktreeStatus', () => {
+  const claude = (over: Partial<Session>): Session[] => [
+    session({ id: 's1', worktreeId: 'a', kind: 'claude', ...over }),
+  ]
+
+  it('calls a worktree with no agent off', () => {
+    expect(worktreeStatus([], 'a')).toBe('off')
+  })
+
+  it('calls an exited agent off too', () => {
+    // From outside, a worktree with no agent running is a worktree with no
+    // agent running; the window says which it is once you are looking at it.
+    expect(worktreeStatus(claude({ liveness: 'dead' }), 'a')).toBe('off')
+  })
+
+  it('passes attention through otherwise', () => {
+    expect(worktreeStatus(claude({ attention: 'needs-you' }), 'a')).toBe('needs-you')
+    expect(worktreeStatus(claude({ attention: 'working' }), 'a')).toBe('working')
+    expect(worktreeStatus(claude({ attention: 'idle' }), 'a')).toBe('idle')
+  })
+
+  it('ignores a terminal, however busy', () => {
+    expect(
+      worktreeStatus([session({ id: 's', worktreeId: 'a', kind: 'shell', attention: 'working' })], 'a'),
+    ).toBe('off')
+  })
+})
+
+describe('mostUrgentStatus', () => {
+  it('carries the one worth being told about', () => {
+    // Blocked on you outranks busy, which outranks idle, which outranks off.
+    expect(mostUrgentStatus(['off', 'idle', 'working', 'needs-you'])).toBe('needs-you')
+    expect(mostUrgentStatus(['off', 'idle', 'working'])).toBe('working')
+    expect(mostUrgentStatus(['off', 'idle'])).toBe('idle')
+    expect(mostUrgentStatus(['off'])).toBe('off')
+  })
+
+  it('answers off for nothing at all', () => {
+    expect(mostUrgentStatus([])).toBe('off')
+  })
+})
+
+describe('orderWorktrees', () => {
+  it('puts the main worktree first, then sorts by name', () => {
+    const ordered = orderWorktrees([
+      worktree({ id: '3', name: 'zebra' }),
+      worktree({ id: '1', name: 'alpha' }),
+      worktree({ id: '0', name: 'main', isMain: true }),
+      worktree({ id: '2', name: 'Beta' }),
+    ])
+    expect(ordered.map((w) => w.name)).toEqual(['main', 'alpha', 'Beta', 'zebra'])
+  })
+
+  it('does not disturb the array it was given', () => {
+    const input = [worktree({ id: 'b', name: 'b' }), worktree({ id: 'a', name: 'a' })]
+    orderWorktrees(input)
+    expect(input.map((w) => w.name)).toEqual(['b', 'a'])
+  })
+})
+
+describe('stateLabel', () => {
+  it('names every state a session can be in', () => {
+    expect(stateLabel(undefined)).toBe('not running')
+    expect(stateLabel(session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'idle' }))).toBe('idle')
+    expect(stateLabel(session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'working' }))).toBe('working')
+    expect(stateLabel(session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'needs-you' }))).toBe('needs you')
+  })
+
+  it('tells a deliberate /exit from a crash', () => {
+    const dead = (exitStatus: number | null): Session =>
+      session({ id: 's', worktreeId: 'a', kind: 'claude', liveness: 'dead', exitStatus })
+    expect(stateLabel(dead(0))).toBe('exited')
+    expect(stateLabel(dead(null))).toBe('exited')
+    expect(stateLabel(dead(137))).toBe('exited (137)')
+  })
+})
+
+describe('isRunning', () => {
+  it('needs the session to be there and alive', () => {
+    expect(isRunning(undefined)).toBe(false)
+    expect(isRunning(session({ id: 's', worktreeId: 'a', kind: 'shell' }))).toBe(true)
+    expect(isRunning(session({ id: 's', worktreeId: 'a', kind: 'shell', liveness: 'dead' }))).toBe(false)
+  })
+})
+
+describe('worktreeTodos', () => {
+  it('keeps creation order even as things are queued', () => {
+    /*
+     * Sorting queued ones to the top would move a row out from under the
+     * pointer that just queued it, and take the focus of anything being edited
+     * in it with it.
+     */
+    const todos = [
+      todo({ id: 't1', worktreeId: 'a', createdAt: 1 }),
+      todo({ id: 't2', worktreeId: 'a', createdAt: 2, queuedAt: 100 }),
+      todo({ id: 't3', worktreeId: 'a', createdAt: 3, queuedAt: 50 }),
+    ]
+    const view = worktreeTodos(todos, 'a')
+    expect(view.map((v) => v.todo.id)).toEqual(['t1', 't2', 't3'])
+    // The first one pressed is (1), whatever order they were created in.
+    expect(view.map((v) => v.position)).toEqual([null, 2, 1])
+  })
+
+  it('leaves another worktree’s todos alone', () => {
+    const todos = [todo({ id: 't1', worktreeId: 'a' }), todo({ id: 't2', worktreeId: 'b' })]
+    expect(worktreeTodos(todos, 'a').map((v) => v.todo.id)).toEqual(['t1'])
+  })
+
+  it('counts what is waiting to be typed in', () => {
+    const todos = [
+      todo({ id: 't1', worktreeId: 'a', queuedAt: 1 }),
+      todo({ id: 't2', worktreeId: 'a' }),
+      todo({ id: 't3', worktreeId: 'b', queuedAt: 1 }),
+    ]
+    expect(queuedTodoCount(todos, 'a')).toBe(1)
+    expect(queuedTodoCount(todos, 'c')).toBe(0)
+  })
+})
+
+describe('removalQuestions', () => {
+  it('asks nothing of a worktree that holds nothing of its own', () => {
+    expect(removalQuestions(worktree({ id: 'a', dirty: 0, unmerged: 0 }))).toEqual({
+      discard: false,
+      branch: false,
+      branchGoesAnyway: true,
+    })
+  })
+
+  it('asks about uncommitted work, which is what git refuses over', () => {
+    expect(removalQuestions(worktree({ id: 'a', dirty: 3, unmerged: 0 })).discard).toBe(true)
+  })
+
+  it('asks about the branch while it has commits of its own', () => {
+    const questions = removalQuestions(worktree({ id: 'a', dirty: 0, unmerged: 2 }))
+    expect(questions.branch).toBe(true)
+    expect(questions.branchGoesAnyway).toBe(false)
+  })
+
+  it('treats an absent count as unknown rather than as zero', () => {
+    // A server that did not send it has not told us the branch is spent.
+    expect(removalQuestions(worktree({ id: 'a', dirty: 0 })).branch).toBe(true)
+  })
+
+  it('has no branch to ask about on a detached HEAD', () => {
+    const questions = removalQuestions(worktree({ id: 'a', branch: null, unmerged: 5 }))
+    expect(questions.branch).toBe(false)
+    expect(questions.branchGoesAnyway).toBe(false)
+  })
+})
+
+describe('removalWarnings', () => {
+  const wt = worktree({ id: 'a' })
+
+  it('says nothing about a worktree with nothing running in it', () => {
+    expect(removalWarnings(wt, [], [])).toEqual([])
+  })
+
+  it('does not warn about an idle Claude', () => {
+    // It is sitting at its prompt with nothing to lose but the conversation,
+    // which is what removing a worktree means.
+    const sessions = [session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'idle' })]
+    expect(removalWarnings(wt, sessions, [])).toEqual([])
+  })
+
+  it('warns about a turn in flight and an unanswered question', () => {
+    const at = (attention: Session['attention']): string[] =>
+      removalWarnings(wt, [session({ id: 's', worktreeId: 'a', kind: 'claude', attention })], []).map(
+        (w) => w.text,
+      )
+    expect(at('working')[0]).toContain('turn is killed mid-flight')
+    expect(at('needs-you')[0]).toContain('goes unanswered')
+  })
+
+  it('counts todos, and says how many were queued', () => {
+    const one = removalWarnings(wt, [], [todo({ id: 't1', worktreeId: 'a' })])
+    expect(one[0]?.text).toBe('1 todo here. They go with the worktree.')
+    const queued = removalWarnings(wt, [], [
+      todo({ id: 't1', worktreeId: 'a', queuedAt: 1 }),
+      todo({ id: 't2', worktreeId: 'a' }),
+    ])
+    expect(queued[0]?.text).toBe('2 todos here, 1 queued to run next. They go with the worktree.')
+  })
+
+  it('counts only terminals that are still running', () => {
+    const sessions = [
+      session({ id: 's1', worktreeId: 'a', kind: 'shell' }),
+      session({ id: 's2', worktreeId: 'a', kind: 'shell', liveness: 'dead' }),
+    ]
+    expect(removalWarnings(wt, sessions, [])[0]?.text).toContain('1 terminal still running')
+    expect(removalWarnings(wt, sessions, [])[0]?.text).toContain('in it is killed')
+  })
+})
+
+describe('removalAsks', () => {
+  it('is quiet only for a worktree that is clean, merged and empty', () => {
+    expect(removalAsks(worktree({ id: 'a', dirty: 0, unmerged: 0 }), [], [])).toBe(false)
+  })
+
+  it('opens for a question git would raise', () => {
+    expect(removalAsks(worktree({ id: 'a', dirty: 1, unmerged: 0 }), [], [])).toBe(true)
+    expect(removalAsks(worktree({ id: 'a', dirty: 0, unmerged: 1 }), [], [])).toBe(true)
+  })
+
+  it('opens for something only the IDE knows about', () => {
+    /*
+     * A worktree can be clean and merged, and so have nothing for git to ask
+     * about, while an agent is mid-turn in it with four todos lined up behind
+     * it -- and that click used to remove it outright.
+     */
+    const clean = worktree({ id: 'a', dirty: 0, unmerged: 0 })
+    const working = [session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'working' })]
+    expect(removalAsks(clean, working, [])).toBe(true)
+    expect(removalAsks(clean, [], [todo({ id: 't', worktreeId: 'a' })])).toBe(true)
+  })
+})
