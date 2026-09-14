@@ -18,7 +18,7 @@ import type {
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { config } from './config.js'
-import { PeerClient, PeerUnreachable, normalizeBaseUrl } from './remote/peer.js'
+import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl } from './remote/peer.js'
 import { hostKeyFor, unscopeId } from './remote/scope.js'
 import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
@@ -279,7 +279,9 @@ export class Workspace {
    * listing of its disk to pick one from.
    */
   peers(): PeerClient[] {
-    return this.store.servers.map((server) => new PeerClient(server.baseUrl, server.token))
+    return this.store.servers.map(
+      (server) => new PeerClient(server.baseUrl, server.token, server.basic),
+    )
   }
 
   /**
@@ -469,7 +471,14 @@ export class Workspace {
    */
   async addServer(input: { baseUrl: string; token: string }): Promise<RemoteServer> {
     const baseUrl = normalizeBaseUrl(input.baseUrl)
-    const identity = await new PeerClient(baseUrl, input.token).identify().catch((err: unknown) => {
+    /*
+     * Taken out of the address before anything else sees it. `normalizeBaseUrl`
+     * would drop it silently and `fetch()` refuses a URL that carries it, so
+     * `https://user:pw@machine` used to mean "type a password and watch it
+     * vanish, then get a bare 401 from the proxy with no hint why".
+     */
+    const basic = basicFrom(input.baseUrl)
+    const identity = await new PeerClient(baseUrl, input.token, basic).identify().catch((err: unknown) => {
       /*
        * 504, not 500. The proxy goes to trouble to make this distinction --
        * "that machine did not answer" rather than "this one is broken" -- and
@@ -493,6 +502,7 @@ export class Workspace {
       baseUrl,
       name: identity.name,
       token: input.token,
+      ...(basic === undefined ? {} : { basic }),
       addedAt: Date.now(),
     }
     this.store.addServer(server)

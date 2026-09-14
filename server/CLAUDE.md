@@ -483,6 +483,23 @@ translation is the ids:
   at the peer: they arbitrate as equals, which a gateway-local arbiter could not
   produce.
 
+  **A machine behind a password is reached with one.** If a proxy in front of a
+  peer asks for HTTP Basic, put it in the address -- `https://user:pw@box` --
+  and it is taken out before anything else sees it: the stored base URL is
+  hashed into the key that scopes every id from that machine, shown in the
+  picker and written into log lines, none of which is a place for a password.
+  It travels as an `Authorization` header on the reads *and on the socket
+  upgrade*, since a socket that 401s is a machine whose terminals never paint
+  while its REST works perfectly. Left in the URL it would have gone nowhere
+  twice over: `new URL().origin` drops it silently, and `fetch()` refuses a URL
+  that carries credentials.
+
+  Worth knowing what that costs, though, and it is why the advice above stands:
+  **a proxy connects from loopback**, so on a peer behind one, every request it
+  forwards satisfies the loopback rule. Basic auth becomes that machine's real
+  boundary and the token stops doing the work. Reach a peer directly where you
+  can.
+
   **A gateway's own socket gets no relay.** Two machines linked to each other
   otherwise melt down: A's relay opens a socket to B, B accepts it as an
   ordinary client and gives it a relay, which opens one back. Measured at ~55

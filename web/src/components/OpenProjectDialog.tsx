@@ -110,7 +110,9 @@ const AddServer = ({
       </button>
       <span className="field__hint">
         That machine&apos;s <code>SWB_TOKEN</code>, which is what makes it readable as a machine at
-        all. It is kept here and sent from this server; your browser never talks to it.
+        all. It is kept here and sent from this server; your browser never talks to it. If a proxy
+        in front of it asks for a password, put it in the address:{' '}
+        <code>https://user:pw@box.local</code>.
       </span>
     </div>
   )

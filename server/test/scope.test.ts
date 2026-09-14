@@ -132,3 +132,33 @@ describe('scoping a peer', () => {
     expect(unscopeId('h1234abcd~wt~1')).toEqual({ host: 'h1234abcd', id: 'wt~1' })
   })
 })
+
+describe('a machine behind a password', () => {
+  /*
+   * `https://user:pw@machine` is the syntax people reach for, and every layer
+   * below refuses it: `new URL().origin` drops it silently, and `fetch()`
+   * throws outright on a URL carrying credentials. So it used to mean "type a
+   * password, watch it vanish, and get a bare 401 from the proxy with no hint
+   * why" -- the worst of the three possible behaviours.
+   */
+  it('takes the password out of the address and leaves the address alone', async () => {
+    const { basicFrom, normalizeBaseUrl } = await import('../src/remote/peer.js')
+    expect(basicFrom('https://andrin:secret@box:84')).toBe(
+      Buffer.from('andrin:secret').toString('base64'),
+    )
+    // The base URL is hashed into the key that scopes every id from that
+    // machine, shown in the picker and written into log lines. None of those is
+    // a place for a password.
+    expect(normalizeBaseUrl('https://andrin:secret@box:84')).toBe('https://box:84')
+    expect(basicFrom('https://box:84')).toBeUndefined()
+  })
+
+  it('decodes what the URL had to encode', async () => {
+    const { basicFrom } = await import('../src/remote/peer.js')
+    // A password with a `@` or a `:` in it has to arrive percent-encoded, and
+    // the proxy expects the real bytes.
+    expect(basicFrom('https://a%40b:p%3Aw@box')).toBe(
+      Buffer.from('a@b:p:w').toString('base64'),
+    )
+  })
+})

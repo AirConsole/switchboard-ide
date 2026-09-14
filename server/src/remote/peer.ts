@@ -46,6 +46,27 @@ export const PROTOCOL_HEADER = 'x-swb-protocol'
 const SNAPSHOT_TIMEOUT_MS = 10_000
 
 /** Normalized so it can be hashed into an id and compared character by character. */
+/**
+ * `user:password` out of a URL, if it carries any.
+ *
+ * `https://andrin:secret@box:84` is the syntax people reach for, and every
+ * layer below refuses it: `new URL().origin` drops it silently, and `fetch()`
+ * throws outright on a URL that carries credentials. So it is taken out here
+ * and travels as an `Authorization` header instead -- which is what it would
+ * have become anyway.
+ */
+export const basicFrom = (raw: string): string | undefined => {
+  try {
+    const url = new URL(raw.trim())
+    if (url.username === '') return undefined
+    const user = decodeURIComponent(url.username)
+    const password = decodeURIComponent(url.password)
+    return Buffer.from(`${user}:${password}`).toString('base64')
+  } catch {
+    return undefined
+  }
+}
+
 export const normalizeBaseUrl = (raw: string): string => {
   let url: URL
   try {
@@ -190,6 +211,8 @@ export class PeerClient {
   constructor(
     readonly baseUrl: string,
     private readonly token: string | undefined,
+    /** Base64 `user:password` for a proxy in front of that machine, if any. */
+    private readonly basic?: string,
   ) {
     this.key = hostKeyFor(baseUrl)
   }
@@ -229,6 +252,7 @@ export class PeerClient {
         headers: {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...(this.token === undefined ? {} : { 'x-swb-token': this.token }),
+          ...(this.basic === undefined ? {} : { authorization: `Basic ${this.basic}` }),
           [PEER_READ_HEADER]: '1',
         },
         ...(body === undefined ? {} : { body: JSON.stringify(unscopeTree(body)) }),
@@ -276,12 +300,20 @@ export class PeerClient {
    * class has to hold one to ask.
    */
   sameCredential(other: PeerClient): boolean {
-    return this.baseUrl === other.baseUrl && this.token === other.token
+    return (
+      this.baseUrl === other.baseUrl && this.token === other.token && this.basic === other.basic
+    )
   }
 
   /** What a socket to this peer must carry; see gate.ts on the peer's side. */
   socketHeaders(): Record<string, string> {
-    return this.token === undefined ? {} : { 'x-swb-token': this.token }
+    return {
+      ...(this.token === undefined ? {} : { 'x-swb-token': this.token }),
+      // The upgrade goes through the same proxy the reads do, so it needs the
+      // same credential -- a socket that 401s is a machine whose terminals
+      // never paint while its REST works perfectly.
+      ...(this.basic === undefined ? {} : { authorization: `Basic ${this.basic}` }),
+    }
   }
 
   /**

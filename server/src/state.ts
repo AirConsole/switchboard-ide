@@ -88,6 +88,7 @@ const reviveServer = (value: unknown): RemoteServer | null => {
     baseUrl: row.baseUrl,
     name: typeof row.name === 'string' && row.name !== '' ? row.name : row.baseUrl,
     ...(typeof row.token === 'string' ? { token: row.token } : {}),
+    ...(typeof row.basic === 'string' ? { basic: row.basic } : {}),
     addedAt: typeof row.addedAt === 'number' ? row.addedAt : Date.now(),
   }
 }

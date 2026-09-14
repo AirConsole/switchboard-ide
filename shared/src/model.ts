@@ -39,6 +39,15 @@ export interface RemoteCache {
 
 export interface RemoteServer {
   baseUrl: string
+  /**
+   * HTTP Basic credentials for a proxy in front of that machine, if it has one.
+   *
+   * Kept apart from `baseUrl` rather than left in it, because the base URL is
+   * hashed into the key that scopes every id from that machine, shown in the
+   * picker, and written into log lines -- none of which a password should be
+   * in. Never sent to a client, for the same reason `token` is not.
+   */
+  basic?: string
   /** What the peer calls itself, as of when it was added. */
   name: string
   token?: string
