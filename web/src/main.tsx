@@ -7,21 +7,31 @@ import './styles.css'
 trackViewport()
 
 /*
- * Registered only so Chrome will offer the install icon: the omnibox promotion
- * and `beforeinstallprompt` still require a worker with a fetch handler, even
- * though installing from the ⋮ menu no longer does.
+ * Removes the service worker this app briefly shipped, and does not register one.
  *
- * The worker caches nothing but an offline notice and never answers from cache
- * while the network is up -- see web/public/sw.js, which explains at length why
- * it must stay that way. Production only: in dev, Vite serves the app and a
- * worker sitting in front of it is one more thing between an edit and the page.
+ * A worker was added to earn Chrome's omnibox install icon, which is the one
+ * install affordance that still requires a fetch handler, and then dropped: the
+ * ⋮ menu installs the app perfectly well from the manifest alone, and a worker
+ * is sticky machinery to maintain for a click.
+ *
+ * Deleting the file is not enough, which is why this is here. A registered
+ * worker outlives its script, and /sw.js now falls through to the SPA handler,
+ * which answers index.html with a 200 -- so the browser's update check gets
+ * HTML where it wanted JavaScript, fails, and keeps running the worker it
+ * already has, indefinitely. This unregisters it instead, and drops the one
+ * cache it kept.
+ *
+ * Safe to delete once every browser that loaded the app during that window has
+ * loaded it again. Harmless until then: it is a no-op wherever there is nothing
+ * registered.
  */
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // Failure is not worth surfacing: every part of the app works without it,
-    // and the only casualty is the install icon.
-    void navigator.serviceWorker.register('/sw.js').catch(() => {})
-  })
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker
+    .getRegistrations()
+    .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+    .then(() => globalThis.caches?.keys())
+    .then((keys) => Promise.all((keys ?? []).map((key) => globalThis.caches.delete(key))))
+    .catch(() => {})
 }
 
 const host = document.getElementById('root')
