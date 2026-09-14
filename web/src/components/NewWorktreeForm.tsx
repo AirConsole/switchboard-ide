@@ -44,7 +44,11 @@ export const NewWorktreeForm = ({
    * new one. `null` while nobody has typed anything or the answer is still in
    * flight, so the line under the field is empty rather than guessing.
    */
-  const [fate, setFate] = useState<{ valid: boolean; exists: boolean } | null>(null)
+  const [fate, setFate] = useState<{
+    valid: boolean
+    exists: boolean
+    usedBy?: string
+  } | null>(null)
 
   /*
    * Arriving at a project means naming the next worktree often enough that the
@@ -91,12 +95,24 @@ export const NewWorktreeForm = ({
     }
   }, [branch, project.id])
 
+  /*
+   * Whether this name can be used at all.
+   *
+   * A branch is checked out in one worktree at a time, so a name already in use
+   * is not slow -- it is refused, and git says so only after the button. `null`
+   * while the answer is in flight, which is why this is a *known* no rather
+   * than "not yet a yes": refusing on silence would make the button flicker
+   * off on every keystroke.
+   */
+  const refused = fate !== null && (!fate.valid || fate.usedBy !== undefined)
+
   const submit = (): void => {
     // The button is disabled while a request is in flight; key repeat has to
     // respect the same rule, or holding Enter fires several creates whose
     // failures are swallowed as the pane re-renders.
     if (busy) return
     if (branch.trim() === '') return
+    if (refused) return
     setBusy(true)
     void api
       .createWorktree({
@@ -142,7 +158,11 @@ export const NewWorktreeForm = ({
             if (event.key === 'Enter') submit()
           }}
         />
-        <button className="btn" onClick={submit} disabled={busy || branch.trim() === ''}>
+        <button
+          className="btn"
+          onClick={submit}
+          disabled={busy || branch.trim() === '' || refused}
+        >
           Create
         </button>
       </div>
@@ -156,12 +176,14 @@ export const NewWorktreeForm = ({
         {directory}
       </span>
       {fate !== null && (
-        <span className={fate.exists ? 'addform__fate addform__fate--on' : 'addform__fate'}>
-          {fate.exists
-            ? `“${branch.trim()}” exists — it is checked out here, not branched from ${base}`
+        <span className={refused || fate.exists ? 'addform__fate addform__fate--on' : 'addform__fate'}>
+          {fate.usedBy !== undefined
+            ? `“${branch.trim()}” is already checked out at ${fate.usedBy}`
             : !fate.valid
               ? 'git will not take that as a branch name'
-              : `New branch, from ${base}`}
+              : fate.exists
+                ? `“${branch.trim()}” exists — it is checked out here, not branched from ${base}`
+                : `New branch, from ${base}`}
         </span>
       )}
       {error && <p className="addform__error">{error}</p>}
