@@ -596,6 +596,16 @@ button {
   color: var(--graphite);
 }
 
+/*
+ * Lit, like the tab of the window you are in -- because that is what it is.
+ * The new-worktree tile is the one cell in the row with no tab of its own, so
+ * without this the strip claimed nobody was anywhere while you stood in it.
+ */
+.tabgroup__add--on {
+  background: var(--level-lit);
+  color: var(--bone);
+}
+
 .tabgroup__add:hover {
   /* With the pointer on it, the same step a tab takes: up toward --level-lit. */
   background: var(--level-hover);
