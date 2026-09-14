@@ -282,10 +282,13 @@ used now, by the gateway described below.
 ## Remote projects
 
 A project can live on another machine running this same IDE, and **this server
-is the gateway**. The browser still talks to one origin and never learns that a
-project is remote: `api.ts`, `store.ts`, `socket.ts` and the whole of the layout
-are untouched by the feature. Only the open dialog knows, because somebody has
-to pick the machine.
+is the gateway**. The browser still talks to one origin and, almost everywhere,
+never learns that a project is remote: `store.ts`, `Overview.tsx`, `TopBar.tsx`
+and `App.tsx` are untouched, so the unit arithmetic, the keyboard, the focus
+model and the WebGL budget never had to be reasoned about. Two places do know.
+The open dialog, because somebody has to pick the machine; and one branch of
+`socket.ts`, because a machine restarting re-attaches its panes and only a
+repaint can say what they show now.
 
 That is the whole of the design, and everything else follows from it:
 

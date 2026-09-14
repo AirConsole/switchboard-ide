@@ -228,8 +228,9 @@ transcript is megabytes and this runs per worktree per poll.
 `idFor(prefix, path, host)` hashes the path. **Local ids hash the bare absolute
 path and must keep doing so**, byte for byte: those ids are recorded in
 `@swb_meta`, so changing the derivation orphans every running session. The
-remote branch namespaces by base URL; that is the whole of the remote design
-that exists today, together with `Project.host`.
+gateway namespaces a peer's ids by a short key derived from its base URL, in
+`remote/scope.ts`, and the one caller that passes a `host` here is a remote
+project's *pointer* — because the same path on two machines hashes identically.
 
 Anything destructive checks first and in the right order: `removeWorktree`
 refuses a dirty worktree *before* killing its sessions, so a refusal costs
@@ -362,10 +363,16 @@ whole of it, and `config.ts`'s `publicOrigins` is the list it consults.
 - **A gateway**, which is this same program on another machine reading a project
   that lives here. Not a browser; it presents `SWB_TOKEN`.
 
-`SWB_TOKEN` is what a machine sets to *be* a peer. Unset — a normal instance —
-nothing changes and the bind address is the boundary, as it always was. Set,
-anything arriving over the network must carry the token, which is what makes it
-safe to bind an address other than loopback.
+`SWB_TOKEN` is what a machine sets to *be* a peer. Set, anything arriving over
+the network must carry it. **Unset, this instance serves only this machine** —
+every request and every socket must come from a loopback address. That is not
+belt-and-braces: with no credential, every header a caller could be judged by is
+one the caller writes. Measured on `SWB_HOST=0.0.0.0` with no token, a request
+from the network carrying `Host: 127.0.0.1:<port>` — a name this server
+genuinely answers to — read the whole snapshot, and a socket forging
+`Origin: http://127.0.0.1:<port>` was admitted, which is attach-and-type. So
+binding elsewhere without a token is not a configuration that can be made safe,
+and it now fails at the first request rather than quietly serving the network.
 
 **The `/ws` check exists even on a normal instance**, and it closes a live hole:
 a WebSocket is exempt from CORS, so any page you visit can open one, and every
@@ -430,8 +437,16 @@ peer itself; you look at a peer through the gateway. And **do not put a reverse
 proxy in front of a peer** — a proxy connects from loopback, so everything it
 forwards would look local. A peer needs none: the gateway reaches it directly.
 
-Rebinding can still *read* `/api` on a non-peer; that is disclosure rather than
-execution, and closing it is a `Host` allow-list, not this.
+Rebinding was worth closing rather than documenting: on a token-less instance
+`/api` was fully *writable* by any page that kept a DNS record pointed at this
+address. `POST /api/sessions` spawns a pty, and a queued todo is typed into a
+live Claude by the dispatcher with no browser open — exactly the capability the
+`/ws` check closes, reached through `/api` instead. Fetch Metadata narrows
+browser traffic on top of that, on every instance rather than only on a peer: a
+client sending none is not a browser and is judged by its address, while a
+browser naming a cross-site initiator is refused. Measured before that,
+`POST /api/worktrees/<id>/sleep` from a page you merely visited returned 200 —
+it cannot read the reply, and does not need to in order to act.
 
 ## A project on another machine
 
