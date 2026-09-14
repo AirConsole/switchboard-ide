@@ -7,9 +7,12 @@ import {
   findFiles,
   invalidateStatus,
   listDirectory,
+  mediaFile,
+  mediaTypeOf,
   readTextFile,
   writeTextFile,
 } from '../src/files.js'
+import { config } from '../src/config.js'
 import { HttpError } from '../src/http-error.js'
 import { addWorktree } from '../src/git/worktree.js'
 import { makeRepoWithCommit, type TempRepo } from './helpers/repo.js'
@@ -262,6 +265,45 @@ describe('read and write', () => {
     expect('text' in content).toBe(false)
   })
 
+  it('names a media type for a binary the browser can draw', async () => {
+    // The panel shows an image instead of saying there is nothing to see, and
+    // this is the whole of how it knows to.
+    await repo.write('logo.png', 'not really a png, and it does not matter here')
+    const content = await readTextFile(repo.path, 'logo.png')
+    expect('media' in content && content.media).toBe('image/png')
+    expect('binary' in content && content.binary).toBe(true)
+    expect('text' in content).toBe(false)
+  })
+
+  it('leaves a binary with no renderer as binary alone', async () => {
+    await writeFile(join(repo.path, 'blob.bin'), Buffer.from([0x01, 0x00, 0x02]))
+    const content = await readTextFile(repo.path, 'blob.bin')
+    expect('media' in content).toBe(false)
+  })
+
+  it('shows an image over the size cap, which only ever applied to text', async () => {
+    /*
+     * The order of the two checks is the point. `maxFileBytes` exists because a
+     * text file has to travel through JSON, and an image does not travel this
+     * way at all -- the browser fetches it from /raw. With the cap first, every
+     * photograph in the repository answered "too large to open here".
+     */
+    const big = Buffer.alloc(config.maxFileBytes + 1, 0x41)
+    await writeFile(join(repo.path, 'big.jpg'), big)
+    const content = await readTextFile(repo.path, 'big.jpg')
+    expect('media' in content && content.media).toBe('image/jpeg')
+    expect('tooLarge' in content).toBe(false)
+  })
+
+  it('opens an SVG in the editor, because it is text', async () => {
+    // The rule is "not text, but the browser can show it". An SVG is text, and
+    // editing one is the reason to open it.
+    await repo.write('icon.svg', '<svg xmlns="http://www.w3.org/2000/svg"/>\n')
+    const content = await readTextFile(repo.path, 'icon.svg')
+    expect('text' in content && content.text).toContain('<svg')
+    expect('media' in content).toBe(false)
+  })
+
   it('refuses a latin-1 file, which has no NUL but would be rewritten on save', async () => {
     // A strict decode is the check that actually protects the file: latin-1
     // decodes happily into U+FFFD, and saving it back rewrites every non-ASCII
@@ -321,5 +363,48 @@ describe('read and write', () => {
   it('refuses to read or write anything outside the worktree', async () => {
     expect(await statusOf(readTextFile(repo.path, '../../../etc/passwd'))).toBe(403)
     expect(await statusOf(writeTextFile(repo.path, '/etc/passwd', 'x', 'r'))).toBe(400)
+  })
+})
+
+describe('media files', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('art/logo.png', 'pretend bytes')
+    await repo.commit('add art')
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('reads the extension case-insensitively', () => {
+    expect(mediaTypeOf('a/B.PNG')).toBe('image/png')
+    expect(mediaTypeOf('a/photo.JPEG')).toBe('image/jpeg')
+  })
+
+  it('does not take a dot in a directory name for an extension', () => {
+    // `img.d/README` has a dot in it, and none of it is an extension.
+    expect(mediaTypeOf('img.d/README')).toBe(undefined)
+    expect(mediaTypeOf('noextension')).toBe(undefined)
+  })
+
+  it('serves nothing it does not have a renderer for', async () => {
+    // The route hands the browser this type verbatim, so the table is the only
+    // thing that decides what a file is served as.
+    expect(await statusOf(mediaFile(repo.path, 'README.md'))).toBe(415)
+  })
+
+  it('is contained like every other read', async () => {
+    // It streams bytes straight out of the worktree, so the escape that matters
+    // is the one that never reaches `readTextFile`.
+    expect(await statusOf(mediaFile(repo.path, '../../../etc/hosts.png'))).toBe(403)
+  })
+
+  it('names the file to stream and what to serve it as', async () => {
+    const media = await mediaFile(repo.path, 'art/logo.png')
+    expect(media.type).toBe('image/png')
+    expect(media.file.endsWith('art/logo.png')).toBe(true)
+    expect(media.size).toBe('pretend bytes'.length)
   })
 })

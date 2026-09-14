@@ -20,7 +20,7 @@ import { HttpError } from './http-error.js'
 import { config } from './config.js'
 import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl } from './remote/peer.js'
 import { hostKeyFor, unscopeId } from './remote/scope.js'
-import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
+import { findFiles, listDirectory, mediaFile, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
@@ -36,6 +36,7 @@ import {
   ensureWorktreesIgnored,
   initRepository,
   isGitRepo,
+  branchExists,
   isValidBranchName,
   listWorktrees,
   projectIdFor,
@@ -549,6 +550,29 @@ export class Workspace {
     this.invalidate()
   }
 
+  /**
+   * What creating a worktree on this name would do, for the form to say so.
+   *
+   * `git worktree add` means two different things depending on the answer --
+   * check out a branch that is already there, or cut a new one from the default
+   * -- and the form asks for a name without saying which it will be. It used to
+   * carry a "Branch from" field that made the second case explicit; this tells
+   * you instead of asking, which is the same information for none of the width.
+   */
+  async describeBranch(
+    projectId: string,
+    name: string,
+  ): Promise<{ valid: boolean; exists: boolean }> {
+    const project = this.store.project(projectId)
+    if (!project) throw new HttpError(404, 'no such project')
+    const branch = name.trim()
+    if (branch === '') return { valid: false, exists: false }
+    if (!(await isValidBranchName(project.root, branch))) {
+      return { valid: false, exists: false }
+    }
+    return { valid: true, exists: await branchExists(project.root, branch) }
+  }
+
   async createWorktree(opts: {
     projectId: string
     branch: string
@@ -713,17 +737,22 @@ export class Workspace {
   }
 
   /**
-   * Edit a todo, or move it in and out of the run queue.
+   * Edit a todo, move it in and out of the run queue, or move it to another
+   * worktree.
    *
    * `queued` is a boolean on the wire and a timestamp in the store: the client
    * says whether it wants the todo to run, and the server decides where in the
    * queue that puts it. Otherwise two browsers could disagree about the order.
    */
-  updateTodo(id: string, patch: { prompt?: string; queued?: boolean }): WorktreeTodo {
+  async updateTodo(
+    id: string,
+    patch: { prompt?: string; queued?: boolean; worktreeId?: string },
+  ): Promise<WorktreeTodo> {
     const todo = this.store.todo(id)
     if (!todo) throw new HttpError(404, 'no such todo')
     // Its prompt may already be on its way into Claude; editing it now would
-    // change something that has effectively been sent.
+    // change something that has effectively been sent -- and moving it would
+    // park it against an agent that is not the one receiving it.
     if (todo.dispatchingAt !== undefined) {
       throw new HttpError(409, 'that todo is being sent to Claude', 'todo-dispatching')
     }
@@ -733,10 +762,30 @@ export class Workspace {
       if (prompt === '') throw new HttpError(400, 'a todo needs a prompt')
       next.prompt = prompt
     }
+    /*
+     * Where the todo now lives. Resolved first, so a move to a worktree that is
+     * no longer there 404s rather than stranding the todo somewhere nothing
+     * lists -- `removeTodosFor` only ever sees ids that are still worktrees.
+     */
+    const destination = patch.worktreeId ?? todo.worktreeId
+    if (patch.worktreeId !== undefined && patch.worktreeId !== todo.worktreeId) {
+      await this.resolve(patch.worktreeId)
+      next.worktreeId = patch.worktreeId
+    }
+    /*
+     * A queued todo stays queued across a move -- moving it is saying "run that
+     * there instead", and silently dropping the one instruction it carries is
+     * worse than honouring it. But a place in a queue is only meaningful within
+     * one worktree, so it takes a new one at the end of the destination's:
+     * keeping the old timestamp would let a todo moved in overtake everything
+     * already waiting there.
+     */
     if (patch.queued !== undefined) {
-      next.queuedAt = patch.queued ? this.nextQueuedAt(todo.worktreeId) : undefined
+      next.queuedAt = patch.queued ? this.nextQueuedAt(destination) : undefined
       // Queueing it again is the human saying "try that once more".
       if (patch.queued) next.lastError = undefined
+    } else if (next.worktreeId !== undefined && todo.queuedAt !== undefined) {
+      next.queuedAt = this.nextQueuedAt(destination)
     }
     return this.store.patchTodo(id, next) ?? todo
   }
@@ -802,6 +851,21 @@ export class Workspace {
   ): Promise<FileContent | FileUnchanged> {
     const { worktree } = await this.resolve(worktreeId)
     return readTextFile(worktree.path, path, ifNotRev)
+  }
+
+  /**
+   * Where a file the browser can draw itself is, and what to serve it as.
+   *
+   * The bytes do not come back through here: the route streams them. What the
+   * funnel owns is the same thing it owns for every other file operation --
+   * which worktree, and therefore which root the path is contained against.
+   */
+  async mediaFile(
+    worktreeId: string,
+    path: string,
+  ): Promise<{ file: string; type: string; size: number }> {
+    const { worktree } = await this.resolve(worktreeId)
+    return mediaFile(worktree.path, path)
   }
 
   /** Save a file, refusing if it moved on disk since it was read. */

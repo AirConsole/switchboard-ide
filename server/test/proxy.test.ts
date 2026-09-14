@@ -66,6 +66,8 @@ beforeAll(async () => {
   // The two the allow-list exists to keep local.
   app.patch('/api/ui', async () => ({ here: true }))
   app.post('/api/servers', async () => ({ here: true }))
+  // Master's todo-move route: the one that carries two ids at once.
+  app.patch('/api/todos/:id', async () => ({ here: true }))
   app.post('/api/worktrees/:id/todos', async () => ({ here: true }))
   await app.ready()
 })
@@ -78,7 +80,7 @@ afterAll(async () => {
 
 const call = async (
   url: string,
-  method: 'GET' | 'POST' = 'GET',
+  method: 'GET' | 'POST' | 'PATCH' = 'GET',
   payload?: Record<string, unknown>,
 ): Promise<{ status: number; body: Record<string, unknown>; asked: typeof asked }> => {
   asked.length = 0
@@ -194,6 +196,36 @@ describe('which machine a request goes to', () => {
       code: 'path-missing',
       path: '/srv/x',
     })
+  })
+
+  /*
+   * A **bare** id names *this* machine. Mixing one with a scoped id is a
+   * cross-machine operation no route supports, and it used to be sent to the
+   * remote machine carrying the local id: moving a local todo to a worktree on
+   * another machine went there and 404'd. Not reachable from the dialog, which
+   * offers only the project's own worktrees, and not destructive -- but the
+   * same guard already refuses two *remote* machines, and for the same reason.
+   */
+  it('refuses a local id with a remote one', async () => {
+    const out = await call('/api/todos/localtodo1', 'PATCH', {
+      worktreeId: `${key}~wt-peer`,
+    })
+    expect(out.status).toBe(400)
+    expect(out.asked).toEqual([])
+  })
+
+  it('still moves a todo between two worktrees on the same machine', async () => {
+    const out = await call(`/api/todos/${key}~t-1`, 'PATCH', {
+      worktreeId: `${key}~wt-peer`,
+    })
+    expect(out.asked[0]?.url).toBe('/api/todos/t-1')
+    expect((out.asked[0]?.body as { worktreeId: string }).worktreeId).toBe('wt-peer')
+  })
+
+  it('still moves one between two local worktrees', async () => {
+    const out = await call('/api/todos/localtodo1', 'PATCH', { worktreeId: 'wt-local' })
+    expect(out.asked).toEqual([])
+    expect(out.body).toEqual({ here: true })
   })
 
   it('says which machine did not answer, not that this one broke', async () => {

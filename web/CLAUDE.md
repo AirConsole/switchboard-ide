@@ -8,9 +8,12 @@ object, and that is enough.
 App.tsx              projects -> groups -> the row; every dialog; UI state writes
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
-components/TopBar    the tab strip: project groups, tabs, zZ dropdown, usage bars
+components/TopBar    the tab strip: project heads, tabs, usage bars
+components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
+components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
+components/useAnchoredMenu  a menu hung under its trigger, kept on screen
 views/Overview       the row: spot arithmetic, scrolling, what fits
-views/TodoPane       a worktree's todos, and RUN NEXT
+views/TodoPane       a worktree's todos, RUN NEXT, and Move to
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/ChangesPane    what changed and what was committed; the patch renderer
 views/FilesPane      the panel: its three modes, the search box, and the editor
@@ -193,14 +196,20 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
-- **The + is the group's last segment, and a bare glyph.** It wore the noun
-  while it was the thing that opened the form, because a scoped + reads as
-  Chrome's global "one more tab" and this bar already carries an **Open project**
-  at its far left. The form is a tile at the end of that project's run of
-  windows now, so the + is *navigation*: it walks you there and hands over the
-  caret, and the tile it lands on says what it is in full. The word cost exactly
-  100px of headroom, measured — every name fit from 1150px with it and 1050px
-  without.
+- **The project's name is its pane's tab.** It was a label with an × on it, and
+  that × closed the project — the same glyph a worktree's tab uses to merely
+  sleep it, one mis-click apart. Closing lives in the pane now; the head is a
+  button that walks you there and lights `--level-lit` while you are in it, with
+  `--bone` text, because `--graphite` is 3.90:1 on that ground.
+- **The head's state bar carries only its sleepers, and only amber or green.**
+  That is the zZ tab's job, which was the one thing that could not be lost when
+  it went: sleeping does not mean stopped, so a sleeper blocked on you still has
+  to reach the top bar. An awake worktree says its own state on its own tab, so
+  the head reports what has no tab. `tab--working` and `tab--off` are never
+  applied to it — a summary that is always lit is not a summary. A quiet `zZ`
+  beside the name says there is something behind this project you cannot see;
+  it carried the count for a day and that was noise, since how many is a thing
+  you find out by looking and the pane is one click away.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -218,20 +227,17 @@ The pieces, and why each is the way it is:
   it is named after, so it was a second copy of the name most of the time and
   every tab paid width for it. The window's own bar names it, and so does a
   tab's title.
-- **The zZ dropdown is the same tabs, stacked.** A sleeping worktree is one of
-  these tabs that happens not to be in the row, so it is drawn by the same
-  `tab()`: the sleeve under it, the state bar, the zZ, the name and its marks, the
-  hover panel — only fully round rather than square-shouldered, since nothing in
-  a list stands on a floor — and **the same height**, 32px, which has to be said
-  out loud in the menu because a row there has no 38px bar to derive it from. A
-  row left at its natural 15px is all radius: 9px top and bottom is its whole
-  left edge, so the state bar had no straight run to fill and came out a
-  crescent while the strip beside it drew a bar. It used to invent a row of its own, with the state
-  spelled out in words and the prompt on a second line, which made one worktree
-  look like two different objects depending on where you met it; both facts are
-  still there, on the bar and in the title. The menu takes its width from its
-  widest row up to 420px, where the strip caps a tab at 200: this is a list with
-  one job, and a sleeper is the worktree you have least chance of recognising.
+- **The same row, stacked, in three places.** `WorktreeTab` draws a worktree in
+  the strip, in a project's pane and in the todo panel's **Move to** list, and
+  that is one component because a worktree met in three places has to be one
+  object. The list forms used to invent a row of their own, with the state
+  spelled out in words and the prompt on a second line, which made the same
+  worktree look like different things depending on where you met it; both facts
+  are on the row itself, the state on its bar and the prompt in its title. A
+  stacked row needs a height said out loud -- it has no 38px bar to derive one
+  from -- and left at its natural 15px it is all radius: 9px top and bottom is
+  its whole left edge, so the state bar has no straight run to fill and comes
+  out a crescent while the strip beside it draws a bar.
 - **Widths come from a cap that tightens with the count**, `data-tight` on the
   strip, not from flexbox. Two attempts failed and the measurements are worth
   keeping: `min-width: 0` on the body is what lets a name ellipsise, and it
@@ -269,8 +275,7 @@ The pieces, and why each is the way it is:
   resting label is `--graphite` (6.98:1 on the sleeve) and the active tab's is
   `--bone` (7.48:1 on `--level-lit`): 1.92:1 between the two labels, against 1.0
   before. What that channel used to carry — awake or asleep — costs nothing to
-  give up, since every tab in the strip is awake except the one that says
-  "zZ 3" in words.
+  give up, since every tab in the strip is awake.
 - **Contrast pins two more rules.** Everything quiet on a tab is `--graphite`
   on every ground but one — 5.19:1 on a resting segment, 4.61 hovered, 6.91 on
   the project's head — and `--quiet-on` on the lit segment, which is the light
@@ -331,25 +336,73 @@ and worse the wider the monitor: 57 columns at 3440px, because more spots fit
 and a two-pane tile is always two of them. At three units it is 90–107 columns
 from 1687px up, and 82 once the editor asks for exactly 80.
 
-**The files panel is one unit while it is only its tree**, and the new-worktree
-tile is one always. They are the two exceptions to "nothing may ask for one
+**The files panel is one unit while it is only its tree**, and a project's own
+pane is one always. They are the two exceptions to "nothing may ask for one
 unit", and both are chrome rather than something you read code in: the floor of
 two exists to keep the 80-column promise, and that promise is about panes you
-read *code* in — a terminal, a diff, the editor. The new-worktree tile holds two
-short fields and a button, none of which is better for being 80 columns wide.
+read *code* in — a terminal, a diff, the editor.
 
-**That tile is the form itself, one per project, at the end of that project's
-run of windows** — see `NewWorktreePane`. It was a modal, and a modal is the
-wrong shape for it: a dialog interrupts to ask one question and goes away, where
-"and one more" is a standing offer, and the scrim hid the very windows you were
-naming a branch relative to. Sitting in the row it is a pane you can walk to —
-`PaneKind` includes `'add'`, cells are keyed by `addKey(projectId)`, and the
-Cmd+arrow stops are keyed by the cell rather than by a worktree, so the walk
-reaches it with no special case and the caret lands in the branch box. One per
-project is what lets it never ask which project it is for; the single tile at
-the far end of the row could not answer that once two were open, which is why it
-used to appear only when exactly one was. There is no Cancel, because there is
-nothing to cancel back to. A tree is chrome: names at a few levels of indent,
+**A project's pane is the head of its run of windows** — see `ProjectPane`. It
+holds that project's awake worktrees, its sleeping ones, the form for a new one
+and the button that closes it: everything that is about the *project* rather
+than about one of its worktrees, which the top bar used to carry as a ×, a `zZ`
+dropdown and a `+`. A menu is the wrong home for a list you want to scan, and a
+modal the wrong shape for "and one more", which is a standing offer rather than
+a question.
+
+It is a pane you can walk to: `PaneKind` includes `'project'`, cells are keyed
+by `projectKey(projectId)`, and the Cmd+arrow stops are keyed by the cell rather
+than by a worktree, so the walk reaches it with no special case. Arriving puts
+the caret in **the branch box** — naming the next worktree is what you come here
+to do often enough. It has to hold the keyboard somewhere regardless: the
+stepper reads where it is from `activeElement`, so a pane that refuses focus is
+one the walk can never leave.
+
+**The field says which of the two things it is about to do.** `git worktree add`
+either checks out a branch that is already there or cuts a new one from the
+default, and the name alone does not say which — "Branch from" used to imply it
+by sitting there empty, and removing that box removed the only hint. So
+`GET /api/projects/:id/branch` answers a beat after you stop typing (one
+`show-ref` behind `describeBranch`; the staleness guard is the branch itself
+rather than a counter, so a reply that is not about what is in the field now is
+dropped whichever order they arrive in, and a failed request says nothing rather
+than claiming the branch is new). The line under the field reads *"fourth"
+exists — it is checked out here, not branched from HEAD*, or *New branch, from
+HEAD*.
+
+The surprising answer goes **bright**, not amber. `--signal` was the first
+reach and it was wrong: amber means an agent is blocked on you and nothing
+else, and a form saying what a button will do is not a state you scan a row of
+agents for. `--graphite-dim` to `--bone` is the 1.92:1 step that already means
+"read this one".
+
+**The project's name is 19px**, not a tile bar's 12. This pane is the only cell
+in the row whose bar is not a toolbar — there is nothing beside the name to keep
+small for — and it is the thing you scroll the row looking for.
+
+**Its foot does not scroll.** The lists grow — a project can have twenty
+worktrees — and a form you have to scroll to is a form you stop using, so the
+new-worktree field and Close project are pinned under the part that moves. That
+form is **one field**: "Branch from" was left empty every time, since the
+remote's default (or HEAD without one) is what you want unless you are doing
+something unusual and something unusual is what a terminal is for; and "Start
+Claude here" was checked every time, because a worktree with no agent in it is a
+directory. The server still takes both parameters — this stops asking. Close
+project is shaped like a tab, which is what the pane's other controls are, and
+turns `--danger` under the pointer: the red the project's × used to turn, said
+on the thing itself.
+
+The lists are `WorktreeRow`, the same component the strip's tabs are, keeping
+every `.tab*` class — only the container differs. A worktree met in the pane and
+met in the strip has to be one object. They deliberately carry no `data-pane` of
+their own: a row claiming a worktree's pane key would teleport the walk, so they
+resolve to the pane's. The cell carries its `ProjectGroup` rather than looking
+the project up by id, because `useTileMotion` keeps a departed cell on screen
+for its exit and anything re-derived from `projects` is gone by then — and
+closing a project is now a button *inside* that cell, so that is the common path
+rather than a rare one.
+
+A tree is chrome: names at a few levels of indent,
 its own floor 158px, against a unit that measures 336px at 2400px and 403px on a
 phone. So `panesOf` asks `filesContentOpen` before it asks `PANE_UNITS`, and a
 worktree browsing its files is three units where one reading a file is five —
@@ -484,6 +537,22 @@ answer or the tile is laid out for a column it does not render:
   put it away, or use the `»` at the right of the bar, which is the same action
   with a name. A diff is not something you collect the way you collect the files
   you are working in.
+
+**Not text, but the browser can draw it: draw it.** A `.png` picked in the tree
+opens as a picture rather than as the note saying it is not a text file. The
+server decides from the extension and before it reads a byte (`MEDIA_TYPES` in
+`server/src/files.ts`), answering `binary: true` with a `media` type; the bytes
+never travel as JSON, because an `<img src>` is exactly a GET the browser makes
+on its own -- `GET /api/worktrees/:id/raw`, whose URL carries the file's rev, so
+an image the agent regenerates is a *different* URL and repaints on the next
+poll instead of showing what the browser still has. That decision has to come
+**before** the size cap, which is a cap on text going through JSON and has
+nothing to say about a photograph: with the cap first, every image over 2MB
+answered "too large to open here". It is scaled down to the pane and never up --
+measured, a 1600x1200 png drawn at 652x489 and a 16px favicon at 16px -- and the
+line under it carries the real dimensions and the file size, which is the one
+thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
+table: it is text, it decodes, and editing it is the reason to open it.
 
 Nothing auto-selects any more. The commit list used to choose its newest for you,
 which was free when the pane was always there and is not now: it would open the
@@ -766,6 +835,64 @@ mutation in the app refreshes it mid-sentence. The draft holds until the server
 echoes back exactly what was sent. Verified by typing into a prompt while a
 `curl` created a todo on another worktree — the keystrokes and the caret survive.
 
+**The three things you can do to a todo are the tab strip's object, stood on
+end.** RUN NEXT, MOVE TO and DELETE as square segments inside one rounded shell,
+seamed 2px in `--sleeve` -- `.tabgroup`'s own argument, that round pills are each
+their own object while square segments inside one shell are one object divided,
+and the shell holds every outer edge. They were a pill, a bare × beside it and a
+quiet word underneath, then three stacked pills; a column of pills is still a
+column of separate objects, and none of it had anything to do with the strip
+above it.
+
+Three details carry it. Labels are **left-aligned on the tab's own 13px leading
+inset** rather than centred, so the three read down one edge and a mark could
+appear down a segment's leading edge later without moving a label; the queue
+position sits at the far edge with the caret for the same reason, since a number
+that appears and disappears must not push its own label along. The caret is the
+zZ tab's, **17px** -- it is the one mark that says a control opens a list rather
+than acting on the spot, so it is the same mark in both places, and at 9px it was
+a speck beside an 11px label. And the column is `min-width: 118px` rather than a
+fixed width: every row comes out at 118 because no label reaches it, and a wider
+font grows the slab instead of clipping a label.
+
+Weight, not colour, still separates them -- amber means Claude is blocked on you
+and green that it has come to rest, and none of the three is either -- so queued
+is RUN NEXT filled in reverse, `--ink` on `--bone` at 14.46:1, which is the
+loudest thing the panel can say and is spent here because a queue marker has to
+be findable across a row of windows. **DELETE is the one segment that does not
+lift on hover**, and that is measured rather than an oversight: `--danger` is
+4.88:1 on `--level-object` and 4.14:1 on `--level-hover`, so lifting it would
+cost either a second red or the colour on the only control here that destroys
+something.
+
+**The slab is exactly as tall as its three segments and stops there.** Beside a
+prompt of several lines it ends well above the foot of its own row, and the space
+under it is the panel. It was tried the other way -- stretched to the row, with
+an empty segment taking up the slack so the slab met the bottom the way the strip
+meets its bar -- and an empty segment under DELETE reads as a fourth thing you
+can do to a todo, drawn and doing nothing. Measured: the slab is 72px against
+prompts of 25px and 100px alike.
+
+MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
+and it hangs off the segment's own bottom-left corner.
+
+**Its list is this project's worktrees and no others.** A todo is work on a
+repository, and another repository's worktrees are not somewhere it could be
+done -- offering every worktree the IDE knows made the list longer with the
+answers you would never pick, and made it need a heading per project to tell two
+`main`s apart. Scoped, the headings go with it: every row belongs to the project
+the todo is already in, so there is nothing for a label to disambiguate. `App`
+builds the targets per project id and a tile takes its own; a project with one
+worktree leaves the list empty and MOVE TO does not draw.
+
+**A moved todo is not a sent one.** From this pane a queued todo leaving looks
+identical whether the server typed it into Claude or you moved it elsewhere, and
+the panel closes on the first. So a move is reported to `leftHere` the way a
+delete is -- measured, moving the last queued todo away took the panel with it
+and handed the keyboard to a Claude that had been sent nothing. Moving it keeps
+it queued, and the server gives it a fresh place at the end of the queue it
+joins: a place in a queue is only meaningful within one worktree.
+
 The **form is at the foot of the panel**, under the queue: the list reads top to
 bottom in the order it will go and the box you type into is the next line of it,
 rather than sitting above its own output.
@@ -1007,10 +1134,12 @@ Drive a real browser against `scripts/scratch.sh`, never the user's instance on
 geometry. Then:
 
 - **Ask `document.elementFromPoint()`.** Presence in the DOM is not visibility,
-  and a programmatic click works fine on an element that is clipped away. A
-  dropdown here was "verified" twice while `overflow` had eaten it — note that
-  `overflow-x: auto` computes `overflow-y` to auto too, which is why the menu is
-  `position: fixed` off the trigger's rect.
+  and a programmatic click works fine on an element that is clipped away. The zZ
+  dropdown was "verified" twice while `overflow` had eaten it — `overflow-x:
+  auto` computes `overflow-y` to auto as well, so a scroller clips in both
+  directions. The menu is gone and so is the `position: fixed` that rescued it,
+  but the trap is the strip's, not the menu's: `.tabstrip` is still a scroller
+  and `.tabgroup` is still `overflow: hidden`.
 - **Sample pixels for hairlines.** A resampled screenshot blends a 1px divider
   out of existence; one was reported missing twice and was there both times.
 - **Do not claim animation timing.** The headless clock races —

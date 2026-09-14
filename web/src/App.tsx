@@ -5,16 +5,19 @@ import { TopBar } from './components/TopBar.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { addKey, Overview, type PaneKind } from './views/Overview.js'
+import { Overview, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
   claudeSession,
   orderWorktrees,
+  queuedTodoCount,
   removalAsks,
   removalQuestions,
   terminalSessions,
+  worktreeStatus,
 } from './selectors.js'
+import type { MoveTarget } from './views/TodoPane.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -199,6 +202,34 @@ export const App = (): React.ReactElement => {
   /** Every awake worktree, in the order the row shows them. */
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
 
+  /**
+   * Where a todo can be moved to, per project: that project's own worktrees, in
+   * the top bar's own order.
+   *
+   * By project because a todo is work on a repository, and another repository's
+   * worktrees are not somewhere it could be done. Sleeping ones are in, and
+   * that is the point -- parking work against an agent you are not running
+   * today is most of what a todo is for, and the row only holds the awake ones.
+   */
+  const moveTo = useMemo<Record<string, MoveTarget[]>>(
+    () =>
+      Object.fromEntries(
+        groups.map((group) => [
+          group.project.id,
+          [
+            ...group.awake.map((worktree) => ({ worktree, sleeping: false })),
+            ...group.asleep.map((worktree) => ({ worktree, sleeping: true })),
+          ].map(({ worktree, sleeping }) => ({
+            worktree,
+            sleeping,
+            status: worktreeStatus(sessions, worktree.id),
+            queued: queuedTodoCount(todos, worktree.id),
+          })),
+        ]),
+      ),
+    [groups, sessions, todos],
+  )
+
   const setAwake = (ids: Iterable<string>): void => setUi({ awake: [...ids] })
 
   /*
@@ -356,6 +387,44 @@ export const App = (): React.ReactElement => {
       newTerminal(worktreeId)
     }
   }
+
+  /**
+   * A worktree's last terminal has exited.
+   *
+   * The same close `closeTerminal` does, for the terminal that closed itself:
+   * the server drops a shell session as soon as its pane dies, and a panel with
+   * no terminals in it is a column holding a spot in the row for nothing. So
+   * typing `exit` narrows the window exactly as clicking the × does, and the
+   * keyboard goes back to that worktree's Claude -- the pane it was in no
+   * longer exists, and leaving focus on the document would take the arrow keys
+   * with it.
+   *
+   * Not while the worktree is on its way to sleep: sleeping kills its terminals
+   * too, and this would read that as the panel closing itself and forget the
+   * panel the worktree is supposed to wake up with. `awake` loses it on the
+   * click, before the sessions go.
+   */
+  const terminalsGone = useCallback(
+    (worktreeId: string): void => {
+      const ui = uiRef.current
+      if (ui.awake !== null && !ui.awake.includes(worktreeId)) return
+      setUi({
+        panels: {
+          ...ui.panels,
+          [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'terminals'),
+        },
+      })
+      // Written out rather than calling `reveal`, for the reason given below:
+      // both setters are stable, and `reveal` is a fresh function every render.
+      setActive({ id: worktreeId, pane: 'claude' })
+      setScrollTo((previous) => ({
+        id: worktreeId,
+        pane: 'claude',
+        nonce: (previous?.nonce ?? 0) + 1,
+      }))
+    },
+    [setUi],
+  )
 
   /**
    * A worktree's todo queue has emptied itself into Claude.
@@ -524,13 +593,12 @@ export const App = (): React.ReactElement => {
       sessions={sessions}
       todos={todos}
       onOpenProject={() => setShowOpenProject(true)}
-      onCloseProject={setClosingProject}
       /*
-       * The + no longer opens anything: the form is a tile at the end of that
-       * project's run of windows, so this walks you to it and hands over the
-       * caret, the same as clicking a worktree's tab.
+       * The project's name is its pane's tab: this walks you there and hands
+       * over the caret, the same as clicking a worktree's tab. Closing the
+       * project is in that pane now rather than on a × up here.
        */
-      onNewWorktree={(project) => reveal(addKey(project.id), 'add')}
+      onRevealProject={(project) => reveal(projectKey(project.id), 'project')}
       onWake={wake}
       onReveal={reveal}
       onSleep={setSleeping}
@@ -573,6 +641,22 @@ export const App = (): React.ReactElement => {
                 worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
               )
               setAwake([...awake].filter((id) => !mine.has(id)))
+            }
+            /*
+             * If you were standing in something that project owned, move into
+             * whatever is left. Closing is a button *inside* that project's own
+             * pane now, so `active` reliably names a cell that is about to go --
+             * and an `active` pointing at nothing leaves the keyboard on the
+             * document and blanks the Cmd legend. The same reasoning as
+             * `forgetWorktree`, one level up.
+             */
+            const mine = new Set(
+              worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
+            )
+            if (active !== null && (active.id === projectKey(closingProject) || mine.has(active.id))) {
+              const left = groups.find((g) => g.project.id !== closingProject)
+              if (left === undefined) setActive(null)
+              else reveal(projectKey(left.project.id), 'project')
             }
             setClosingProject(null)
             void api.closeProject(closingProject, { sleep }).then(refresh).catch(fail)
@@ -672,6 +756,7 @@ export const App = (): React.ReactElement => {
         worktrees={rowWorktrees}
         projects={projects}
         todos={todos}
+        moveTo={moveTo}
         sessions={sessions}
         panels={ui.panels}
         activeTerminalByWorktree={ui.activeTerminalByWorktree}
@@ -679,6 +764,10 @@ export const App = (): React.ReactElement => {
         openFilesByWorktree={ui.openFilesByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
+        groups={groups}
+        onWake={wake}
+        onSleep={setSleeping}
+        onCloseProject={setClosingProject}
         scrollTo={scrollTo}
         active={active}
         onActivate={activate}
@@ -708,6 +797,7 @@ export const App = (): React.ReactElement => {
         onExpandDir={expandDir}
         onFilesMode={filesMode}
         onCloseTerminal={closeTerminal}
+        onNoTerminalsLeft={terminalsGone}
       />
 
       {dialogs}

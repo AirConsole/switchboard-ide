@@ -497,6 +497,18 @@ export interface FileContent {
    */
   binary?: boolean
   /**
+   * The media type to render it as, when `binary` and the browser draws this
+   * kind itself -- `image/png` and the rest of the image table in
+   * `server/src/files.ts`.
+   *
+   * Set from the extension rather than from the bytes, and only for types the
+   * browser has a renderer for: it says "fetch this from `/raw` and show it",
+   * not "here is what the file is". A binary with no entry in that table is
+   * still `binary` alone, which is the reader being told there is nothing to
+   * see.
+   */
+  media?: string
+  /**
    * Over `SWB_MAX_FILE_BYTES`.
    *
    * Nothing is ever truncated: a partial buffer that reached the editor would be

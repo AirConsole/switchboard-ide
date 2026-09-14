@@ -49,6 +49,22 @@ export interface TreeRow {
   open: boolean
 }
 
+/**
+ * A file the browser draws itself.
+ *
+ * The bytes are not here: `url` is what an `<img>` fetches, and it carries the
+ * rev, so a file the agent rewrites is a new URL and the element repaints. The
+ * size is worth carrying because a picture says nothing about how big it is.
+ */
+export interface MediaFile {
+  path: string
+  /** The media type the server named, e.g. `image/png`. */
+  type: string
+  url: string
+  /** Bytes on disk. */
+  size: number
+}
+
 export interface FilesState {
   /** Whose files these are, so the pane can search them. */
   worktreeId: string
@@ -59,7 +75,15 @@ export interface FilesState {
   loading: boolean
   /** The open file as it is on disk, or null when none can be shown. */
   file: EditorFile | null
-  /** Why there is no file to show: not text, too large, gone. */
+  /**
+   * The open file as something to look at rather than edit: an image.
+   *
+   * Never set at the same time as `file` -- a file is one or the other -- and
+   * the pane picks between them the same way it picks between either and
+   * `refusal`.
+   */
+  media: MediaFile | null
+  /** Why there is no file to show: not text, not drawable, too large, gone. */
   refusal: string | null
   dirty: boolean
   saving: boolean
@@ -207,6 +231,7 @@ export const useFilesState = (opts: {
 
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({})
   const [file, setFile] = useState<EditorFile | null>(null)
+  const [media, setMedia] = useState<MediaFile | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -320,6 +345,7 @@ export const useFilesState = (opts: {
     if (!enabled || filePath === null) {
       if (filePath === null) {
         setFile(null)
+        setMedia(null)
         setRefusal(null)
         revRef.current = null
       }
@@ -340,9 +366,33 @@ export const useFilesState = (opts: {
           revRef.current = result.rev
           if (result.binary === true) {
             setFile(null)
+            /*
+             * Not text, but the browser has a renderer for it: show it instead
+             * of saying there is nothing to see. `media` on the answer is the
+             * server saying so -- an extension it knows how to name -- and the
+             * bytes come from `/raw`, keyed by the rev this poll just read, so
+             * an image the agent regenerates repaints without anything here
+             * having to notice.
+             */
+            const type = result.media
+            if (type !== undefined) {
+              const url = api.rawFileUrl(worktreeId, result.path, result.rev)
+              setRefusal(null)
+              setMedia((previous) =>
+                previous !== null && previous.url === url ? previous : {
+                  path: result.path,
+                  type,
+                  url,
+                  size: result.size,
+                },
+              )
+              return
+            }
+            setMedia(null)
             setRefusal('This is not a text file.')
             return
           }
+          setMedia(null)
           if (result.tooLarge === true) {
             setFile(null)
             setRefusal(`${Math.round(result.size / 1024)} KB — too large to open here.`)
@@ -475,6 +525,7 @@ export const useFilesState = (opts: {
     rows,
     loading: listings[''] === undefined,
     file,
+    media,
     refusal,
     dirty,
     saving,
@@ -489,6 +540,69 @@ export const useFilesState = (opts: {
     overwrite,
     revert,
   }
+}
+
+/** A size a person reads, for the line under a picture. */
+const fileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * A file the browser draws itself, fitted to the pane.
+ *
+ * Scaled down and never up: `max-width`/`max-height` at 100% with
+ * `object-fit: contain` leaves a 16×16 favicon at 16×16 and brings a 4000px
+ * screenshot down to the pane, which is the rule the reader would state --
+ * blowing an icon up to fill a column would be inventing detail that is not in
+ * the file.
+ *
+ * The line underneath is the part a picture cannot say: its real dimensions,
+ * which is how you know whether what you are looking at is the whole of it, and
+ * how big the file is. It is the interface talking, so it is in the interface's
+ * own face and the dim grey the tree's notes use.
+ */
+const MediaView = ({ media }: { media: MediaFile }): React.ReactElement => {
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
+  const [failed, setFailed] = useState(false)
+  // A new file, or the same one rewritten: both arrive as a new URL, and both
+  // mean the dimensions on screen belong to the picture that is going away.
+  useEffect(() => {
+    setNatural(null)
+    setFailed(false)
+  }, [media.url])
+
+  return (
+    <div className="files__media">
+      {failed ? (
+        /*
+         * The extension said the browser could draw this and it could not:
+         * a `.png` that is not one, or a truncated download. Said plainly,
+         * because the alternative is the browser's own broken-image glyph,
+         * which reads as the panel being broken.
+         */
+        <p className="files__note">This file could not be shown.</p>
+      ) : (
+        <img
+          className="files__image"
+          src={media.url}
+          alt={media.path}
+          onLoad={(event) =>
+            setNatural({
+              w: event.currentTarget.naturalWidth,
+              h: event.currentTarget.naturalHeight,
+            })
+          }
+          onError={() => setFailed(true)}
+        />
+      )}
+      <p className="files__media-note">
+        {natural === null ? '' : `${natural.w} × ${natural.h} · `}
+        {fileSize(media.size)}
+      </p>
+    </div>
+  )
 }
 
 /**
@@ -963,6 +1077,12 @@ export const FilesPane = ({
 
   const content = (): React.ReactElement => {
     if (mode === 'files') {
+      /*
+       * A file to look at rather than edit. Behind `near` like the editor is:
+       * a tile off the side of the row should no more fetch a megabyte of
+       * image than it should mount CodeMirror.
+       */
+      if (files.media !== null) return near ? <MediaView media={files.media} /> : <></>
       if (files.refusal !== null) return <p className="files__note">{files.refusal}</p>
       if (files.file === null) return <></>
       return mountEditor ? (

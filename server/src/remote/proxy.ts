@@ -51,33 +51,31 @@ const decode = (segment: string): string => {
 
 const pathOf = (url: string): string => url.split('?')[0] ?? ''
 
-/** Every peer named by a scoped id in the path. */
-const keysInPath = (url: string): string[] =>
-  pathOf(url)
-    .split('/')
-    .map((segment) => unscopeId(decode(segment))?.host)
-    .filter((host): host is string => host !== undefined)
-
 /**
- * Every peer named by a scoped id in a body field that carries ids.
+ * Every id this request routes by: the route's own parameters, and the body
+ * fields that carry ids.
  *
- * All of them, not the first: two ids from different machines in one body would
- * otherwise go to whichever came first in `ID_FIELDS`, with the other reduced
- * to a bare id and delivered to a machine it does not belong to -- and because
- * ids hash the bare path, the wrong peer *answering* is the normal case.
+ * The params rather than every path segment, because a param *is* an id by
+ * construction -- every route in this API takes `:id` and nothing else -- while
+ * a segment might be anything. That distinction is what lets a **bare** id be
+ * read as "this machine" rather than as "no opinion".
  *
  * Only the fields that carry ids, never every string in the body. A todo's
  * prompt is a string too, and deciding which machine a request is for by
  * scanning free text is how `rm -rf ~` becomes a route to nowhere.
  */
-const keysInBody = (body: unknown): string[] => {
-  if (typeof body !== 'object' || body === null) return []
+const idsIn = (params: unknown, body: unknown): string[] => {
   const found: string[] = []
-  for (const field of ID_FIELDS) {
-    const value = (body as Record<string, unknown>)[field]
-    if (typeof value !== 'string') continue
-    const scoped = unscopeId(value)
-    if (scoped) found.push(scoped.host)
+  if (typeof params === 'object' && params !== null) {
+    for (const value of Object.values(params as Record<string, unknown>)) {
+      if (typeof value === 'string' && value !== '') found.push(decode(value))
+    }
+  }
+  if (typeof body === 'object' && body !== null) {
+    for (const field of ID_FIELDS) {
+      const value = (body as Record<string, unknown>)[field]
+      if (typeof value === 'string' && value !== '') found.push(value)
+    }
   }
   return found
 }
@@ -94,10 +92,9 @@ const keysInBody = (body: unknown): string[] => {
  * `PATCH /api/ui?host=B` replaced **B's stored layout** -- its panels, open
  * files and expanded trees, for the person sitting at B -- and
  * `POST /api/servers?host=B` linked B to a machine of the caller's choosing,
- * with a token the caller supplied. Neither is reachable from the dialog, and
- * both are one URL. `ui` in particular is the thing `PeerClient.snapshot`
- * strips at the boundary because "the layout is the viewer's"; enforcing that
- * on the read side only was half a rule.
+ * with a token the caller supplied. `ui` in particular is what
+ * `PeerClient.snapshot` strips at the boundary because "the layout is the
+ * viewer's"; enforcing that on the read side only was half a rule.
  */
 const HOST_STEERABLE: ReadonlySet<string> = new Set([
   '/api/browse',
@@ -191,12 +188,29 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
       throw new HttpError(400, 'that route does not take a server')
     }
     const steered = asked
+
+    /*
+     * Which machines this request names -- and a **bare** id names *this* one,
+     * which is why it is collected too.
+     *
+     * Mixing a bare id with a scoped one is a cross-machine operation that no
+     * route supports, and it used to be sent to the remote machine carrying the
+     * local id: `PATCH /api/todos/<local>` with a remote `worktreeId` -- moving
+     * a todo to a worktree on another machine -- went there and 404'd. Not
+     * reachable from the dialog, which offers only the project's own worktrees,
+     * and not destructive. But the same guard already refuses two *remote*
+     * machines, and for the same reason: silently resolving the ambiguity is
+     * what lands an operation on another machine's identically-pathed worktree.
+     */
+    const ids = idsIn(request.params, request.body)
     const named = new Set([
-      ...keysInPath(request.url),
-      ...keysInBody(request.body),
+      ...ids.map((id) => unscopeId(id)?.host).filter((host): host is string => host !== undefined),
       ...(steered === null ? [] : [steered]),
     ])
-    if (named.size > 1) throw new HttpError(400, 'that request names two different servers')
+    const namesThisMachine = ids.some((id) => unscopeId(id) === null)
+    if (named.size > 1 || (named.size > 0 && namesThisMachine)) {
+      throw new HttpError(400, 'that request names more than one machine')
+    }
     const key = [...named][0] ?? null
 
     if (key === null) return

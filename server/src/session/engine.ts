@@ -553,15 +553,51 @@ export class SessionEngine {
   private readonly sessions = new Map<string, LiveSession>()
   private poller: NodeJS.Timeout | null = null
   private readonly listeners = new Set<(session: Session) => void>()
+  private readonly goneListeners = new Set<(sessionId: string) => void>()
 
   onSessionChange(listener: (session: Session) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
+  /**
+   * A session removed itself. Distinct from `onSessionChange`, which says a
+   * session changed: this one is no longer in `list()`, so the snapshot is what
+   * has to be refetched, not a field patched.
+   */
+  onSessionGone(listener: (sessionId: string) => void): () => void {
+    this.goneListeners.add(listener)
+    return () => this.goneListeners.delete(listener)
+  }
+
   private emit(live: LiveSession): void {
     const record = live.toRecord()
     for (const listener of this.listeners) listener(record)
+    if (record.kind === 'shell' && record.liveness === 'dead') void this.reap(record.id)
+  }
+
+  /**
+   * A terminal that has exited closes itself.
+   *
+   * `remain-on-exit on` keeps a dead pane so a *Claude* that stopped can be
+   * read and respawned in place -- that is the whole reason it is on, and it
+   * stays on. A terminal has nothing to read: you typed `exit`, and what is
+   * left is tmux's own "Pane is dead" line over a screen you are finished with,
+   * plus a tab you now have to close by hand.
+   *
+   * Every dead terminal, not only one that exited zero. `exit` with no argument
+   * returns the status of the last command, so Ctrl-D after a failing command
+   * exits non-zero -- the status cannot tell a deliberate exit from a crash
+   * here, and "the last command failed" is the common case, not the rare one.
+   *
+   * Here rather than in the browser because a terminal exits whether or not
+   * anyone is watching, and a tmux session no interface can reach should not
+   * outlive the tab being closed.
+   */
+  private async reap(sessionId: string): Promise<void> {
+    if (!this.sessions.has(sessionId)) return
+    await this.kill(sessionId)
+    for (const listener of this.goneListeners) listener(sessionId)
   }
 
   async start(): Promise<void> {

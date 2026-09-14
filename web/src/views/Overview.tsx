@@ -12,6 +12,7 @@ import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
 } from '../terminal/TerminalView.js'
+import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
 import {
   claudeSession,
@@ -20,14 +21,14 @@ import {
   worktreeTodos,
   type TodoView,
 } from '../selectors.js'
-import { TodoBar, TodoPane } from './TodoPane.js'
+import { TodoBar, TodoPane, type MoveTarget } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
 import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
-import { NewWorktreePane } from '../components/NewWorktreePane.js'
+import { ProjectPane } from '../components/ProjectPane.js'
 import { useNearViewport } from './useNearViewport.js'
 
 /**
@@ -40,7 +41,6 @@ import { useNearViewport } from './useNearViewport.js'
 const GAP = 12
 
 /** How the add tile is identified in the layout. */
-const ADD_KEY = '__add'
 
 /*
  * One shared empty list for worktrees with nothing expanded. A fresh `[]` each
@@ -51,6 +51,9 @@ const EMPTY_DIRS: string[] = []
 
 /** Likewise for a worktree with no file open; see EMPTY_DIRS. */
 const EMPTY_FILES: string[] = []
+
+/** And for a project whose worktrees have not been read yet; see EMPTY_DIRS. */
+const EMPTY_MOVE: MoveTarget[] = []
 
 /**
  * Is the whole of a tile on screen already?
@@ -284,7 +287,7 @@ const panelLabel = (panel: PanelName, counts: PanelCounts, lit: boolean): React.
  * half a pane, and the 80-column floor is a promise about panes. The two that
  * do are chrome -- the files tree by itself, and the placeholder below.
  */
-const PANE_UNITS: Record<'claude' | 'add' | PanelName, number> = {
+const PANE_UNITS: Record<'claude' | 'project' | PanelName, number> = {
   claude: 2,
   /*
    * The new-worktree placeholder is one unit, not two.
@@ -295,7 +298,7 @@ const PANE_UNITS: Record<'claude' | 'add' | PanelName, number> = {
    * worktree could have used, on a row you scroll precisely because there is
    * never enough of it.
    */
-  add: 1,
+  project: 1,
   todo: 2,
   terminals: 2,
   files: 3,
@@ -324,19 +327,19 @@ const FILES_TREE_UNITS = 1
  * only worktrees, so that stepping right can take you into the thing you were
  * about to type in rather than past it.
  */
-export type PaneKind = 'claude' | PanelName | 'add'
+export type PaneKind = 'claude' | PanelName | 'project'
 
 export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktreeId}:${pane}`
 
 /**
- * The row id of a project's new-worktree tile.
+ * The row id of a project's own pane.
  *
  * Every cell in the row is keyed by something `scrollTo`, `active` and the
- * Cmd+arrow walk can name, and those used to be worktree ids alone. The add
- * tile is a stop now, so it needs one too -- prefixed, because a project id and
- * a worktree id come from the same hash and must not collide.
+ * Cmd+arrow walk can name, and those used to be worktree ids alone. A project's
+ * pane is a stop too, so it needs one -- prefixed, because a project id and a
+ * worktree id come from the same hash and must not collide.
  */
-export const addKey = (projectId: string): string => `add:${projectId}`
+export const projectKey = (projectId: string): string => `project:${projectId}`
 
 /**
  * Whether Cmd is down right now.
@@ -375,7 +378,7 @@ const useMetaHeld = (): boolean => {
 type Pane =
   | { kind: 'claude'; key: string; worktree: Worktree; units: number }
   | { kind: PanelName; key: string; worktree: Worktree; units: number }
-  | { kind: 'add'; key: string; units: number }
+  | { kind: 'project'; key: string; units: number }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -509,6 +512,8 @@ interface WorktreeTileProps {
   project: Project | undefined
   /** This worktree's todos, in list order, each with its queue position. */
   todos: TodoView[]
+  /** Where one of them can be moved to; the pane drops this worktree itself. */
+  moveTo: MoveTarget[]
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
@@ -574,6 +579,7 @@ interface WorktreeTileProps {
   onSelectTerminal: (sessionId: string) => void
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
+  onNoTerminalsLeft: () => void
   onOpenPath: (path: string) => void
   onCloseFile: (path: string) => void
   /** Null closes the pane; the hook calls it that way when a hash goes stale. */
@@ -598,6 +604,7 @@ const WorktreeTile = ({
   worktree,
   project,
   todos,
+  moveTo,
   panes,
   focus,
   focusPane,
@@ -620,6 +627,7 @@ const WorktreeTile = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onNoTerminalsLeft,
   onOpenPath,
   onCloseFile,
   onSelectCommit,
@@ -855,6 +863,7 @@ const WorktreeTile = ({
                 onSelect={onSelectTerminal}
                 onNew={onNewTerminal}
                 onClose={onCloseTerminal}
+                onNoneLeft={onNoTerminalsLeft}
               />
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
@@ -918,6 +927,7 @@ const WorktreeTile = ({
                 worktreeId={worktree.id}
                 todos={todos}
                 claudeRunning={running}
+                moveTo={moveTo}
                 focus={focusPane === 'todo' ? focus : null}
                 /*
                  * Closed the way the layout closes a panel it could not keep,
@@ -998,6 +1008,8 @@ export interface OverviewProps {
   projects: Project[]
   /** Every todo, across every worktree; each tile takes its own. */
   todos: WorktreeTodo[]
+  /** Each project's own worktrees, as the places a todo of theirs can go. */
+  moveTo: Record<string, MoveTarget[]>
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
@@ -1038,8 +1050,13 @@ export interface OverviewProps {
   active: { id: string; pane: PaneKind } | null
   /** Anything in this pane took focus, so this is where you are now. */
   onActivate: (worktreeId: string, pane: PaneKind) => void
-  /** A worktree was just made in one of the row's new-worktree tiles. */
+  /** A worktree was just made in one of the row's project panes. */
   onCreated: (worktreeId: string) => void
+  /** This project's worktrees, awake and asleep, for its own pane. */
+  groups: ProjectGroup[]
+  onWake: (worktreeId: string) => void
+  onSleep: (worktreeId: string) => void
+  onCloseProject: (projectId: string) => void
   onStart: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
@@ -1048,6 +1065,7 @@ export interface OverviewProps {
   onQueueDrained: (worktreeId: string) => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
+  onNoTerminalsLeft: (worktreeId: string) => void
   /** Closing the last one closes the panel too, so it needs the worktree. */
   onCloseTerminal: (worktreeId: string, sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
@@ -1074,6 +1092,7 @@ export const Overview = ({
   worktrees,
   projects,
   todos,
+  moveTo,
   sessions,
   panels,
   activeTerminalByWorktree,
@@ -1085,6 +1104,10 @@ export const Overview = ({
   active,
   onActivate,
   onCreated,
+  groups,
+  onWake,
+  onSleep,
+  onCloseProject,
   onStart,
   onReveal,
   onTogglePanel,
@@ -1092,6 +1115,7 @@ export const Overview = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onNoTerminalsLeft,
   onOpenPath,
   onCloseFile,
   onToggleDir,
@@ -1260,12 +1284,31 @@ export const Overview = ({
   const units = Math.max(2, Math.floor((width - GAP) / unitPitch))
   const pitch = (width - GAP) / units
 
-  type Cell = { key: string; worktree: Worktree | null; panes: Pane[]; at: number; units: number }
+  /*
+   * `group` rather than a project id, because a leaving slot outlives the list
+   * that produced it -- `useTileMotion` keeps it on screen for the exit -- and
+   * anything re-derived from `projects` is gone by then. Closing a project is a
+   * button *inside* this cell now, so that is the common path rather than a
+   * rare one.
+   */
+  type Cell = {
+    key: string
+    worktree: Worktree | null
+    group: ProjectGroup | null
+    panes: Pane[]
+    at: number
+    units: number
+  }
   const cells: Cell[] = []
   let next = 0
-  const push = (key: string, worktree: Worktree | null, panes: Pane[]): void => {
+  const push = (
+    key: string,
+    worktree: Worktree | null,
+    group: ProjectGroup | null,
+    panes: Pane[],
+  ): void => {
     const span = panes.reduce((n, pane) => n + pane.units, 0)
-    cells.push({ key, worktree, panes, at: next, units: span })
+    cells.push({ key, worktree, group, panes, at: next, units: span })
     next += span
   }
   /*
@@ -1277,12 +1320,12 @@ export const Overview = ({
    * more than one project was open, and why it used to appear only when exactly
    * one was.
    */
-  for (const project of projects) {
-    for (const worktree of worktrees.filter((w) => w.projectId === project.id)) {
-      push(worktree.id, worktree, panesOf(worktree, units))
-    }
-    const key = addKey(project.id)
-    push(key, null, [{ kind: 'add', key, units: Math.min(PANE_UNITS.add, units) }])
+  for (const group of groups) {
+    const key = projectKey(group.project.id)
+    push(key, null, group, [
+      { kind: 'project', key, units: Math.min(PANE_UNITS.project, units) },
+    ])
+    for (const worktree of group.awake) push(worktree.id, worktree, null, panesOf(worktree, units))
   }
   const totalUnits = next
 
@@ -1738,7 +1781,7 @@ export const Overview = ({
                         const pane = slot.data.panes.find((one) => one.key === key)
                         onActivate(
                           worktree.id,
-                          pane === undefined || pane.kind === 'add' ? 'claude' : pane.kind,
+                          pane === undefined || pane.kind === 'project' ? 'claude' : pane.kind,
                         )
                         // Not for a tile on its way out: it is held at its old
                         // place by the motion, and its `at` names a run of the
@@ -1761,24 +1804,33 @@ export const Overview = ({
                 <div className="slot__inner" style={{ width: slot.width }}>
                   {worktree === null ? (
                     <div
-                      className="tile tile--addpane"
-                      data-pane={paneKey(slot.key, 'add')}
-                      onFocus={() => {
-                        onActivate(slot.key, 'add')
-                        if (!slot.leaving) revealTile(slot.data)
-                      }}
+                      className="tile tile--project"
+                      data-pane={paneKey(slot.key, 'project')}
+                      onFocus={() => onActivate(slot.key, 'project')}
                     >
-                      <NewWorktreePane
-                        project={projectById.get(slot.key.slice('add:'.length))!}
-                        focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
-                        onCreated={onCreated}
-                      />
+                      {slot.data.group === null ? null : (
+                        <ProjectPane
+                          project={slot.data.group.project}
+                          awake={slot.data.group.awake}
+                          asleep={slot.data.group.asleep}
+                          sessions={sessions}
+                          todos={todos}
+                          activeId={active?.id ?? null}
+                          focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
+                          onWake={onWake}
+                          onReveal={onReveal}
+                          onSleep={onSleep}
+                          onCreated={onCreated}
+                          onCloseProject={onCloseProject}
+                        />
+                      )}
                     </div>
                   ) : (
                     <WorktreeTile
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}
+                      moveTo={moveTo[worktree.projectId] ?? EMPTY_MOVE}
                       panes={slot.data.panes}
                       /*
                        * Non-null only for the worktree just navigated to, and a
@@ -1816,6 +1868,7 @@ export const Overview = ({
                       onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
+                      onNoTerminalsLeft={() => onNoTerminalsLeft(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
                       onCloseFile={(path) => onCloseFile(worktree.id, path)}

@@ -126,6 +126,11 @@ export const api = {
     request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
+  /** Whether that branch is already there, so the form can say what it will do. */
+  describeBranch: (projectId: string, name: string) =>
+    request<{ valid: boolean; exists: boolean }>(
+      `/api/projects/${projectId}/branch?name=${encodeURIComponent(name)}`,
+    ),
   createWorktree: (body: { projectId: string; branch: string; base?: string; startClaude: boolean }) =>
     request<{ worktree: Worktree; sessions: Session[] }>('/api/worktrees', {
       method: 'POST',
@@ -187,7 +192,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   /** `queued` is the RUN NEXT toggle. */
-  patchTodo: (id: string, patch: { prompt?: string; queued?: boolean }) =>
+  patchTodo: (id: string, patch: { prompt?: string; queued?: boolean; worktreeId?: string }) =>
     request<WorktreeTodo>(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTodo: (id: string) => request<{ ok: true }>(`/api/todos/${id}`, { method: 'DELETE' }),
 
@@ -221,6 +226,18 @@ export const api = {
       `/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}` +
         (ifNotRev === undefined ? '' : `&ifNotRev=${encodeURIComponent(ifNotRev)}`),
     ),
+
+  /**
+   * Where the browser fetches a media file's bytes from.
+   *
+   * A URL rather than a request, because what asks for it is an `<img src>`.
+   * The rev goes in it so that a file the agent regenerates is a different URL:
+   * the element repaints on the next poll instead of showing what the browser
+   * still has.
+   */
+  rawFileUrl: (worktreeId: string, path: string, rev: string) =>
+    `/api/worktrees/${worktreeId}/raw?path=${encodeURIComponent(path)}` +
+    `&rev=${encodeURIComponent(rev)}`,
 
   /**
    * Save a file, refused with 409 `stale-file` if it moved since it was read.
