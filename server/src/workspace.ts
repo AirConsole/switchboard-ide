@@ -22,6 +22,8 @@ import {
   addWorktree,
   defaultWorktreeRoot,
   deleteBranch,
+  deleteRemoteBranch,
+  remoteBranches,
   defaultBranchRef,
   dirtyCount,
   unmergedCount,
@@ -86,6 +88,9 @@ export class Workspace {
       .map(
         (w) =>
           `${w.id}:${w.branch ?? ''}:${w.head ?? ''}:${w.dirty ?? 0}:${w.unmerged ?? 0}:` +
+          // A branch appearing on or vanishing from a remote changes what the
+          // removal dialog asks, so it is part of "something changed here".
+          `${w.remoteBranch ?? ''}:${w.remoteBranchMerged === true ? 'm' : ''}:` +
           `${w.missing === true}:${w.prompt ?? ''}`,
       )
       .join('|')
@@ -133,7 +138,11 @@ export class Workspace {
         // Once per project, not once per worktree: they share a repository and
         // therefore a default branch.
         const defaultRef = await defaultBranchRef(project.root)
+        // Likewise once per project: `refs/remotes` is the repository's, and
+        // every worktree of it reads its own branch out of the same answer.
+        const remotes = await remoteBranches(project.root, defaultRef)
         for (const worktree of list) {
+          const remote = worktree.branch === null ? undefined : remotes.get(worktree.branch)
           all.push({
             ...worktree,
             // `undefined` rather than a number when git could not say: the
@@ -141,6 +150,8 @@ export class Workspace {
             // here would tell it the worktree is clean.
             dirty: (await dirtyCount(worktree.path)) ?? undefined,
             unmerged: await unmergedCount(worktree.path, defaultRef),
+            remoteBranch: remote?.ref,
+            remoteBranchMerged: remote?.merged,
             prompt: await lastPrompt(worktree.path),
           })
         }
@@ -311,15 +322,17 @@ export class Workspace {
   /**
    * Remove a worktree and everything running in it.
    *
-   * Sessions are killed first, deliberately: a live shell holding the directory
-   * as its cwd leaves tmux reporting `/path (deleted)` and can make git's
-   * removal fail or leave the session pointed at a directory that no longer
-   * exists.
+   * Of what is destroyed locally, sessions go first, deliberately: a live shell
+   * holding the directory as its cwd leaves tmux reporting `/path (deleted)`
+   * and can make git's removal fail or leave the session pointed at a directory
+   * that no longer exists. Ahead of all of it, and ahead of the point of no
+   * return, goes the branch on the remote.
    */
   async removeWorktree(opts: {
     worktreeId: string
     force: boolean
     alsoDeleteBranch: boolean
+    alsoDeleteRemoteBranch: boolean
   }): Promise<void> {
     const { worktree, project } = await this.resolve(opts.worktreeId)
     if (worktree.isMain) throw new HttpError(400, 'refusing to remove the main worktree')
@@ -347,6 +360,40 @@ export class Workspace {
           'worktree-dirty',
           { dirty },
         )
+      }
+    }
+
+    /*
+     * The remote goes first, before anything local is destroyed.
+     *
+     * It is the only step here that leaves this machine, and so the only one
+     * that fails for reasons nothing local can predict: no network, a protected
+     * branch, a lease that does not hold. Failing here leaves the worktree, its
+     * sessions and its branch exactly as they were and puts git's own words in
+     * the dialog. Doing it last would have left the human looking at a closed
+     * dialog believing a branch was gone that is still on the remote.
+     *
+     * It also has to come before the local branch goes: the remote copy is
+     * found through `refs/heads/<branch>`, so deleting the branch first leaves
+     * nothing to look it up from and the remote branch quietly survives -- the
+     * test for "deletes the branch on the remote when asked" fails on exactly
+     * that when this block is moved down.
+     */
+    if (opts.alsoDeleteRemoteBranch && worktree.branch !== null) {
+      const defaultRef = await defaultBranchRef(project.root)
+      const target = (await remoteBranches(project.root, defaultRef)).get(worktree.branch)
+      // Nothing there is not a failure: someone else deleting it first is the
+      // outcome that was asked for.
+      if (target) {
+        try {
+          await deleteRemoteBranch(project.root, target)
+        } catch (err) {
+          throw new HttpError(
+            400,
+            `${target.ref} was not deleted, so nothing was removed: ${gitMessage(err)}`,
+            'remote-branch',
+          )
+        }
       }
     }
 

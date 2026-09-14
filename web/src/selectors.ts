@@ -122,6 +122,10 @@ export interface RemovalQuestions {
   branch: boolean
   /** The branch goes without being asked about: it holds nothing of its own. */
   branchGoesAnyway: boolean
+  /** The same question again, of the copy on the remote. */
+  remoteBranch: boolean
+  /** The copy on the remote goes unasked, for the same reason the branch does. */
+  remoteBranchGoesAnyway: boolean
 }
 
 export const removalQuestions = (worktree: Worktree): RemovalQuestions => {
@@ -131,10 +135,20 @@ export const removalQuestions = (worktree: Worktree): RemovalQuestions => {
    * question stands. A detached HEAD has no branch to ask about at all.
    */
   const unmerged = worktree.unmerged === undefined || worktree.unmerged > 0
+  /*
+   * And the same of the remote, read the same cautious way round: a branch is
+   * only spent when the server said so. `remoteBranch` absent is the whole
+   * answer for a branch that was never pushed -- there is nothing on a remote
+   * to ask about, so neither half is true and the dialog says nothing about it.
+   */
+  const onRemote = worktree.remoteBranch !== undefined
+  const remoteSpent = worktree.remoteBranchMerged === true
   return {
     discard: (worktree.dirty ?? 0) > 0,
     branch: worktree.branch !== null && unmerged,
     branchGoesAnyway: worktree.branch !== null && !unmerged,
+    remoteBranch: onRemote && !remoteSpent,
+    remoteBranchGoesAnyway: onRemote && remoteSpent,
   }
 }
 
@@ -214,6 +228,6 @@ export const removalAsks = (
   todos: WorktreeTodo[],
 ): boolean => {
   const questions = removalQuestions(worktree)
-  if (questions.discard || questions.branch) return true
+  if (questions.discard || questions.branch || questions.remoteBranch) return true
   return removalWarnings(worktree, sessions, todos).length > 0
 }

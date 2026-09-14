@@ -361,6 +361,131 @@ export const deleteBranch = async (root: string, branch: string, force = false):
   await git(root, 'branch', force ? '-D' : '-d', branch)
 }
 
+/** A branch's copy on a remote, as `refs/remotes/` records it. */
+export interface RemoteBranch {
+  /** What the remote-tracking ref is called here, e.g. `origin/ui`. */
+  ref: string
+  /** The remote a deletion is pushed to, e.g. `origin`. */
+  remote: string
+  /** What the branch is called *on* that remote, e.g. `refs/heads/ui`. */
+  remoteRef: string
+  /** `defaultRef` already contains its tip, so it holds nothing of its own. */
+  merged: boolean
+}
+
+const refLines = (out: string): string[] =>
+  out.split('\n').map((line) => line.trim()).filter((line) => line !== '')
+
+/**
+ * Every local branch's copy on a remote, keyed by the local branch name.
+ *
+ * Three `for-each-ref` calls for the whole repository rather than one per
+ * worktree: this runs on every poll, and a repository has one answer for all of
+ * its worktrees the same way its default branch does.
+ *
+ * Existence comes from `refs/remotes`, not from the configured upstream.
+ * Measured: after `git push --delete origin feat`, `%(upstream:short)` still
+ * answers `origin/feat` -- the upstream is config, and deleting the branch on
+ * the remote does not unset it -- so trusting it would offer to delete a branch
+ * that is already gone.
+ *
+ * The no-upstream fallback is for a branch pushed with a plain
+ * `git push origin <branch>`, which leaves a remote copy and no config saying
+ * so. It matches by name on exactly one remote; two remotes carrying the name
+ * is a guess, and this feeds a delete.
+ */
+export const remoteBranches = async (
+  root: string,
+  defaultRef: string | null,
+): Promise<Map<string, RemoteBranch>> => {
+  const found = new Map<string, RemoteBranch>()
+  try {
+    const present = new Set(
+      refLines(await git(root, 'for-each-ref', '--format=%(refname:short)', 'refs/remotes')),
+    )
+    if (present.size === 0) return found
+    // `--merged <ref>` is git's own "this tip is already in there", which is the
+    // same question `unmergedCount` asks with rev-list -- asked here of every
+    // remote branch at once. No default ref to compare with means nothing can
+    // be called spent.
+    const merged =
+      defaultRef === null
+        ? new Set<string>()
+        : new Set(
+            refLines(
+              await git(
+                root,
+                'for-each-ref',
+                '--merged',
+                defaultRef,
+                '--format=%(refname:short)',
+                'refs/remotes',
+              ),
+            ),
+          )
+    const heads = await git(
+      root,
+      'for-each-ref',
+      '--format=%(refname:short)%00%(upstream:short)%00%(upstream:remotename)%00%(upstream:remoteref)',
+      'refs/heads',
+    )
+    for (const line of refLines(heads)) {
+      const [branch, upstream, remote, remoteRef] = line.split('\0')
+      if (branch === undefined || branch === '') continue
+      if (upstream !== undefined && upstream !== '' && present.has(upstream)) {
+        found.set(branch, {
+          ref: upstream,
+          remote: remote ?? 'origin',
+          remoteRef: remoteRef === undefined || remoteRef === '' ? `refs/heads/${branch}` : remoteRef,
+          merged: merged.has(upstream),
+        })
+        continue
+      }
+      // A remote name cannot contain a slash, so the first one splits
+      // `origin/feature/login` into the remote and the branch on it.
+      const named = [...present].filter((ref) => ref.slice(ref.indexOf('/') + 1) === branch)
+      if (named.length !== 1) continue
+      const ref = named[0]!
+      found.set(branch, {
+        ref,
+        remote: ref.slice(0, ref.indexOf('/')),
+        remoteRef: `refs/heads/${branch}`,
+        merged: merged.has(ref),
+      })
+    }
+  } catch {
+    // A repository with no remotes, or a git that could not answer: no remote
+    // branch to offer, which is the same as having none.
+  }
+  return found
+}
+
+/**
+ * Delete a branch on its remote.
+ *
+ * `--force-with-lease` is load-bearing, not belt and braces. Whether the branch
+ * is spent was decided from `refs/remotes/...` as it stands on disk and nothing
+ * in this server fetches, so a push by somebody else since the last fetch is
+ * invisible here -- and "merged, so it goes without asking" would throw their
+ * commits away. The lease makes git compare the remote's real tip with the
+ * remote-tracking ref we judged and refuse when they differ; measured against a
+ * stale clone, that is `! [rejected] (delete) -> feat (stale info)` and a
+ * non-zero exit, with the branch still on the remote.
+ *
+ * `GIT_TERMINAL_PROMPT=0` and a timeout because this is the one git call here
+ * that touches the network, inside an HTTP request: an https remote with no
+ * cached credentials would otherwise wait forever for a username to be typed on
+ * a terminal nobody is looking at.
+ */
+export const deleteRemoteBranch = async (root: string, target: RemoteBranch): Promise<void> => {
+  await exec('git', ['push', '--force-with-lease', target.remote, '--delete', target.remoteRef], {
+    cwd: root,
+    maxBuffer: 8 * 1024 * 1024,
+    timeout: 30_000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  })
+}
+
 export const pruneWorktrees = async (root: string): Promise<void> => {
   await git(root, 'worktree', 'prune')
 }

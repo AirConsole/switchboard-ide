@@ -6,12 +6,14 @@ import {
   addWorktree,
   currentBranch,
   defaultWorktreeRoot,
+  deleteRemoteBranch,
   dirtyCount,
   ensureWorktreesIgnored,
   isValidBranchName,
   listRawWorktrees,
   listWorktrees,
   projectIdFor,
+  remoteBranches,
   removeWorktree,
   repoRoot,
   resolveDefaultBase,
@@ -19,7 +21,12 @@ import {
   worktreeIdFor,
   worktreePathFor,
 } from '../src/git/worktree.js'
-import { makeRepoWithCommit, type TempRepo } from './helpers/repo.js'
+import {
+  makeRepoWithCommit,
+  makeRepoWithRemote,
+  type TempRemoteRepo,
+  type TempRepo,
+} from './helpers/repo.js'
 
 describe('ids', () => {
   /*
@@ -217,5 +224,120 @@ describe('against a real repository', () => {
       branch: 'nested',
     })
     expect(await dirtyCount(repo.path)).toBe(0)
+  })
+})
+
+describe('against a real remote', () => {
+  let repo: TempRemoteRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithRemote()
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  /** A branch with `n` commits on it, pushed to origin with an upstream set. */
+  const pushBranch = async (name: string, commits = 1): Promise<void> => {
+    await repo.git('checkout', '-b', name, 'main')
+    for (let i = 0; i < commits; i += 1) {
+      await repo.git('commit', '--allow-empty', '-m', `${name} ${i}`)
+    }
+    await repo.git('push', '-u', 'origin', name)
+    await repo.git('checkout', 'main')
+  }
+
+  it('finds a pushed branch, and says whether the default branch has it', async () => {
+    await pushBranch('feature')
+    const before = await remoteBranches(repo.path, 'origin/main')
+    expect(before.get('feature')).toEqual({
+      ref: 'origin/feature',
+      remote: 'origin',
+      remoteRef: 'refs/heads/feature',
+      merged: false,
+    })
+
+    await repo.git('merge', '--no-ff', 'feature', '-m', 'merge feature')
+    await repo.git('push', 'origin', 'main')
+    expect((await remoteBranches(repo.path, 'origin/main')).get('feature')?.merged).toBe(true)
+  })
+
+  it('reads existence from the ref, because the upstream outlives the branch', async () => {
+    /*
+     * The measurement this whole design rests on. After the branch is deleted
+     * on the remote, `%(upstream:short)` still answers `origin/feature` -- the
+     * upstream is config, and deleting the branch does not unset it -- so a
+     * dialog built on the upstream would offer to delete a branch that is
+     * provably gone, and the delete would fail with "remote ref does not
+     * exist".
+     */
+    await pushBranch('feature')
+    await repo.git('push', 'origin', '--delete', 'feature')
+    expect(await repo.git('for-each-ref', '--format=%(upstream:short)', 'refs/heads/feature')).toContain(
+      'origin/feature',
+    )
+    expect((await remoteBranches(repo.path, 'origin/main')).has('feature')).toBe(false)
+  })
+
+  it('finds a branch pushed without an upstream, by its name on the one remote', async () => {
+    // `git push origin <branch>` leaves a copy on the remote and no config
+    // saying so, and that copy is still the one the human means.
+    await repo.git('checkout', '-b', 'stray', 'main')
+    await repo.git('commit', '--allow-empty', '-m', 'stray work')
+    await repo.git('push', 'origin', 'stray')
+    // Measured, and the reason the fallback is not hypothetical: a push with
+    // no `-u` really does leave no upstream -- `git branch --unset-upstream
+    // stray` here fails with "Branch 'stray' has no upstream information".
+    expect(
+      (await repo.git('for-each-ref', '--format=[%(upstream:short)]', 'refs/heads/stray')).trim(),
+    ).toBe('[]')
+    await repo.git('checkout', 'main')
+    expect((await remoteBranches(repo.path, 'origin/main')).get('stray')).toEqual({
+      ref: 'origin/stray',
+      remote: 'origin',
+      remoteRef: 'refs/heads/stray',
+      merged: false,
+    })
+  })
+
+  it('calls nothing spent when there is no default branch to compare with', async () => {
+    await pushBranch('feature', 0)
+    expect((await remoteBranches(repo.path, null)).get('feature')?.merged).toBe(false)
+  })
+
+  it('offers nothing in a repository with no remote', async () => {
+    const alone = await makeRepoWithCommit()
+    try {
+      expect((await remoteBranches(alone.path, 'main')).size).toBe(0)
+    } finally {
+      await alone.cleanup()
+    }
+  })
+
+  it('deletes the branch on the remote', async () => {
+    await pushBranch('feature')
+    const target = (await remoteBranches(repo.path, 'origin/main')).get('feature')!
+    await deleteRemoteBranch(repo.path, target)
+    expect(await repo.git('ls-remote', '--heads', 'origin', 'feature')).toBe('')
+  })
+
+  it('refuses to delete a remote branch that moved since the last fetch', async () => {
+    /*
+     * The lease, which is the whole safety of deleting a merged branch
+     * unasked. Merged-ness is read from `refs/remotes/...` on disk and nothing
+     * here fetches, so a colleague's push is invisible -- and without the lease
+     * this would delete their commits. Measured: git answers
+     * `! [rejected] (delete) -> feature (stale info)` and exits non-zero.
+     */
+    await pushBranch('feature')
+    const target = (await remoteBranches(repo.path, 'origin/main')).get('feature')!
+
+    const theirs = await repo.elsewhere()
+    await theirs.git('checkout', '-b', 'feature', 'origin/feature')
+    await theirs.git('commit', '--allow-empty', '-m', 'work this clone has not seen')
+    await theirs.git('push', 'origin', 'feature')
+
+    await expect(deleteRemoteBranch(repo.path, target)).rejects.toThrow(/stale info/)
+    expect(await repo.git('ls-remote', '--heads', 'origin', 'feature')).toContain('feature')
   })
 })
