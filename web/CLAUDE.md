@@ -193,19 +193,14 @@ The pieces, and why each is the way it is:
   worktree that is clean and merged: without them, a click removed an agent
   mid-turn with four todos behind it and asked nothing. Only a worktree that is
   clean, merged, running nothing and holding nothing goes without the dialog.
-- **The + is the group's last segment and it wears its noun.** A bare + at the
-  end of a run of tabs is Chrome's "one more tab", full stop — so a *scoped* one
-  gets read as the global one, and this bar already carries an **Open project**
-  at its far left that it was being confused with. It used to spend the word
-  only when a single project made the + unambiguous anyway, which is the case
-  that needed it least. Measured with four worktrees over two projects: every
-  name fits from 1150px with the word and from 1050px without it, so it is worth
-  exactly 100px of headroom — and it is dropped two ways, under
-  `@media (max-width: 1200px)` and at `data-tight` 2 and 3, because the strip
-  runs out of room by window *and* by tab count and `data-tight` only counts the
-  second (it measured 0 at every width here). By the time either fires the + is
-  one glyph between two tabs inside a visible slab, which scopes it anyway — the
-  word was buying clarity the shell now supplies.
+- **The + is the group's last segment, and a bare glyph.** It wore the noun
+  while it was the thing that opened the form, because a scoped + reads as
+  Chrome's global "one more tab" and this bar already carries an **Open project**
+  at its far left. The form is a tile at the end of that project's run of
+  windows now, so the + is *navigation*: it walks you there and hands over the
+  caret, and the tile it lands on says what it is in full. The word cost exactly
+  100px of headroom, measured — every name fit from 1150px with it and 1050px
+  without.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -337,13 +332,24 @@ and a two-pane tile is always two of them. At three units it is 90–107 columns
 from 1687px up, and 82 once the editor asks for exactly 80.
 
 **The files panel is one unit while it is only its tree**, and the new-worktree
-placeholder is one always. They are the two exceptions to "nothing may ask for
-one unit", and both are chrome rather than something you read code in: the floor
-of two exists to keep the 80-column promise, and that promise is about panes you
-read *code* in — a terminal, a diff, the editor. The placeholder holds a +, a
-label and a sentence, none of which is better for being 80 columns wide, and at
-two it was a whole empty pane parked at the end of a row you scroll precisely
-because there is never enough of it. A tree is chrome: names at a few levels of indent,
+tile is one always. They are the two exceptions to "nothing may ask for one
+unit", and both are chrome rather than something you read code in: the floor of
+two exists to keep the 80-column promise, and that promise is about panes you
+read *code* in — a terminal, a diff, the editor. The new-worktree tile holds two
+short fields and a button, none of which is better for being 80 columns wide.
+
+**That tile is the form itself, one per project, at the end of that project's
+run of windows** — see `NewWorktreePane`. It was a modal, and a modal is the
+wrong shape for it: a dialog interrupts to ask one question and goes away, where
+"and one more" is a standing offer, and the scrim hid the very windows you were
+naming a branch relative to. Sitting in the row it is a pane you can walk to —
+`PaneKind` includes `'add'`, cells are keyed by `addKey(projectId)`, and the
+Cmd+arrow stops are keyed by the cell rather than by a worktree, so the walk
+reaches it with no special case and the caret lands in the branch box. One per
+project is what lets it never ask which project it is for; the single tile at
+the far end of the row could not answer that once two were open, which is why it
+used to appear only when exactly one was. There is no Cancel, because there is
+nothing to cancel back to. A tree is chrome: names at a few levels of indent,
 its own floor 158px, against a unit that measures 336px at 2400px and 403px on a
 phone. So `panesOf` asks `filesContentOpen` before it asks `PANE_UNITS`, and a
 worktree browsing its files is three units where one reading a file is five —
@@ -353,10 +359,20 @@ true: a panel that asks for *less* than the floor cannot settle for less still
 on the window takes `capacity` rather than what it asked for, or a phone would
 show a tree down one half of the screen and nothing down the other.
 
-A panel asks and settles. Files wants three units but takes two rather than
-cost you Claude's pane on a window with only four — a narrower editor beats no
-agent — and only when even two will not fit is Claude dropped, which is the
-phone rule.
+A panel asks, and **Claude is what gives way**. Files wants three units; on a
+window with only four it does not settle for two, because two is what puts the
+half you are reading under the floor — measured at 1500px, the editor came to
+**70 columns** beside Claude and **82** with Claude hidden. It used to settle,
+on the argument that a narrower editor beats no agent; a diff you cannot read at
+80 columns is not a narrower editor, it is a broken one, and the agent is still
+there the moment you close the panel. `wants > least` in `panesOf` is exactly
+"this panel would have to be squeezed", since `least` is what the squeeze would
+give it. A panel that asked for no more than a pane's floor — todo, terminals,
+the files tree by itself — still settles beside Claude as it did.
+
+Measured across the band, with a file open: 1400px and 1500px (four units) hide
+Claude and give the panel the window; 1687px and up (five) show both. Every one
+of them lands the editor at 82 columns.
 
 Two consequences to preserve. **Every tile starts on a unit boundary**, so
 scrolling to `unit * pitch` lands a tile flush at the left edge and no tile is
@@ -865,6 +881,21 @@ is what makes the tab and the bar one sentence rather than two. It drifted
 twice: the tab went up for the strip's redesign and this stayed, then the ladder
 moved it again, and the gap grew 1.07 → 1.24 → 1.33 while this paragraph went on
 promising they matched.
+
+**The three panel names are white, and one white rule says which is open.**
+`TERMINAL`, `TODO` and `FILES` all read `--bone` — 11.59:1 on a quiet bar,
+7.48 on the lit one — and `.tile__toggle--on` carries a 2px `--bone` underline.
+It used to be the other way round: brightness said which panel was on screen
+and the underline agreed underneath, except that underline was `--rule-bright`
+at **1.25:1** and **1.24:1**, so it said nothing and the label carried it alone.
+Moving the job to the line is what let the labels become equally legible.
+
+That also gave the lit bar its hover back. It could not fill on hover while its
+labels were `--quiet-on`, because a lift big enough to see put them on 4.11:1 —
+so the pointer was said by the label brightening instead. White labels spend
+that trick, but `--bone` survives a lift where the grey did not, so the fill
+returns as `--level-lift`, a 10% wash of `--bone` over the lit surface: 1.28:1
+over it, label still at 5.83.
 
 Wearing the lit surface across a whole **toolbar** costs more than wearing it
 across a tab, and that cost is the interesting part. `--graphite` is 3.90:1 on it
