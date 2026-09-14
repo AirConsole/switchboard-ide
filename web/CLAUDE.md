@@ -62,18 +62,31 @@ interface.
 
 The pieces, and why each is the way it is:
 
+- **The strip names levels, it does not invent them.** `--sleeve` and
+  `--tab-head` are *aliases* — `var(--slab-raised)` and `var(--slab)` — not
+  values of their own. They were `#1e242f` and `#171d26`, which measured
+  1.014:1 and 1.010:1 from the tokens they now point at. Two colours that close
+  are one colour with two spellings: nobody resolves the step and nobody keeps
+  them in sync, so they drift the first time either end is retuned and the drift
+  is invisible until it is not. Folding them changed nothing on screen — the
+  project head went `#171d26` to `#171c24` — and improved two numbers, the head
+  against a segment from 1.33:1 to 1.35 and the seam from 1.23:1 to 1.24. The
+  tab ladder below is genuinely separate and stays: folding `--tab-hover` into
+  `--rule-bright` would drop the hover step from 1.16:1 to 1.07, which is most
+  of the hover.
+
 - **The bar has its own ground, `--bar`, and that was the whole contrast
   problem.** It used to be `--ink`, the page's, and the sleeve measured
   **1.08:1** against it — so the trough that says "these tabs are one project"
   was not visible at all, and every complaint about the strip followed from it.
   Chrome runs its frame against its toolbar at 1.33:1 *and* gives each group a
-  hue. `--bar` is `#0a0d12` and `--sleeve` `#1e242f`, which is 1.25:1, and the
-  shell's shape carries the rest.
+  hue. `--bar` is `#0a0d12` and `--sleeve` is `--slab-raised`, which is 1.23:1,
+  and the shell's shape carries the rest.
 - **The project is the group's first segment**, not a bead in front of it. It
   was a 22px fully-round pill, vertically centred, 14px clear of 32px tabs — a
   different shape at a different height with a gap after it, which is exactly
   what "dangling" was. Now it is the tabs' own height, flush against them, and
-  `--tab-head` is a rung **down** from the sleeve rather than up: 1.33:1 below a
+  `--tab-head` is a rung **down** from the sleeve rather than up: 1.35:1 below a
   segment, so the run reads *heading, then items* rather than five things you
   could click into. Uppercase and letterspaced at label size, because a heading
   is not a name you read one character at a time. Its × stays on it — closing a
@@ -234,7 +247,7 @@ The pieces, and why each is the way it is:
   one and where `--graphite` finally falls through the floor at 3.90. It used to
   be a single value across all three; raising the active tab is what bought the
   second, and it is the whole price of that rung. And the project head's ×
-  turns `--danger` with no ground under it: 5.59:1 on `--tab-head`.
+  turns `--danger` with no ground under it: 5.64:1 on `--tab-head`.
 
 ## The row is a grid of units
 

@@ -54,17 +54,32 @@
    * spend hue on identity, so the ground has to do the work alone.
    */
   --bar: #0a0d12;
-  --sleeve: #1e242f;
   /*
-   * The tabs' own ladder. Separate tokens rather than --rule and --rule-bright,
+   * The sleeve and the project's head are *aliases*, not values of their own.
+   *
+   * They were #1e242f and #171d26 -- 1.014:1 from --slab-raised and 1.010:1
+   * from --slab. Two colours that close are one colour with two spellings: no
+   * eye resolves the step and no hand keeps them in sync, so they drift apart
+   * the first time either end is retuned and nobody can see that they have.
+   * Naming the level the strip is actually sitting on says the true thing, and
+   * `grep` finds every surface at that depth in one search.
+   *
+   * Folding them changed nothing visible and two measurements improved: the
+   * project head reads 1.35:1 against a segment where it read 1.33, and the
+   * seam between segments 1.24:1 where it read 1.23.
+   */
+  --sleeve: var(--slab-raised);
+  --tab-head: var(--slab);
+  /*
+   * The tabs' own ladder. Separate values rather than --rule and --rule-bright,
    * which are borders and dividers all over the app and have no business moving
-   * when the strip is retuned.
+   * when the strip is retuned -- and, unlike the two above, genuinely distinct:
+   * --tab-hover folded into --rule-bright would drop the hover step over a
+   * resting tab from 1.16:1 to 1.07, which is most of the hover.
    */
   --tab-rest: #2b3341;
   --tab-hover: #323b49;
   --tab-on: #3b4657;
-  /* The project mark and the +: below the tabs rather than among them. */
-  --tab-head: #171d26;
   /*
    * What the quiet things on a tab are written in once it is the lit one.
    *
