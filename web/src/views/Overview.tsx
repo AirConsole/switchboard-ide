@@ -1798,18 +1798,6 @@ export const Overview = ({
                     <div
                       className="tile tile--project"
                       data-pane={paneKey(slot.key, 'project')}
-                      /*
-                       * Focusable so the walk can land here and leave again: the
-                       * stepper reads where it is from `activeElement`, and a
-                       * pane that refuses focus is one Cmd+arrow can never get
-                       * out of. It takes the focus itself rather than handing it
-                       * to the branch box, because arriving here means "show me
-                       * this project", not "type a branch name".
-                       */
-                      tabIndex={-1}
-                      ref={(el) => {
-                        if (el && scrollTo?.id === slot.key) el.focus({ preventScroll: true })
-                      }}
                       onFocus={() => onActivate(slot.key, 'project')}
                     >
                       {slot.data.group === null ? null : (
@@ -1820,6 +1808,7 @@ export const Overview = ({
                           sessions={sessions}
                           todos={todos}
                           activeId={active?.id ?? null}
+                          focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
                           onWake={onWake}
                           onReveal={onReveal}
                           onSleep={onSleep}

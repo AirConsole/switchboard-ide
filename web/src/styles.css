@@ -1656,17 +1656,19 @@ button {
 }
 
 /*
- * One scroller for the whole pane rather than one per list. Two lists, a form
- * and a button do not fit a short window, and a pane with three scrollbars in
- * it is worse than one that simply runs on.
+ * The lists take the slack and the foot below them does not move.
+ *
+ * A project can have twenty worktrees, and a form you have to scroll to is a
+ * form you stop using -- so the two things that are not a list are pinned under
+ * one that is.
  */
 .projpane__body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   flex: 1;
   min-height: 0;
-  padding: 14px 12px 16px;
+  padding: 14px 12px;
   overflow-y: auto;
 }
 
@@ -1710,13 +1712,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /*
-   * Its own ceiling, because on first run `ui.awake` seeds from live sessions
-   * -- so a machine with twenty worktrees and nothing running would otherwise
-   * put twenty rows in a one-unit column and push the form off the bottom.
-   */
-  max-height: 40vh;
-  overflow-y: auto;
 }
 
 .projpane__list .tab {
@@ -1725,31 +1720,65 @@ button {
   min-height: 30px;
 }
 
-/*
- * Closing is last, after everything you might actually be here to do, and it
- * says what it does not touch -- the question the dialog then asks is about
- * what is *running*, not about the directory.
- */
-.projpane__section--close {
-  gap: 6px;
-  margin-top: 2px;
-  padding-top: 14px;
+.projpane__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: none;
+  padding: 12px;
   border-top: 1px solid var(--rule);
 }
 
-.projpane__note {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--graphite-dim);
+/*
+ * Shaped like a tab, because every other control in this pane is one and this
+ * action used to live in the strip -- a × on the project's name. Full width
+ * rather than a pill, since it is the only thing on its line.
+ */
+.projpane__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-height: 30px;
+  border-radius: 9px;
+  background: var(--level-object);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--graphite);
 }
 
-/* --- the new-worktree form, a section of that pane ---------------------- */
+.projpane__close:hover {
+  background: var(--level-hover);
+  /* The red the project's × turned under the pointer, said on the thing itself
+     now rather than on a glyph beside its name. */
+  color: var(--danger);
+}
+
+/* --- the new-worktree form, the foot of that pane ----------------------- */
 
 .addform {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
+}
+
+.addform__label {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.addform__row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.addform__row .field__input {
+  flex: 1;
+  min-width: 0;
 }
 
 .addform__error {
@@ -1759,21 +1788,12 @@ button {
   color: var(--danger);
 }
 
-.addform__foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 /*
  * Where it will land, which is the one thing about a new worktree you cannot
- * work out from the branch name. It takes whatever the button leaves and
- * ellipsises from the left, because the tail -- the directory being made -- is
- * the half worth reading.
+ * work out from the branch name. It ellipsises from the left, because the tail
+ * -- the directory being made -- is the half worth reading.
  */
 .addform__where {
-  flex: 1;
-  min-width: 0;
   direction: rtl;
   text-align: left;
   overflow: hidden;

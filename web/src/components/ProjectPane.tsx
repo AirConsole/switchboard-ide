@@ -11,6 +11,8 @@ export interface ProjectPaneProps {
   sessions: Session[]
   todos: WorktreeTodo[]
   activeId: string | null
+  /** Bumped when the row navigates here, to hand the caret to the branch box. */
+  focus: number | null
   onWake: (worktreeId: string) => void
   onReveal: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
@@ -44,6 +46,7 @@ export const ProjectPane = ({
   sessions,
   todos,
   activeId,
+  focus,
   onWake,
   onReveal,
   onSleep,
@@ -113,25 +116,27 @@ export const ProjectPane = ({
         </section>
       )}
 
-      <section className="projpane__section">
-        <h3 className="projpane__heading">New worktree</h3>
-        <NewWorktreeForm project={project} onCreated={onCreated} />
-      </section>
-
+    </div>
+    {/*
+      * The two things that are not a list are pinned under it.
+      *
+      * The lists are what grows -- a project can have twenty worktrees -- and a
+      * form you have to scroll to is a form you stop using. So the lists take
+      * the slack and these two stay where they are, in the order you reach for
+      * them: making one is the everyday thing, closing the project the last.
+      */}
+    <div className="projpane__foot">
+      <NewWorktreeForm project={project} focus={focus} onCreated={onCreated} />
       {/*
-        * Closing the project is last and on its own, below everything you might
-        * be here to do. It used to be a × on the project's name in the strip,
-        * one mis-click from the × that merely sleeps a worktree -- the same
-        * glyph for a keystroke you undo by clicking again and one you do not.
+        * Shaped like a tab, because that is what this pane's other controls
+        * are and the strip is where this action used to live -- a × on the
+        * project's name, one mis-click from the × that merely sleeps a
+        * worktree. It turns --danger under the pointer: the same red that ×
+        * did, said on the thing itself rather than on a glyph beside it.
         */}
-      <section className="projpane__section projpane__section--close">
-        <button className="btn btn--quiet" onClick={() => onCloseProject(project.id)}>
-          Close project
-        </button>
-        <p className="projpane__note">
-          Takes its windows off the row. Nothing on disk changes.
-        </p>
-      </section>
+      <button className="projpane__close" onClick={() => onCloseProject(project.id)}>
+        Close project
+      </button>
     </div>
   </div>
 )
