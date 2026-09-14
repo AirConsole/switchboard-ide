@@ -90,11 +90,10 @@
   --quiet-on: #b3bac6;
 
   /*
-   * The strip's own names for two of those levels, kept because the comments
-   * around the tab strip are written in them. Aliases, never values.
+   * The strip's own name for one of those levels, kept because the comments
+   * around the tab strip are written in it. An alias, never a value.
    */
   --sleeve: var(--level-raised);
-  --tab-head: var(--level-panel);
 
   /*
    * Three steps of text, and every one of them readable.
@@ -144,7 +143,15 @@
    */
   --diff-add: #6bd968;
   --diff-del: #ff6b6b;
-  --danger: #e5707a;
+  /*
+   * Lifted from #e5707a when the project's head joined the tabs at
+   * --level-object: the × it turns on hover measured 4.19:1 there, under the
+   * floor, where on the old head it was 5.64. --level-object is the lightest
+   * ground any red in this interface lands on, so clearing it at 4.82 clears
+   * every other -- the dialogs and the todo list, both on --level-panel, go
+   * 5.64 to 6.49. One red, raised, rather than a second red for one control.
+   */
+  --danger: #eb8087;
 
   /*
    * A source file is content in exactly the same sense as a patch, so it gets
@@ -480,12 +487,17 @@ button {
  * gap after it, which is what "dangling" was. Now it is the tabs' own height,
  * flush against them, wearing the shell's left curve.
  *
- * Down from the sleeve rather than up, which is the opposite of what it did
- * before and is what keeps it from reading as a tab: 1.33:1 below a segment, so
- * the run reads heading then items rather than five things you could click
- * into. Set at label size, uppercase and letterspaced, because a heading is not
- * a name you read one character at a time. Its × stays with it -- closing a
- * project is the project's own action and belongs on the project's own segment.
+ * It wears the segments' own --level-object, and that is a correction. It was a
+ * rung *below* them, on the argument that a heading should sit under the things
+ * it heads -- but the head and the + are the two segments at the ends of the
+ * slab, and at #171c24 they measured 1.14:1 against the bar behind them. They
+ * dissolved into it, so the shape the slab is supposed to be lost both of its
+ * ends and read as the tabs alone. At --level-object that is 1.53:1.
+ *
+ * What separates it from a tab is no longer the fill: it is set at label size,
+ * uppercase and letterspaced, because a heading is not a name you read one
+ * character at a time. Its × stays with it -- closing a project is the
+ * project's own action and belongs on the project's own segment.
  */
 .tabgroup__pill {
   display: flex;
@@ -494,7 +506,7 @@ button {
   flex: none;
   align-self: stretch;
   padding: 0 4px 0 12px;
-  background: var(--tab-head);
+  background: var(--level-object);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -561,7 +573,7 @@ button {
   flex: none;
   align-self: stretch;
   padding: 0 11px 0 9px;
-  background: var(--tab-head);
+  background: var(--level-object);
   font-size: 11px;
   line-height: 1;
   /* --graphite-dim measures 3.40:1 on --sleeve, well under the floor. */
@@ -1282,7 +1294,7 @@ button {
 .tile:hover {
   border-top-color: var(--rule-bright);
   border-right-color: var(--rule-bright);
-  border-bottom-color: var(--rule-bright);
+  border-bottom-color: var(--quiet-on);
 }
 
 /* State is carried by the left rail, matching the tabs. Only "waiting" is
@@ -1330,8 +1342,12 @@ button {
   cursor: pointer;
 }
 
+.tile__bar {
+  background: var(--level-object);
+}
+
 .tile__bar:hover {
-  background: var(--level-raised);
+  background: var(--level-hover);
 }
 
 /*
@@ -1551,7 +1567,7 @@ button {
  */
 .tile__project {
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1562,7 +1578,7 @@ button {
 
 .tile__slash {
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   /* Pulled in on both sides: the label's 8px gap is the spacing between two
      names, and this is punctuation inside one address. */
   margin: 0 -3px;
@@ -1591,7 +1607,7 @@ button {
 
 .tile__branch {
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1612,7 +1628,7 @@ button {
   min-width: 0;
   padding-right: 10px;
   font-size: 11px;
-  color: var(--graphite-dim);
+  color: var(--graphite);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

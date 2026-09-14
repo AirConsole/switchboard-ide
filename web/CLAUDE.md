@@ -69,7 +69,7 @@ The pieces, and why each is the way it is:
   rest on a surface: a tab, a segment, a scrollbar thumb) and `--level-lit` (the
   one you are in, wherever you are — the tab, and a selected row in the files or
   changes list, which is the same statement). `grep -- --level-` finds every
-  surface at a given depth. `--sleeve` and `--tab-head` survive as aliases
+  surface at a given depth. `--sleeve` survives as an alias
   because the comments around the strip are written in them.
 
   This replaced twelve grey tokens describing about five rungs. The names used
@@ -119,11 +119,15 @@ The pieces, and why each is the way it is:
   was a 22px fully-round pill, vertically centred, 14px clear of 32px tabs — a
   different shape at a different height with a gap after it, which is exactly
   what "dangling" was. Now it is the tabs' own height, flush against them, and
-  `--tab-head` is a rung **down** from the sleeve rather than up: 1.35:1 below a
-  segment, so the run reads *heading, then items* rather than five things you
-  could click into. Uppercase and letterspaced at label size, because a heading
-  is not a name you read one character at a time. Its × stays on it — closing a
-  project is the project's own action.
+  it wears the segments' own `--level-object`. It was a rung *below* them, and
+  that was wrong for a measured reason: the head and the `＋` are the two
+  segments at the **ends** of the slab, and at `#171c24` they were **1.14:1**
+  against the bar behind them — they dissolved into it, so the shape lost both
+  its ends and read as the tabs alone. At `--level-object` it is **1.53:1**.
+  What separates the head from a tab is no longer the fill but the type:
+  uppercase and letterspaced at label size, because a heading is not a name you
+  read one character at a time. Its × stays on it — closing a project is the
+  project's own action.
 - **The tab you are in is `--level-lit`**, the lightest thing on the strip, and one
   rung higher than it was: 2.26:1 over the bar where it used to be 1.66. That
   rung is not free, and the price is one value. `--graphite` is what every quiet
@@ -278,7 +282,12 @@ The pieces, and why each is the way it is:
   one and where `--graphite` finally falls through the floor at 3.90. It used to
   be a single value across all three; raising the active tab is what bought the
   second, and it is the whole price of that rung. And the project head's ×
-  turns `--danger` with no ground under it: 5.64:1 on `--tab-head`.
+  turns `--danger` with no ground under it — and `--danger` itself was lifted
+  `#e5707a` → `#eb8087` when the head joined the tabs, because on
+  `--level-object` the old red measured **4.19:1**, under the floor. That is the
+  lightest ground any red here lands on, so clearing it at 4.82 clears the rest:
+  the dialogs and the todo list, both on `--level-panel`, go 5.64 → 6.49. One
+  red raised, rather than a second red for one control.
 
 ## The row is a grid of units
 
@@ -797,6 +806,19 @@ the bar segments and the pane bodies carry — so a terminal tab reports
 when the pair is unchanged, and that is not a nicety: `activeId` was a string, so
 rewriting it was free, while an object is not, and this now fires on every focus
 move *within* a pane.
+
+**One surface means "not this one", everywhere.** `--level-object` is the fill
+of an inactive tab, of the project's head, of `＋ Worktree`, and of every window
+bar that is not the one you are in. `--level-lit` is the exception in all four
+places. The value in between that these were reaching for does not exist: going
+darker than `--level-object` costs the 2px seam (1.24:1 → 1.08 at `#222936`) and
+puts `--graphite-dim` under the floor on the bars (4.47), while making the head
+read *worse* against the bar, which was the complaint that started it.
+
+Note what it costs: the bar that says which window you are in went from 1.79:1
+over the others to **1.33:1** — the same step the strip uses between a resting
+tab and the lit one. It is legible because the tab directly above it says the
+same thing.
 
 **The window you are in says so at both ends.** The strip makes its tab the lit
 one; `.tile--current` gives that window's own bar the **same** `--level-lit`,
