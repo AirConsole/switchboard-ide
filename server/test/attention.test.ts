@@ -76,15 +76,125 @@ describe('looksLikePrompt', () => {
      * Measured on a live worktree: Claude wrote "Which way do you want to go?"
      * in prose, that matched the tool-permission dialog's wording, and the
      * window stayed amber while the agent worked two rows from the bottom.
+     *
+     * That exact phrase no longer matches anything -- `Do you (want to|trust)`
+     * was deleted, for the second measured reason below -- so the fixture uses
+     * a different line of ordinary English Claude writes, one a surviving
+     * pattern does still catch. Otherwise this passes whether or not the turn
+     * scoping is there, which is a test that guards nothing.
      */
     const prose = screen(
-      '● Which way do you want to go?',
+      '● Then press enter to continue, and it will pick up where it left off.',
       '✻ Baked for 2s · done 3:01 PM',
       '● Reading files',
       INPUT,
     )
     expect(looksLikePrompt(prose)).toBe(false)
   })
+
+  it('tells a live question from the same question answered', () => {
+    /*
+     * The bug this whole deletion is for, measured twice on 2026-09-14.
+     *
+     * An AskUserQuestion stays on screen after it is answered, inside the same
+     * turn -- so scoping to the turn, which fixed the prose case above, cannot
+     * help here. In the name-and-app worktree the question below was answered
+     * at 07:56:33 and the window stayed amber until the turn's done line landed
+     * at 07:59:21: three minutes of "needs you" over an agent that was
+     * deploying. `Do you (want to|trust)` was the only pattern that matched.
+     *
+     * Verbatim from the mirror, which renders the answered block as a `●`
+     * opener and a `⎿` continuation carrying the question's own text.
+     */
+    const answered = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '● User declined to answer questions',
+      '  ⎿  · An answered AskUserQuestion leaves "How do you want to play the service',
+      '     worker?" on screen. How should I narrow it? (Drop the phrase pattern /',
+      '     Demote it to a footer / Require a menu with it)',
+      '',
+      '  Finding snapshots containing the dialog',
+      '* Whirring… (3m 15s · ↓ 13.1k tokens · thinking)',
+      INPUT,
+      HINT,
+    )
+    expect(looksLikePrompt(answered)).toBe(false)
+
+    /*
+     * The same question while it is still up, measured in this IDE's own
+     * window. This half is why the deletion is safe and the pair is why this
+     * test is worth its runtime: the wording is identical in both screens, so
+     * the only thing separating them is the menu -- a glyph Claude never
+     * prints, which disappears the moment the question is answered.
+     */
+    const asking = screen(
+      '✻ Baked for 2s · done 3:01 PM',
+      '● An answered AskUserQuestion leaves "How do you want to play the service',
+      '  worker?" on screen. How should I narrow it?',
+      '',
+      '❯ 1. Drop the phrase pattern',
+      '  2. Demote it to a footer',
+      '  3. Require a menu with it',
+      '',
+      'Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel',
+    )
+    expect(looksLikePrompt(asking)).toBe(true)
+  })
+
+  it('still catches the write-permission dialog by its menu', () => {
+    /*
+     * Claude Code v2.1.270, verbatim: the phrase and the numbered menu are both
+     * there, which is why deleting the phrase costs nothing here.
+     */
+    const permission = screen(
+      '✻ Cooked for 3s · done 8:04 AM',
+      '❯ create a file b.txt containing the word bye',
+      '● Write(b.txt)',
+      '─────────────────────────────',
+      ' Create file',
+      ' b.txt',
+      ' Do you want to create b.txt?',
+      ' ❯ 1. Yes',
+      '   2. Yes, and switch to accept edits (auto-approve file edits) for this',
+      '      session (shift+tab)',
+      '   3. No',
+      '',
+      ' Esc to cancel · Tab to amend',
+      '',
+      '',
+      '',
+    )
+    expect(looksLikePrompt(permission)).toBe(true)
+  })
+
+  it('still catches the trust-folder dialog, which no longer says "trust" first', () => {
+    /*
+     * Claude Code v2.1.270, verbatim, and written the way `tailText` delivers
+     * it: the emulator pops trailing blank rows (mirror.ts), so the dialog's
+     * own footer is the last line of the screen even though tmux's capture
+     * shows twenty blank rows under it.
+     *
+     * The wording moved -- it asks "Is this a project you created or one you
+     * trust?" now, so the deleted phrase would not have seen it either -- and
+     * its options are not numbered, so `❯ N.` does not see it. What holds it up
+     * is `Enter to confirm` and, because of that trimming, the `Esc to cancel`
+     * footer as well. Two patterns, so this is a characterisation of a real
+     * dialog rather than a guard on one line; it fails only if both go.
+     */
+    const trust = screen(
+      ' Quick safety check: Is this a project you created or one you trust? (Like your own',
+      " code, a well-known open source project, or work from your team).",
+      '',
+      " Claude Code'll be able to read, edit, and execute files here.",
+      '',
+      ' ❯ No, exit',
+      '   Yes, I trust this folder',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    )
+    expect(looksLikePrompt(trust)).toBe(true)
+  })
+
 
   it('does not read a bare chevron as a question', () => {
     // The idle input box draws one too, and a wrong "needs you" is worse than

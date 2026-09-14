@@ -78,11 +78,22 @@ is the point:
    dialog's sat 11, each option carrying a paragraph, so the old 12-row window
    caught both by a row or two and one more line of text would have lost them.
    The turn is everything below the last `· done HH:MM`, because the screen is
-   a scrollback and the patterns are not all safe on the turns above it: two of
-   them are ordinary English, and a live worktree's `Which way do you want to
+   a scrollback and the patterns are not all safe on the turns above it:
+   several of them are ordinary English, and a live worktree's `Which way do you want to
    go?` matched the permission dialog's "Do you want to …" and held a tile amber
-   through a turn the spinner was visibly running. A dialog Claude is showing
-   now is always below the marker — measured on a real permission dialog whose
+   through a turn the spinner was visibly running. That phrase pattern is gone
+   now, because scoping to the turn could not save it either: an
+   AskUserQuestion **stays on screen after it is answered**, inside the same
+   turn, and the question Claude asks is usually phrased "do you want to …" --
+   measured, three minutes of amber over an agent that was deploying. Nothing
+   was lost by deleting it, measured on v2.1.270: the permission dialog draws
+   `❯ 1. Yes` beside the phrase, and the trust dialog no longer contains the
+   phrase at all, asking "Is this a project you created or one you trust?"
+   over options that are not numbered -- so `❯ N.` misses it too, and what
+   holds it up is `Enter to confirm` together with the `Esc to cancel` footer,
+   which lands in the footer window because `tailText` pops trailing blank
+   rows. A dialog
+   Claude is showing now is always below the marker — measured on a real permission dialog whose
    question sat on line 28 of 34 with the previous turn's done line on 12. Weak
    patterns live in `PROMPT_FOOTERS` and are trusted only on the last three
    lines. `^1. Yes` was dropped outright: it is what Claude writes when

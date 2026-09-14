@@ -34,17 +34,34 @@ export const REPAINT_QUIET_MS = 500
  * text loses them.
  *
  * They are *not* safe over the whole screen, which is where they used to be
- * read. Two of them are ordinary English -- `thisTurn` below has the measured
+ * read. Some of them are ordinary English -- `thisTurn` below has the measured
  * case -- and a screen is a scrollback, so every turn Claude has finished is
  * still on it. The `❯` glyph is the exception either way: it belongs to the
  * input box and to a dialog's selected row, and Claude never prints it.
+ *
+ * `Do you (want to|trust)` used to head this list and is gone, because scoping
+ * to the turn was not enough for it: a dialog that has been *answered* stays on
+ * screen inside the same turn, and the phrase is one Claude itself writes.
+ * Measured on a live worktree -- an AskUserQuestion reading `How do you want to
+ * play the service worker?` was answered at 07:56:33 and the window stayed
+ * amber until the turn's done line landed at 07:59:21, three minutes of "needs
+ * you" over an agent that was deploying.
+ *
+ * Deleting it costs nothing, which was measured too, on Claude Code v2.1.270:
+ *   - the write-permission dialog says `Do you want to create b.txt?` *and*
+ *     draws `❯ 1. Yes`, so `❯ N.` already has it;
+ *   - the trust-folder dialog no longer contains the phrase at all -- it asks
+ *     `Is this a project you created or one you trust?` over `❯ No, exit`,
+ *     which is not even numbered, and is caught by `Enter to confirm`;
+ *   - an AskUserQuestion draws `❯ 1. ...` under
+ *     `Enter to select · ↑/↓ to navigate · Esc to cancel`, so three of these
+ *     patterns hold it up while it is live and none once it is answered.
  */
 const PROMPT_PATTERNS: RegExp[] = [
   // Claude Code's modal dialogs (tool permission, trust folder, /login, ...)
   // all render this footer. Observed verbatim on the trust-folder dialog; the
   // resting input box shows the mode hint instead, so it does not collide.
   /Enter to (?:confirm|select|continue)\b/i,
-  /Do you (?:want to|trust)\b/i,
   // Plan approval, verbatim from the dialog ExitPlanMode raises.
   /Would you like to proceed\?/i,
   /shift\+tab to approve\b/i,
@@ -118,7 +135,9 @@ export const looksBusy = (text: string): boolean => {
  * and prose collides with the dialogs' wording -- measured on a live worktree,
  * `Which way do you want to go?` matched the tool-permission dialog's
  * `Do you want to ...` and left the tile amber while the agent was visibly
- * working two rows from the bottom, twenty rows below that line.
+ * working two rows from the bottom, twenty rows below that line. (That pattern
+ * is gone now, for a second measured reason the scoping could not fix; the
+ * remaining ones are ordinary English too, and this is what keeps them honest.)
  *
  * A dialog Claude is showing *now* is always under the marker, so nothing has
  * to be given up to exclude the text above it -- in particular not the breadth
