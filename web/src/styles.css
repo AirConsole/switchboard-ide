@@ -1636,15 +1636,22 @@ button {
   height: 100%;
 }
 
+/*
+ * The project's name, at the size a heading wants rather than the size a tile
+ * bar wants. This pane is the only cell in the row whose bar is not a toolbar
+ * -- there is nothing beside the name to keep small for -- and it is the thing
+ * you scroll the row looking for.
+ */
 .projpane__bar {
   display: flex;
   align-items: center;
   flex: none;
   height: 35px;
-  padding: 0 10px;
+  padding: 0 12px;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 19px;
   font-weight: 500;
+  letter-spacing: -0.01em;
   color: var(--bone);
   white-space: nowrap;
   overflow: hidden;
@@ -1779,6 +1786,26 @@ button {
 .addform__row .field__input {
   flex: 1;
   min-width: 0;
+}
+
+/*
+ * Which of the two things `git worktree add` does this name will do.
+ *
+ * The surprising answer -- a name you thought was new turning out to exist, so
+ * what gets checked out is somebody's work rather than a fresh branch -- is
+ * said by going *bright*, not by going amber. Amber means an agent is blocked
+ * on you and nothing else; this is a form telling you what a button will do,
+ * which is not a state you scan a row of agents for. --graphite-dim to --bone
+ * is the 1.92:1 step the interface already uses to say "read this one".
+ */
+.addform__fate {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--graphite-dim);
+}
+
+.addform__fate--on {
+  color: var(--bone);
 }
 
 .addform__error {

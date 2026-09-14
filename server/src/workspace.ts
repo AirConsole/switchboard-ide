@@ -31,6 +31,7 @@ import {
   ensureWorktreesIgnored,
   initRepository,
   isGitRepo,
+  branchExists,
   isValidBranchName,
   listWorktrees,
   projectIdFor,
@@ -281,6 +282,29 @@ export class Workspace {
     this.store.removeProject(id)
     this.store.removeTodosFor(mine)
     this.invalidate()
+  }
+
+  /**
+   * What creating a worktree on this name would do, for the form to say so.
+   *
+   * `git worktree add` means two different things depending on the answer --
+   * check out a branch that is already there, or cut a new one from the default
+   * -- and the form asks for a name without saying which it will be. It used to
+   * carry a "Branch from" field that made the second case explicit; this tells
+   * you instead of asking, which is the same information for none of the width.
+   */
+  async describeBranch(
+    projectId: string,
+    name: string,
+  ): Promise<{ valid: boolean; exists: boolean }> {
+    const project = this.store.project(projectId)
+    if (!project) throw new HttpError(404, 'no such project')
+    const branch = name.trim()
+    if (branch === '') return { valid: false, exists: false }
+    if (!(await isValidBranchName(project.root, branch))) {
+      return { valid: false, exists: false }
+    }
+    return { valid: true, exists: await branchExists(project.root, branch) }
   }
 
   async createWorktree(opts: {

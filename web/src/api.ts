@@ -84,6 +84,11 @@ export const api = {
     request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
+  /** Whether that branch is already there, so the form can say what it will do. */
+  describeBranch: (projectId: string, name: string) =>
+    request<{ valid: boolean; exists: boolean }>(
+      `/api/projects/${projectId}/branch?name=${encodeURIComponent(name)}`,
+    ),
   createWorktree: (body: { projectId: string; branch: string; base?: string; startClaude: boolean }) =>
     request<{ worktree: Worktree; sessions: Session[] }>('/api/worktrees', {
       method: 'POST',
