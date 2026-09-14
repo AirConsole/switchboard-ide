@@ -472,18 +472,48 @@ export const remoteBranches = async (
  * stale clone, that is `! [rejected] (delete) -> feat (stale info)` and a
  * non-zero exit, with the branch still on the remote.
  *
- * `GIT_TERMINAL_PROMPT=0` and a timeout because this is the one git call here
- * that touches the network, inside an HTTP request: an https remote with no
+ * A lease can also be refused over a branch that is *already* gone, and that is
+ * not a failure: the tracking ref outlives a deletion made in another checkout
+ * until something fetches or prunes, so git compares "I expect <sha>" against a
+ * ref that is not there and answers `(stale info)` for both cases alike --
+ * measured. So a rejection is checked against the remote itself, and only a
+ * branch that is still standing is reported as one. Asking the remote is one
+ * more round trip on a path that has already failed, and it is the difference
+ * between "somebody pushed to this, look again" and a worktree that cannot be
+ * removed because its branch was tidied up somewhere else.
+ *
+ * `GIT_TERMINAL_PROMPT=0` and a timeout because these are the git calls here
+ * that touch the network, inside an HTTP request: an https remote with no
  * cached credentials would otherwise wait forever for a username to be typed on
  * a terminal nobody is looking at.
  */
+const NETWORK_GIT = {
+  maxBuffer: 8 * 1024 * 1024,
+  timeout: 30_000,
+  env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+}
+
 export const deleteRemoteBranch = async (root: string, target: RemoteBranch): Promise<void> => {
-  await exec('git', ['push', '--force-with-lease', target.remote, '--delete', target.remoteRef], {
-    cwd: root,
-    maxBuffer: 8 * 1024 * 1024,
-    timeout: 30_000,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-  })
+  try {
+    await exec(
+      'git',
+      ['push', '--force-with-lease', target.remote, '--delete', target.remoteRef],
+      { cwd: root, ...NETWORK_GIT },
+    )
+  } catch (err) {
+    // Anything but an empty answer leaves the push's refusal standing, the
+    // unreadable remote included: a question we could not ask is not an answer
+    // of "gone", and the push's own words are the better thing to show either
+    // way.
+    const standing = await exec(
+      'git',
+      ['ls-remote', '--heads', target.remote, target.remoteRef],
+      { cwd: root, ...NETWORK_GIT },
+    )
+      .then(({ stdout }) => stdout.trim() !== '')
+      .catch(() => true)
+    if (standing) throw err
+  }
 }
 
 export const pruneWorktrees = async (root: string): Promise<void> => {

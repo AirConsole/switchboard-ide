@@ -314,6 +314,26 @@ describe('against a real remote', () => {
     }
   })
 
+  it('is content with a branch somebody else already deleted', async () => {
+    /*
+     * The lease cannot tell the two stale cases apart, and one of them is not a
+     * failure. A deletion made in another checkout leaves this one's tracking
+     * ref standing until something fetches or prunes, so git compares "I expect
+     * <sha>" against a ref that is not there and answers `(stale info)` --
+     * measured, the same words as a branch somebody pushed to. Reporting that
+     * as a failure made a worktree unremovable because its branch had been
+     * tidied up somewhere else, which is the outcome that was asked for.
+     */
+    await pushBranch('feature')
+    const target = (await remoteBranches(repo.path, 'origin/main')).get('feature')!
+
+    const theirs = await repo.elsewhere()
+    await theirs.git('push', 'origin', '--delete', 'feature')
+    expect(await repo.git('for-each-ref', '--format=x', 'refs/remotes/origin/feature')).toContain('x')
+
+    await expect(deleteRemoteBranch(repo.path, target)).resolves.toBeUndefined()
+  })
+
   it('deletes the branch on the remote', async () => {
     await pushBranch('feature')
     const target = (await remoteBranches(repo.path, 'origin/main')).get('feature')!
