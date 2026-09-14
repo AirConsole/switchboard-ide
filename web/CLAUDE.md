@@ -763,9 +763,16 @@ and green that it has come to rest, and none of the three is either -- so the on
 state any of them can be in, RUN NEXT lit, is the pill filled in reverse. DELETE
 is the only red in the panel and only on hover (`--danger`, 6.49:1 here). MOVE TO
 carries a caret, which is what says it opens a list rather than acting on the
-spot; its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
-with a heading per project when more than one is open -- two projects can each
-have a `main`.
+spot; its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown.
+
+**Its list is this project's worktrees and no others.** A todo is work on a
+repository, and another repository's worktrees are not somewhere it could be
+done -- offering every worktree the IDE knows made the list longer with the
+answers you would never pick, and made it need a heading per project to tell two
+`main`s apart. Scoped, the headings go with it: every row belongs to the project
+the todo is already in, so there is nothing for a label to disambiguate. `App`
+builds the targets per project id and a tile takes its own; a project with one
+worktree leaves the list empty and MOVE TO does not draw.
 
 **A moved todo is not a sent one.** From this pane a queued todo leaving looks
 identical whether the server typed it into Claude or you moved it elsewhere, and

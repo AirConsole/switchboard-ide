@@ -2761,28 +2761,6 @@ button {
   border-color: var(--rule-bright);
 }
 
-/*
- * A project's worktrees inside a menu that lists more than one project's.
- *
- * The heading is the tab strip's project head laid flat: the same uppercase,
- * letterspaced label, because a heading is not a name you read one character at
- * a time. It is drawn only when there is another project to tell it apart
- * from -- with one project every row belongs to it and the word is furniture.
- */
-.menu__group {
-  display: flex;
-  flex-direction: column;
-}
-
-.menu__label {
-  padding: 6px 10px 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--graphite);
-}
-
 /* A tab in the strip stands on the strip's floor, which is where its square
    shoulders and its feet come from. Nothing here stands on anything: these are
    loose tabs in a list, so they take the fully round shape a hovered tab has,
