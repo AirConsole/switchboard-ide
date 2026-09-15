@@ -328,6 +328,34 @@ describe('describeBranch', () => {
     })
   })
 
+  it('refuses a branch some worktree already has checked out', async () => {
+    /*
+     * A branch is checked out in one worktree at a time. Without this the form
+     * happily offers Create and git refuses after the click, with "already used
+     * by worktree at ..." -- and the path in that message is the useful half,
+     * so it is what comes back rather than a bare boolean.
+     */
+    const projectId = (await workspace.openProject(repo.path)).id
+    const made = await workspace.createWorktree({ projectId, branch: 'taken' })
+
+    const answer = await workspace.describeBranch(projectId, 'taken')
+    expect(answer.exists).toBe(true)
+    expect(answer.usedBy).toBe(made.path)
+
+    // The branch it was cut from is checked out by the main worktree, which is
+    // just as much in use.
+    expect((await workspace.describeBranch(projectId, 'main')).usedBy).toBe(repo.path)
+  })
+
+  it('leaves usedBy off a branch nothing has checked out', async () => {
+    const projectId = (await workspace.openProject(repo.path)).id
+    await repo.git('branch', 'parked')
+    expect(await workspace.describeBranch(projectId, 'parked')).toEqual({
+      valid: true,
+      exists: true,
+    })
+  })
+
   it('does not call a name git would refuse valid', async () => {
     const projectId = (await workspace.openProject(repo.path)).id
     // Same rules `createWorktree` enforces, asked before rather than after.

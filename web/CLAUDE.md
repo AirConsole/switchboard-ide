@@ -343,6 +343,17 @@ than claiming the branch is new). The line under the field reads *"fourth"
 exists — it is checked out here, not branched from HEAD*, or *New branch, from
 HEAD*.
 
+**A branch another worktree holds is refused outright**, because git checks a
+branch out in one worktree at a time and Create would end in
+`fatal: 'x' is already used by worktree at ...`. `usedBy` comes back with the
+answer and the button goes off; the *path* rather than a boolean, since "already
+in use" is only useful if you can go and look at what is using it. Note the
+distinction the field used to hide: a branch that merely **exists** is fine — it
+gets checked out rather than cut — and only one something is **holding** is
+impossible. Refusing is on a *known* no rather than the absence of a yes, since
+the answer is in flight for a beat after every keystroke and refusing on silence
+would flicker the button off as you type.
+
 The surprising answer goes **bright**, not amber. `--signal` was the first
 reach and it was wrong: amber means an agent is blocked on you and nothing
 else, and a form saying what a button will do is not a state you scan a row of
