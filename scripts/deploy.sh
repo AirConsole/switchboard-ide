@@ -13,16 +13,24 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${SWB_PORT:-8084}"
 LOG=/tmp/swb-prod.log
 
-# The public name the browser actually types, which is Caddy's and not ours.
+# Whatever this machine's deploy needs that the repository should not know.
 #
-# `/ws` refuses a page from any origin it does not know, and behind a proxy this
-# process cannot derive the one the page was served from -- it only ever sees
-# 127.0.0.1. Unset, the loopback defaults still let a browser on this machine in
-# and every socket through Caddy is refused, so this is not optional here.
+# `deploy.env` is gitignored: the public name a browser types is a fact about
+# one machine, and a default in a shared repository would have every checkout
+# announce itself as somebody else's host. Absent, the loopback defaults apply
+# and the instance serves this machine only, which is the right answer for a
+# checkout nobody has told otherwise.
 #
-# A bare name on purpose: the server allows both schemes for it, so nobody has
-# to know how Caddy is terminating. Confirmed by probe that :84 is TLS.
-HOST="${SWB_PUBLIC_HOST:-andrin.ide.n-dream.com:84}"
+#   # scripts/deploy.env
+#   SWB_PUBLIC_HOST=ide.example.com:84
+#
+[ -f "$REPO/scripts/deploy.env" ] && . "$REPO/scripts/deploy.env"
+
+# A bare name on purpose: the server allows both schemes for it, so nobody
+# deploying has to know how the proxy in front is terminating. Getting that
+# wrong costs a page that loads over a row that never paints, which is why the
+# check at the end of this script exists.
+HOST="${SWB_PUBLIC_HOST:-}"
 
 cd "$REPO"
 
@@ -45,7 +53,7 @@ fi
 # reparents the server to init, which is also what stops the terminal that ran
 # this from taking the IDE down when it closes.
 (cd server && NODE_ENV=production SWB_PORT="$PORT" \
-  setsid --fork node dist/index.js --host "$HOST" >>"$LOG" 2>&1 </dev/null)
+  setsid --fork node dist/index.js ${HOST:+--host "$HOST"} >>"$LOG" 2>&1 </dev/null)
 
 for _ in $(seq 1 40); do
   curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break
@@ -79,7 +87,12 @@ for name in ${HOST//,/ }; do
   [ "$ws" != "refused" ] || { echo "--host looks wrong: /ws refused a page from $origin" >&2; exit 1; }
 done
 
-echo "live on :$PORT at $(git rev-parse --short HEAD), for $HOST"
+if [ -n "$HOST" ]; then
+  echo "live on :$PORT at $(git rev-parse --short HEAD), for $HOST"
+else
+  echo "live on :$PORT at $(git rev-parse --short HEAD), this machine only"
+  echo "  (set SWB_PUBLIC_HOST in scripts/deploy.env to serve it through a proxy)"
+fi
 curl -fsS "http://127.0.0.1:$PORT/api/snapshot" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)

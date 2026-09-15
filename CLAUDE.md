@@ -7,6 +7,12 @@ fast — a dispatcher, not a dashboard.
 The IDE is used to develop itself. If you are reading this in a worktree, you
 are probably one of the agents in one of its windows.
 
+`README.md` is the overview and how to run it. These three `CLAUDE.md` files are
+something else: the reasoning, and most of it was measured rather than argued.
+Where something looks arbitrary, the comment beside it says what it cost to
+learn — treat those as load-bearing, because they were each written after
+getting it wrong once.
+
 ## The model
 
 A **project** is a registered git repository. Every registered project is open;
@@ -85,25 +91,29 @@ one that merely runs the code. When you add one, break the line it guards and
 watch it fail; a test that passes either way is documentation with a runtime
 cost. Every test in the suite was checked that way once.
 
-## A live instance is running on this machine
+## The IDE is probably serving somebody while you work on it
 
-The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
-`web/dist` from this checkout, behind Caddy. Consequences:
+This project is used to develop itself, so a checkout usually has a live
+instance running from it -- by default `127.0.0.1:8084`, serving `server/dist`
+and `web/dist`, often behind a reverse proxy. Assume that is true unless you
+have checked. Consequences:
 
 - **A web change reaches them on reload.** A change under `server/` or `shared/`
   needs the server process restarted, which briefly drops every browser socket.
-  Their tmux sessions survive it — that is the whole point of the design — but
+  The tmux sessions survive it — that is the whole point of the design — but
   ask before restarting unless they asked for the change.
-- **`scripts/deploy.sh` is the restart**, run from the master checkout after a
-  merge lands: it builds, and only if that succeeds stops :8084 and starts it
+- **`scripts/deploy.sh` is the restart**, run from the main checkout after a
+  merge lands: it builds, and only if that succeeds stops the port and starts it
   again detached. It is never automatic and never run from a worktree. It also
-  passes `--host`, without which every socket arriving through Caddy is refused
-  and the row never paints.
-- **Never touch their project or its sessions.** Their worktrees have live
+  passes `--host` from `scripts/deploy.env` when there is one; without it every
+  socket arriving through a proxy is refused and the row never paints, which is
+  why the script checks afterwards rather than trusting the value.
+- **Never touch somebody's project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
-  `tmux kill-server` on `~/.config/switchboard/tmux.sock`.
-- **Do not test against :8084.** Clicks there fight the user for the same UI
-  state, and a browser tab of your own competes for terminal geometry. Use:
+  `tmux kill-server` on the state directory's socket.
+- **Do not test against the live port.** Clicks there fight the user for the
+  same UI state, and a browser tab of your own competes for terminal geometry.
+  Use a scratch instance:
 
 ```sh
 scripts/scratch.sh up      # this checkout's own instance; prints its URL
@@ -130,7 +140,7 @@ Your worktree is its own checkout with its own `dist/`, so building, testing and
 running a scratch instance here cannot reach the running IDE. Nothing you do in
 a worktree deploys — the live instance serves `server/dist` and `web/dist` from
 the master checkout alone. So do not build, start, or restart anything in
-`/home/andrin/src/ide` itself, and do not restart :8084; finish on your branch
+the main checkout itself, and do not restart the live port; finish on your branch
 and let the merge into master be what ships it.
 
 A fresh worktree needs its own `pnpm install` before it can build, and `node-pty`
@@ -190,7 +200,7 @@ browser ── one WebSocket (JSON control + binary output frames) ──> serve
 recorded inside its tmux session's metadata, so changing how local ids are
 computed orphans every running session. Local ids keep hashing the bare path,
 deliberately; a peer's are namespaced **on the server**, by a short key derived
-from its base URL, because `/home/andrin/src/ide` on two machines hashes
+from its base URL, because `/home/you/src/ide` on two machines hashes
 identically.
 
 **One tmux client per session, owned by the server.** Browsers are never tmux

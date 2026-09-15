@@ -7,3 +7,6 @@ dist/
 .env.local
 .playwright-mcp/
 coverage/
+
+# One machine’s deploy settings; see scripts/deploy.sh.
+scripts/deploy.env

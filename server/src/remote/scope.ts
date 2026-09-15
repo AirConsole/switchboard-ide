@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
  * Ids a peer handed us, made unambiguous on this machine.
  *
  * A peer is an unmodified instance: it knows nothing about us and hands out its
- * own ids, which are a hash of an absolute path. `/home/andrin/src/ide` on two
+ * own ids, which are a hash of an absolute path. `/home/you/src/ide` on two
  * machines hashes identically, so without a namespace the two would silently
  * alias -- and these ids key the state store, tmux's own metadata and every
  * route parameter, so aliasing is not a display bug, it is one worktree's

@@ -120,8 +120,12 @@ const publicOrigins = (): ReadonlySet<string> => {
 
 export const config = {
   /**
-   * The address to listen on. Caddy fronts 127.0.0.1:8084 as
-   * andrin.ide.n-dream.com:84 with auth, so this stays loopback.
+   * The address to listen on, and loopback is the answer unless this machine is
+   * somebody's peer.
+   *
+   * There is no password: a reverse proxy in front of the public name is what
+   * authenticates a person, and `SWB_TOKEN` is what authenticates a gateway.
+   * Binding anything else without the token serves the network with neither.
    *
    * Named `bind`, not `host`: `--host` is the *public* name a browser types,
    * and one word meaning both the address we answer on and the name we answer
