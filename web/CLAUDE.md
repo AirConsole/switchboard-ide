@@ -731,19 +731,36 @@ vertical drag on a terminal sends those; horizontal drags are left to the row.
 `.term-host` carries `touch-action: pan-x` so the browser hands over the
 vertical axis instead of claiming it for a pan that has nowhere to go.
 
-**An eighth of the pane's height buys a page**, and that number is the whole
-feel of reading back on a phone. It was half the height, which is more than a
-drag: a finger travels comfortably about 300px, and at 341px per page —
-measured on a 400×800 screen, where the terminal is 682px — a 300px pull sent
-**nothing at all** and the gesture read as broken, while a full-height 640px
-pull bought one screenful. Reading back a long turn that way is a dozen
-full-screen drags. At 85px the same screen gives 1 page for a 100px pull, 3 for
-the comfortable 300, and 7 for the full 640, with a 40px nudge still ignored as
-the noise of holding a phone. It stays **linear**, so it stays reversible —
-drag back exactly as far and you are where you started — rather than growing a
-velocity curve that would make one gesture mean different amounts depending on
-how hard it was flicked. The 48px floor is for a short pane: without it a 200px
-terminal would page on 25px of drag.
+**The drag sends whichever of the two the app is listening for.** An app with a
+tracking mode on is one xterm reports the wheel to — that is how the same
+transcript is scrolled on a desktop — so a finger sends the same report,
+`ESC [ < 64` and `65` in SGR, **one notch per line of finger travel**
+(`host.clientHeight / term.rows`, floored at 8px). SGR without asking, because
+every app in this stack sets `?1006h`; the guard on `send` refuses the legacy
+form outright, so a report built wrong here cannot reach an agent. An app that
+answers no mouse report — a plain shell — keeps Page Up and Page Down at an
+eighth of the pane's height.
+
+Paging was the whole gesture, and it was too coarse in both directions at once:
+Page Up moves a *screen*, so the smallest move available was the largest move
+there is, and it cost 85px of dragging to get it. (It cost 341px before that,
+half the pane's height, which was more than a comfortable drag — a 300px pull
+sent **nothing at all** and the gesture read as broken. That number is where the
+eighth came from, and it survives as the shell's step.)
+
+Measured on a 400×800 phone, a 682px terminal at 40 rows — 17px a notch — with
+`vim -c 'set mouse=a' -c 'set ttymouse=sgr'` as the stand-in for an app that
+takes the mouse: a 300px push sent 18 notches and vim scrolled 54 lines, three
+a notch, reading 19 → 73 in one gesture; 100px sent 6; the same drag pulled back
+sent 18 the other way. On a plain shell's pane the identical 300px drag sent
+**3 Page Ups and no notches**, which is the old behaviour kept where it is the
+only one available.
+
+A burst is capped at twenty reports per move event, and the remainder dropped
+rather than carried: the step is small enough now that a finger that *jumps* —
+a touch reordered, a pane resized mid-drag — would otherwise spend the distance
+as a flood of reports at an agent, and paying it out later would scroll for a
+gesture that had already finished.
 
 Measure it by counting what goes down the socket, not by looking: the payload
 is JSON, so an escape is the six characters `\u001b[5~` and a regex for a raw
