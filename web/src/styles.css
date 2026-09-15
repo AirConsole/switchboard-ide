@@ -2731,6 +2731,51 @@ button {
   border-color: var(--graphite-dim);
 }
 
+/*
+ * Narrow: the three go *under* the prompt rather than beside it.
+ *
+ * Their column costs a flat 94px whatever the pane is worth, and on a phone
+ * that is a quarter of the row: measured at a 420px window, the row is 377px
+ * and the prompt gets 255 of it -- about 38 characters of prose, wrapping every
+ * few words. Under the prompt they cost a line of height instead, which the
+ * list has, and the prompt gets the whole width: 357px, near half as much
+ * again. They sit side by side there and wrap if even that will not fit, so a
+ * 320px phone does not push DELETE off the edge.
+ *
+ * Natural widths rather than one shared edge, which is the opposite of the rule
+ * a column obeys: three pills stretched to the widest of them is what makes a
+ * *stack* read as one control rather than three ragged ones, and three sitting
+ * in a row already share the edge that matters, the one they stand on.
+ *
+ * **The viewport is the wrong thing to ask and the only thing we may.** A
+ * container query is what this wants, and it cannot be used: `container-type`
+ * brings `contain: layout` with it, which makes the element a containing block
+ * for fixed-position descendants -- and `.menu`, which MOVE TO opens, is
+ * `position: fixed` *inside* this row precisely so an ancestor's overflow
+ * cannot clip it. Any container above it takes that back and the menu is drawn
+ * somewhere else, which is the bug the fixed positioning was the fix for.
+ *
+ * The viewport answers anyway, because this panel is always two units and two
+ * units are only small when the window is: a pane measured 377px inside a 420px
+ * window and 576px inside a 600px one. 440px is where the prompt would fall
+ * under about 300px, which is where prose starts reading as a column of
+ * fragments.
+ */
+@media (max-width: 440px) {
+  .todo__row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .todo__controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    grid-column: 1;
+    grid-row: 2;
+  }
+}
+
 .todo__next--on {
   color: var(--ink);
   background: var(--bone);

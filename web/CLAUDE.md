@@ -945,6 +945,30 @@ spot; its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
 with a heading per project when more than one is open -- two projects can each
 have a `main`.
 
+**Narrow, they go under the prompt instead of beside it.** The column costs a
+flat 94px whatever the pane is worth, which on a phone is a quarter of the row:
+measured in a 420px window, the row is 377px and the prompt gets 255 of it,
+about 38 characters of prose. Underneath they cost a line of height, which the
+list has, and the prompt gets the whole 357 -- and they sit side by side there
+at their natural widths, wrapping onto a second line rather than overflowing
+(measured at 320px: DELETE drops below the other two and the row stays 277px
+wide with nothing outside it). Natural widths are the opposite of the rule the
+column obeys, deliberately: stretching three pills to the widest of them is what
+makes a *stack* read as one control, and three in a row already share the edge
+that matters, the one they stand on.
+
+The breakpoint is on the **viewport**, and it has to be. A container query is
+what this wants, and `container-type` brings `contain: layout` with it, which
+makes the element a containing block for fixed-position descendants -- and
+`.menu` is `position: fixed` *inside* the row, precisely so no ancestor's
+overflow can clip it. Any container above it takes that back and re-creates the
+bug the fixed positioning fixed. The viewport answers anyway, because this panel
+is always two units and two units are only small when the window is: the pane
+measured 377px inside a 420px window and 576px inside a 600px one. 440px is
+where the prompt would fall under about 300px. Verified in the narrow layout
+that MOVE TO still opens at the button's bottom edge, shifted left to stay on
+screen, with `elementFromPoint` at its centre landing inside the menu.
+
 **A moved todo is not a sent one.** From this pane a queued todo leaving looks
 identical whether the server typed it into Claude or you moved it elsewhere, and
 the panel closes on the first. So a move is reported to `leftHere` the way a
