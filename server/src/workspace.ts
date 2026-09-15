@@ -38,6 +38,7 @@ import {
   isGitRepo,
   branchExists,
   isValidBranchName,
+  listRawWorktrees,
   listWorktrees,
   projectIdFor,
   pruneWorktrees,
@@ -577,7 +578,7 @@ export class Workspace {
   async describeBranch(
     projectId: string,
     name: string,
-  ): Promise<{ valid: boolean; exists: boolean }> {
+  ): Promise<{ valid: boolean; exists: boolean; usedBy?: string }> {
     const project = this.store.project(projectId)
     if (!project) throw new HttpError(404, 'no such project')
     const branch = name.trim()
@@ -585,7 +586,22 @@ export class Workspace {
     if (!(await isValidBranchName(project.root, branch))) {
       return { valid: false, exists: false }
     }
-    return { valid: true, exists: await branchExists(project.root, branch) }
+    /*
+     * A branch can only be checked out in one worktree at a time, so a name
+     * already in use is not a slow way to get an error -- it is a thing git
+     * will refuse outright ("fatal: '<branch>' is already used by worktree
+     * at ..."). Reported here so the form can stop before the button rather
+     * than after it, and reported as the *path*, because "already in use" is
+     * only useful if you can go and look at what is using it.
+     */
+    const usedBy = (await listRawWorktrees(project.root).catch(() => [])).find(
+      (w) => w.branch === branch,
+    )?.path
+    return {
+      valid: true,
+      exists: await branchExists(project.root, branch),
+      ...(usedBy === undefined ? {} : { usedBy }),
+    }
   }
 
   async createWorktree(opts: {
