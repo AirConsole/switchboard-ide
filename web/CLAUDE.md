@@ -456,10 +456,39 @@ Measured across the band, with a file open: 1400px and 1500px (four units) hide
 Claude and give the panel the window; 1687px and up (five) show both. Every one
 of them lands the editor at 82 columns.
 
-Two consequences to preserve. **Every tile starts on a unit boundary**, so
-scrolling to `unit * pitch` lands a tile flush at the left edge and no tile is
-ever shown half-cut; the snap points are one out-of-flow `.grid__spot` marker
-per unit. And **a tile wider than the window is collapsed, not squeezed**:
+Two consequences to preserve. **The row comes to rest on a pane's leading
+edge**, so a pane is never shown cut down the middle; the snap points are one
+out-of-flow `.grid__spot` marker per pane start, listed in `rest`, plus the far
+end. They were one per *unit*, and a unit is half a pane: the row could stop
+with half of Claude beside half of a terminal, and on a phone — where a window
+is the whole screen — that was the *usual* place a swipe landed, two halves of
+two worktrees and neither of them readable. A pane is the smallest thing worth
+looking at, so it is the smallest thing worth stopping on, and it is already the
+granularity the Cmd+arrow walk uses.
+
+Three things fall out of that and are load-bearing. `nearestOffset` has to
+**return one of those stops**, because mandatory snapping governs programmatic
+scrolls too and the browser would otherwise re-snap the offset it was just
+given, somewhere that cuts the tile it was asked to reveal. **The far end is a
+stop whether or not a pane begins there**: the last reachable offset is
+`totalUnits - units`, which lands mid-pane whenever the tail does not divide
+evenly, and without it the last window could never be seen whole — it is also
+exactly the low end of `nearestOffset`'s range for the last tile, so revealing
+that tile and resting at the end are the same offset. And **a wheel notch goes
+to the next stop in the direction it is travelling** rather than a flat two
+units: two units is one pane only while every pane is one, and the files panel
+is three, so a notch used to leave the row a unit inside the next pane with the
+one after it undoing the mistake.
+
+Measured at 2400px, where the row is seven units of 341px and `fourth` holds
+Claude beside an open file (five units, at unit 3): stops at units 0, 1, 3, 5
+and 6 — 5 being the files pane's own edge inside that tile, 6 the far end.
+Wheel right stepped 341 → 1023 → 1706 → 2047 and held there; wheel left came
+back 1706 → 1023 → 341 → 0. Clicking the tabs landed on 2047, 341 and 1023,
+each on a stop and each with the named window whole on screen. On a 400×800
+phone, where every tile is one pane, the stops are units 0, 1, 3, 5, 7, 8 and
+five swipes walked 0 → 1 → 7 → 8 — a flick crossing several stops, never
+resting between two. And **a tile wider than the window is collapsed, not squeezed**:
 `panesOf` drops Claude's pane first, which is all it ever has to drop now that a
 worktree shows one panel at a time — a tile is two, four or five units, so the
 only window it cannot fit whole is one a single pane already fills. That is what
@@ -745,19 +774,36 @@ vertical drag on a terminal sends those; horizontal drags are left to the row.
 `.term-host` carries `touch-action: pan-x` so the browser hands over the
 vertical axis instead of claiming it for a pan that has nowhere to go.
 
-**An eighth of the pane's height buys a page**, and that number is the whole
-feel of reading back on a phone. It was half the height, which is more than a
-drag: a finger travels comfortably about 300px, and at 341px per page —
-measured on a 400×800 screen, where the terminal is 682px — a 300px pull sent
-**nothing at all** and the gesture read as broken, while a full-height 640px
-pull bought one screenful. Reading back a long turn that way is a dozen
-full-screen drags. At 85px the same screen gives 1 page for a 100px pull, 3 for
-the comfortable 300, and 7 for the full 640, with a 40px nudge still ignored as
-the noise of holding a phone. It stays **linear**, so it stays reversible —
-drag back exactly as far and you are where you started — rather than growing a
-velocity curve that would make one gesture mean different amounts depending on
-how hard it was flicked. The 48px floor is for a short pane: without it a 200px
-terminal would page on 25px of drag.
+**The drag sends whichever of the two the app is listening for.** An app with a
+tracking mode on is one xterm reports the wheel to — that is how the same
+transcript is scrolled on a desktop — so a finger sends the same report,
+`ESC [ < 64` and `65` in SGR, **one notch per line of finger travel**
+(`host.clientHeight / term.rows`, floored at 8px). SGR without asking, because
+every app in this stack sets `?1006h`; the guard on `send` refuses the legacy
+form outright, so a report built wrong here cannot reach an agent. An app that
+answers no mouse report — a plain shell — keeps Page Up and Page Down at an
+eighth of the pane's height.
+
+Paging was the whole gesture, and it was too coarse in both directions at once:
+Page Up moves a *screen*, so the smallest move available was the largest move
+there is, and it cost 85px of dragging to get it. (It cost 341px before that,
+half the pane's height, which was more than a comfortable drag — a 300px pull
+sent **nothing at all** and the gesture read as broken. That number is where the
+eighth came from, and it survives as the shell's step.)
+
+Measured on a 400×800 phone, a 682px terminal at 40 rows — 17px a notch — with
+`vim -c 'set mouse=a' -c 'set ttymouse=sgr'` as the stand-in for an app that
+takes the mouse: a 300px push sent 18 notches and vim scrolled 54 lines, three
+a notch, reading 19 → 73 in one gesture; 100px sent 6; the same drag pulled back
+sent 18 the other way. On a plain shell's pane the identical 300px drag sent
+**3 Page Ups and no notches**, which is the old behaviour kept where it is the
+only one available.
+
+A burst is capped at twenty reports per move event, and the remainder dropped
+rather than carried: the step is small enough now that a finger that *jumps* —
+a touch reordered, a pane resized mid-drag — would otherwise spend the distance
+as a flood of reports at an agent, and paying it out later would scroll for a
+gesture that had already finished.
 
 Measure it by counting what goes down the socket, not by looking: the payload
 is JSON, so an escape is the six characters `\u001b[5~` and a regex for a raw
@@ -775,9 +821,9 @@ screen has nothing of its own to scroll, so a downward wheel over most of a
 window would otherwise do nothing, and the row was offered the gesture instead.
 That loses to what it costs -- reading down a diff and running off its end threw
 the row sideways, and so did a stray graze over a terminal. Only a *sideways*
-gesture moves the row, stepped by the spot because `scroll-snap-type: x
-mandatory` drags anything shorter back (measured: a 120px nudge snapped to where
-it started, a 600px flick landed a spot along). Anything with sideways scrolling
+gesture moves the row, a pane at a time because `scroll-snap-type: x mandatory`
+drags anything shorter back (measured: a 120px nudge snapped to where it
+started, a 600px flick landed a spot along). Anything with sideways scrolling
 of its own keeps first claim through `inner()` -- measured on a tile's terminal
 tab strip, which took 8px of the gesture and left the row at 0, then handed the
 next one on once it was at its end.

@@ -313,10 +313,28 @@ export const TerminalView = ({
      *
      * On the alternate screen there is no scrollback for the browser to move --
      * the app owns its own history -- and a phone has no wheel and no Page Up
-     * key. Claude scrolls on Page Up and Page Down (measured: its "Jump to
-     * bottom (ctrl+End)" hint appears on the first one), so a vertical drag
-     * becomes those, half a pane's worth of drag to the page. Horizontal drags
-     * are left alone: they belong to the row of windows.
+     * key. So the drag becomes whichever of those the app is listening for.
+     *
+     * **A wheel where the app takes one.** An app with a tracking mode on is
+     * one xterm reports the wheel to, and that is how the same transcript is
+     * scrolled on a desktop -- so a finger sends the same report, `ESC [ < 64`
+     * and `65` in SGR, one notch per line of finger travel. Paging was the
+     * whole gesture before and it was too coarse in both directions at once:
+     * Page Up moves a *screen*, so the smallest move possible was the largest
+     * move there is, and it cost an eighth of the pane's height of dragging to
+     * get it. A notch is a line or three of Claude's own scrolling, and it
+     * arrives every 17px or so, which is what makes the transcript follow the
+     * finger rather than jump underneath it.
+     *
+     * SGR without asking, because every app in this stack sets `?1006h` -- see
+     * the guard on `send`, which refuses the legacy form outright, so a report
+     * built wrong here cannot reach an agent.
+     *
+     * **Keys where it does not.** A plain shell answers no mouse report, so it
+     * keeps Page Up and Page Down at an eighth of the pane's height. It is the
+     * coarse gesture, but it is the only one that app has.
+     *
+     * Horizontal drags are left alone either way: they belong to the row.
      *
      * This is not the wheel rule in reverse. A wheel over a tile means "scroll
      * the row", so turning it into keystrokes was wrong; a finger dragged
@@ -325,6 +343,21 @@ export const TerminalView = ({
      */
     const PAGE_UP = '\x1b[5~'
     const PAGE_DOWN = '\x1b[6~'
+    /*
+     * One wheel notch, reported where the finger is.
+     *
+     * The cell is derived from the pane rather than read off xterm, whose own
+     * dimensions are not public. It is only used to place the report, and an
+     * app scrolls its transcript the same wherever the pointer sits inside it.
+     */
+    const notch = (up: boolean): string => {
+      const rect = host.getBoundingClientRect()
+      const at = (offset: number, of: number, count: number): number =>
+        Math.min(Math.max(Math.floor(offset / (of / Math.max(1, count))) + 1, 1), Math.max(1, count))
+      const col = at(touchX - rect.left, host.clientWidth, term.cols)
+      const row = at(touchY - rect.top, host.clientHeight, term.rows)
+      return `\x1b[<${up ? 64 : 65};${col};${row}M`
+    }
     /*
      * The finger this gesture belongs to.
      *
@@ -412,15 +445,37 @@ export const TerminalView = ({
        * The floor is what a short pane needs: without it a 200px terminal would
        * page on 25px of drag, which is inside the noise of holding a phone.
        */
-      const page = Math.max(48, host.clientHeight / 8)
-      while (carried >= page) {
-        send(PAGE_UP)
-        carried -= page
+      /*
+       * A line of finger per line of text where the app takes the wheel, and
+       * the coarse page where it does not. `term.rows` is what the pty was
+       * sized to, so the pane's height over it is the cell.
+       */
+      const reports = term.modes.mouseTrackingMode !== 'none'
+      const step = reports
+        ? Math.max(8, host.clientHeight / Math.max(1, term.rows))
+        : Math.max(48, host.clientHeight / 8)
+      /*
+       * A ceiling on one move's worth, because the step is now small enough
+       * that a finger that jumps -- a touch reordered, a pane resized under the
+       * drag -- would otherwise spend the distance as a burst of reports at an
+       * agent. Twenty is more than a screenful of lines and nothing a hand
+       * covers in one frame.
+       */
+      let spent = 0
+      while (carried >= step && spent < 20) {
+        send(reports ? notch(true) : PAGE_UP)
+        carried -= step
+        spent += 1
       }
-      while (carried <= -page) {
-        send(PAGE_DOWN)
-        carried += page
+      while (carried <= -step && spent < 20) {
+        send(reports ? notch(false) : PAGE_DOWN)
+        carried += step
+        spent += 1
       }
+      // Whatever a capped burst did not spend is dropped rather than carried:
+      // it came from a jump, and paying it out on the next move would scroll
+      // the transcript for a gesture that had already happened.
+      if (spent >= 20) carried = 0
     }
 
     host.addEventListener('touchstart', onTouchStart, { passive: true })

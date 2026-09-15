@@ -76,7 +76,7 @@ const wholeOnScreen = (
   (tile.at + tile.units) * pitch <= scrollLeft + width + 1
 
 /**
- * Which unit to scroll to so a tile is wholly on screen, moving as little as
+ * Which offset to scroll to so a tile is wholly on screen, moving as little as
  * possible.
  *
  * A tile of u units at `at` is whole on screen for every offset from
@@ -87,15 +87,33 @@ const wholeOnScreen = (
  * than pulling the new one to the front and taking everything else off the
  * screen with it.
  *
+ * `stops` is where the row is allowed to come to rest -- every pane's leading
+ * edge, plus the far end -- and the answer has to be one of them or the browser
+ * would snap it somewhere else the moment it arrived, mandatory snapping being
+ * a rule about programmatic scrolls too. The clamped position is what the
+ * nearest is measured from rather than `from` itself, so a tile off the right
+ * edge is brought to the right edge and not dragged to the front.
+ *
  * The range is never empty, because a tile is never wider than the window --
- * see `panesOf` -- so it always holds `at` itself. Offsets are unit indices,
- * which is what the row is allowed to come to rest on.
+ * see `panesOf` -- so it always holds `at`, which is a pane's leading edge by
+ * construction. The clamp is the fallback anyway, for a row with no stops at
+ * all: before the first measured render there are none.
  */
 const nearestOffset = (
   tile: { at: number; units: number },
   from: number,
   capacity: number,
-): number => Math.min(Math.max(from, tile.at + tile.units - capacity), tile.at)
+  stops: readonly number[],
+): number => {
+  const lo = tile.at + tile.units - capacity
+  const want = Math.min(Math.max(from, lo), tile.at)
+  let best: number | null = null
+  for (const stop of stops) {
+    if (stop < lo || stop > tile.at) continue
+    if (best === null || Math.abs(stop - want) < Math.abs(best - want)) best = stop
+  }
+  return best ?? want
+}
 
 /**
  * Every panel, in the order they sit beside Claude.
@@ -1300,6 +1318,19 @@ export const Overview = ({
     units: number
   }
   const cells: Cell[] = []
+  /*
+   * Where the row may come to rest: every pane's leading edge, in units.
+   *
+   * Not every unit. A unit is half a pane, so a marker on each one let the row
+   * stop with a pane cut down the middle -- half of Claude beside half of a
+   * terminal -- and on a phone, where a window is the screen, that is the
+   * *usual* place a swipe landed: two halves of two worktrees and neither of
+   * them readable. A pane is the smallest thing worth looking at, so it is the
+   * smallest thing worth stopping on, and it is already the granularity the
+   * Cmd+arrow walk uses -- `stops` below is the same list said in panes rather
+   * than in units.
+   */
+  const rests: number[] = []
   let next = 0
   const push = (
     key: string,
@@ -1307,7 +1338,11 @@ export const Overview = ({
     group: ProjectGroup | null,
     panes: Pane[],
   ): void => {
-    const span = panes.reduce((n, pane) => n + pane.units, 0)
+    let span = 0
+    for (const pane of panes) {
+      rests.push(next + span)
+      span += pane.units
+    }
     cells.push({ key, worktree, group, panes, at: next, units: span })
     next += span
   }
@@ -1328,6 +1363,26 @@ export const Overview = ({
     for (const worktree of group.awake) push(worktree.id, worktree, null, panesOf(worktree, units))
   }
   const totalUnits = next
+  /*
+   * The far end is a resting place whether or not a pane begins there.
+   *
+   * The last offset the row can reach is `totalUnits - units`, and that lands
+   * mid-pane whenever the tail of the row does not divide evenly -- so without
+   * it the nearest stop before the end is where mandatory snapping would hold
+   * the row, and the last window could never be seen whole. It is also exactly
+   * the low end of `nearestOffset`'s range for the last tile, which is what
+   * makes revealing that tile and resting at the end the same offset.
+   */
+  const lastOffset = Math.max(0, totalUnits - units)
+  const rest = [...new Set([...rests.filter((at) => at < lastOffset), lastOffset])].sort(
+    (a, b) => a - b,
+  )
+  /*
+   * The wheel handler subscribes once and would otherwise close over the first
+   * render's list. Written during render, read only from the listener.
+   */
+  const restRef = useRef(rest)
+  restRef.current = rest
 
   const slots: Slot<Cell>[] = cells.map((cell) => ({
     key: cell.key,
@@ -1387,7 +1442,7 @@ export const Overview = ({
      */
     const tile = { at: target.at, units: target.units }
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), units)
+    const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, restRef.current)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
@@ -1428,7 +1483,7 @@ export const Overview = ({
     const grid = gridRef.current
     if (!grid || width === 0) return
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), units)
+    const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, rest)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
   }
 
@@ -1740,21 +1795,27 @@ export const Overview = ({
         aim = null
       }, WHEEL_IDLE_MS)
 
-      const from = aim ?? Math.round(grid.scrollLeft / pitch)
+      const from = aim ?? grid.scrollLeft / pitch
       /*
-       * A notch still travels one pane, which is two units now that a unit is
-       * half of one. Stepping a single unit would have halved how far a flick
-       * carries you along a row that has not got any shorter.
+       * A notch travels to the next place the row may rest, in the direction it
+       * is going -- one pane, whatever that pane is worth in units. It was two
+       * units flat, which is one pane only while every pane is one: the files
+       * panel is three, so a notch left it a unit inside the next pane and the
+       * one after that had to undo it.
+       *
+       * The ends are where they are rather than clamped arithmetic: `rest`
+       * holds nothing past the last offset the row can reach, which is not the
+       * last unit that exists -- clamping at `totalUnits - 1` once let `aim`
+       * climb past the end and made the first notch back read as dead.
+       *
+       * A hair of tolerance, because `from` is a fraction of a pitch and a row
+       * resting exactly on a stop must step off it rather than at it.
        */
-      const step = (pixels > 0 ? 1 : -1) * 2
-      /*
-       * The last offset the row can rest at, not the last unit that exists.
-       * Content is `totalUnits * pitch` wide and the window shows `units` of
-       * them, so clamping at `totalUnits - 1` let `aim` climb past the end and
-       * the first notch back read as a dead one.
-       */
-      const last = Math.max(0, totalUnits - units)
-      const to = Math.min(Math.max(from + step, 0), last)
+      const stops = restRef.current
+      const to =
+        pixels > 0
+          ? (stops.find((at) => at > from + 0.01) ?? stops[stops.length - 1] ?? 0)
+          : ([...stops].reverse().find((at) => at < from - 0.01) ?? stops[0] ?? 0)
       aim = to
       grid.scrollTo({ left: to * pitch })
     }
@@ -1776,23 +1837,21 @@ export const Overview = ({
         }}
       >
         {/*
-          * One marker per unit, so a scroll comes to rest on a unit boundary
-          * rather than part-way through one. Every tile begins on one, so no
-          * tile is ever shown half-cut.
+          * One marker per place the row may rest -- see `rest`: each pane's
+          * leading edge, and the far end. A scroll therefore comes to rest with
+          * a pane against the left edge and never part-way through one.
           *
-          * Markers rather than the tiles themselves: a tile wider than the
-          * window has to be scrollable *within*, to reach the units it covers,
-          * and snapping to tile starts alone would refuse to stop there. They
-          * are out of flow and take no space, and the panes cannot be used for
-          * this -- a pane is a share of its tile's width, which is half a gap
-          * out from the unit grid.
+          * Markers rather than the panes themselves, which are what you would
+          * reach for: a pane is a share of its tile's width and sits half a gap
+          * out from the unit grid, so snapping to one would leave the row a few
+          * pixels off every time. These are out of flow and take no space.
           */}
         {width > 0 &&
-          Array.from({ length: totalUnits }, (_, index) => (
+          rest.map((at) => (
             <i
-              key={index}
+              key={at}
               className="grid__spot"
-              style={{ left: GAP + index * pitch }}
+              style={{ left: GAP + at * pitch }}
               aria-hidden="true"
             />
           ))}
