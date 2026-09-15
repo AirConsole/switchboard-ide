@@ -6,7 +6,8 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
-import { allowSocket, hasPeerToken } from '../gate.js'
+import { allowSocket } from '../gate.js'
+import { RELAY_HEADER } from '../remote/peer.js'
 import { Relay } from '../remote/relay.js'
 import type { Workspace } from '../workspace.js'
 
@@ -170,11 +171,12 @@ export const registerWs = (
      *
      * This is the `/ws` half of what `x-swb-peer-read` does for the snapshot:
      * a read made *by* a gateway is answered with this machine's own world and
-     * nothing further. A peer is recognised the same way it is anywhere else,
-     * by the token -- and it has no use for a relay, because it is the thing
-     * being relayed to.
+     * nothing further. The relay says so in a header, because the token cannot:
+     * an instance that is nobody's peer has no token to check, so asking "did
+     * this socket present one" answered no for every socket and gave a relay to
+     * the very thing that must not have one.
      */
-    const relay = hasPeerToken(request)
+    const relay = request.headers[RELAY_HEADER] !== undefined
       ? null
       : new Relay(() => workspace.peers(), {
           sendJson: (msg) => sink.sendJson(msg),

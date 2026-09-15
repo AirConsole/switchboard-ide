@@ -162,3 +162,24 @@ describe('a machine behind a password', () => {
     )
   })
 })
+
+describe('credentials that people actually type', () => {
+  /*
+   * `decodeURIComponent` throws on a lone `%`, and the throw took the whole
+   * credential with it -- so `100%pure`, an ordinary password, produced the
+   * bare 401 from the proxy that this feature exists to stop. A password that
+   * cannot be decoded was never encoded; it is itself.
+   */
+  it('survives a per-cent sign, and an empty user', async () => {
+    const { basicFrom } = await import('../src/remote/peer.js')
+    const decoded = (raw: string): string | undefined => {
+      const b = basicFrom(raw)
+      return b === undefined ? undefined : Buffer.from(b, 'base64').toString()
+    }
+    expect(decoded('http://u:100%pure@box')).toBe('u:100%pure')
+    expect(decoded('http://u:p%40ss@box')).toBe('u:p@ss')
+    // Legal, and means the password is the whole credential.
+    expect(decoded('http://:pw@box')).toBe(':pw')
+    expect(decoded('http://box')).toBeUndefined()
+  })
+})

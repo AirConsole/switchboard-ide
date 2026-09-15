@@ -504,9 +504,16 @@ export class Workspace {
      * seconds, measured. Compared by instance id rather than by address,
      * because the address is exactly what is being got wrong.
      */
-    if (identity.instanceId !== undefined && identity.instanceId === config.instanceId) {
-      throw new HttpError(400, 'that is this machine', 'server-is-self')
-    }
+    const isSelf =
+      identity.instanceId === undefined
+        ? // A machine old enough to send no instance id still must not be
+          // linked to itself, and the address is what is left to compare. It
+          // catches the spelling someone would actually type, which is the
+          // mistake this guard is for; a different one for the same machine
+          // gets through, and no longer melts anything down when it does.
+          config.publicOrigins.has(baseUrl)
+        : identity.instanceId === config.instanceId
+    if (isSelf) throw new HttpError(400, 'that is this machine', 'server-is-self')
     const server: RemoteServer = {
       baseUrl,
       name: identity.name,

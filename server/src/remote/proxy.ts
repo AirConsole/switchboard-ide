@@ -68,7 +68,15 @@ const idsIn = (params: unknown, body: unknown): string[] => {
   const found: string[] = []
   if (typeof params === 'object' && params !== null) {
     for (const value of Object.values(params as Record<string, unknown>)) {
-      if (typeof value === 'string' && value !== '') found.push(decode(value))
+      /*
+       * Not decoded again. Fastify has already percent-decoded a param, and a
+       * second pass made routing read an id that `unscopeUrl` -- which decodes
+       * once, from the raw URL -- did not: `%257E` became `~` here and stayed
+       * `%7E` there, so the request was forwarded without the id that chose its
+       * destination. No id needs encoding today; the extra decode was a
+       * leftover from when this scanned raw path segments.
+       */
+      if (typeof value === 'string' && value !== '') found.push(value)
     }
   }
   if (typeof body === 'object' && body !== null) {
@@ -96,6 +104,39 @@ const idsIn = (params: unknown, body: unknown): string[] => {
  * `PeerClient.snapshot` strips at the boundary because "the layout is the
  * viewer's"; enforcing that on the read side only was half a rule.
  */
+/**
+ * Routes that are answered here, whatever ids they carry.
+ *
+ * `/api/snapshot` is the merge of every machine rather than a question for one.
+ * `/api/health` says `{ok:true}` and is reached without credentials, so it must
+ * not be a lever on a machine the caller cannot otherwise reach. The other two
+ * are this machine's own business and it is measurable what happens without
+ * them: a `worktreeId` in a `PATCH /api/ui` body steered the patch to the peer
+ * and **replaced its stored layout** -- the panels, open files and expanded
+ * trees of whoever sits there -- and returned that layout to the caller, the
+ * one blob `PeerClient.snapshot` strips at the boundary precisely so it never
+ * travels. A body id did that while `?host=` was refused: the allow-list below
+ * guarded one door of three.
+ *
+ * So this is checked before any of them, and `HOST_STEERABLE` narrows only the
+ * door that has no resource to name.
+ */
+const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
+  '/api/snapshot',
+  '/api/health',
+  '/api/ui',
+  '/api/servers',
+])
+
+/**
+ * Routes whose reply is bytes rather than JSON.
+ *
+ * Named, rather than sniffed from the peer's `content-type`, because what to
+ * do with a reply is a property of the route and guessing it would make every
+ * other route's error handling depend on a header the peer chose.
+ */
+const RAW_ROUTES: ReadonlySet<string> = new Set(['/api/worktrees/:id/raw'])
+
 const HOST_STEERABLE: ReadonlySet<string> = new Set([
   '/api/browse',
   '/api/recents',
@@ -147,36 +188,8 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
     // percent-encoded or absolute-form spelling. See the gate in index.ts.
     const route = request.routeOptions.url ?? ''
     if (!route.startsWith('/api')) return
-    /*
-     * The snapshot is the merge of every machine, not a question for one of
-     * them, and `workspace.ts` builds it. Forwarded whole it would have handed
-     * back the peer's entire world -- its own unregistered projects, and the
-     * `ui` blob that `PeerClient.snapshot` exists to strip at the boundary.
-     */
-    if (route === '/api/snapshot') return
-    /*
-     * And `/api/health`, which the gate lets through unauthenticated. Left
-     * proxyable, an anonymous caller could make a token-holding gateway open a
-     * credentialed request to a registered machine -- `GET /api/health?host=…`
-     * reached the hook and answered "no such server", which is a liveness
-     * oracle on a route that is meant to say nothing but `{ok:true}`. The two
-     * exemption lists have to agree.
-     */
-    if (route === '/api/health') return
-    // An absolute-form target would be pasted straight onto the peer's base
-    // URL. Nothing legitimate sends one to this server.
-    if (!request.url.startsWith('/')) throw new HttpError(400, 'bad request target')
+    if (ALWAYS_LOCAL.has(route)) return
 
-    /*
-     * Every machine the request names, from all three places at once.
-     *
-     * Collected rather than taken in priority order, because silently
-     * resolving a disagreement is the thing that lands a request on another
-     * machine's identically-pathed worktree -- and worktree ids hash the bare
-     * path, so the wrong peer *answering* is the normal case, not a miss.
-     * `?host=B` beside a path id belonging to A used to be sent to B with A's
-     * bare id. Two names is a request nobody meant to make.
-     */
     /*
      * Evaluated on every route, used on three. A `?host=` on a route that does
      * not take one is refused rather than ignored: it named a machine, and
@@ -222,13 +235,19 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
       // GET alone. A proxied DELETE is `git worktree remove --force` plus
       // killing its sessions and maybe deleting a branch -- the very shape the
       // long timeout exists for, and aborting it cancels nothing on the peer.
+      if (RAW_ROUTES.has(route)) {
+        const raw = await peer.requestRaw(unscopeUrl(request.url))
+        await reply.status(raw.status).header('content-type', raw.contentType).send(raw.body)
+        return
+      }
       const reads = request.method === 'GET'
       const result = await peer.request<unknown>(
         request.method,
         unscopeUrl(request.url),
-        // `undefined` for a GET or a DELETE: `fetch` refuses a body on a GET
-        // outright, and no proxied DELETE carries one.
-        reads || request.method === 'DELETE' ? undefined : body,
+        // `undefined` for a GET, which `fetch` refuses a body on outright.
+        // A DELETE may carry one -- `DELETE /api/servers` does -- and dropping
+        // it answered "expected object, received undefined".
+        reads ? undefined : body,
         /*
          * A mutation gets far longer than a read, because the wait is a
          * different kind. `POST /api/worktrees` is a `git worktree add` -- a

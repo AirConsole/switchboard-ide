@@ -148,12 +148,12 @@ describe('which machine a request goes to', () => {
    * request elsewhere is how a mistake becomes an afternoon.
    */
   it('refuses a server on a route that does not take one', async () => {
-    const cases: [string, 'GET' | 'POST'][] = [
+    const cases: [string, 'GET' | 'POST' | 'PATCH'][] = [
       [`/api/worktrees/${key}~wt-peer/tree?host=${key}`, 'GET'],
-      [`/api/servers?host=${key}`, 'POST'],
+      [`/api/todos/${key}~t-1?host=${key}`, 'PATCH'],
     ]
     for (const [url, method] of cases) {
-      const out = await call(url, method, method === 'POST' ? {} : undefined)
+      const out = await call(url, method, method === 'GET' ? undefined : {})
       expect([url, out.status]).toEqual([url, 400])
       expect(out.asked).toEqual([])
     }
@@ -226,6 +226,24 @@ describe('which machine a request goes to', () => {
     const out = await call('/api/todos/localtodo1', 'PATCH', { worktreeId: 'wt-local' })
     expect(out.asked).toEqual([])
     expect(out.body).toEqual({ here: true })
+  })
+
+  /*
+   * Some routes are this machine's, whatever ids they carry. Measured without
+   * this: a `worktreeId` in a `PATCH /api/ui` body steered the patch to the
+   * peer and replaced its stored layout -- the panels and open files of
+   * whoever sits there -- and handed that layout back to the caller. A body id
+   * did it while `?host=` was already refused, because the allow-list guarded
+   * one door of three.
+   */
+  it('answers the local-only routes here, whatever id they carry', async () => {
+    const ui = await call('/api/ui', 'PATCH', { worktreeId: `${key}~wt-peer`, awake: [] })
+    expect(ui.asked).toEqual([])
+    expect(ui.body).toEqual({ here: true })
+
+    const servers = await call('/api/servers', 'POST', { id: `${key}~anything`, baseUrl: 'http://x' })
+    expect(servers.asked).toEqual([])
+    expect(servers.body).toEqual({ here: true })
   })
 
   it('says which machine did not answer, not that this one broke', async () => {

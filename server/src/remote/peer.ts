@@ -29,6 +29,20 @@ export const PEER_READ_HEADER = 'x-swb-peer-read'
 export const PROTOCOL_HEADER = 'x-swb-protocol'
 
 /**
+ * Marks the socket a gateway's relay opens, so the far side gives it no relay
+ * of its own.
+ *
+ * Said outright rather than inferred from the token, which is what it was: a
+ * token-less instance answers `hasPeerToken` false for *every* socket, so it
+ * handed one to a peer's relay and two such instances linked to each other
+ * melted down exactly as before -- measured, both wedged at the file-descriptor
+ * limit in under two seconds. And that is the ordinary configuration here:
+ * several checkouts, each its own loopback instance, none of them anybody's
+ * peer. Linking two of them is the first thing you would try.
+ */
+export const RELAY_HEADER = 'x-swb-relay'
+
+/**
  * How long a machine has to describe itself.
  *
  * The same budget as any other proxied read, and it used to be half of it --
@@ -44,6 +58,7 @@ export const PROTOCOL_HEADER = 'x-swb-protocol'
  * is scanned for exactly these two colours.
  */
 const SNAPSHOT_TIMEOUT_MS = 10_000
+const READ_TIMEOUT_MS = 10_000
 
 /** Normalized so it can be hashed into an id and compared character by character. */
 /**
@@ -56,15 +71,28 @@ const SNAPSHOT_TIMEOUT_MS = 10_000
  * have become anyway.
  */
 export const basicFrom = (raw: string): string | undefined => {
+  let url: URL
   try {
-    const url = new URL(raw.trim())
-    if (url.username === '') return undefined
-    const user = decodeURIComponent(url.username)
-    const password = decodeURIComponent(url.password)
-    return Buffer.from(`${user}:${password}`).toString('base64')
+    url = new URL(raw.trim())
   } catch {
     return undefined
   }
+  if (url.username === '' && url.password === '') return undefined
+  /*
+   * Decoded leniently. `new URL` leaves a lone `%` verbatim -- `100%pure` is an
+   * ordinary password -- and `decodeURIComponent` throws on it, which took the
+   * whole credential with it and produced the bare 401 this was written to
+   * stop. A password that cannot be decoded was never encoded; it is itself.
+   */
+  const plain = (value: string): string => {
+    try {
+      return decodeURIComponent(value)
+    } catch {
+      return value
+    }
+  }
+  // An empty user is legal and means the password is the whole credential.
+  return Buffer.from(`${plain(url.username)}:${plain(url.password)}`).toString('base64')
 }
 
 export const normalizeBaseUrl = (raw: string): string => {
@@ -251,9 +279,7 @@ export class PeerClient {
         signal: controller.signal,
         headers: {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          ...(this.token === undefined ? {} : { 'x-swb-token': this.token }),
-          ...(this.basic === undefined ? {} : { authorization: `Basic ${this.basic}` }),
-          [PEER_READ_HEADER]: '1',
+          ...this.headers(),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(unscopeTree(body)) }),
       })
@@ -305,9 +331,62 @@ export class PeerClient {
     )
   }
 
+  /**
+   * A reply that is not JSON, forwarded as the bytes it is.
+   *
+   * `/api/worktrees/:id/raw` answers with an image, and everything else here
+   * parses. Through the parsing path it came back as
+   * `504 … Unexpected token '<fffd>', "<fffd>PNG..." is not valid JSON` -- so
+   * every image in a linked machine's worktree was broken, the peer's file
+   * bytes were echoed into an error handed to the client, and the file was
+   * buffered whole as a UTF-8 string on the way. The files pane commits to
+   * drawing an image as soon as `readFile` says `binary`, so it was a broken
+   * picture rather than a message.
+   */
+  private headers(): Record<string, string> {
+    return {
+      ...(this.token === undefined ? {} : { 'x-swb-token': this.token }),
+      ...(this.basic === undefined ? {} : { authorization: `Basic ${this.basic}` }),
+      [PEER_READ_HEADER]: '1',
+    }
+  }
+
+  async requestRaw(
+    path: string,
+    timeoutMs = READ_TIMEOUT_MS,
+  ): Promise<{ status: number; contentType: string; body: Buffer }> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        signal: controller.signal,
+        headers: this.headers(),
+      })
+      await this.checkProtocol(response)
+      const length = Number(response.headers.get('content-length') ?? '0')
+      if (length > MAX_REPLY_BYTES) {
+        await discard(response)
+        throw new HttpError(502, 'that server sent too much')
+      }
+      const body = Buffer.from(await response.arrayBuffer())
+      if (body.byteLength > MAX_REPLY_BYTES) throw new HttpError(502, 'that server sent too much')
+      return {
+        status: response.status,
+        contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+        body,
+      }
+    } catch (err) {
+      if (err instanceof HttpError) throw err
+      throw new PeerUnreachable(this.baseUrl, err instanceof Error ? err.message : String(err))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   /** What a socket to this peer must carry; see gate.ts on the peer's side. */
   socketHeaders(): Record<string, string> {
     return {
+      [RELAY_HEADER]: '1',
       ...(this.token === undefined ? {} : { 'x-swb-token': this.token }),
       // The upgrade goes through the same proxy the reads do, so it needs the
       // same credential -- a socket that 401s is a machine whose terminals
