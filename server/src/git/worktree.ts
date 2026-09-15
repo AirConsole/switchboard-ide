@@ -12,9 +12,6 @@ const git = async (cwd: string, ...args: string[]): Promise<string> => {
   return stdout
 }
 
-/** '' for a local host; the base URL for a remote one. */
-export type HostKey = string
-
 /**
  * Ids are derived from the absolute path rather than generated.
  *
@@ -22,25 +19,24 @@ export type HostKey = string
  * after an IDE restart or those sessions would be orphaned. Hashing the path
  * makes that automatic and needs no persistence to be correct.
  *
- * `host` is what keeps that true once a project can live on another
- * Switchboard server. A path alone is not unique across machines -- two hosts
- * with a checkout at the same path hash identically, and these ids key the
- * state store, the tmux metadata and every route parameter, so the two would
- * silently alias. A remote host contributes its base URL; a local one
- * contributes nothing at all, which is deliberate: it keeps every id this
- * machine has already recorded in tmux exactly as it was.
+ * **The path and nothing else**, byte for byte as it always has been. Adding
+ * even a separator would change every id on this machine and orphan every
+ * session tmux is holding, which is the one thing this must not do.
+ *
+ * A path is not unique across machines -- two with a checkout at the same path
+ * hash identically, and that is the normal case rather than a coincidence --
+ * but that is not this function's problem any more. These are the ids a machine
+ * gives its *own* projects; a linked machine's arrive already made, and are
+ * namespaced on the way in by `remote/scope.ts`. This took a `host` parameter
+ * for a while, against the day a project could live elsewhere. The day came and
+ * the answer turned out to be one layer up, so the parameter is gone rather
+ * than kept for a caller that never existed.
  */
-const idFor = (prefix: string, path: string, host: HostKey = ''): string => {
-  // A local id hashes the bare path, byte for byte as it always has. Adding
-  // even a separator would change every id on this machine and orphan every
-  // session tmux is holding, which is the one thing this must not do.
-  const input = host === '' ? resolve(path) : `${host}\u0000${resolve(path)}`
-  return `${prefix}-${createHash('sha1').update(input).digest('hex').slice(0, 10)}`
-}
+const idFor = (prefix: string, path: string): string =>
+  `${prefix}-${createHash('sha1').update(resolve(path)).digest('hex').slice(0, 10)}`
 
-export const projectIdFor = (root: string, host: HostKey = ''): string => idFor('p', root, host)
-export const worktreeIdFor = (path: string, host: HostKey = ''): string =>
-  idFor('wt', path, host)
+export const projectIdFor = (root: string): string => idFor('p', root)
+export const worktreeIdFor = (path: string): string => idFor('wt', path)
 
 export const isGitRepo = async (path: string): Promise<boolean> => {
   try {

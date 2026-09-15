@@ -155,10 +155,28 @@ const Group = ({
           .filter(Boolean)
           .join(' ')}
         onClick={() => onRevealProject(project)}
-        title={`${project.root}\n${
+        title={`${project.host.kind === 'remote' ? `on ${hostLabel(project.host)}\n` : ''}${project.root}\n${
           asleep.length === 0 ? 'Nothing asleep' : `${asleep.length} asleep`
         }\nClick for this project's worktrees, a new one, and closing it`}
       >
+        {/*
+          * Which machine, and only when it is not this one.
+          *
+          * Linking a machine brings everything open on it, so two projects with
+          * the same name is the normal case rather than a collision -- the same
+          * checkout on two machines is what these ids are namespaced to tell
+          * apart in the first place. Without this the strip read "one two one
+          * two" and the only way to tell which was which was to hover for the
+          * path, in the one part of the interface you are meant to be able to
+          * scan.
+          *
+          * Ahead of the name and dimmer, the way a path segment sits before
+          * what it qualifies: the project is still the thing you are looking
+          * for, and the machine is where it happens to be.
+          */}
+        {project.host.kind === 'remote' && (
+          <span className="tabgroup__host">{hostLabel(project.host)}</span>
+        )}
         <span className="tabgroup__name">{project.name}</span>
         {/* That there is something behind this project you cannot see. The
             count sat here for a day and was noise: how many is a thing you find
@@ -321,6 +339,22 @@ const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | null => {
  * Amber stays reserved for a worktree whose Claude is blocked on you, and it
  * has to survive being asleep, since sleeping can leave Claude running.
  */
+/**
+ * What to call the machine a project is on.
+ *
+ * Its own name where it gave one -- the same word the machine picker shows, so
+ * the two halves of the interface do not name it differently -- and its host
+ * otherwise, which is the next most recognisable thing about it.
+ */
+const hostLabel = (host: { baseUrl: string; name?: string }): string => {
+  if (host.name !== undefined && host.name !== '') return host.name
+  try {
+    return new URL(host.baseUrl).hostname
+  } catch {
+    return host.baseUrl
+  }
+}
+
 export const TopBar = ({
   groups,
   sessions,

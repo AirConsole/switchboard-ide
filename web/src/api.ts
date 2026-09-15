@@ -62,16 +62,58 @@ export interface BrowseResult {
   entries: { name: string; path: string; isRepo: boolean }[]
 }
 
+/** A machine this server can read from, as the picker sees it. */
+export interface ServerRow {
+  /** The short key that scopes its ids; what `host` takes everywhere. */
+  key: string
+  baseUrl: string
+  name: string
+}
+
 export const api = {
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
 
   /** Claude's usage limits. The server caches these for five minutes. */
   usage: () => request<Usage>('/api/usage'),
-  /** Closed projects, newest first; already filtered to ones still on disk. */
-  recents: () => request<RecentProject[]>('/api/recents'),
-  browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
-  openProject: (path: string, opts: { create?: boolean; commitExisting?: boolean } = {}) =>
-    request<Project>('/api/projects', {
+  /**
+   * Closed projects, newest first; already filtered to ones still on disk.
+   *
+   * `host` names a machine the server holds a pointer to, and everything about
+   * reaching it is the server's business -- this is still our own origin. That
+   * is the whole of what the browser knows about remote projects.
+   */
+  recents: (host?: string) =>
+    request<RecentProject[]>(`/api/recents${host === undefined ? '' : `?host=${host}`}`),
+  browse: (path: string, host?: string) =>
+    request<BrowseResult>(
+      `/api/browse?path=${encodeURIComponent(path)}${host === undefined ? '' : `&host=${host}`}`,
+    ),
+
+  /**
+   * The machines this one is linked to.
+   *
+   * Linking is the whole of the relationship: everything open on a linked
+   * machine is open here. There is nothing to subscribe to per project, and
+   * nothing here records one -- a remote project arrives in the snapshot under
+   * that machine's own id.
+   */
+  servers: () => request<ServerRow[]>('/api/servers'),
+  addServer: (input: { baseUrl: string; token: string }) =>
+    request<ServerRow>('/api/servers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  forgetServer: (baseUrl: string) =>
+    request<{ ok: true }>('/api/servers', {
+      method: 'DELETE',
+      body: JSON.stringify({ baseUrl }),
+    }),
+
+  openProject: (
+    path: string,
+    opts: { create?: boolean; commitExisting?: boolean; host?: string } = {},
+  ) =>
+    request<Project>(`/api/projects${opts.host === undefined ? '' : `?host=${opts.host}`}`, {
       method: 'POST',
       body: JSON.stringify({
         path,

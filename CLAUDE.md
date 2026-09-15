@@ -146,12 +146,19 @@ the checkout does not read as dirty because of them. Nothing depends on that
 location, though: worktrees are read from `git worktree list`, so one registered
 anywhere shows up.
 
-The server binds localhost and leaves `/api` to the reverse proxy in front of
-it. The one thing it checks itself is **who may open `/ws`**, because a
-WebSocket is exempt from CORS and neither the bind address nor Caddy is in that
-path: any page you visited could otherwise open one, read a session id off the
-broadcast and type into a running agent. Behind a proxy that check needs
-`--host`, the public name a browser types, which `deploy.sh` passes. See
+The server binds localhost and checks two things itself, both because neither
+the bind address nor Caddy is in the path that matters. **Who may open `/ws`**:
+a WebSocket is exempt from CORS, so any page you visited could otherwise open
+one, read a session id off the broadcast and type into a running agent. And
+**what name a request was addressed to**: a DNS-rebound page is same-origin with
+us afterwards, so `Host` is the only thing about it that is not the attacker's
+to choose. Both need `--host` behind a proxy -- the public name a browser types,
+which `deploy.sh` passes.
+
+Without `SWB_TOKEN` this instance serves **this machine only** -- there is no
+credential, so the connection's own address is the whole of the boundary.
+Setting `SWB_TOKEN` is what lets another machine read it, and therefore what
+makes binding anything but loopback a thing that can be made safe. See
 `server/CLAUDE.md`.
 
 It also **installs as an app** -- a manifest and icons in `web/public/`, so
@@ -167,7 +174,8 @@ browser ── one WebSocket (JSON control + binary output frames) ──> serve
    xterm.js per pane                     SessionEngine ──> node-pty ──> tmux
    fetch for everything else                    │          (private socket)
                                                 ├─ @xterm/headless mirror/session
-                                                └─ git worktree / status / diff
+                                                ├─ git worktree / status / diff
+                                                └─ peer (another machine's server)
 ```
 
 - `shared/` — the wire contract: the domain model and the WebSocket protocol.
@@ -180,8 +188,10 @@ browser ── one WebSocket (JSON control + binary output frames) ──> serve
 **Ids are derived from absolute paths, and the derivation must not change.**
 `idFor` in `server/src/git/worktree.ts` hashes the path; a worktree's id is
 recorded inside its tmux session's metadata, so changing how local ids are
-computed orphans every running session. A remote host will namespace its ids by
-base URL; local ids keep hashing the bare path, deliberately.
+computed orphans every running session. Local ids keep hashing the bare path,
+deliberately; a peer's are namespaced **on the server**, by a short key derived
+from its base URL, because `/home/andrin/src/ide` on two machines hashes
+identically.
 
 **One tmux client per session, owned by the server.** Browsers are never tmux
 clients, which removes the whole class of "tmux resized the window to the
@@ -268,13 +278,79 @@ Commit messages say what changed and why it was wrong before, and record what
 was measured. They are long here on purpose: most of the traps in this codebase
 were found once and would be re-introduced without a note saying so.
 
-Do not add abstractions for things that do not exist yet. Two seams are named
-ahead of time — `Project.host` and the id namespacing — and both are documented
-where they are.
+Do not add abstractions for things that do not exist yet. The two seams that
+were named ahead of time — `Project.host` and the id namespacing — are both
+used now, by the gateway described below.
+
+## Linked machines
+
+Another machine running this same IDE can be **linked**, and then everything
+open there is open here. There is no per-project subscription: you link the
+machine, and its projects, worktrees, sessions and queued todos join the row.
+
+That is the model the row is for. An agent blocked on you is blocked on you
+wherever it is, and under a per-project model one in a project you had not
+happened to register never reached you. It is also the model the rest of this
+IDE already has — every registered project is open, there is no active one.
+
+**This server is the gateway.** The browser talks to one origin and, almost
+everywhere, never learns that a project is remote: `store.ts`, `Overview.tsx`,
+`TopBar.tsx` and `App.tsx` are untouched, so the unit arithmetic, the keyboard,
+the focus model and the WebGL budget never had to be reasoned about. Two places
+know — the open dialog, because somebody has to pick the machine, and one
+branch of `socket.ts`, because a machine restarting re-attaches its panes and
+only a repaint can say what they show now.
+
+Everything else follows from those two sentences:
+
+- **A machine's ids are its own.** A remote project, worktree or session is
+  known here by the id that machine gave it, namespaced by a short key, so
+  every route addresses it through the ordinary proxy with no special case.
+  When this server minted ids of its own for them, the one route that
+  addresses a project rather than a worktree could not be routed at all.
+- **Linking is not transitive.** A linked machine contributes its *own*
+  projects, never the machines it is itself linked to. That is also what makes
+  two machines linked to each other terminate rather than recurse — in the
+  snapshot, and on the socket, where a peer's relay gets no relay of its own.
+- **A peer needs no public exposure.** No DNS, no TLS, no Caddy of its own, no
+  login. It is reached from the gateway over the network the two share, which
+  is the topology this was built for: the machines are together and only you
+  are somewhere else. A proxy's cost is the *detour*, not the peer's round
+  trip, and over a LAN hop that is about a millisecond on terminal echo.
+- **A peer is an unmodified instance.** It runs this same program and has no
+  idea anyone is linked to it. That is what lets one hook forward every `/api`
+  route and one relay carry the socket: the path that answers here answers
+  there.
+- **Todos live with the worktree**, so RUN NEXT on a remote worktree is typed
+  by that machine's own dispatcher with no browser open anywhere. Measured by
+  killing the gateway two milliseconds after queueing one: the prompt was typed
+  757ms after the gateway had ceased to exist.
+- **The layout is yours.** `ui` is read and written only on the server that
+  served the page; a peer's copy is dropped at the boundary.
+- **A machine that is off keeps its tab**, with the worktrees it last had and
+  **no sessions**. The UI prunes stored layout for worktrees it cannot see, so
+  losing them costs panels and open files permanently — and liveness recalled
+  is worse than absent: it claims an agent is running, and that one is blocked
+  on you, on a machine that is switched off.
+- **Authentication is a token between servers, and there is no login.** A peer
+  sets `SWB_TOKEN`, which is also what makes it safe for it to bind an address
+  other than loopback. Your browser never talks to a peer, so there is no CORS,
+  no cookie, no preflight — and Caddy keeps its `basicauth` exactly as it is.
+
+Testing needs two instances:
+
+```sh
+scripts/scratch.sh up          # the gateway
+scripts/scratch.sh up peer     # the machine to link; prints its token
+scripts/scratch.sh down peer   # each one goes down by name
+```
 
 ## Not built yet
 
-- Remote projects: a project on another Switchboard server, with this server as
-  the gateway. The seams are named in `server/CLAUDE.md`.
+- Installing and updating: there is no way to install this on a fresh box, so a
+  peer is a checkout someone built by hand.
+- Telling you *why* a machine is quiet: an unreachable peer's project keeps its
+  tab and shows the worktrees it last had, but nothing yet says which of those
+  it is.
 - Registering as a Claude Code IDE (`~/.claude/ide/<port>.lock`) so agents get
   `openDiff` and diagnostics against this IDE.

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RecentProject } from '@switchboard/shared'
-import { ApiError, api, type BrowseResult } from '../api.js'
+import { ApiError, api, type BrowseResult, type ServerRow } from '../api.js'
 import { useEscape } from './useEscape.js'
 
 export interface OpenProjectDialogProps {
@@ -54,6 +54,70 @@ const readStrings = (value: unknown): string[] =>
  * nothing but the path, and walking the tree back down to it is the whole of
  * that cost.
  */
+/**
+ * Address and token for a machine to add.
+ *
+ * The token is this server's credential for the peer, not the user's: it is
+ * handed over once and never comes back, which is why the field is emptied the
+ * moment it is submitted rather than left to be read off the screen.
+ */
+const AddServer = ({
+  busy,
+  onAdd,
+}: {
+  busy: boolean
+  onAdd: (baseUrl: string, token: string) => void
+}): React.ReactElement => {
+  const [baseUrl, setBaseUrl] = useState('')
+  const [token, setToken] = useState('')
+  const submit = (): void => {
+    // Both, because a machine with no token cannot be read: it answers only to
+    // loopback and its own published names, and a gateway is neither.
+    if (baseUrl.trim() === '' || token.trim() === '') return
+    onAdd(baseUrl.trim(), token)
+    setToken('')
+  }
+  return (
+    <div className="addserver">
+      <input
+        className="field__input"
+        placeholder="http://box.local:8084"
+        value={baseUrl}
+        spellCheck={false}
+        autoFocus
+        onChange={(event) => setBaseUrl(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+      />
+      <input
+        className="field__input"
+        placeholder="token"
+        type="password"
+        value={token}
+        spellCheck={false}
+        onChange={(event) => setToken(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+      />
+      <button
+        className="btn"
+        onClick={submit}
+        disabled={busy || baseUrl.trim() === '' || token.trim() === ''}
+      >
+        Add
+      </button>
+      <span className="field__hint">
+        That machine&apos;s <code>SWB_TOKEN</code>, which is what makes it readable as a machine at
+        all. It is kept here and sent from this server; your browser never talks to it. If a proxy
+        in front of it asks for a password, put it in the address:{' '}
+        <code>https://user:pw@box.local</code>.
+      </span>
+    </div>
+  )
+}
+
 export const OpenProjectDialog = ({
   onClose,
   onOpened,
@@ -66,26 +130,126 @@ export const OpenProjectDialog = ({
   const [commitExisting, setCommitExisting] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * Which machine the picker is looking at. `undefined` is this one.
+   *
+   * Nothing else in the dialog changes with it: the listing, the recents and
+   * opening all take it and the server decides what it means. The browser is
+   * still talking to one origin.
+   */
+  const [host, setHost] = useState<string | undefined>(undefined)
+  const [servers, setServers] = useState<ServerRow[]>([])
+  const [adding, setAdding] = useState(false)
 
-  const browse = (next: string): void => {
+  /*
+   * Which read is the current one.
+   *
+   * A machine that is slow to answer would otherwise overwrite a machine that
+   * was quick: switch away from a remote peer and the local listing lands
+   * first, the peer's lands second, and the chip says "This machine" over the
+   * peer's disk -- with Open then targeting whichever the chip says.
+   */
+  const reads = useRef(0)
+  /** Its own generation: `browse` is called again on every click, and a shared
+   * counter then discarded the recents reply that was still on its way -- so
+   * one machine's closed projects sat under another machine's chip until you
+   * switched again. */
+  const recentReads = useRef(0)
+
+  const browse = (next: string, on = host): void => {
+    const read = ++reads.current
     void api
-      .browse(next)
+      .browse(next, on)
       .then((result) => {
+        if (read !== reads.current) return
         setListing(result)
         setPath(result.path)
         setError(null)
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => {
+        if (read !== reads.current) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
-  useEffect(() => browse(''), [])
+  /*
+   * Emptied before the new machine answers, not after.
+   *
+   * Left up, they are another machine's directories under this machine's chip,
+   * and nothing about the screen says so -- a peer that is asleep takes the
+   * full request timeout, and the error path leaves the old listing where it
+   * was. Clicking one of those rows opened a path read from machine A on
+   * machine B, and with "create" that is a mkdir and a git init in the wrong
+   * place. Empty is honest; stale is not.
+   */
+  useEffect(() => {
+    setListing(null)
+    setRecents([])
+    // The path too, and it is the stronger vector of the two: the listing is
+    // only something to click, while this is what Open actually sends. A peer
+    // that is asleep takes the full timeout and then errors, and a path read
+    // from one machine sitting under another machine's chip with the button
+    // live opens it there -- and "the same checkout path on two machines is the
+    // normal case", so it usually succeeds, silently, on the wrong one.
+    setPath('')
+    setProposal(null)
+    browse('', host)
+  }, [host])
+
   // Not fatal if it fails: the picker below opens any project this can.
   useEffect(() => {
+    const read = ++recentReads.current
     void api
-      .recents()
-      .then(setRecents)
+      .recents(host)
+      .then((rows) => {
+        if (read === recentReads.current) setRecents(rows)
+      })
+      .catch(() => {
+        if (read === recentReads.current) setRecents([])
+      })
+  }, [host])
+  const loadServers = (): void => {
+    void api
+      .servers()
+      .then(setServers)
       .catch(() => {})
-  }, [])
+  }
+  useEffect(loadServers, [])
+
+  /**
+   * Add a machine, then look at it.
+   *
+   * The token is asked for here and goes no further than this server, which
+   * keeps it and speaks to the peer itself. Nothing about a peer is ever
+   * reached from the browser.
+   */
+  const addServer = (baseUrl: string, token: string): void => {
+    if (busy) return
+    setBusy(true)
+    void api
+      .addServer({ baseUrl, token: token.trim() })
+      .then((server) => {
+        setBusy(false)
+        setAdding(false)
+        setError(null)
+        /*
+         * Added to the list in the same render that selects it. Refreshing the
+         * list from the server instead left `host` naming a machine `servers`
+         * did not have yet, and `open()` reads `servers` to decide local versus
+         * remote -- so clicking a directory in that window opened the peer's
+         * path on *this* machine, and with "create" that is mkdir and git init
+         * in the wrong place.
+         */
+        setServers((rows) =>
+          rows.some((row) => row.key === server.key) ? rows : [...rows, server],
+        )
+        setHost(server.key)
+      })
+      .catch((err: unknown) => {
+        setBusy(false)
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
 
   const open = (target: string, create = false): void => {
     // The buttons are disabled while a request is in flight; Enter has to
@@ -93,8 +257,37 @@ export const OpenProjectDialog = ({
     // are swallowed when the dialog unmounts.
     if (busy) return
     setBusy(true)
-    void api
-      .openProject(target, { create, commitExisting })
+    const server = servers.find((row) => row.key === host)
+    if (host !== undefined && server === undefined) {
+      /*
+       * The chip says a machine the list no longer has -- another tab forgot it
+       * while this dialog was open. Falling through opened *that machine's*
+       * path here, and with "create" that is a mkdir and a git init in the
+       * wrong place. It is the same vector `addServer` adds the row
+       * synchronously to close; the refresh path left it open.
+       */
+      setError('That machine is no longer registered here.')
+      // Unwound, like every other error path here. Left set, the chips, the
+      // Add button, the rows and Enter are all dead and the only way out of
+      // the dialog is Esc.
+      setBusy(false)
+      return
+    }
+    /*
+     * One call, to the machine the project will live on.
+     *
+     * It used to be two -- open it there, then record a pointer here -- which
+     * meant a half-open state nobody asked for: the peer had the project and
+     * this machine did not. There is nothing to record now. A linked machine
+     * contributes everything it has open, so opening it there *is* opening it
+     * here, one snapshot later.
+     */
+    const request = api.openProject(target, {
+      create,
+      commitExisting,
+      ...(server === undefined ? {} : { host: server.key }),
+    })
+    void request
       .then(() => onOpened())
       .catch((err: unknown) => {
         setBusy(false)
@@ -207,6 +400,62 @@ export const OpenProjectDialog = ({
           <h2 className="dialog__title">Open project</h2>
         </div>
         <div className="dialog__body">
+          {/*
+            * Which machine, before which directory -- the listing below is that
+            * machine's disk, so choosing it second would mean browsing one and
+            * opening on another.
+            */}
+          <div className="field">
+            <span className="field__label">Machine</span>
+            <div className="chips">
+              <button
+                className={host === undefined ? 'chip chip--on' : 'chip'}
+                onClick={() => setHost(undefined)}
+                disabled={busy}
+              >
+                This machine
+              </button>
+              {servers.map((server) => (
+                <span key={server.key} className="chips__pair">
+                  <button
+                    className={host === server.key ? 'chip chip--on' : 'chip'}
+                    onClick={() => setHost(server.key)}
+                    disabled={busy}
+                    title={server.baseUrl}
+                  >
+                    {server.name}
+                  </button>
+                  <button
+                    className="chip chip--drop"
+                    title={`Forget ${server.baseUrl}`}
+                    aria-label={`Forget ${server.name}`}
+                    disabled={busy}
+                    onClick={() => {
+                      // The refusal is the useful half -- a machine with
+                      // projects open says so rather than taking them with it.
+                      void api
+                        .forgetServer(server.baseUrl)
+                        .then(() => {
+                          if (host === server.key) setHost(undefined)
+                          setError(null)
+                          loadServers()
+                        })
+                        .catch((err: unknown) =>
+                          setError(err instanceof Error ? err.message : String(err)),
+                        )
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button className="chip" onClick={() => setAdding(!adding)} disabled={busy}>
+                {adding ? 'Cancel' : '+ Add'}
+              </button>
+            </div>
+            {adding && <AddServer busy={busy} onAdd={addServer} />}
+          </div>
+
           {recents.length > 0 && (
             <div className="field">
               <span className="field__label">Recently closed</span>

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 // Imported for its declaration merging, which adds `websocket: true` to
 // RouteShorthandOptions. Without this the route option does not typecheck.
 import '@fastify/websocket'
@@ -6,6 +6,10 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
+import { allowSocket } from '../gate.js'
+import { RELAY_HEADER } from '../remote/peer.js'
+import { Relay } from '../remote/relay.js'
+import type { Workspace } from '../workspace.js'
 
 /**
  * One WebSocket carries every terminal in the app.
@@ -91,14 +95,14 @@ class SocketSink implements Sink {
  * one of ours. See `publicOrigins` in config.ts for why it is a list and not a
  * comparison against `Host`.
  */
-const clientAllowed = (origin: string | undefined): boolean =>
-  origin === undefined || config.publicOrigins.has(origin)
-
 export const registerWs = (
   app: FastifyInstance,
   engine: SessionEngine,
+  workspace: Workspace,
 ): { broadcastInvalidate: () => void; clientCount: () => number } => {
   const sinks = new Set<SocketSink>()
+  /** Each browser's links to the other machines, so they can be kept level. */
+  const relays = new Set<Relay>()
 
   const broadcast = (msg: ServerMsg): void => {
     for (const sink of sinks) sink.sendJson(msg)
@@ -121,17 +125,22 @@ export const registerWs = (
     // Refused *before* the sink joins `sinks`: every session's liveness and
     // attention is broadcast to everything in that set, session ids included,
     // and a refused client must not be handed one on its way out.
-    if (!clientAllowed(request.headers.origin)) {
+    if (!allowSocket(request)) {
       /*
        * Logged, and at warn, because the other thing that reaches here is our
        * own page behind a proxy whose origin nobody configured -- and that
        * failure is otherwise invisible: the page loads, every REST call works,
-       * and only the row never paints. Naming the origin that was refused
-       * turns "the IDE is broken" into one grep and one env var.
+       * and only the row never paints. Naming what was refused turns "the IDE
+       * is broken" into one grep and one env var.
        */
       app.log.warn(
-        { origin: request.headers.origin ?? null, allowed: [...config.publicOrigins] },
-        'refused a socket from an origin that is not ours -- was --host passed?',
+        {
+          origin: request.headers.origin ?? null,
+          host: request.headers.host ?? null,
+          ip: request.ip,
+          allowed: [...config.publicOrigins],
+        },
+        'refused a socket -- was --host passed, and is this machine meant to reach it?',
       )
       // 1008 is "policy violation", said out loud rather than dropped silently.
       socket.close(1008, 'origin not allowed')
@@ -141,12 +150,51 @@ export const registerWs = (
     const sink = new SocketSink(socket)
     sinks.add(sink)
 
+    /*
+     * This browser's own links to the other machines its windows live on.
+     *
+     * Per socket rather than per process, so a peer sees one client per browser
+     * and its own size and input arbitration decides between two viewers of a
+     * remote terminal -- the same rule, in the same place, as for a local one.
+     */
+    /*
+     * A gateway's relay socket gets no relay of its own.
+     *
+     * Without this, two machines linked to each other melt down: A's relay
+     * opens a socket to B, B accepts it as an ordinary client and gives it a
+     * relay, which opens a socket back to A, which does the same. Measured at
+     * **~55 new sockets per second in each direction**, and self-sustaining --
+     * killing the only browser did not stop it, because by then the sockets
+     * were each other's clients. Both machines run out of file descriptors and
+     * stay there. Linking a machine to *itself* is the same mechanism in one
+     * process: 1,447 sockets in five seconds.
+     *
+     * This is the `/ws` half of what `x-swb-peer-read` does for the snapshot:
+     * a read made *by* a gateway is answered with this machine's own world and
+     * nothing further. The relay says so in a header, because the token cannot:
+     * an instance that is nobody's peer has no token to check, so asking "did
+     * this socket present one" answered no for every socket and gave a relay to
+     * the very thing that must not have one.
+     */
+    const relay = request.headers[RELAY_HEADER] !== undefined
+      ? null
+      : new Relay(() => workspace.peers(), {
+          sendJson: (msg) => sink.sendJson(msg),
+          sendBinary: (data) => sink.sendBinary(data),
+          onInvalidate: () => sink.sendJson({ t: 'invalidate' }),
+          knowsSession: (id) => workspace.knowsSession(id),
+        })
+    if (relay) relays.add(relay)
+
     socket.on('message', (raw: Buffer | string) => {
       const msg = parseClientMsg(raw.toString())
       if (msg === null) {
         sink.sendJson({ t: 'error', message: 'malformed message' })
         return
       }
+      // A frame naming another machine never reaches the local engine, which
+      // would answer "no such session" about an id that was never its.
+      if (relay?.handle(msg) === true) return
       switch (msg.t) {
         case 'attach':
           void engine.attach(sink, msg.sessionId, msg.cols, msg.rows, msg.primary)
@@ -172,12 +220,27 @@ export const registerWs = (
       // Detach from every session, or the engine would keep sending output to a
       // dead socket and hold its mirror subscriptions forever.
       engine.detachAll(sink)
+      if (relay) {
+        relay.dispose()
+        // Out of the set as well as disposed. Left in it, the next invalidate
+        // -- which is constant -- called `sync()` on a dead relay, and `sync()`
+        // cheerfully opened fresh sockets to every peer that nothing would ever
+        // close. One per reload, per peer, for the life of the process.
+        relays.delete(relay)
+      }
       sinks.delete(sink)
     })
   })
 
   return {
-    broadcastInvalidate: () => broadcast({ t: 'invalidate' }),
+    broadcastInvalidate: () => {
+      // Registering or forgetting a machine is one of the things that
+      // invalidates the snapshot, so this is also where every browser's links
+      // are brought level with the registry -- opening one for a machine just
+      // added, closing one for a machine just forgotten.
+      for (const relay of relays) relay.sync()
+      broadcast({ t: 'invalidate' })
+    },
     /** So work nobody would see -- polling git, say -- can simply not happen. */
     clientCount: () => sinks.size,
   }

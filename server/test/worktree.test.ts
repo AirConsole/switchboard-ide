@@ -51,13 +51,20 @@ describe('ids', () => {
     expect(projectIdFor('/tmp/x')).not.toBe(worktreeIdFor('/tmp/x'))
   })
 
-  it('namespaces a remote host without disturbing the local derivation', () => {
-    // The empty host key is what keeps every id already in tmux exactly as it
-    // was; a remote one has to differ, or two machines silently alias.
-    expect(worktreeIdFor('/home/a/src/ide', '')).toBe(worktreeIdFor('/home/a/src/ide'))
-    expect(worktreeIdFor('/home/a/src/ide', 'https://other/')).not.toBe(
-      worktreeIdFor('/home/a/src/ide'),
-    )
+  /*
+   * The derivation is the path and nothing else, and it must stay that way:
+   * these ids are recorded inside tmux's own metadata, so changing how they are
+   * computed orphans every running session.
+   *
+   * It carried a `host` parameter for a while, against the day a project could
+   * live on another machine. That day came, and the answer turned out to be one
+   * layer up -- a linked machine's ids arrive already made and are namespaced by
+   * `remote/scope.ts` -- so what this guards now is that nothing crept back in.
+   */
+  it('hashes the path and nothing else', () => {
+    expect(worktreeIdFor('/home/a/src/ide')).toBe(worktreeIdFor('/home/a/src/ide/'))
+    expect(worktreeIdFor('/home/a/src/ide')).not.toBe(worktreeIdFor('/home/a/src/other'))
+    expect(worktreeIdFor('/home/a/src/ide')).toMatch(/^wt-[0-9a-f]{10}$/)
   })
 })
 

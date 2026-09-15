@@ -289,6 +289,33 @@ The pieces, and why each is the way it is:
   the dialogs and the todo list, both on `--level-panel`, go 5.64 → 6.49. One
   red raised, rather than a second red for one control.
 
+## Remote projects are not this package's problem
+
+A project can live on another machine, and **nothing here knows**. `api.ts`
+still speaks to one origin, `socket.ts` still opens one socket, `store.ts` still
+merges one snapshot, and a worktree id is a worktree id. The server forwards and
+namespaces; see `server/CLAUDE.md`.
+
+That is deliberate and worth keeping. The subtle parts of this package -- the
+unit arithmetic, `useNearViewport` and the WebGL budget it protects, the
+document-level capture listeners every shortcut is built on, the focus model,
+and `ui` being one last-writer-wins document -- are all things a second origin
+in the row would have broken, and an iframe per window would have broken all
+five at once.
+
+One line of `socket.ts` knows, and only just: **a second `attached` for a session
+already mapped is a re-attach, and repaints.** When a remote worktree's machine
+restarts, the gateway re-claims the attachment on our behalf and this socket
+never closes -- so nothing else would ever clear `painted`, and the pane went on
+showing the screen from before the restart while everything printed in the gap
+was dropped. Claude runs on the alternate screen, where a serialized repaint is
+the only thing worth anything. The stale stream number is dropped with it.
+
+The other component that knows is `OpenProjectDialog`, because somebody has to
+pick the machine: a `host` key goes to `browse`, `recents` and `openProject`,
+and the server decides what it means. Adding a machine takes its token, which
+goes to our own server and no further -- the browser never talks to a peer.
+
 ## The row is a grid of units
 
 `Overview.tsx` holds the only layout arithmetic:

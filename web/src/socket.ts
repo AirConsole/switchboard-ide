@@ -107,6 +107,26 @@ class TerminalSocket {
   private handleJson(msg: ServerMsg): void {
     switch (msg.t) {
       case 'attached': {
+        /*
+         * A second `attached` for a session we already have is a *re*-attach:
+         * the server has re-claimed it on our behalf and given it a new stream
+         * number. That happens when a remote worktree's machine restarts --
+         * the gateway re-attaches for us, and this socket never closed, so
+         * nothing else would ever reset `painted`. Without a repaint the pane
+         * kept showing the screen from before the restart, silently, and
+         * everything the agent printed in the gap was dropped -- on the
+         * alternate screen, where replayed history is meaningless and only a
+         * serialized repaint is worth anything.
+         */
+        for (const [streamId, sessionId] of this.streamToSession) {
+          if (sessionId !== msg.sessionId || streamId === msg.streamId) continue
+          // The old number will never carry anything again; leaving it mapped
+          // is one stale entry per restart.
+          this.streamToSession.delete(streamId)
+          for (const consumer of this.consumers.get(msg.sessionId) ?? []) {
+            consumer.painted = false
+          }
+        }
         this.streamToSession.set(msg.streamId, msg.sessionId)
         const set = this.consumers.get(msg.sessionId)
         if (!set) return

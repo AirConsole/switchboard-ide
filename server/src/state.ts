@@ -1,6 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
-import type { Project, RecentProject, UiState, WorktreeTodo } from '@switchboard/shared'
+import type {
+  Project,
+  RecentProject,
+  RemoteCache,
+  RemoteServer,
+  UiState,
+  WorktreeTodo,
+} from '@switchboard/shared'
 import { defaultUiState } from '@switchboard/shared'
 import { defaultWorktreeRoot } from './git/worktree.js'
 import { stateFile } from './config.js'
@@ -35,6 +42,16 @@ export interface PersistedState {
    * and `ui` is the client's blob.
    */
   recents: RecentProject[]
+  /**
+   * Machines this one can read projects from, with their credentials.
+   *
+   * Required for the reason `todos` is: `load()` builds a fresh literal, so a
+   * key nobody copies is dropped on read and erased by the next save -- and
+   * losing these silently locks you out of every remote project at once.
+   */
+  servers: RemoteServer[]
+  /** See `RemoteCache`: what each machine last said, so its absence is not a deletion. */
+  remoteCache: RemoteCache[]
   ui: UiState
 }
 
@@ -46,6 +63,8 @@ const emptyState = (): PersistedState => ({
   projects: [],
   todos: [],
   recents: [],
+  servers: [],
+  remoteCache: [],
   ui: defaultUiState(),
 })
 
@@ -60,6 +79,32 @@ const emptyState = (): PersistedState => ({
  * with it. The catch's comment says everything here is rebuildable by the
  * user; a queue of prompts is not.
  */
+/** A stored server, or nothing. Row by row, for the reason projects are. */
+const reviveServer = (value: unknown): RemoteServer | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Partial<RemoteServer>
+  if (typeof row.baseUrl !== 'string' || row.baseUrl === '') return null
+  return {
+    baseUrl: row.baseUrl,
+    name: typeof row.name === 'string' && row.name !== '' ? row.name : row.baseUrl,
+    ...(typeof row.token === 'string' ? { token: row.token } : {}),
+    ...(typeof row.basic === 'string' ? { basic: row.basic } : {}),
+    addedAt: typeof row.addedAt === 'number' ? row.addedAt : Date.now(),
+  }
+}
+
+/** A stored peer cache, or nothing. Row by row, for the reason projects are. */
+const reviveRemoteCache = (value: unknown): RemoteCache | null => {
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Partial<RemoteCache>
+  if (typeof row.baseUrl !== 'string' || row.baseUrl === '') return null
+  return {
+    baseUrl: row.baseUrl,
+    projects: Array.isArray(row.projects) ? row.projects : [],
+    worktrees: Array.isArray(row.worktrees) ? row.worktrees : [],
+  }
+}
+
 const reviveProject = (value: unknown): Project | null => {
   if (typeof value !== 'object' || value === null) return null
   const row = value as Partial<Project>
@@ -67,10 +112,17 @@ const reviveProject = (value: unknown): Project | null => {
   if (typeof row.root !== 'string' || row.root === '') return null
   return {
     ...(row as Project),
-    // A project registered before hosts existed is a local one. Defaulting it
-    // here keeps the type honest about a field the stored file has never
-    // contained.
-    host: row.host ?? { kind: 'local' as const },
+    /*
+     * Always local, and this is the one place that says so.
+     *
+     * Only local projects are stored: a machine you have linked contributes
+     * *its* projects to the snapshot, under its own ids, and none of them is
+     * written here. Forcing it keeps that an invariant of the file rather than
+     * something every reader has to check -- `worktrees()` used to skip a
+     * remote row, and `createWorktree` used to refuse one, because a stored
+     * remote project would send local git at a path on another machine.
+     */
+    host: { kind: 'local' as const },
     worktreeRoot: defaultWorktreeRoot(row.root),
   }
 }
@@ -163,6 +215,12 @@ export class StateStore {
             .map(reviveRecent)
             .filter((recent): recent is RecentProject => recent !== null)
             .slice(0, RECENT_LIMIT),
+          servers: (Array.isArray(candidate.servers) ? candidate.servers : [])
+            .map(reviveServer)
+            .filter((server): server is RemoteServer => server !== null),
+          remoteCache: (Array.isArray(candidate.remoteCache) ? candidate.remoteCache : [])
+            .map(reviveRemoteCache)
+            .filter((entry): entry is RemoteCache => entry !== null),
           ui: pickKnownUiKeys(candidate.ui),
         }
       }
@@ -201,6 +259,48 @@ export class StateStore {
 
   removeProject(id: string): void {
     this.state.projects = this.state.projects.filter((p) => p.id !== id)
+    this.scheduleSave()
+  }
+
+  get servers(): RemoteServer[] {
+    return this.state.servers
+  }
+
+  server(baseUrl: string): RemoteServer | undefined {
+    return this.state.servers.find((s) => s.baseUrl === baseUrl)
+  }
+
+  /** Adding a machine that is already there replaces its credential. */
+  addServer(server: RemoteServer): void {
+    const at = this.state.servers.findIndex((s) => s.baseUrl === server.baseUrl)
+    if (at === -1) this.state.servers.push(server)
+    else this.state.servers[at] = server
+    this.scheduleSave()
+  }
+
+  removeServer(baseUrl: string): void {
+    this.state.servers = this.state.servers.filter((s) => s.baseUrl !== baseUrl)
+    this.scheduleSave()
+  }
+
+  remoteCache(baseUrl: string): RemoteCache | undefined {
+    return this.state.remoteCache.find((entry) => entry.baseUrl === baseUrl)
+  }
+
+  setRemoteCache(entry: RemoteCache): void {
+    const at = this.state.remoteCache.findIndex((e) => e.baseUrl === entry.baseUrl)
+    if (at === -1) this.state.remoteCache.push(entry)
+    else this.state.remoteCache[at] = entry
+    this.scheduleSave()
+  }
+
+  clearRemoteCache(baseUrl: string): void {
+    // Nothing to clear is not a change. `scheduleSave` resets its timer on
+    // every call with no maximum wait, and "registered with nothing open" is
+    // the normal state while browsing a machine in the open dialog -- so an
+    // unconditional write here starves the save it is trying not to starve.
+    if (!this.state.remoteCache.some((e) => e.baseUrl === baseUrl)) return
+    this.state.remoteCache = this.state.remoteCache.filter((e) => e.baseUrl !== baseUrl)
     this.scheduleSave()
   }
 
@@ -298,11 +398,18 @@ export class StateStore {
     await this.saving
   }
 
-  /** Atomic: write a sibling temp file, then rename over the target. */
+  /**
+   * Atomic: write a sibling temp file, then rename over the target.
+   *
+   * `mode` because this file holds peers' credentials. Set on the temp file
+   * rather than after the rename, so there is no instant at which the contents
+   * exist under the default umask -- and `writeFile`'s mode applies only when
+   * it creates the file, which is why the temp name carries the pid.
+   */
   private async write(): Promise<void> {
     await mkdir(dirname(stateFile), { recursive: true })
     const tmp = `${stateFile}.${process.pid}.tmp`
-    await writeFile(tmp, `${JSON.stringify(this.state, null, 2)}\n`, 'utf8')
+    await writeFile(tmp, `${JSON.stringify(this.state, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
     await rename(tmp, stateFile)
   }
 }

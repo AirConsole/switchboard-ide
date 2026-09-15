@@ -1,4 +1,5 @@
-import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 
 const env = process.env
@@ -69,22 +70,50 @@ const publicOrigins = (): ReadonlySet<string> => {
   // the user's choice of URL and all three are the same server.
   const loopback = ['127.0.0.1', 'localhost', '[::1]']
   const allowed = loopback.map((h) => `http://${h}:${port}`)
-  // In dev the page is Vite's and it proxies `/ws` here, so the browser's origin
-  // is Vite's rather than ours. `changeOrigin` rewrites `Host` and leaves
-  // `Origin` alone, which is why this is needed and why it names the web port.
-  if (isDev) {
+  /*
+   * In dev the page is Vite's and it proxies `/ws` here, so the browser's
+   * origin is Vite's rather than ours. `changeOrigin` rewrites `Host` and
+   * leaves `Origin` alone, which is why this is needed and why it names the
+   * web port.
+   *
+   * Keyed on `NODE_ENV` being *explicitly* development, not on its absence.
+   * `isDev` is "not production", so a hand-started `node dist/index.js` --
+   * which is the documented way to run one for testing -- was a dev instance,
+   * and any other local app that happened to be served on 5240 could open
+   * `/ws`, read a session id off the broadcast and type into a terminal.
+   */
+  if (env.NODE_ENV === 'development') {
     const webPort = int(env.SWB_WEB_PORT, 5240)
     for (const h of loopback) allowed.push(`http://${h}:${webPort}`)
   }
   for (const raw of flag('host').flatMap((value) => value.split(','))) {
     const given = raw.trim().replace(/\/+$/, '')
     if (given === '') continue
-    if (given.includes('://')) {
-      allowed.push(given)
-      continue
+    // A bare name means both schemes; writing one pins it. See above.
+    const written = given.includes('://') ? [given] : [`https://${given}`, `http://${given}`]
+    for (const candidate of written) {
+      try {
+        /*
+         * Canonicalised, and that is what keeps `publicHosts` below from
+         * disagreeing with this set: it derives from these values, and it used
+         * to re-parse raw input of its own. `https://IDE.Example.com` then
+         * allowed `/api` and refused `/ws` -- a half-broken deployment, which
+         * is worse than either end of it, because the page loads and only the
+         * row never paints. A browser's `Origin` is always the canonical form,
+         * so that is what has to be in here.
+         *
+         * The scheme is checked, and not as a formality: a name that is itself
+         * scheme-shaped (`box.local:8084`) parses as the *scheme*
+         * `box.local:`, and `.origin` for any non-special scheme is the
+         * literal string `"null"` -- which would land in this set and blow up
+         * `new URL` downstream.
+         */
+        const url = new URL(candidate)
+        if (url.protocol === 'http:' || url.protocol === 'https:') allowed.push(url.origin)
+      } catch {
+        // Not a URL at all. Dropped rather than guessed.
+      }
     }
-    // A bare name. Both schemes; see above.
-    allowed.push(`https://${given}`, `http://${given}`)
   }
   return new Set(allowed)
 }
@@ -103,6 +132,56 @@ export const config = {
 
   /** Origins whose pages may open `/ws`. See `publicOrigins` above. */
   publicOrigins: publicOrigins(),
+
+  /**
+   * Host names this server answers to, which is what closes DNS rebinding.
+   *
+   * Rebinding is a page served from a name the attacker owns, the name then
+   * re-pointed at this address -- and the subtle half is that the rebound page
+   * is *same-origin* with us afterwards, so it sends no `Origin`, needs no
+   * preflight, and `Sec-Fetch-Site` reads `same-origin`. Every check built on
+   * those agrees with it. What it cannot forge is `Host`: the browser sends the
+   * name that was typed, and that name is one we never published.
+   *
+   * Derived from the same place as `publicOrigins`, so a deployment configures
+   * one thing. Port is ignored -- it is the name that is being lied about.
+   */
+  publicHosts: new Set(
+    // Every entry is already a canonical origin, so this cannot disagree with
+    // the set above -- which it did, and silently.
+    [...publicOrigins()].map((origin) => new URL(origin).hostname).filter((host) => host !== ''),
+  ),
+
+  /**
+   * The shared secret that makes this instance reachable as somebody's peer.
+   *
+   * Unset -- the default, and what a normal instance stays -- nothing changes:
+   * the bind address and whatever proxy sits in front are the boundary, as they
+   * always were. Set, every `/api` and `/ws` request must either carry it or be
+   * our own page, which is what makes it safe to bind an address other than
+   * loopback so a gateway on the network can read this machine. See gate.ts.
+   */
+  token: env.SWB_TOKEN === '' ? undefined : env.SWB_TOKEN,
+
+  /**
+   * What this machine calls itself in another machine's UI.
+   *
+   * The hostname is the obvious default and a poor one for testing, where two
+   * instances share a host and would be one name twice.
+   */
+  serverName: env.SWB_SERVER_NAME ?? hostname(),
+
+  /**
+   * A value this process can use to recognise itself.
+   *
+   * Not the name, which two machines can share, and not the address, which is
+   * the thing being compared. Linking a machine to itself is otherwise
+   * accepted and is a meltdown: its relay opens a socket to itself, which is
+   * accepted as a client and given a relay, which opens another -- 1,447
+   * sockets in five seconds, measured. Per start, because nothing needs it to
+   * survive one.
+   */
+  instanceId: randomUUID(),
 
   /*
    * Holds `state.json` and the tmux socket, so it is the one path that must not

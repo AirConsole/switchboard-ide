@@ -9,6 +9,10 @@ import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs } from './routes/ws.js'
+import { registerGate } from './gate.js'
+import { registerProxy } from './remote/proxy.js'
+import { PROTOCOL_HEADER } from './remote/peer.js'
+import { PROTOCOL_VERSION } from '@switchboard/shared'
 
 const app = Fastify({
   logger: {
@@ -50,7 +54,21 @@ process.on('unhandledRejection', (reason) => {
   app.log.error({ err: reason }, 'unhandled rejection; the server is staying up')
 })
 
-const { broadcastInvalidate, clientCount } = registerWs(app, engine)
+/*
+ * Every reply says which protocol this server speaks, so a gateway compares it
+ * on every read rather than only when the machine was added -- the other side
+ * is upgraded on its own schedule, and a version skew is otherwise silent.
+ */
+app.addHook('onSend', async (_request, reply, payload) => {
+  void reply.header(PROTOCOL_HEADER, String(PROTOCOL_VERSION))
+  return payload
+})
+
+registerGate(app)
+
+registerProxy(app, workspace)
+
+const { broadcastInvalidate, clientCount } = registerWs(app, engine, workspace)
 registerApi(app, { store, engine, workspace, broadcastInvalidate })
 
 // Session changes alter the snapshot (a session dying, for instance), so drop

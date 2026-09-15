@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
-import type { SessionKind } from '@switchboard/shared'
+import { PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -9,6 +9,8 @@ import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
+import { hostKeyFor } from '../remote/scope.js'
+import { PEER_READ_HEADER } from '../remote/peer.js'
 import { usage } from '../usage.js'
 
 /**
@@ -184,7 +186,28 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.get('/api/health', async () => ({ ok: true }))
 
-  app.get('/api/snapshot', async () => workspace.snapshot())
+  /*
+   * Who this machine is, for a gateway that has just been pointed at it.
+   *
+   * The version is here rather than in a header so a mismatch is a reply a
+   * human can be shown, naming both numbers. It is compared on every read and
+   * not only when a peer is added, because the other machine is upgraded on its
+   * own schedule.
+   */
+  app.get('/api/server', async () => ({
+    name: config.serverName,
+    protocolVersion: PROTOCOL_VERSION,
+    // So a gateway can tell this machine from itself, whatever address it used.
+    instanceId: config.instanceId,
+  }))
+
+  /*
+   * `localOnly` when another machine is the one asking. See `Workspace.snapshot`:
+   * without it, two instances pointed at each other recurse.
+   */
+  app.get('/api/snapshot', async (request) =>
+    workspace.snapshot({ localOnly: request.headers[PEER_READ_HEADER] !== undefined }),
+  )
 
   /*
    * Claude's own usage limits, cached for five minutes.
@@ -220,6 +243,50 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * because those processes outlive the browser and would otherwise be left
    * alive with nothing on screen owning them.
    */
+  /**
+   * The machines this one can read from.
+   *
+   * Never the credential: this is the picker's list, and the token that reaches
+   * a peer is held here and sent server to server.
+   */
+  app.get('/api/servers', async () =>
+    store.servers.map((server) => ({
+      key: hostKeyFor(server.baseUrl),
+      baseUrl: server.baseUrl,
+      name: server.name,
+    })),
+  )
+
+  app.post('/api/servers', async (request) => {
+    const body = z
+      .object({
+        baseUrl: z.string().min(1),
+        /*
+         * Required, not optional. A machine with no `SWB_TOKEN` answers `/api`
+         * only to loopback and its own published names -- which a gateway
+         * addressing it by hostname or LAN IP is not -- so a token-less peer
+         * cannot be read at all. Accepting one here offered a configuration
+         * that cannot work and then blamed the token, which is the one thing
+         * that was not the problem.
+         */
+        token: z.string().min(1, 'that machine needs its SWB_TOKEN'),
+      })
+      // Defaulted before parsing, so a *missing* token gets the sentence below
+      // rather than zod's "expected string, received undefined".
+      .parse({ token: '', ...(request.body as Record<string, unknown>) })
+    const server = await workspace.addServer(body)
+    // Other tabs, and this tab's own relay, have to learn there is a machine.
+    broadcastInvalidate()
+    return { key: hostKeyFor(server.baseUrl), baseUrl: server.baseUrl, name: server.name }
+  })
+
+  app.delete('/api/servers', async (request) => {
+    const body = z.object({ baseUrl: z.string().min(1) }).parse(request.body)
+    workspace.removeServer(body.baseUrl)
+    broadcastInvalidate()
+    return { ok: true }
+  })
+
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }
     const { sleep } = closeProjectQuery.parse(request.query)
