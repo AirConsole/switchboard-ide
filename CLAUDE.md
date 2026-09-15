@@ -34,8 +34,8 @@ time** -- its todos, its files and changes, or its terminals -- so a window is
 two, three, four or five units. A unit is as wide as it needs to be for as many
 as fit to fill the screen, and two of them never fall below 80 columns; the
 tree by itself is the one thing allowed to have less, because it is names and
-not code. Navigation always lands on a unit boundary, so no window is ever shown
-half-cut.
+not code. Navigation always lands on a pane's leading edge, so no pane is ever
+shown cut down the middle.
 
 ## Commands
 
