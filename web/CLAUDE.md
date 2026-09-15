@@ -463,6 +463,33 @@ clipped on the right 0 -> 363 and whole, clipped on the left 363 -> 0 and whole,
 already whole 363 -> 363, and `activeElement` the clicked terminal's own
 textarea throughout.
 
+**A window that grows means it too.** Opening a panel is a reveal already;
+opening something *inside* one was not, and it is the same action a level down
+— the files panel is one unit while it is only its tree and three once a file,
+a diff or a commit is open in it, so a click inside a pane that is fully on
+screen can take its tile from three units to five and push its own right-hand
+half off the edge. So the row remembers each cell's span between renders and
+reveals one that **grew**, through the same two functions as everything else.
+
+Three things about it are deliberate, and each is a way of not moving the row
+when nobody asked. **Growth, not size**: a tile that shrinks — you closed the
+file — has nothing hidden left to show, and scrolling then would take the window
+you were reading out from under you. **A new cell is not growth**, since waking
+a worktree and making one each scroll to it themselves and a tile arriving
+mid-row must not drag the row to wherever it landed. And **not across a
+resize**, which is the other thing that changes a span: capacity moves with the
+window, so a tile can gain a unit with nothing opened, and the row is already
+putting itself back by spot (`unitRef`) — two effects scrolling one row in one
+commit is one of them losing.
+
+Measured at 2400px, where the row is six units of 341px: with the files panel
+open on a tile at 1377–2388 (three units, whole on screen), opening README.md
+took it to 1694px wide and 665px of it past the right edge, and the row stepped
+two units, 682 -> 1365, leaving the tile at 694–2388 and whole. Closing the file
+again left the row at 1365, and re-opening it from there — where the grown tile
+still fits — also left it at 1365. Across 2400 -> 2800 -> 1500 -> 2400 the row
+kept its spot and came back to 1365 exactly, as it did before this existed.
+
 `measureMonoCharWidth` is **floored** on purpose. xterm rasterises glyphs into
 an atlas and blits per cell, so a cell is a whole number of pixels: canvas says
 8.429px where xterm lays out 8. This value now decides how many tiles the window
