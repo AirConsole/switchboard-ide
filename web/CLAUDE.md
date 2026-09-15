@@ -803,10 +803,23 @@ the row — so `App`'s `refocus()` reveals that pane again, which also brings a
 window that had scrolled off the side back with the keyboard.
 
 A removal has no pane to go back to, so it moves you on: the worktree after the
-one that went, or the one before it when it was the last in the row -- where the
-eye already is, and where a Cmd+arrow step from the gap would have taken you.
-Read off the row as it still stands, before the refresh drops the worktree,
-which is why it can be answered at all.
+one that went, or the one before it when it was the last -- where the eye
+already is, and where a Cmd+arrow step from the gap would have taken you. Read
+off the row as it still stands, before the refresh drops the worktree, which is
+why it can be answered at all.
+
+**Within its own project.** The row is every project's windows in a line, so
+"the next one" across the whole row is the first window of the *next project*
+whenever you remove a project's last worktree — somebody else's work, and
+nowhere you asked to be. With nothing awake left beside it, that project's own
+pane takes the keyboard instead: it is the head of the run and it is there
+whether or not anything else is, which makes it the one landing spot a removal
+can always promise, and it is where you go to make the next worktree, which is
+often why the last one went. The close-project path already lands this way — it
+moves to the pane of the project left standing — so the two now agree. The rule
+is `removalLanding` in `selectors.ts` rather than a closure in `App`, which is
+what lets a test hold it: two of its four cases are the flat row's answers
+written down as the wrong ones.
 
 ## The todo panel holds no state of its own
 

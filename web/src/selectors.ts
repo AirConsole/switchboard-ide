@@ -231,3 +231,49 @@ export const removalAsks = (
   if (questions.discard || questions.branch || questions.remoteBranch) return true
   return removalWarnings(worktree, sessions, todos).length > 0
 }
+
+/**
+ * Just enough of a project's run of windows to answer the question below.
+ * Structural on purpose: `ProjectGroup` is `App`'s, and `App` imports this.
+ */
+interface Run {
+  project: { id: string }
+  awake: { id: string }[]
+}
+
+/** Where the keyboard goes when the window you are in is removed. */
+export type RemovalLanding =
+  | { kind: 'worktree'; id: string }
+  | { kind: 'project'; id: string }
+  | null
+
+/**
+ * Where a removal leaves you: the neighbouring worktree **in the same
+ * project**, and that project's own pane when it was the last one awake.
+ *
+ * The one after it, or the one before it when it was the last -- where the eye
+ * already is, and where a Cmd+arrow step from the gap would have taken you.
+ *
+ * Scoped to the project rather than to the row, because the row is every
+ * project's windows in a line: "the next one" across the whole row is the first
+ * window of the *next project* whenever you remove a project's last worktree,
+ * which is somebody else's work and nowhere you asked to be.
+ *
+ * The project's pane is the fallback because it is the head of that run and is
+ * there whether or not anything else is -- the one landing a removal can always
+ * promise -- and it is where you go to make the next worktree, which is often
+ * why the last one went. `null` only when the worktree is in no run at all,
+ * which leaves the caller nothing to say.
+ *
+ * Answered against the row as it still stands, with the worktree being removed
+ * still in it: it is the refresh afterwards that drops it.
+ */
+export const removalLanding = (runs: Run[], worktreeId: string): RemovalLanding => {
+  const mine = runs.find((run) => run.awake.some((w) => w.id === worktreeId))
+  if (mine === undefined) return null
+  const at = mine.awake.findIndex((w) => w.id === worktreeId)
+  const next = mine.awake[at + 1] ?? (at > 0 ? mine.awake[at - 1] : undefined)
+  return next === undefined
+    ? { kind: 'project', id: mine.project.id }
+    : { kind: 'worktree', id: next.id }
+}
