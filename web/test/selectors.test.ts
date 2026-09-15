@@ -7,6 +7,7 @@ import {
   orderWorktrees,
   queuedTodoCount,
   removalAsks,
+  removalLanding,
   removalQuestions,
   removalWarnings,
   stateLabel,
@@ -334,5 +335,38 @@ describe('removalAsks', () => {
     const working = [session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'working' })]
     expect(removalAsks(clean, working, [])).toBe(true)
     expect(removalAsks(clean, [], [todo({ id: 't', worktreeId: 'a' })])).toBe(true)
+  })
+})
+
+/*
+ * Where removal leaves the keyboard.
+ *
+ * The row is every project's windows in a line, and this used to step along it
+ * flat -- so removing the last worktree of one project handed the keyboard to
+ * the first window of the *next* project. Each case below is that line read the
+ * wrong way round, which is why the two runs are deliberately adjacent.
+ */
+describe('removalLanding', () => {
+  const runs = [
+    { project: { id: 'p1' }, awake: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] },
+    { project: { id: 'p2' }, awake: [{ id: 'd' }] },
+  ]
+
+  it('takes the one after it', () => {
+    expect(removalLanding(runs, 'b')).toEqual({ kind: 'worktree', id: 'c' })
+  })
+
+  it('takes the one before it when it was the last of its project', () => {
+    // Flat across the row this is 'd', which belongs to the next project.
+    expect(removalLanding(runs, 'c')).toEqual({ kind: 'worktree', id: 'b' })
+  })
+
+  it('takes the project pane when nothing of that project is left awake', () => {
+    // Flat across the row this is 'c', in the project before it.
+    expect(removalLanding(runs, 'd')).toEqual({ kind: 'project', id: 'p2' })
+  })
+
+  it('says nothing about a worktree no run holds', () => {
+    expect(removalLanding(runs, 'gone')).toBeNull()
   })
 })

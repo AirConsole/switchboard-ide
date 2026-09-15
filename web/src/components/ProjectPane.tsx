@@ -125,15 +125,20 @@ export const ProjectPane = ({
       * the slack and these two stay where they are, in the order you reach for
       * them: making one is the everyday thing, closing the project the last.
       */}
+    {/*
+      * One block, not two. The form and Close project are both things you do to
+      * the project rather than to one of its worktrees, and they were reading
+      * as a form with a stray button under it -- so they share a heading, a
+      * rhythm and an edge, and the button is the last row of the form rather
+      * than a peer of it.
+      *
+      * It turns --danger under the pointer, which is the red the project's ×
+      * used to turn: said on the thing itself now rather than on a glyph beside
+      * the name.
+      */}
     <div className="projpane__foot">
+      <span className="projpane__footlabel">New worktree</span>
       <NewWorktreeForm project={project} focus={focus} onCreated={onCreated} />
-      {/*
-        * Shaped like a tab, because that is what this pane's other controls
-        * are and the strip is where this action used to live -- a × on the
-        * project's name, one mis-click from the × that merely sleeps a
-        * worktree. It turns --danger under the pointer: the same red that ×
-        * did, said on the thing itself rather than on a glyph beside it.
-        */}
       <button className="projpane__close" onClick={() => onCloseProject(project.id)}>
         Close project
       </button>

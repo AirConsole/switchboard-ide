@@ -12,6 +12,7 @@ import {
   claudeSession,
   orderWorktrees,
   queuedTodoCount,
+  removalLanding,
   removalAsks,
   removalQuestions,
   terminalSessions,
@@ -277,21 +278,18 @@ export const App = (): React.ReactElement => {
     delete panels[worktreeId]
     setUi({ awake: [...awake].filter((id) => id !== worktreeId), panels })
     /*
-     * If you were in the one that went, move into its neighbour.
-     *
-     * The one after it in the row, or the one before it when it was the last --
-     * where the eye already is, and where a Cmd+arrow step from the gap would
-     * have taken you. Read off the row as it stands, which still holds the
-     * worktree being removed: the refresh below is what drops it, and by then
-     * this has already said where to go. Leaving `active` null instead is what
-     * used to happen, and it left the keyboard on the document with every
-     * window still full of terminals.
+     * If you were in the one that went, move into its neighbour -- see
+     * `removalLanding`, which is where the rule and its reasons live. Read off
+     * the row as it stands, which still holds the worktree being removed: the
+     * refresh below is what drops it, and by then this has already said where
+     * to go. Leaving `active` null instead is what used to happen, and it left
+     * the keyboard on the document with every window still full of terminals.
      */
     if (active?.id === worktreeId) {
-      const at = rowWorktrees.findIndex((w) => w.id === worktreeId)
-      const next = rowWorktrees[at + 1] ?? (at > 0 ? rowWorktrees[at - 1] : undefined)
-      if (next === undefined) setActive(null)
-      else reveal(next.id)
+      const landing = removalLanding(groups, worktreeId)
+      if (landing === null) setActive(null)
+      else if (landing.kind === 'worktree') reveal(landing.id)
+      else reveal(projectKey(landing.id), 'project')
     }
     void refresh()
   }

@@ -1433,6 +1433,52 @@ export const Overview = ({
   }
 
   /*
+   * A window that grows brings the rest of itself over.
+   *
+   * Opening a file, a diff or a commit is what does this: the files panel is
+   * one unit while it is only its tree and three once something is open in it,
+   * so a tile goes three units to five on a click inside a pane that is already
+   * on screen. The half that appears is on the *right*, which is the edge it
+   * runs off -- and the pane you just opened something in is the one that goes
+   * under, since the panel sits to the right of Claude. Opening a panel is a
+   * reveal already; opening something *inside* one was not, and that is the
+   * same action one level down.
+   *
+   * It is the same least-movement rule as every other navigation here, so a
+   * tile that still fits where it is does not move, and one that does not
+   * shifts by the fewest units that bring the whole of it over.
+   *
+   * Growth is the trigger, not size: a tile that shrinks (you closed the file)
+   * has nothing hidden to show, and moving the row then would take a window you
+   * *were* reading out from under you for nothing.
+   *
+   * Spans are remembered rather than derived, because what a tile was is not
+   * something the render has -- and a *new* tile counts as no growth at all:
+   * waking one and making one each scroll to it themselves, and a tile arriving
+   * mid-row must not drag the row to wherever it landed.
+   *
+   * Not across a resize, which is the one other thing that changes a span. The
+   * capacity of the row changes with the window, so a tile can gain a unit
+   * without anything being opened, and the row is already putting itself back
+   * where it was by spot -- see `unitRef`. Two effects scrolling the same row in
+   * one commit is one of them losing.
+   */
+  const spans = useRef(new Map<string, number>())
+  const capacity = useRef(units)
+  useEffect(() => {
+    if (width === 0) return
+    const was = spans.current
+    const resized = capacity.current !== units
+    spans.current = new Map(cells.map((cell) => [cell.key, cell.units]))
+    capacity.current = units
+    if (resized) return
+    const grown = cells.find((cell) => cell.units > (was.get(cell.key) ?? cell.units))
+    if (grown !== undefined) revealTile(grown)
+    // `cells` is rebuilt every render, so there is no dependency to name: the
+    // remembered spans are what say whether anything actually happened.
+  })
+
+  /*
    * Cmd+Left and Cmd+Right step through the worktrees.
    *
    * The terminals have no claim on it: xterm produces nothing at all for a

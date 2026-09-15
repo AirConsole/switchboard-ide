@@ -387,6 +387,20 @@ else, and a form saying what a button will do is not a state you scan a row of
 agents for. `--graphite-dim` to `--bone` is the 1.92:1 step that already means
 "read this one".
 
+**The room for that line is reserved, not made.** It is rendered whether or not
+there is anything in it, and `.addform__fate` is `min-height` two rows tall —
+because the answer lands a beat after you stop typing, and a line appearing then
+shoved the field you were still looking at. Two rows rather than one for the
+same reason: the longest of these messages wraps at this width, and a box that
+grows from one row to two jumps exactly as badly as one that grows from none.
+The path in it is said **relative to the project** (`.claude/worktrees/x`, and
+"the project itself" for the root), which is both what keeps it inside two rows
+and the only part worth reading — this line is shown inside that project's own
+pane, so the absolute path is mostly its root repeated back. The full path stays
+in the `title`. Measured across empty, typed-but-unanswered, a two-line answer
+and a one-line answer at 1180×620: field, path, line and button all sat at
+y=463, 503, 522 and 565 every time.
+
 **The project's name is 19px**, not a tile bar's 12. This pane is the only cell
 in the row whose bar is not a toolbar — there is nothing beside the name to keep
 small for — and it is the thing you scroll the row looking for.
@@ -398,12 +412,16 @@ form is **one field**: "Branch from" was left empty every time, since the
 remote's default (or HEAD without one) is what you want unless you are doing
 something unusual and something unusual is what a terminal is for; and "Start
 Claude here" was checked every time, because a worktree with no agent in it is a
-directory. The server still takes both parameters — this stops asking. Close
-project is shaped like a tab, which is what the pane's other controls are, and
-turns `--danger` under the pointer: the red the project's × used to turn, said
-on the thing itself.
+directory. The server still takes both parameters — this stops asking.
 
-The lists are `WorktreeRow`, the same component the strip's tabs are, keeping
+**Close project is the form's last row, not a button under it.** Both are things
+you do to the *project* rather than to one of its worktrees, so they sit under
+one heading with one rhythm and one edge; it was a stray control below a form
+that read as belonging to neither. It is shaped like a tab, which is what the
+pane's other controls are, and turns `--danger` under the pointer: the red the
+project's × used to turn, said on the thing itself.
+
+The lists are `WorktreeTab`, the same component the strip's tabs are, keeping
 every `.tab*` class — only the container differs. A worktree met in the pane and
 met in the strip has to be one object. They deliberately carry no `data-pane` of
 their own: a row claiming a worktree's pane key would teleport the walk, so they
@@ -471,6 +489,33 @@ terminal tab that was actually clicked. Measured at 1100px with 713px tiles:
 clipped on the right 0 -> 363 and whole, clipped on the left 363 -> 0 and whole,
 already whole 363 -> 363, and `activeElement` the clicked terminal's own
 textarea throughout.
+
+**A window that grows means it too.** Opening a panel is a reveal already;
+opening something *inside* one was not, and it is the same action a level down
+— the files panel is one unit while it is only its tree and three once a file,
+a diff or a commit is open in it, so a click inside a pane that is fully on
+screen can take its tile from three units to five and push its own right-hand
+half off the edge. So the row remembers each cell's span between renders and
+reveals one that **grew**, through the same two functions as everything else.
+
+Three things about it are deliberate, and each is a way of not moving the row
+when nobody asked. **Growth, not size**: a tile that shrinks — you closed the
+file — has nothing hidden left to show, and scrolling then would take the window
+you were reading out from under you. **A new cell is not growth**, since waking
+a worktree and making one each scroll to it themselves and a tile arriving
+mid-row must not drag the row to wherever it landed. And **not across a
+resize**, which is the other thing that changes a span: capacity moves with the
+window, so a tile can gain a unit with nothing opened, and the row is already
+putting itself back by spot (`unitRef`) — two effects scrolling one row in one
+commit is one of them losing.
+
+Measured at 2400px, where the row is six units of 341px: with the files panel
+open on a tile at 1377–2388 (three units, whole on screen), opening README.md
+took it to 1694px wide and 665px of it past the right edge, and the row stepped
+two units, 682 -> 1365, leaving the tile at 694–2388 and whole. Closing the file
+again left the row at 1365, and re-opening it from there — where the grown tile
+still fits — also left it at 1365. Across 2400 -> 2800 -> 1500 -> 2400 the row
+kept its spot and came back to 1365 exactly, as it did before this existed.
 
 `measureMonoCharWidth` is **floored** on purpose. xterm rasterises glyphs into
 an atlas and blits per cell, so a cell is a whole number of pixels: canvas says
@@ -828,10 +873,23 @@ the row — so `App`'s `refocus()` reveals that pane again, which also brings a
 window that had scrolled off the side back with the keyboard.
 
 A removal has no pane to go back to, so it moves you on: the worktree after the
-one that went, or the one before it when it was the last in the row -- where the
-eye already is, and where a Cmd+arrow step from the gap would have taken you.
-Read off the row as it still stands, before the refresh drops the worktree,
-which is why it can be answered at all.
+one that went, or the one before it when it was the last -- where the eye
+already is, and where a Cmd+arrow step from the gap would have taken you. Read
+off the row as it still stands, before the refresh drops the worktree, which is
+why it can be answered at all.
+
+**Within its own project.** The row is every project's windows in a line, so
+"the next one" across the whole row is the first window of the *next project*
+whenever you remove a project's last worktree — somebody else's work, and
+nowhere you asked to be. With nothing awake left beside it, that project's own
+pane takes the keyboard instead: it is the head of the run and it is there
+whether or not anything else is, which makes it the one landing spot a removal
+can always promise, and it is where you go to make the next worktree, which is
+often why the last one went. The close-project path already lands this way — it
+moves to the pane of the project left standing — so the two now agree. The rule
+is `removalLanding` in `selectors.ts` rather than a closure in `App`, which is
+what lets a test hold it: two of its four cases are the flat row's answers
+written down as the wrong ones.
 
 ## The todo panel holds no state of its own
 

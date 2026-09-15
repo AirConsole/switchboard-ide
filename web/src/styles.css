@@ -1771,13 +1771,29 @@ button {
   min-height: 30px;
 }
 
+/*
+ * One block: the heading, the field, what the name will do, and the way out.
+ *
+ * These were a form with a stray button under it. Both are things you do to the
+ * *project* rather than to one of its worktrees, so they share a heading, one
+ * rhythm and one edge, and Close project is the form's last row rather than its
+ * neighbour.
+ */
 .projpane__foot {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   flex: none;
   padding: 12px;
   border-top: 1px solid var(--rule);
+}
+
+.projpane__footlabel {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
 }
 
 /*
@@ -1798,6 +1814,11 @@ button {
   color: var(--graphite);
 }
 
+/* The last row of the block above it, not a thing below it. */
+.projpane__foot .projpane__close {
+  margin-top: 2px;
+}
+
 .projpane__close:hover {
   background: var(--level-hover);
   /* The red the project's × turned under the pointer, said on the thing itself
@@ -1811,14 +1832,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.addform__label {
-  font-family: var(--font-ui);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--graphite);
 }
 
 .addform__row {
@@ -1845,6 +1858,17 @@ button {
 .addform__fate {
   font-size: 11.5px;
   line-height: 1.45;
+  /*
+   * Two rows of room whether or not there is anything to say.
+   *
+   * The answer arrives a beat after you stop typing, and a line that appears
+   * then shoves the field you are still looking at -- so the space is reserved
+   * rather than made. Two rather than one because the longest of these ("... is
+   * already checked out at .claude/worktrees/some-name") wraps at this width,
+   * and a box that grows from one row to two jumps exactly as badly as one that
+   * grows from none.
+   */
+  min-height: calc(11.5px * 1.45 * 2);
   color: var(--graphite-dim);
 }
 
