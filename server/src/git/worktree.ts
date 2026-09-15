@@ -389,10 +389,11 @@ const refLines = (out: string): string[] =>
  * the remote does not unset it -- so trusting it would offer to delete a branch
  * that is already gone.
  *
- * The no-upstream fallback is for a branch pushed with a plain
+ * The fallback below is for a branch pushed with a plain
  * `git push origin <branch>`, which leaves a remote copy and no config saying
- * so. It matches by name on exactly one remote; two remotes carrying the name
- * is a guess, and this feeds a delete.
+ * so, and for the branch whose upstream names something other than itself. It
+ * matches by name on exactly one remote; two remotes carrying the name is a
+ * guess, and this feeds a delete.
  */
 export const remoteBranches = async (
   root: string,
@@ -432,11 +433,27 @@ export const remoteBranches = async (
     for (const line of refLines(heads)) {
       const [branch, upstream, remote, remoteRef] = line.split('\0')
       if (branch === undefined || branch === '') continue
-      if (upstream !== undefined && upstream !== '' && present.has(upstream)) {
+      // The upstream must carry this branch's own name to be its copy. An
+      // upstream is a merge *target*, not a copy: `git branch feat
+      // origin/master` sets `branch.feat.merge` to `refs/heads/master` and
+      // nothing since has pushed, so trusting it names master as "feat's copy
+      // on the remote" -- and master is merged into itself, so it was reported
+      // spent and went without being asked about. Measured: removing a worktree
+      // on a never-pushed branch ran `push --delete origin refs/heads/master`,
+      // which only the remote's own refusal to delete its default branch
+      // stopped. A branch pushed under a different name on purpose falls
+      // through to the name match below and is simply not offered, which is the
+      // direction this is allowed to be wrong in.
+      if (
+        upstream !== undefined &&
+        upstream !== '' &&
+        present.has(upstream) &&
+        remoteRef === `refs/heads/${branch}`
+      ) {
         found.set(branch, {
           ref: upstream,
           remote: remote ?? 'origin',
-          remoteRef: remoteRef === undefined || remoteRef === '' ? `refs/heads/${branch}` : remoteRef,
+          remoteRef,
           merged: merged.has(upstream),
         })
         continue
