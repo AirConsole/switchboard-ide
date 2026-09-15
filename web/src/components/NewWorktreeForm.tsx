@@ -139,12 +139,32 @@ export const NewWorktreeForm = ({
   const directory = `${project.worktreeRoot}/${branch.trim().replace(/\//g, '-') || '…'}`
   // What the server will branch from when the name is new.
   const base = project.defaultBase ?? 'HEAD'
+  /*
+   * Said relative to the project, because this line is read inside that
+   * project's own pane and the absolute path is mostly its root repeated. It is
+   * also what keeps the line to one row at this width -- see `.addform__fate`,
+   * which reserves the room whether or not there is anything to put in it.
+   */
+  const near = (path: string): string =>
+    path === project.root
+      ? 'the project itself'
+      : path.startsWith(`${project.root}/`)
+        ? path.slice(project.root.length + 1)
+        : path
+
+  const says =
+    fate === null
+      ? ''
+      : fate.usedBy !== undefined
+        ? `“${branch.trim()}” is already checked out at ${near(fate.usedBy)}`
+        : !fate.valid
+          ? 'git will not take that as a branch name'
+          : fate.exists
+            ? `“${branch.trim()}” exists, so it is checked out rather than branched from ${base}`
+            : `New branch, from ${base}`
 
   return (
     <div className="addform">
-      <label className="addform__label" htmlFor={`branch-${project.id}`}>
-        New worktree
-      </label>
       <div className="addform__row">
         <input
           id={`branch-${project.id}`}
@@ -175,17 +195,17 @@ export const NewWorktreeForm = ({
       <span className="addform__where" title={directory}>
         {directory}
       </span>
-      {fate !== null && (
-        <span className={refused || fate.exists ? 'addform__fate addform__fate--on' : 'addform__fate'}>
-          {fate.usedBy !== undefined
-            ? `“${branch.trim()}” is already checked out at ${fate.usedBy}`
-            : !fate.valid
-              ? 'git will not take that as a branch name'
-              : fate.exists
-                ? `“${branch.trim()}” exists — it is checked out here, not branched from ${base}`
-                : `New branch, from ${base}`}
-        </span>
-      )}
+      {/* Always here, empty or not: the answer arrives a beat after you stop
+          typing, and a line that appears then would shove the field you are
+          still looking at. `.addform__fate` holds its two rows either way. */}
+      <span
+        className={
+          refused || fate?.exists ? 'addform__fate addform__fate--on' : 'addform__fate'
+        }
+        title={fate?.usedBy ?? undefined}
+      >
+        {says}
+      </span>
       {error && <p className="addform__error">{error}</p>}
     </div>
   )

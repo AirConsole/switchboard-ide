@@ -360,6 +360,20 @@ else, and a form saying what a button will do is not a state you scan a row of
 agents for. `--graphite-dim` to `--bone` is the 1.92:1 step that already means
 "read this one".
 
+**The room for that line is reserved, not made.** It is rendered whether or not
+there is anything in it, and `.addform__fate` is `min-height` two rows tall —
+because the answer lands a beat after you stop typing, and a line appearing then
+shoved the field you were still looking at. Two rows rather than one for the
+same reason: the longest of these messages wraps at this width, and a box that
+grows from one row to two jumps exactly as badly as one that grows from none.
+The path in it is said **relative to the project** (`.claude/worktrees/x`, and
+"the project itself" for the root), which is both what keeps it inside two rows
+and the only part worth reading — this line is shown inside that project's own
+pane, so the absolute path is mostly its root repeated back. The full path stays
+in the `title`. Measured across empty, typed-but-unanswered, a two-line answer
+and a one-line answer at 1180×620: field, path, line and button all sat at
+y=463, 503, 522 and 565 every time.
+
 **The project's name is 19px**, not a tile bar's 12. This pane is the only cell
 in the row whose bar is not a toolbar — there is nothing beside the name to keep
 small for — and it is the thing you scroll the row looking for.
@@ -371,12 +385,16 @@ form is **one field**: "Branch from" was left empty every time, since the
 remote's default (or HEAD without one) is what you want unless you are doing
 something unusual and something unusual is what a terminal is for; and "Start
 Claude here" was checked every time, because a worktree with no agent in it is a
-directory. The server still takes both parameters — this stops asking. Close
-project is shaped like a tab, which is what the pane's other controls are, and
-turns `--danger` under the pointer: the red the project's × used to turn, said
-on the thing itself.
+directory. The server still takes both parameters — this stops asking.
 
-The lists are `WorktreeRow`, the same component the strip's tabs are, keeping
+**Close project is the form's last row, not a button under it.** Both are things
+you do to the *project* rather than to one of its worktrees, so they sit under
+one heading with one rhythm and one edge; it was a stray control below a form
+that read as belonging to neither. It is shaped like a tab, which is what the
+pane's other controls are, and turns `--danger` under the pointer: the red the
+project's × used to turn, said on the thing itself.
+
+The lists are `WorktreeTab`, the same component the strip's tabs are, keeping
 every `.tab*` class — only the container differs. A worktree met in the pane and
 met in the strip has to be one object. They deliberately carry no `data-pane` of
 their own: a row claiming a worktree's pane key would teleport the walk, so they
