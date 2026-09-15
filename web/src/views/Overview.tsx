@@ -21,7 +21,7 @@ import {
   worktreeTodos,
   type TodoView,
 } from '../selectors.js'
-import { TodoBar, TodoPane, type MoveGroup } from './TodoPane.js'
+import { TodoBar, TodoPane, type MoveTarget } from './TodoPane.js'
 import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
@@ -51,6 +51,9 @@ const EMPTY_DIRS: string[] = []
 
 /** Likewise for a worktree with no file open; see EMPTY_DIRS. */
 const EMPTY_FILES: string[] = []
+
+/** And for a project whose worktrees have not been read yet; see EMPTY_DIRS. */
+const EMPTY_MOVE: MoveTarget[] = []
 
 /**
  * Is the whole of a tile on screen already?
@@ -528,7 +531,7 @@ interface WorktreeTileProps {
   /** This worktree's todos, in list order, each with its queue position. */
   todos: TodoView[]
   /** Where one of them can be moved to; the pane drops this worktree itself. */
-  moveTo: MoveGroup[]
+  moveTo: MoveTarget[]
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
@@ -594,6 +597,7 @@ interface WorktreeTileProps {
   onSelectTerminal: (sessionId: string) => void
   onNewTerminal: () => void
   onCloseTerminal: (sessionId: string) => void
+  onNoTerminalsLeft: () => void
   onOpenPath: (path: string) => void
   onCloseFile: (path: string) => void
   /** Null closes the pane; the hook calls it that way when a hash goes stale. */
@@ -641,6 +645,7 @@ const WorktreeTile = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onNoTerminalsLeft,
   onOpenPath,
   onCloseFile,
   onSelectCommit,
@@ -876,6 +881,7 @@ const WorktreeTile = ({
                 onSelect={onSelectTerminal}
                 onNew={onNewTerminal}
                 onClose={onCloseTerminal}
+                onNoneLeft={onNoTerminalsLeft}
               />
             )}
             {pane.kind === 'todo' && <TodoBar todos={todos} claudeRunning={running} />}
@@ -1020,8 +1026,8 @@ export interface OverviewProps {
   projects: Project[]
   /** Every todo, across every worktree; each tile takes its own. */
   todos: WorktreeTodo[]
-  /** Every worktree a todo could be moved to, grouped by project. */
-  moveTo: MoveGroup[]
+  /** Each project's own worktrees, as the places a todo of theirs can go. */
+  moveTo: Record<string, MoveTarget[]>
   sessions: Session[]
   panels: Record<string, PanelName[]>
   activeTerminalByWorktree: Record<string, string>
@@ -1077,6 +1083,7 @@ export interface OverviewProps {
   onQueueDrained: (worktreeId: string) => void
   onSelectTerminal: (worktreeId: string, sessionId: string) => void
   onNewTerminal: (worktreeId: string) => void
+  onNoTerminalsLeft: (worktreeId: string) => void
   /** Closing the last one closes the panel too, so it needs the worktree. */
   onCloseTerminal: (worktreeId: string, sessionId: string) => void
   onOpenPath: (worktreeId: string, path: string) => void
@@ -1126,6 +1133,7 @@ export const Overview = ({
   onSelectTerminal,
   onNewTerminal,
   onCloseTerminal,
+  onNoTerminalsLeft,
   onOpenPath,
   onCloseFile,
   onToggleDir,
@@ -1927,7 +1935,7 @@ export const Overview = ({
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}
-                      moveTo={moveTo}
+                      moveTo={moveTo[worktree.projectId] ?? EMPTY_MOVE}
                       panes={slot.data.panes}
                       /*
                        * Non-null only for the worktree just navigated to, and a
@@ -1965,6 +1973,7 @@ export const Overview = ({
                       onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}
+                      onNoTerminalsLeft={() => onNoTerminalsLeft(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
                       onOpenPath={(path) => onOpenPath(worktree.id, path)}
                       onCloseFile={(path) => onCloseFile(worktree.id, path)}

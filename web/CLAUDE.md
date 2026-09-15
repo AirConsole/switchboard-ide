@@ -289,6 +289,33 @@ The pieces, and why each is the way it is:
   the dialogs and the todo list, both on `--level-panel`, go 5.64 → 6.49. One
   red raised, rather than a second red for one control.
 
+## Remote projects are not this package's problem
+
+A project can live on another machine, and **nothing here knows**. `api.ts`
+still speaks to one origin, `socket.ts` still opens one socket, `store.ts` still
+merges one snapshot, and a worktree id is a worktree id. The server forwards and
+namespaces; see `server/CLAUDE.md`.
+
+That is deliberate and worth keeping. The subtle parts of this package -- the
+unit arithmetic, `useNearViewport` and the WebGL budget it protects, the
+document-level capture listeners every shortcut is built on, the focus model,
+and `ui` being one last-writer-wins document -- are all things a second origin
+in the row would have broken, and an iframe per window would have broken all
+five at once.
+
+One line of `socket.ts` knows, and only just: **a second `attached` for a session
+already mapped is a re-attach, and repaints.** When a remote worktree's machine
+restarts, the gateway re-claims the attachment on our behalf and this socket
+never closes -- so nothing else would ever clear `painted`, and the pane went on
+showing the screen from before the restart while everything printed in the gap
+was dropped. Claude runs on the alternate screen, where a serialized repaint is
+the only thing worth anything. The stale stream number is dropped with it.
+
+The other component that knows is `OpenProjectDialog`, because somebody has to
+pick the machine: a `host` key goes to `browse`, `recents` and `openProject`,
+and the server decides what it means. Adding a machine takes its token, which
+goes to our own server and no further -- the browser never talks to a peer.
+
 ## The row is a grid of units
 
 `Overview.tsx` holds the only layout arithmetic:
@@ -595,6 +622,22 @@ answer or the tile is laid out for a column it does not render:
   put it away, or use the `»` at the right of the bar, which is the same action
   with a name. A diff is not something you collect the way you collect the files
   you are working in.
+
+**Not text, but the browser can draw it: draw it.** A `.png` picked in the tree
+opens as a picture rather than as the note saying it is not a text file. The
+server decides from the extension and before it reads a byte (`MEDIA_TYPES` in
+`server/src/files.ts`), answering `binary: true` with a `media` type; the bytes
+never travel as JSON, because an `<img src>` is exactly a GET the browser makes
+on its own -- `GET /api/worktrees/:id/raw`, whose URL carries the file's rev, so
+an image the agent regenerates is a *different* URL and repaints on the next
+poll instead of showing what the browser still has. That decision has to come
+**before** the size cap, which is a cap on text going through JSON and has
+nothing to say about a photograph: with the cap first, every image over 2MB
+answered "too large to open here". It is scaled down to the pane and never up --
+measured, a 1600x1200 png drawn at 652x489 and a 16px favicon at 16px -- and the
+line under it carries the real dimensions and the file size, which is the one
+thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
+table: it is text, it decodes, and editing it is the reason to open it.
 
 Nothing auto-selects any more. The commit list used to choose its newest for you,
 which was free when the pane was always there and is not now: it would open the
@@ -927,47 +970,85 @@ mutation in the app refreshes it mid-sentence. The draft holds until the server
 echoes back exactly what was sent. Verified by typing into a prompt while a
 `curl` created a todo on another worktree — the keystrokes and the caret survive.
 
-**The three things you can do to a todo are one column of three.** RUN NEXT,
-MOVE TO and DELETE, one under the other, one shape and one width. They were a
-pill, a bare × beside it and a quiet word underneath -- three kinds of control
-for three things at the same level, and the × read as part of RUN NEXT rather
-than as its own action. `justify-items: stretch` is what gives the column a
-single right edge; three pills at their natural widths is the ragged thing the ×
-already was. The row is 86px tall where it was 63, which is what a stack costs
-and is the only cost: nothing else in the panel moved.
+**The three things you can do to a todo are the tab strip's object, stood on
+end.** RUN NEXT, MOVE TO and DELETE as square segments inside one rounded shell,
+seamed 2px in `--sleeve` -- `.tabgroup`'s own argument, that round pills are each
+their own object while square segments inside one shell are one object divided,
+and the shell holds every outer edge. They were a pill, a bare × beside it and a
+quiet word underneath, then three stacked pills; a column of pills is still a
+column of separate objects, and none of it had anything to do with the strip
+above it.
+
+Three details carry it. Labels are **left-aligned on the tab's own 13px leading
+inset** rather than centred, so the three read down one edge and a mark could
+appear down a segment's leading edge later without moving a label; the queue
+position sits at the far edge with the caret for the same reason, since a number
+that appears and disappears must not push its own label along. The caret is the
+zZ tab's, **17px** -- it is the one mark that says a control opens a list rather
+than acting on the spot, so it is the same mark in both places, and at 9px it was
+a speck beside an 11px label. And the column is `min-width: 118px` rather than a
+fixed width: every row comes out at 118 because no label reaches it, and a wider
+font grows the slab instead of clipping a label.
 
 Weight, not colour, still separates them -- amber means Claude is blocked on you
-and green that it has come to rest, and none of the three is either -- so the one
-state any of them can be in, RUN NEXT lit, is the pill filled in reverse. DELETE
-is the only red in the panel and only on hover (`--danger`, 6.49:1 here). MOVE TO
-carries a caret, which is what says it opens a list rather than acting on the
-spot; its list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
-with a heading per project when more than one is open -- two projects can each
-have a `main`.
+and green that it has come to rest, and none of the three is either -- so queued
+is RUN NEXT filled in reverse, `--ink` on `--bone` at 14.46:1, which is the
+loudest thing the panel can say and is spent here because a queue marker has to
+be findable across a row of windows. **DELETE is the one segment that does not
+lift on hover**, and that is measured rather than an oversight: `--danger` is
+4.88:1 on `--level-object` and 4.14:1 on `--level-hover`, so lifting it would
+cost either a second red or the colour on the only control here that destroys
+something.
 
-**Narrow, they go under the prompt instead of beside it.** The column costs a
-flat 94px whatever the pane is worth, which on a phone is a quarter of the row:
-measured in a 420px window, the row is 377px and the prompt gets 255 of it,
-about 38 characters of prose. Underneath they cost a line of height, which the
-list has, and the prompt gets the whole 357 -- and they sit side by side there
-at their natural widths, wrapping onto a second line rather than overflowing
-(measured at 320px: DELETE drops below the other two and the row stays 277px
-wide with nothing outside it). Natural widths are the opposite of the rule the
-column obeys, deliberately: stretching three pills to the widest of them is what
-makes a *stack* read as one control, and three in a row already share the edge
-that matters, the one they stand on.
+**The slab is exactly as tall as its three segments and stops there.** Beside a
+prompt of several lines it ends well above the foot of its own row, and the space
+under it is the panel. It was tried the other way -- stretched to the row, with
+an empty segment taking up the slack so the slab met the bottom the way the strip
+meets its bar -- and an empty segment under DELETE reads as a fourth thing you
+can do to a todo, drawn and doing nothing. Measured: the slab is 72px against
+prompts of 25px and 100px alike.
+
+MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
+and it hangs off the segment's own bottom-left corner.
+
+**Its list is this project's worktrees and no others.** A todo is work on a
+repository, and another repository's worktrees are not somewhere it could be
+done -- offering every worktree the IDE knows made the list longer with the
+answers you would never pick, and made it need a heading per project to tell two
+`main`s apart. Scoped, the headings go with it: every row belongs to the project
+the todo is already in, so there is nothing for a label to disambiguate. `App`
+builds the targets per project id and a tile takes its own; a project with one
+worktree leaves the list empty and MOVE TO does not draw.
+
+**Narrow, the slab turns on its side and goes under the prompt.** It is 118px
+wide whatever the pane is worth, which on a phone is a third of the row: at
+441px, the last window width that keeps it beside the prompt, the row is 398px
+and the prompt gets 252 of it. One pixel narrower it sits underneath, and the
+prompt gets the whole 377 — 125px more prose for 2px of row height. On the
+phones people actually hold: 367px of prompt at a 430px window, 330 at 393.
+
+It stays one slab. The segments keep the shell and its clipped corners, and the
+2px `--sleeve` seam moves from the top edge to the leading one — the same seam
+said along the other axis. What does change is the alignment: the labels centre
+in shares of the row, because "read down one edge" is an argument about a
+column, and a row of three is scanned across. `min-width: 118px` goes with it
+for the same reason — it exists to give a *column* one width. The shares are
+grown from the labels rather than from nothing, so the longest is never the one
+that clips: 120/131/106 at a 420px window, 87/98/73 at 320, all three on one
+line and inside the row at both.
 
 The breakpoint is on the **viewport**, and it has to be. A container query is
 what this wants, and `container-type` brings `contain: layout` with it, which
-makes the element a containing block for fixed-position descendants -- and
+makes the element a containing block for fixed-position descendants — and
 `.menu` is `position: fixed` *inside* the row, precisely so no ancestor's
 overflow can clip it. Any container above it takes that back and re-creates the
 bug the fixed positioning fixed. The viewport answers anyway, because this panel
 is always two units and two units are only small when the window is: the pane
 measured 377px inside a 420px window and 576px inside a 600px one. 440px is
 where the prompt would fall under about 300px. Verified in the narrow layout
-that MOVE TO still opens at the button's bottom edge, shifted left to stay on
-screen, with `elementFromPoint` at its centre landing inside the menu.
+that MOVE TO still opens at its own button's bottom edge (x 152, y 179 under a
+button at x 152 ending at 179), fully on screen, with `elementFromPoint` at the
+menu's centre landing inside it.
 
 **A moved todo is not a sent one.** From this pane a queued todo leaving looks
 identical whether the server typed it into Claude or you moved it elsewhere, and

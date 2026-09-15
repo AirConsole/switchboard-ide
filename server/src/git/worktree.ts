@@ -12,9 +12,6 @@ const git = async (cwd: string, ...args: string[]): Promise<string> => {
   return stdout
 }
 
-/** '' for a local host; the base URL for a remote one. */
-export type HostKey = string
-
 /**
  * Ids are derived from the absolute path rather than generated.
  *
@@ -22,25 +19,24 @@ export type HostKey = string
  * after an IDE restart or those sessions would be orphaned. Hashing the path
  * makes that automatic and needs no persistence to be correct.
  *
- * `host` is what keeps that true once a project can live on another
- * Switchboard server. A path alone is not unique across machines -- two hosts
- * with a checkout at the same path hash identically, and these ids key the
- * state store, the tmux metadata and every route parameter, so the two would
- * silently alias. A remote host contributes its base URL; a local one
- * contributes nothing at all, which is deliberate: it keeps every id this
- * machine has already recorded in tmux exactly as it was.
+ * **The path and nothing else**, byte for byte as it always has been. Adding
+ * even a separator would change every id on this machine and orphan every
+ * session tmux is holding, which is the one thing this must not do.
+ *
+ * A path is not unique across machines -- two with a checkout at the same path
+ * hash identically, and that is the normal case rather than a coincidence --
+ * but that is not this function's problem any more. These are the ids a machine
+ * gives its *own* projects; a linked machine's arrive already made, and are
+ * namespaced on the way in by `remote/scope.ts`. This took a `host` parameter
+ * for a while, against the day a project could live elsewhere. The day came and
+ * the answer turned out to be one layer up, so the parameter is gone rather
+ * than kept for a caller that never existed.
  */
-const idFor = (prefix: string, path: string, host: HostKey = ''): string => {
-  // A local id hashes the bare path, byte for byte as it always has. Adding
-  // even a separator would change every id on this machine and orphan every
-  // session tmux is holding, which is the one thing this must not do.
-  const input = host === '' ? resolve(path) : `${host}\u0000${resolve(path)}`
-  return `${prefix}-${createHash('sha1').update(input).digest('hex').slice(0, 10)}`
-}
+const idFor = (prefix: string, path: string): string =>
+  `${prefix}-${createHash('sha1').update(resolve(path)).digest('hex').slice(0, 10)}`
 
-export const projectIdFor = (root: string, host: HostKey = ''): string => idFor('p', root, host)
-export const worktreeIdFor = (path: string, host: HostKey = ''): string =>
-  idFor('wt', path, host)
+export const projectIdFor = (root: string): string => idFor('p', root)
+export const worktreeIdFor = (path: string): string => idFor('wt', path)
 
 export const isGitRepo = async (path: string): Promise<boolean> => {
   try {
@@ -389,10 +385,11 @@ const refLines = (out: string): string[] =>
  * the remote does not unset it -- so trusting it would offer to delete a branch
  * that is already gone.
  *
- * The no-upstream fallback is for a branch pushed with a plain
+ * The fallback below is for a branch pushed with a plain
  * `git push origin <branch>`, which leaves a remote copy and no config saying
- * so. It matches by name on exactly one remote; two remotes carrying the name
- * is a guess, and this feeds a delete.
+ * so, and for the branch whose upstream names something other than itself. It
+ * matches by name on exactly one remote; two remotes carrying the name is a
+ * guess, and this feeds a delete.
  */
 export const remoteBranches = async (
   root: string,
@@ -432,11 +429,27 @@ export const remoteBranches = async (
     for (const line of refLines(heads)) {
       const [branch, upstream, remote, remoteRef] = line.split('\0')
       if (branch === undefined || branch === '') continue
-      if (upstream !== undefined && upstream !== '' && present.has(upstream)) {
+      // The upstream must carry this branch's own name to be its copy. An
+      // upstream is a merge *target*, not a copy: `git branch feat
+      // origin/master` sets `branch.feat.merge` to `refs/heads/master` and
+      // nothing since has pushed, so trusting it names master as "feat's copy
+      // on the remote" -- and master is merged into itself, so it was reported
+      // spent and went without being asked about. Measured: removing a worktree
+      // on a never-pushed branch ran `push --delete origin refs/heads/master`,
+      // which only the remote's own refusal to delete its default branch
+      // stopped. A branch pushed under a different name on purpose falls
+      // through to the name match below and is simply not offered, which is the
+      // direction this is allowed to be wrong in.
+      if (
+        upstream !== undefined &&
+        upstream !== '' &&
+        present.has(upstream) &&
+        remoteRef === `refs/heads/${branch}`
+      ) {
         found.set(branch, {
           ref: upstream,
           remote: remote ?? 'origin',
-          remoteRef: remoteRef === undefined || remoteRef === '' ? `refs/heads/${branch}` : remoteRef,
+          remoteRef,
           merged: merged.has(upstream),
         })
         continue

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Session } from '@switchboard/shared'
 import { TerminalView } from '../terminal/TerminalView.js'
 import { terminalLabels } from './terminalLabels.js'
@@ -9,6 +10,8 @@ export interface TerminalsTabsProps {
   onSelect: (sessionId: string) => void
   onNew: () => void
   onClose: (sessionId: string) => void
+  /** The last terminal has gone; see the effect below. */
+  onNoneLeft: () => void
 }
 
 /** The selected terminal, falling back to the first. */
@@ -28,9 +31,32 @@ export const TerminalsTabs = ({
   onSelect,
   onNew,
   onClose,
+  onNoneLeft,
 }: TerminalsTabsProps): React.ReactElement => {
   const active = selected(terminals, activeTerminalId)
   const labels = terminalLabels(terminals)
+
+  /*
+   * The panel goes when its last terminal does.
+   *
+   * A terminal that exits is closed for you -- the server drops the session the
+   * moment its pane dies -- so typing `exit` and clicking the × end the same
+   * way, panel included: with none left this is an empty column with a `+` in
+   * it, which is exactly what closing the last one by hand already removes.
+   *
+   * On the transition, never on a count that is merely zero. Opening the panel
+   * on a worktree with no terminals creates one, and for the length of that
+   * round trip the panel is open and empty -- measured at 212ms, from the strip
+   * appearing to the tab landing in it. Closing on a bare zero would undo the
+   * click that opened it, every time.
+   */
+  const count = terminals.length
+  const had = useRef(count)
+  useEffect(() => {
+    const before = had.current
+    had.current = count
+    if (before > 0 && count === 0) onNoneLeft()
+  }, [count, onNoneLeft])
 
   return (
     <div className="termtabs">

@@ -296,6 +296,24 @@ export const looksLikePrompt = (screen: string): boolean => {
 }
 
 /**
+ * The version line of the startup banner, which is also a ceiling.
+ *
+ * Claude prints this once, before any turn, so nothing above it can be
+ * something Claude said -- which makes it the one line the walk in
+ * `screenState` can stop at rather than skip. Measured on a fresh session: the
+ * three lines above the banner were the wrapped tail of a permission warning
+ * whose own `⚠` line had already scrolled off the top, so they matched no
+ * chrome pattern, counted as "something was printed", and a session that had
+ * never been given a turn read as *working* forever -- there being no
+ * transcript yet to break the tie.
+ *
+ * The glyph rows of the banner are deliberately not the ceiling. A block glyph
+ * at the start of a line is a shape, not a sentence, and a tool drawing a
+ * progress bar would end the walk early; the version line is unambiguous.
+ */
+const BANNER = /Claude Code v\d/
+
+/**
  * Lines that are furniture rather than something Claude said.
  *
  * Kept short and named on purpose: everything not listed here counts as a
@@ -305,12 +323,16 @@ export const looksLikePrompt = (screen: string): boolean => {
  * list of what to ignore rather than a list of what to believe.
  */
 const CHROME: RegExp[] = [
-  // The startup banner and the version line beside it.
+  // The glyph rows of the startup banner. Its version line is `BANNER`, which
+  // the walk stops at rather than skips, so it is not repeated here.
   /^\s*[▐▝▜█▛]/,
-  /Claude Code v\d/,
-  // Standing warnings and hints, which sit above the conversation.
+  // Standing warnings and hints, which sit above the conversation. The update
+  // notice is right-aligned on the line under the banner -- so it is below the
+  // ceiling and has to be named. Measured wordings: "Update installed · Restart
+  // to update", "... Restart to apply", and "Update available".
   /^\s*⚠/,
   /\bTip:/,
+  /\bUpdate (installed|available)\b/,
   // The box's own rules, and the mode hint under it.
   /^[─╌\s]*$/,
   /shift\+tab to cycle/,
@@ -378,6 +400,9 @@ export const screenState = (screen: string): 'done' | 'nothing' | 'busy' => {
   for (let index = end - 1; index >= 0; index--) {
     const line = lines[index] ?? ''
     if (line.trim() === '') continue
+    // The banner is printed once, at startup: nothing above it is conversation,
+    // so this is where the walk stops rather than one more line to skip.
+    if (BANNER.test(line)) break
     if (CHROME.some((re) => re.test(line))) continue
     printed = true
     // The recap and everything under it is furniture; keep looking above it.

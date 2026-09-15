@@ -566,6 +566,33 @@ button {
 }
 
 /*
+ * The machine a project is on, when it is not this one.
+ *
+ * The same `--graphite` as the name beside it, deliberately: the rung below is
+ * `--graphite-dim`, and the note further down records that it measures 4.42:1
+ * on the pill's ground -- under the 4.5 floor. So the machine is told apart by
+ * the separator rather than by brightness, which is why the `/` is drawn here
+ * rather than written into the label: `peer/one` reads as a path, and a path is
+ * a thing you already know how to read left to right.
+ *
+ * No colour either. Where a project lives is not one of the two things a row of
+ * agents is scanned for.
+ */
+.tabgroup__host {
+  color: var(--graphite);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+.tabgroup__host::after {
+  content: '/';
+  padding-inline: 2px;
+  color: var(--rule-bright);
+}
+
+/*
  * --graphite, not --graphite-dim: the dim grey measures 4.42:1 on the pill's
  * --rule, under the 4.5 floor. The ladder is the point either way -- the name
  * is --bone at 11.31:1 and the × is the quiet thing beside it, at 5.89.
@@ -1721,7 +1748,24 @@ button {
   gap: 2px;
 }
 
-.projpane__list .tab {
+/*
+ * A tab that is not in the strip: the project pane's list, and the todo
+ * panel's Move to.
+ *
+ * One rule for both, because a row's height here has to be *declared* and the
+ * two lists would otherwise drift. A tab in the strip takes its height from the
+ * bar -- 35px, the 38px bar less the 3px of sleeve above it -- and a row in a
+ * list has no bar to take it from, so left alone it is one 13px line, 15px
+ * tall. That is not merely short: 9px of radius top and bottom is then the
+ * whole of its left edge, so the state bar has no straight run to fill and
+ * comes out a crescent while the strip beside it draws a bar.
+ *
+ * Measured after the zZ dropdown was retired into the project pane, which took
+ * this rule with it and left Move to -- the list that inherited the dropdown's
+ * shape -- drawing 15px rows against the strip's 35px.
+ */
+.projpane__list .tab,
+.menu--tabs .tab {
   width: auto;
   max-width: none;
   min-height: 30px;
@@ -2685,67 +2729,101 @@ button {
 }
 
 /*
- * What you can do to a todo: one column, one shape, one width.
+ * What you can do to a todo: the tab strip's own object, stood on end.
  *
- * They were a pill, a bare × beside it and a quiet word underneath -- three
- * kinds of control for three things at the same level, and the × read as part
- * of RUN NEXT rather than as its own action. `justify-items: stretch` is what
- * gives the column a single right edge: the three labels are different lengths,
- * and three pills of three widths is the ragged thing the × was.
+ * Square segments inside one rounded shell, and the sleeve seen only in the
+ * 2px seams -- `.tabgroup`'s argument, which is that round pills are each their
+ * own object and a column of them is a column of objects that happen to be near
+ * each other, while square segments inside one rounded shell are one object
+ * divided. The shell holds every outer edge, so the first and last segments
+ * wear its curve and no segment has a radius of its own.
+ *
+ * It is exactly as tall as the three segments and stops there. A prompt is
+ * often several lines, so beside a tall one the slab ends well above the foot
+ * of its own row -- which is right: an empty segment under DELETE is a fourth
+ * thing you can do to a todo, drawn and doing nothing.
+ *
+ * `min-width` rather than a width, and it is what keeps the column from being
+ * ragged: every row comes out at 118px because no label reaches it, and a font
+ * wider than the one this was measured on grows the slab instead of clipping a
+ * label. The queue position is why that matters -- it is the one part of a
+ * label that appears and disappears.
  */
 .todo__controls {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-direction: column;
+  min-width: 118px;
   grid-column: 2;
   grid-row: 1;
-  justify-items: stretch;
+  border-radius: var(--radius);
+  /* What clips the end segments to the shell's curve. */
+  overflow: hidden;
+  /* The slab's own ground, which is also what an empty segment is made of. */
+  background: var(--level-object);
 }
 
 /*
- * One of the three.
+ * One segment.
  *
- * Weight, not colour: amber means Claude is blocked on you and green that it
- * has come to rest, and none of the three is either. So the state they can be
- * in -- RUN NEXT, lit -- is said by filling the pill in reverse, which nothing
- * else in the panel wears.
+ * Left-aligned on the tab's own 13px leading inset rather than centred, so the
+ * three read down one edge -- which is what a column is scanned along -- and
+ * so a mark down the leading edge could appear later without moving a label.
  */
 .todo__act {
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border: 1px solid var(--rule-bright);
-  border-radius: 999px;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px 0 13px;
+  border: 0;
+  border-radius: 0;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
+  text-align: left;
   color: var(--graphite);
-  background: var(--level-panel);
+  background: var(--level-object);
   white-space: nowrap;
 }
 
+/* The seam, and the only place the sleeve is seen: 1.32:1 against a segment,
+   which is small, as every step on this ladder is, and the difference between a
+   shape and no shape. */
+.todo__act + .todo__act {
+  border-top: 2px solid var(--sleeve);
+}
+
 .todo__act:hover {
+  background: var(--level-hover);
   color: var(--bone);
-  border-color: var(--graphite-dim);
 }
 
 /*
- * Narrow: the three go *under* the prompt rather than beside it.
+ * Queued, filled in reverse.
  *
- * Their column costs a flat 94px whatever the pane is worth, and on a phone
- * that is a quarter of the row: measured at a 420px window, the row is 377px
- * and the prompt gets 255 of it -- about 38 characters of prose, wrapping every
- * few words. Under the prompt they cost a line of height instead, which the
- * list has, and the prompt gets the whole width: 357px, near half as much
- * again. They sit side by side there and wrap if even that will not fit, so a
- * 320px phone does not push DELETE off the edge.
+ * The loudest thing the panel can say, and it is spent here on purpose: a queue
+ * marker has to be findable from across a row of windows. Weight, not colour --
+ * amber means Claude is blocked on you and green that it has come to rest, and
+ * a queued todo is neither.
+ */
+
+/*
+ * Narrow: the slab turns on its side, under the prompt.
  *
- * Natural widths rather than one shared edge, which is the opposite of the rule
- * a column obeys: three pills stretched to the widest of them is what makes a
- * *stack* read as one control rather than three ragged ones, and three sitting
- * in a row already share the edge that matters, the one they stand on.
+ * It is 118px of a row that is 377px wide in a 420px window -- measured -- so
+ * beside the prompt it takes a third of it and leaves prose wrapping every few
+ * words. Under the prompt it costs a line of height, which a scrolling list
+ * has, and the prompt gets the whole width.
+ *
+ * Still one slab: the segments keep the shell and its clipped corners, and the
+ * seam moves from the top edge to the leading one, which is the same 2px of
+ * `--sleeve` said along the other axis. What does change is the alignment --
+ * the labels centre in equal thirds, because "read down one edge" is an
+ * argument about a column, and a row of three is scanned across. `min-width`
+ * goes with it for the same reason: it exists to give a *column* one width, and
+ * a row's segments take a share of the row instead.
  *
  * **The viewport is the wrong thing to ask and the only thing we may.** A
  * container query is what this wants, and it cannot be used: `container-type`
@@ -2768,37 +2846,68 @@ button {
   }
 
   .todo__controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 6px;
+    flex-direction: row;
+    min-width: 0;
     grid-column: 1;
     grid-row: 2;
+  }
+
+  .todo__act {
+    /* A share of the row each, and grown from their own labels rather than from
+       nothing, so the longest is never the one that gets clipped. */
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
+  }
+
+  .todo__act + .todo__act {
+    border-top: 0;
+    border-left: 2px solid var(--sleeve);
   }
 }
 
 .todo__next--on {
   color: var(--ink);
   background: var(--bone);
-  border-color: var(--bone);
 }
 
 .todo__next--on:hover {
   color: var(--ink);
   background: var(--graphite);
-  border-color: var(--graphite);
 }
 
-/* The caret is what says Move to opens a list rather than acting on the spot. */
+/* The queue position, at the segment's far edge where the caret is: a number
+   appearing must not push its own label along. */
+.todo__at {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The caret, at the size the zZ tab draws it. It is the one mark that says a
+ * control opens a list rather than acting on the spot, so it is the same mark
+ * in both places -- at 9px it was a speck next to an 11px label.
+ */
 .todo__caret {
-  font-size: 9px;
+  flex: none;
+  margin-left: auto;
+  font-size: 17px;
   line-height: 1;
 }
 
-/* The one control here that destroys something, and the only red in the panel.
-   `--danger` is 6.49:1 on this ground. */
+/*
+ * The only red in the panel, and only while the pointer is on it.
+ *
+ * This is the one segment that does not lift, and the reason is measured:
+ * --danger is 4.88:1 on --level-object and 4.14:1 on --level-hover, under the
+ * floor. Lifting it would mean either a red that clears the lighter ground --
+ * a second red for one control -- or the word going --bone on hover, which is
+ * what the other two do and would take the colour off the only control here
+ * that destroys something.
+ */
 .todo__remove:hover {
   color: var(--danger);
-  border-color: var(--danger);
+  background: var(--level-object);
 }
 
 .todo__wait {
@@ -2865,13 +2974,15 @@ button {
 }
 
 /*
- * The sleeping-worktrees dropdown: the same tabs, stacked.
+ * A dropdown whose rows are worktrees: the same tabs, stacked.
  *
- * It used to invent a row of its own -- the state spelled out in words, the
- * prompt on a second line -- which made one worktree look like two different
- * objects depending on where you met it. The rows are `.tab`s now, so the
- * sleeve goes under them and everything a tab knows how to say it says here
- * too.
+ * It was the sleeping-worktrees dropdown first, and the todo panel's Move to
+ * inherited the shape when it needed the same list; the sleepers have since
+ * moved into the project pane, so Move to is what is left here. The rows are
+ * `.tab`s in both, so the sleeve goes under them and everything a tab knows how
+ * to say it says here too -- which is the point, and is what the dropdown got
+ * wrong when it invented a row of its own with the state spelled out in words
+ * and the prompt on a second line.
  */
 .menu--tabs {
   gap: 2px;
@@ -2886,8 +2997,7 @@ button {
   /*
    * As wide as its widest row, up to a cap. A tab in the strip is capped at
    * 200px because the strip has to hold every awake worktree; this is a list
-   * with one job, and a sleeping worktree is the one you have least chance of
-   * recognising, so it gets the width to say its whole name.
+   * with one job, so it gets the width to say a whole name.
    */
   width: max-content;
   max-width: 420px;
@@ -2898,32 +3008,6 @@ button {
   border-color: var(--rule-bright);
 }
 
-/*
- * A project's worktrees inside a menu that lists more than one project's.
- *
- * The heading is the tab strip's project head laid flat: the same uppercase,
- * letterspaced label, because a heading is not a name you read one character at
- * a time. It is drawn only when there is another project to tell it apart
- * from -- with one project every row belongs to it and the word is furniture.
- */
-.menu__group {
-  display: flex;
-  flex-direction: column;
-}
-
-.menu__label {
-  padding: 6px 10px 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--graphite);
-}
-
-/* A tab in the strip stands on the strip's floor, which is where its square
-   shoulders and its feet come from. Nothing here stands on anything: these are
-   loose tabs in a list, so they take the fully round shape a hovered tab has,
-   and they fill the menu rather than sharing a row. */
 /* -------------------------------------------------------------- the files -- */
 
 /*
@@ -3298,6 +3382,57 @@ button {
   min-height: 0;
 }
 
+/*
+ * A file the browser draws itself.
+ *
+ * The box is the whole of what is left of the pane, and the picture is centred
+ * in it with its caption under it. `min-height: 0` for the same reason the
+ * editor's host needs it: without it the flex item is floored at its content's
+ * height and a tall image pushes the caption out of the pane instead of
+ * shrinking.
+ */
+.files__media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+/*
+ * Scaled down to fit, never up.
+ *
+ * Both caps are needed: width alone leaves a tall image running out of the
+ * bottom of the pane, and height alone leaves a wide one running out of the
+ * side. `object-fit: contain` is what keeps the aspect ratio while both apply,
+ * and `min-height: 0` lets the flex item actually shrink to them.
+ *
+ * Nothing scales it up: a 16px favicon is drawn at 16px. Filling the column
+ * with it would be inventing detail the file does not have.
+ */
+.files__image {
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  /* A transparent PNG would otherwise be read against whatever is behind it;
+     this is the same ground the editor draws code on. */
+  background: var(--level-panel);
+}
+
+/* What the picture cannot say: its real size, and the file's. The interface's
+   own voice, so the mono face `.files__file` sets is restated away. */
+.files__media-note {
+  flex: none;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
 /* What is in the way of saving, said above the file and never over it. Shaped
    like the name of a file inside a patch, because it is the same kind of thing:
    a label for the content below it. */
@@ -3454,4 +3589,84 @@ button {
 .files__save:disabled {
   color: var(--graphite-dim);
   cursor: default;
+}
+
+/* --------------------------------------------------------------- machines -- */
+
+/*
+ * Which machine the open dialog is looking at.
+ *
+ * Greyscale like everything else: amber and green answer "is an agent blocked
+ * on you" and "has one finished", and which machine a picker is pointed at is
+ * neither. The one that is on is said with brightness, the way the tab you are
+ * in is.
+ */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips__pair {
+  display: inline-flex;
+}
+
+.chip {
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--slab-raised);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--graphite);
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--rule-bright);
+}
+
+.chip--on {
+  border-color: var(--graphite);
+  color: var(--bone);
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Joined to the chip it belongs to, so the × cannot read as its own machine. */
+.chips__pair .chip:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.chip--drop {
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-inline: 7px;
+}
+
+.chip--drop:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.addserver {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 12ch) auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* The hint runs under all three, rather than squeezing a fourth column in. */
+.addserver .field__hint {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 520px) {
+  .addserver {
+    grid-template-columns: 1fr;
+  }
 }

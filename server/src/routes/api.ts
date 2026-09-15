@@ -1,5 +1,6 @@
+import { createReadStream } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
-import type { SessionKind } from '@switchboard/shared'
+import { PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -8,6 +9,8 @@ import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
+import { hostKeyFor } from '../remote/scope.js'
+import { PEER_READ_HEADER } from '../remote/peer.js'
 import { usage } from '../usage.js'
 
 /**
@@ -116,6 +119,11 @@ const fileQuery = z.object({
   /** The rev the client already holds; unchanged files then cost one stat. */
   ifNotRev: z.string().optional(),
 })
+/**
+ * `/raw`'s query. `rev` is accepted and ignored -- it is a cache key the client
+ * puts in the URL, not something the server reads; see the route.
+ */
+const rawQuery = z.object({ path: filePath.min(1), rev: z.string().optional() })
 const saveFileBody = z.object({
   path: filePath.min(1),
   /** No `.min(1)`: saving a file empty is a legitimate edit. */
@@ -178,7 +186,28 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.get('/api/health', async () => ({ ok: true }))
 
-  app.get('/api/snapshot', async () => workspace.snapshot())
+  /*
+   * Who this machine is, for a gateway that has just been pointed at it.
+   *
+   * The version is here rather than in a header so a mismatch is a reply a
+   * human can be shown, naming both numbers. It is compared on every read and
+   * not only when a peer is added, because the other machine is upgraded on its
+   * own schedule.
+   */
+  app.get('/api/server', async () => ({
+    name: config.serverName,
+    protocolVersion: PROTOCOL_VERSION,
+    // So a gateway can tell this machine from itself, whatever address it used.
+    instanceId: config.instanceId,
+  }))
+
+  /*
+   * `localOnly` when another machine is the one asking. See `Workspace.snapshot`:
+   * without it, two instances pointed at each other recurse.
+   */
+  app.get('/api/snapshot', async (request) =>
+    workspace.snapshot({ localOnly: request.headers[PEER_READ_HEADER] !== undefined }),
+  )
 
   /*
    * Claude's own usage limits, cached for five minutes.
@@ -214,6 +243,50 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * because those processes outlive the browser and would otherwise be left
    * alive with nothing on screen owning them.
    */
+  /**
+   * The machines this one can read from.
+   *
+   * Never the credential: this is the picker's list, and the token that reaches
+   * a peer is held here and sent server to server.
+   */
+  app.get('/api/servers', async () =>
+    store.servers.map((server) => ({
+      key: hostKeyFor(server.baseUrl),
+      baseUrl: server.baseUrl,
+      name: server.name,
+    })),
+  )
+
+  app.post('/api/servers', async (request) => {
+    const body = z
+      .object({
+        baseUrl: z.string().min(1),
+        /*
+         * Required, not optional. A machine with no `SWB_TOKEN` answers `/api`
+         * only to loopback and its own published names -- which a gateway
+         * addressing it by hostname or LAN IP is not -- so a token-less peer
+         * cannot be read at all. Accepting one here offered a configuration
+         * that cannot work and then blamed the token, which is the one thing
+         * that was not the problem.
+         */
+        token: z.string().min(1, 'that machine needs its SWB_TOKEN'),
+      })
+      // Defaulted before parsing, so a *missing* token gets the sentence below
+      // rather than zod's "expected string, received undefined".
+      .parse({ token: '', ...(request.body as Record<string, unknown>) })
+    const server = await workspace.addServer(body)
+    // Other tabs, and this tab's own relay, have to learn there is a machine.
+    broadcastInvalidate()
+    return { key: hostKeyFor(server.baseUrl), baseUrl: server.baseUrl, name: server.name }
+  })
+
+  app.delete('/api/servers', async (request) => {
+    const body = z.object({ baseUrl: z.string().min(1) }).parse(request.body)
+    workspace.removeServer(body.baseUrl)
+    broadcastInvalidate()
+    return { ok: true }
+  })
+
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }
     const { sleep } = closeProjectQuery.parse(request.query)
@@ -330,6 +403,49 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const { path, ifNotRev } = fileQuery.parse(request.query)
     return workspace.readFile(id, path, ifNotRev)
+  })
+
+  /*
+   * The bytes of a file the browser draws itself: an image, today.
+   *
+   * Separate from `/file` because it is the one response here that is not JSON
+   * -- base64 through the snapshot would be a third larger and would sit in two
+   * heaps on the way -- and because an `<img src>` is exactly a GET the browser
+   * makes on its own.
+   *
+   * `rev` is not read. It is in the URL so that a file the agent regenerates is
+   * a *different* URL and repaints on the next poll, which is what a cache is
+   * otherwise entitled to prevent. The type comes from our own extension table,
+   * never from the client.
+   *
+   * Three headers, all of them about the same worry -- this serves bytes from
+   * the worktree on the origin the IDE itself runs on:
+   *
+   * - `nosniff`, so a file whose bytes disagree with its extension is not
+   *   re-interpreted as something executable.
+   * - a `default-src 'none'; sandbox` CSP, which is what makes navigating
+   *   straight to this URL inert. An `<img>` cannot run script in any case, but
+   *   a person pasting the link into the address bar is a different renderer.
+   * - `inline` disposition without a filename, since nothing here is a download
+   *   and a filename header is one more thing to have to escape correctly.
+   */
+  app.get('/api/worktrees/:id/raw', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { path } = rawQuery.parse(request.query)
+    const { file, type, size } = await workspace.mediaFile(id, path)
+    return reply
+      .type(type)
+      .header('content-length', size)
+      .header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'none'; sandbox")
+      .header('content-disposition', 'inline')
+      /*
+       * Never stored. The URL already changes whenever the file does, so a
+       * cache buys one fetch per image per edit -- and the thing it would be
+       * keeping on disk is the contents of someone's working tree.
+       */
+      .header('cache-control', 'no-store')
+      .send(createReadStream(file))
   })
 
   /*

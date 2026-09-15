@@ -13,9 +13,14 @@ import type {
   RecentProject,
   Worktree,
   WorktreeTodo,
+  RemoteServer,
+  RemoteCache,
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
-import { findFiles, listDirectory, readTextFile, writeTextFile } from './files.js'
+import { config } from './config.js'
+import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl } from './remote/peer.js'
+import { hostKeyFor, unscopeId } from './remote/scope.js'
+import { findFiles, listDirectory, mediaFile, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
@@ -52,6 +57,68 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * Ties the three sources of truth together: the state store (projects + UI),
  * git (worktrees) and the session engine (terminals).
  */
+
+
+/**
+ * What a linked machine contributes to the merged snapshot.
+ *
+ * **Everything it has open**, not a subset we subscribed to. Linking a machine
+ * says "what is running there is running here", which is what the row is for:
+ * an agent blocked on you is blocked on you wherever it is, and a model where
+ * you had to have registered that particular project first could not tell you.
+ *
+ * Its *local* projects only. A peer has its own links to third machines, and
+ * following those would make this transitive -- C's worktrees arriving through
+ * B, named by ids B scoped for itself. Non-transitive is also what makes two
+ * machines linked to each other terminate rather than recurse.
+ *
+ * Ids are already scoped by `PeerClient`, so nothing here has to rewrite them:
+ * a remote project is known by the peer's own id, which is what lets every
+ * route address it through the ordinary proxy.
+ */
+const localTo = (
+  snapshot: Omit<AppSnapshot, 'ui'>,
+  baseUrl: string,
+  name: string,
+): Omit<AppSnapshot, 'ui'> => {
+  const projects = snapshot.projects
+    .filter((project) => project.host.kind === 'local')
+    .map((project) => ({ ...project, host: { kind: 'remote' as const, baseUrl, name } }))
+  const mine = new Set(projects.map((project) => project.id))
+  const worktrees = snapshot.worktrees.filter((worktree) => mine.has(worktree.projectId))
+  const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
+  return {
+    projects,
+    worktrees,
+    sessions: snapshot.sessions.filter((session) => worktreeIds.has(session.worktreeId)),
+    todos: snapshot.todos.filter((todo) => worktreeIds.has(todo.worktreeId)),
+  }
+}
+
+/**
+ * What to show for a machine that did not answer.
+ *
+ * Its projects and worktrees as we last saw them, and **no sessions**:
+ * liveness and attention are live facts, and remembered they claim an agent is
+ * running -- and, worse, that one is *blocked on you* -- on a machine that is
+ * switched off. Measured: unplug a peer with an agent waiting and the amber
+ * stayed indefinitely for something that was not there. Amber and green are
+ * the two things the row is scanned for, so they are the two that must never
+ * be recalled.
+ *
+ * Shown at all, rather than dropped, because the UI prunes stored layout for
+ * worktrees it cannot see -- so "that machine is off" reading as "those
+ * worktrees are gone" costs panels and open files permanently.
+ */
+const remembered = (
+  cached: { projects: Project[]; worktrees: Worktree[] } | undefined,
+): Omit<AppSnapshot, 'ui'> => ({
+  projects: cached?.projects ?? [],
+  worktrees: cached?.worktrees ?? [],
+  sessions: [],
+  todos: [],
+})
+
 export class Workspace {
   /**
    * Short-lived cache over `git worktree list` + `git status`. The snapshot is
@@ -174,15 +241,141 @@ export class Workspace {
     return { worktree, project }
   }
 
-  async snapshot(): Promise<AppSnapshot> {
-    return {
+  /**
+   * Everything this browser needs, merged across every machine.
+   *
+   * `localOnly` is what a peer answers with, and it is a loop guard as much as
+   * an optimisation. Without it two instances peered at each other -- which
+   * `localTo` says outright is an expected configuration -- turn one
+   * snapshot into a recursion that only unwinds when the 5s timeouts fire at
+   * the leaves: measured, **8,500 requests and five seconds of pegged CPU from
+   * a single `GET /api/snapshot`**, self-sustaining because the browser
+   * refetches on every invalidate and the git poll fires every four seconds.
+   * Adding your own URL as a machine does it on one box.
+   *
+   * The work skipped was never wanted anyway: `localTo` keeps only the
+   * projects a peer holds *locally*, so a peer's own view of third machines is
+   * computed and then discarded on arrival.
+   */
+  async snapshot(opts: { localOnly?: boolean } = {}): Promise<AppSnapshot> {
+    const local: AppSnapshot = {
       projects: await this.describeProjects(),
       worktrees: await this.worktrees(),
       sessions: this.engine.list(),
       todos: this.store.todos,
       ui: this.store.ui,
     }
+    const remote = opts.localOnly === true ? [] : await this.remoteSlices()
+    return {
+      projects: [...local.projects, ...remote.flatMap((r) => r.projects)],
+      worktrees: [...local.worktrees, ...remote.flatMap((r) => r.worktrees)],
+      sessions: [...local.sessions, ...remote.flatMap((r) => r.sessions)],
+      todos: [...local.todos, ...remote.flatMap((r) => r.todos)],
+      // The layout is the viewer's. A peer's `ui` never reaches here -- it is
+      // dropped in `PeerClient.snapshot` -- and ours is never sent to one.
+      ui: local.ui,
+    }
   }
+
+  /**
+   * Every machine we can read from, once each.
+   *
+   * From the server registry rather than from the projects, because a machine
+   * is added before any project on it is opened -- that is how you get a
+   * listing of its disk to pick one from.
+   */
+  peers(): PeerClient[] {
+    return this.store.servers.map(
+      (server) => new PeerClient(server.baseUrl, server.token, server.basic),
+    )
+  }
+
+  /**
+   * Whether a scoped session id is one the merged snapshot carries.
+   *
+   * What the relay uses to decide which of a peer's pushes are ours to pass on.
+   * Read from the last merge rather than by asking the peer: a push arrives
+   * between snapshots, and a session the snapshot has never mentioned is one
+   * whose project we did not open.
+   */
+  knowsSession(scopedId: string): boolean {
+    for (const slice of this.lastGood.values()) {
+      if (slice.sessions.some((session) => session.id === scopedId)) return true
+    }
+    return false
+  }
+
+  /** By the short key that appears in a scoped id, not by base URL. */
+  peerFor(key: string): PeerClient | null {
+    return this.peers().find((peer) => peer.key === key) ?? null
+  }
+
+  /**
+   * What each peer contributes to the snapshot: the projects we registered
+   * there, and everything belonging to them.
+   *
+   * Only the projects we registered. A peer has its own open projects and its
+   * own pointers to third machines, and showing those would put a repository on
+   * your screen because somebody else opened it.
+   *
+   * A peer that does not answer contributes **nothing rather than an absence**,
+   * and the difference is the whole of the failure mode: the caller must not be
+   * able to tell "that machine is off" from "those worktrees are gone", because
+   * the UI prunes layout for worktrees it no longer sees. `lastGood` is what
+   * keeps a rebooting peer's windows on screen.
+   */
+  /**
+   * What every linked machine is running, merged in.
+   *
+   * One read per machine, in parallel, and a machine that does not answer
+   * contributes what it last said rather than nothing -- see `remembered`.
+   * There is no per-project subscription to reconcile against any more: a
+   * machine is linked or it is not, and linking means all of it.
+   */
+  private async remoteSlices(): Promise<Omit<AppSnapshot, 'ui'>[]> {
+    return Promise.all(
+      this.peers().map(async (peer) => {
+        try {
+          const slice = localTo(
+            await peer.snapshot(),
+            peer.baseUrl,
+            this.store.server(peer.baseUrl)?.name ?? peer.baseUrl,
+          )
+          this.lastGood.set(peer.baseUrl, slice)
+          /*
+           * Written through, so the guarantee survives this process. In memory
+           * alone it only held *after* one successful read, and the case that
+           * costs the user something is the other one: a gateway that starts
+           * before its peer is listening reports zero worktrees, and the UI
+           * prunes the layout of every worktree on it, permanently.
+           *
+           * Only on a change: `snapshot()` is a GET that runs several times a
+           * minute per tab, and `scheduleSave` has no maximum wait, so writing
+           * every time starves the save a just-queued todo depends on.
+           */
+          const entry = {
+            baseUrl: peer.baseUrl,
+            projects: slice.projects,
+            worktrees: slice.worktrees,
+          }
+          if (JSON.stringify(this.store.remoteCache(peer.baseUrl)) !== JSON.stringify(entry)) {
+            this.store.setRemoteCache(entry)
+          }
+          return slice
+        } catch {
+          // Unreachable, refused, or a protocol mismatch.
+          /*
+           * Through `remembered` whichever memory answers, because it is the
+           * one that strips the sessions -- returning `lastGood` directly put
+           * them back, and a test written for exactly that caught it here.
+           */
+          return remembered(this.lastGood.get(peer.baseUrl) ?? this.store.remoteCache(peer.baseUrl))
+        }
+      }),
+    )
+  }
+
+  private readonly lastGood = new Map<string, Omit<AppSnapshot, 'ui'>>()
 
   /**
    * Projects with their derived base ref attached, so the UI can name the ref a
@@ -190,10 +383,17 @@ export class Workspace {
    */
   private async describeProjects(): Promise<Project[]> {
     return Promise.all(
-      this.store.projects.map(async (project) => ({
-        ...project,
-        defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
-      })),
+      // Local only: a remote project is represented in the snapshot by the
+      // peer's own record, scoped, not by the pointer we keep to find it. Two
+      // records for one project would be two tabs that never agree, and
+      // `resolveDefaultBase` would be reading this machine's disk at the
+      // peer's path besides.
+      this.store.projects
+        .filter((project) => project.host.kind === 'local')
+        .map(async (project) => ({
+          ...project,
+          defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
+        })),
     )
   }
 
@@ -270,16 +470,97 @@ export class Workspace {
    * to leave the interface, so a half-stopped project would be exactly the
    * state nobody can see.
    */
+  /**
+   * Register a machine, and check we can actually speak to it.
+   *
+   * The one remote operation that *does* reach out before writing anything:
+   * adding a machine is a thing you do once, at a keyboard, and being told
+   * straight away that the address is wrong or the version does not match is
+   * the whole value of it. Opening a project on it later must not, which is
+   * why that is a separate call.
+   */
+  async addServer(input: { baseUrl: string; token: string }): Promise<RemoteServer> {
+    const baseUrl = normalizeBaseUrl(input.baseUrl)
+    /*
+     * Taken out of the address before anything else sees it. `normalizeBaseUrl`
+     * would drop it silently and `fetch()` refuses a URL that carries it, so
+     * `https://user:pw@machine` used to mean "type a password and watch it
+     * vanish, then get a bare 401 from the proxy with no hint why".
+     */
+    const basic = basicFrom(input.baseUrl)
+    const identity = await new PeerClient(baseUrl, input.token, basic).identify().catch((err: unknown) => {
+      /*
+       * 504, not 500. The proxy goes to trouble to make this distinction --
+       * "that machine did not answer" rather than "this one is broken" -- and
+       * the one place a human types an address was the place that did not,
+       * because `PeerUnreachable` is not an `HttpError` and Fastify defaults.
+       */
+      if (err instanceof PeerUnreachable) throw new HttpError(504, err.message, 'unreachable')
+      throw err
+    })
+    /*
+     * Not this machine. Linking one to itself is accepted at every other step
+     * and is a meltdown: the relay opens a socket to itself, which is accepted
+     * as a client and given a relay of its own -- 1,447 sockets in five
+     * seconds, measured. Compared by instance id rather than by address,
+     * because the address is exactly what is being got wrong.
+     */
+    const isSelf =
+      identity.instanceId === undefined
+        ? // A machine old enough to send no instance id still must not be
+          // linked to itself, and the address is what is left to compare. It
+          // catches the spelling someone would actually type, which is the
+          // mistake this guard is for; a different one for the same machine
+          // gets through, and no longer melts anything down when it does.
+          config.publicOrigins.has(baseUrl)
+        : identity.instanceId === config.instanceId
+    if (isSelf) throw new HttpError(400, 'that is this machine', 'server-is-self')
+    const server: RemoteServer = {
+      baseUrl,
+      name: identity.name,
+      token: input.token,
+      ...(basic === undefined ? {} : { basic }),
+      addedAt: Date.now(),
+    }
+    this.store.addServer(server)
+    this.invalidate()
+    return server
+  }
+
+  /**
+   * Unlink a machine: stop asking it anything.
+   *
+   * Nothing of that machine's is closed, because nothing of it was ever ours --
+   * its projects simply stop appearing here, and are still open there. That is
+   * what makes this safe to do from a small x, where the old model had to
+   * refuse while projects were open because forgetting the link would have
+   * taken local pointer records with it.
+   */
+  removeServer(baseUrl: string): void {
+    const normalized = normalizeBaseUrl(baseUrl)
+    this.store.removeServer(normalized)
+    // Or the memory of it outlives the link and reappears if it is re-added.
+    this.lastGood.delete(normalized)
+    this.store.clearRemoteCache(normalized)
+    this.invalidate()
+  }
+
   async closeProject(id: string, opts: { sleep?: boolean } = {}): Promise<void> {
+    /*
+     * Local projects only, now that a remote one is closed on the machine it
+     * lives on: its id is that machine's own, so the proxy sends this very
+     * request there and the peer runs this very method. Which is the whole
+     * point of linking -- there is no pointer of ours to remove, and "close" on
+     * a remote project means what it says rather than "stop showing it here".
+     */
     // Collected before the project goes, because afterwards its worktrees are
     // no longer listed and there is nothing left to match todos against.
     const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
     const project = this.store.project(id)
     if (opts.sleep === true) await this.engine.killForProject(id)
-    // Remembered before it is removed, and only for a local project: a recent
-    // is a path handed back to `openProject`, which is how a local one is
-    // opened. A remote project will be reopened by base URL instead.
-    if (project && project.host.kind === 'local') this.store.rememberRecent(project)
+    // Remembered before it is removed: a recent is a path handed back to
+    // `openProject`, which is how one is opened.
+    if (project) this.store.rememberRecent(project)
     this.store.removeProject(id)
     this.store.removeTodosFor(mine)
     this.invalidate()
@@ -601,6 +882,21 @@ export class Workspace {
   ): Promise<FileContent | FileUnchanged> {
     const { worktree } = await this.resolve(worktreeId)
     return readTextFile(worktree.path, path, ifNotRev)
+  }
+
+  /**
+   * Where a file the browser can draw itself is, and what to serve it as.
+   *
+   * The bytes do not come back through here: the route streams them. What the
+   * funnel owns is the same thing it owns for every other file operation --
+   * which worktree, and therefore which root the path is contained against.
+   */
+  async mediaFile(
+    worktreeId: string,
+    path: string,
+  ): Promise<{ file: string; type: string; size: number }> {
+    const { worktree } = await this.resolve(worktreeId)
+    return mediaFile(worktree.path, path)
   }
 
   /** Save a file, refusing if it moved on disk since it was read. */

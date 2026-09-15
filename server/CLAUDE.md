@@ -5,6 +5,8 @@ make one promise good: **a session survives the IDE.** The browser can close,
 this process can be restarted, and the agent keeps working.
 
 ```
+remote/         a project on another machine: scope.ts (ids), peer.ts (its API),
+                proxy.ts (forwarding /api), relay.ts (forwarding the socket)
 routes/api.ts   REST: projects, worktrees, sessions, changes, diffs, files, find
 routes/ws.ts    the single socket; JSON control frames + binary output frames
 workspace.ts    the one funnel for every project/worktree operation
@@ -225,9 +227,12 @@ transcript is megabytes and this runs per worktree per poll.
 
 `idFor(prefix, path, host)` hashes the path. **Local ids hash the bare absolute
 path and must keep doing so**, byte for byte: those ids are recorded in
-`@swb_meta`, so changing the derivation orphans every running session. The
-remote branch namespaces by base URL; that is the whole of the remote design
-that exists today, together with `Project.host`.
+`@swb_meta`, so changing the derivation orphans every running session. A linked
+machine's ids are namespaced in `remote/scope.ts` instead, by a short key
+derived from its base URL — not here, because the ids this function makes are
+the ones a machine gives its *own* projects, and a linked machine's arrive
+already made. The `host` parameter has no caller left; it is the seam that was
+named ahead of time, and the answer turned out to be one layer up.
 
 Anything destructive checks first and in the right order: `removeWorktree`
 refuses a dirty worktree *before* killing its sessions, so a refusal costs
@@ -351,36 +356,78 @@ remote project would implement. Routes stay thin: parse, call, map `HttpError`.
 A kill emits no event of its own, so any route that ends a session must call
 `broadcastInvalidate()`; otherwise clients only find out on their next poll.
 
-## Who may open the socket
+## Who may reach this server
 
-`/ws` refuses a browser page whose `Origin` it does not know, and that check is
-the whole of the app's authentication. It exists because **a WebSocket is exempt
-from CORS**: a browser will open one to any origin, with no preflight and no
-`Access-Control-*` to satisfy. Binding `127.0.0.1` does not help, because the
-page runs in *your* browser, which is already inside — and Caddy does not help
-either, because it fronts the public name while the socket is reached on
-loopback.
+Two callers, no login, no cookie and no session between them — `gate.ts` is the
+whole of it, and `config.ts`'s `publicOrigins` is the list it consults.
 
-What that cost before the check, measured on master and recorded in
-`test/ws-origin.test.ts`: a page on any origin opened a socket, and
-`session-state` — carrying a live session id — arrived **unasked**, because
-every liveness and attention change is broadcast to every sink. With an id, a
-single `{"t":"input"}` frame types a prompt and a Return into a running Claude.
-That is command execution as you, from a page you merely looked at.
+- **Our own page**, in a browser.
+- **A gateway**, which is this same program on another machine reading a project
+  that lives here. Not a browser; it presents `SWB_TOKEN`.
 
-Three things about the rule, each of which is a trap if reversed:
+`SWB_TOKEN` is what a machine sets to *be* a peer. Set, anything arriving over
+the network must carry it. **Unset, this instance serves only this machine** —
+every request and every socket must come from a loopback address. That is not
+belt-and-braces: with no credential, every header a caller could be judged by is
+one the caller writes. Measured on `--bind 0.0.0.0` with no token, a request
+from the network carrying `Host: 127.0.0.1:<port>` — a name this server
+genuinely answers to — read the whole snapshot, and a socket forging
+`Origin: http://127.0.0.1:<port>` was admitted, which is attach-and-type. So
+binding elsewhere without a token is not a configuration that can be made safe,
+and it now fails at the first request rather than quietly serving the network.
 
-- **The refusal happens before the sink joins `sinks`.** Closing a socket that
-  is already in the broadcast set is a race, not a fix — the frame it must not
-  see may already be on the wire.
-- **It is an allow-list, not `Origin` against `Host`.** DNS rebinding makes
-  those two agree: the attacker owns the name, re-points it at this address, and
-  both headers then read `evil.example`. A name we never published is exactly
-  what has to be refused, so the names are named.
-- **A missing `Origin` is allowed, and that is not a hole.** Browsers set it on
-  every socket and script cannot override it, so nothing that omits it is a
-  page. curl, the health check and the tests are what arrive that way, and they
-  are gated the way every `/api` route is.
+**The `/ws` check exists even on a normal instance**, and it closes a live hole:
+a WebSocket is exempt from CORS, so any page you visit can open one, and every
+liveness and attention change is broadcast to every connected sink with the
+session id in it. Read an id off that broadcast, send one `{"t":"input"}`, and
+that is a prompt and a Return typed into a running Claude. Neither the loopback
+bind nor Caddy is in that path: the page runs in *your* browser, which is
+already inside, and Caddy fronts the public name while the socket is reached on
+127.0.0.1. Measured, and recorded in `test/ws-origin.test.ts`: the socket
+opened, `clientCount()` went to 1, and a `session-state` frame arrived unasked.
+
+Five rules, each of which was wrong once and found by measurement:
+
+- **The name a request was addressed to has to be one we answer to.** This is
+  the anti-rebinding check and nothing else catches it: a rebound page is
+  *same-origin* with us, so it sends no `Origin`, needs no preflight, and
+  reports `Sec-Fetch-Site: same-origin`. `Host` is the one thing it cannot
+  change. `config.publicHosts` is derived from `--host` plus loopback; a gateway
+  is exempt, because it addresses a peer by a name that machine never published
+  and the token speaks for it. Both sets come from one canonicalisation, which
+  is what stops them disagreeing: they were derived twice, and
+  `https://IDE.Example.com` then allowed `/api` and refused `/ws`. A name that
+  is itself scheme-shaped is dropped rather than repaired -- `new
+  URL('box.local:8084')` does not throw, it parses as a *scheme*, whose
+  `.origin` is the literal string `"null"`.
+
+- **Key on the route Fastify matched, never on the URL text.** `request.url` is
+  the raw request target and the router matches the *decoded* path, so the two
+  disagree — and every spelling of that disagreement was a way through. Against
+  a real peer with a token set and none supplied: `GET /%61pi/snapshot` returned
+  the full snapshot, `/ap%69/…` likewise, an absolute-form target
+  (`GET http://evil/api/snapshot`) did not begin with `/api` at all, and
+  `POST /%61pi/sessions` **spawned a live shell** in one of its worktrees. That
+  is unauthenticated command execution from anywhere on the network, and
+  `routeOptions.url` — the string that actually answered — is the same however
+  the client spells it. The `/api/health` exemption is an exact match for the
+  same reason; `startsWith` also exempted `/api/healthz`.
+- **A browser-set header proves nothing about a non-browser.** `Sec-Fetch-Site`
+  and `Origin` are unforgeable only *inside* a browser, and the caller a peer
+  has to keep out is not one. Both were accepted on their own, and both were
+  defeated with one forged header: `curl -H 'Sec-Fetch-Site: none'` read the
+  whole API, and a raw socket sending `Origin: http://127.0.0.1:<port>` — always
+  in the allow-list — was admitted to `/ws`, where attach and input are full
+  terminal control. So on a peer the **token is the only credential that crosses
+  the network**, and a browser is believed solely from a loopback peer address,
+  which a header cannot forge. Fetch Metadata now only *narrows* traffic that
+  already came from this machine.
+- **The refusal happens before the sink joins `sinks`.** Closing a socket that is
+  already in the broadcast set is a race, not a fix.
+- **An allow-list, not `Origin` against `Host`.** DNS rebinding makes those two
+  agree — the attacker owns the name and re-points it here, so both read
+  `evil.example` — and a name we never published is exactly what has to be
+  refused.
 
 Behind a proxy this process only ever sees `127.0.0.1`, so it cannot derive the
 origin the page was served from and a deployment must say so: `--host`, which
@@ -388,9 +435,138 @@ origin the page was served from and a deployment must say so: `--host`, which
 browser on this machine, so a scratch instance needs nothing — and every socket
 through Caddy is refused, which is the failure to expect if it is forgotten.
 
-`/api` is still unauthenticated and still relies on the bind address and the
-proxy. Rebinding can therefore still *read* it; that is information disclosure
-rather than execution, and closing it is a `Host` allow-list, not this.
+Three consequences worth stating plainly. A peer's own web UI works only from
+the peer itself -- its page is not even served elsewhere -- so you look at a
+peer through the gateway. **Do not put a reverse proxy in front of a peer**: a
+proxy connects from loopback, so everything it forwards would look local, and a
+peer needs none because the gateway reaches it directly. And **the token is the
+whole of a peer's security**, so it wants the properties that implies: high
+entropy (`scratch.sh` generates one; a memorable one is not), and `https://` for
+a peer across a network you do not own, since `PeerClient` sends it as a plain
+header. There is no attempt limit and no lockout -- a token is the credential
+for `POST /api/sessions`, which is arbitrary command execution on that machine.
+
+Rebinding was worth closing rather than documenting: on a token-less instance
+`/api` was fully *writable* by any page that kept a DNS record pointed at this
+address. `POST /api/sessions` spawns a pty, and a queued todo is typed into a
+live Claude by the dispatcher with no browser open — exactly the capability the
+`/ws` check closes, reached through `/api` instead. Fetch Metadata narrows
+browser traffic on top of that, on every instance rather than only on a peer: a
+client sending none is not a browser and is judged by its address, while a
+browser naming a cross-site initiator is refused. Measured before that,
+`POST /api/worktrees/<id>/sleep` from a page you merely visited returned 200 —
+it cannot read the reply, and does not need to in order to act.
+
+## A machine you have linked
+
+Linking another machine makes everything open there open here, and this server
+is the gateway: it forwards, and the browser talks to one origin. See the root
+`CLAUDE.md` for why that shape, and why linking rather than per-project.
+
+Two pieces do the work, and both are small for one reason -- **a peer runs this
+same program**, so the path that answers here answers there and the whole of the
+translation is the ids:
+
+- `remote/proxy.ts` is one `preHandler` hook, not a remote branch in each of
+  twenty-five routes. Which machine a request is for is decided by the scoped id
+  *in the request*, so a route added later is forwarded without anyone
+  remembering to. `?host=` steers the three routes that name no resource yet --
+  browsing a machine's disk, its recents, and opening a project on it -- and is
+  **refused** anywhere else: unrestricted, `PATCH /api/ui?host=` replaced a
+  peer's stored layout and `POST /api/servers?host=` linked it to a machine of
+  the caller's choosing.
+- `remote/relay.ts` is **one upstream socket per browser socket per peer**. The
+  peer then sees one client per browser, so its own `sizeOwner` / `inputOwner`
+  arbitration decides between two viewers of a remote terminal -- the same rule
+  in the same place as for a local one. Verified against the real thing by
+  pitting a viewer connected through the gateway against one connected straight
+  at the peer: they arbitrate as equals, which a gateway-local arbiter could not
+  produce.
+
+  **A machine behind a password is reached with one.** If a proxy in front of a
+  peer asks for HTTP Basic, put it in the address -- `https://user:pw@box` --
+  and it is taken out before anything else sees it: the stored base URL is
+  hashed into the key that scopes every id from that machine, shown in the
+  picker and written into log lines, none of which is a place for a password.
+  It travels as an `Authorization` header on the reads *and on the socket
+  upgrade*, since a socket that 401s is a machine whose terminals never paint
+  while its REST works perfectly. Left in the URL it would have gone nowhere
+  twice over: `new URL().origin` drops it silently, and `fetch()` refuses a URL
+  that carries credentials.
+
+  Worth knowing what that costs, though, and it is why the advice above stands:
+  **a proxy connects from loopback**, so on a peer behind one, every request it
+  forwards satisfies the loopback rule. Basic auth becomes that machine's real
+  boundary and the token stops doing the work. Reach a peer directly where you
+  can.
+
+  **A gateway's own socket gets no relay.** Two machines linked to each other
+  otherwise melt down: A's relay opens a socket to B, B accepts it as an
+  ordinary client and gives it a relay, which opens one back. Measured at ~55
+  new sockets per second each way, self-sustaining once the sockets are each
+  other's clients, ending in `EMFILE` on both. Linking a machine to itself is
+  the same thing in one process, and is refused by instance id -- not by
+  address, since the address is what is being got wrong.
+
+  **The link holds what the browser is attached to and re-claims it on every
+  reconnect.** A peer restarting is the ordinary event -- it is a deploy -- and
+  the browser will not re-attach for us: it re-attaches in its own socket's
+  `onopen`, and its socket never closed. Without this, one blip left every
+  remote pane dead for the life of the page. A `detach` removes the record, or a
+  pane closed while the peer was away is re-claimed when it returns and a stale
+  primary goes on owning that session's geometry.
+
+Terminal bytes are forwarded with four header bytes rewritten and the payload
+untouched -- `streamId` is a `uint32` in a five-byte header, never a string id.
+The gateway hands out stream numbers from its own range, because a peer's and
+the local engine's both start at 1.
+
+What `workspace.ts` contributes is `localTo`, and every line of it is a rule:
+
+- **A machine's own projects only**, never the machines it is itself linked to.
+  Non-transitive is what stops C's worktrees arriving through B under ids B
+  scoped for itself, and it is the other half of why two machines linked to each
+  other terminate.
+- **Its ids, kept.** A remote project is known by the peer's own id, scoped.
+  When this server minted one of its own, nothing about that id said "another
+  machine" and `POST /api/worktrees` -- the one route that addresses a project
+  -- was answered locally and refused, so creating a worktree on a remote
+  project was simply unreachable.
+- **A machine that did not answer keeps its projects and worktrees and loses its
+  sessions.** The UI prunes stored layout for worktrees it cannot see, so
+  dropping them costs panels and open files permanently; and liveness recalled
+  claims an agent is running, and that one is *blocked on you*, on a machine
+  that is off. Both memories -- `lastGood` in the process and `remoteCache` in
+  `state.json` -- go through the one function that strips them, because
+  returning either directly put the sessions back.
+- **The snapshot gets the same budget as any other read.** It had half, so the
+  read that paints the whole row gave up soonest -- and a timeout is
+  indistinguishable from a machine being off, so a *healthy* peer with a blocked
+  agent came back grey.
+
+Three more, each measured rather than reasoned:
+
+- **A peer answers a gateway with its own world only** (`x-swb-peer-read`), or
+  two machines linked to each other recurse until the timeouts fire at the
+  leaves: 5.1 seconds and ~86 requests against 125ms and one.
+- **A peer's errors arrive whole** -- message, `code` and `details`. The client
+  acts on the code: `path-missing` is what turns a failed open into the offer to
+  create it, and `stale-file` carries the `rev` that resolves a save an agent got
+  to first.
+- **A peer's `session-state` is forwarded for sessions the snapshot merged**,
+  not for the ones this browser is attached to. `applySessionState` updates any
+  session in the store, which is how an unattached tile's bullet changes colour
+  at all -- filtered on attachment, a remote worktree asleep with Claude still
+  running asked a question and the bar stayed grey.
+
+And one about being the *other* machine: **the credential lives with the
+machine, never on a project.** `Project` is in every snapshot the browser
+receives; `RemoteServer` is not. `state.json` is written `mode: 0o600` because
+of it, and the mode is set on the temp file so the contents never exist under
+the umask. Only local projects are stored at all, forced in `reviveProject` --
+which is what retired the guards `worktrees()` and `createWorktree` used to
+carry against a stored remote project sending local git at a path on another
+machine.
 
 ## Flags
 
@@ -416,6 +592,9 @@ a typo.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SWB_BIND` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. `--bind` overrides. |
+| `NODE_ENV` | unset | `development` also trusts Vite's origin; anything else does not. `production` turns off the pretty logger. |
+| `SWB_TOKEN` | unset | Set to be somebody's peer. Unset, this server answers loopback only. |
+| `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |
 | `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |
 | `SWB_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |
 | `SWB_TMUX_CONF` | `server/tmux.conf` | The config loaded with `-f`. |

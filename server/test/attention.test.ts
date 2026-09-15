@@ -21,6 +21,29 @@ const screen = (...lines: string[]): string => lines.join('\n')
 const INPUT = '❯ '
 const HINT = '  ? for shortcuts                          shift+tab to cycle'
 
+/**
+ * A fresh session's screen, captured from the mirror of one that was showing
+ * amber with nothing ever submitted to it.
+ *
+ * Two things here are furniture the parser did not know: the update notice
+ * under the banner, and -- above the banner -- the wrapped tail of a permission
+ * warning whose own `⚠` line had already scrolled off the top, which no
+ * pattern anchored at the start of a line can catch.
+ */
+const SPLASH = [
+  'Permission allow rule (../../settings.local.json): Bash(mv pipeline/tools/pipeline/tests/',
+  'test_*.py pipeline/tests/tools/pipeline/) has a wildcard before the rest of the command,',
+  'so it also matches any options inserted at that position and approves them without a prom',
+  ' ▐▛███▛█   Claude Code v2.1.271',
+  '▝▜██████▀  Opus 5 (1M context) · Claude Team',
+  '  ▝▝ ▝▝    ~/src/mapplets/.claude/worktrees/porsche-ai',
+  '                                                 ✔ Update installed · Restart to update',
+  '─'.repeat(89),
+  '❯ test message',
+  '─'.repeat(89),
+  '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+]
+
 describe('looksBusy', () => {
   it('sees a running turn by its parenthesised timer', () => {
     expect(looksBusy('✽ Grooving… (8s · ↓ 81 tokens · thinking)')).toBe(true)
@@ -327,6 +350,27 @@ describe('screenState', () => {
     expect(screenState(screen('▐▛ Claude Code v2.0', '', INPUT, HINT))).toBe('nothing')
   })
 
+  it('reads a real fresh session as nothing printed', () => {
+    // The measured screen, and the bug it caused: a Claude that had never been
+    // given a turn showed as *working* for as long as it sat there. The update
+    // notice and the warning above the banner counted as "something was
+    // printed", `screenState` answered busy, and the transcript that would have
+    // broken the tie does not exist until a turn is submitted -- so nothing
+    // could ever take it back.
+    expect(screenState(screen(...SPLASH))).toBe('nothing')
+  })
+
+  it('stops at the banner rather than reading what scrolled above it', () => {
+    // Claude prints the banner once, before any turn, so prose above it is
+    // startup output and not something Claude said. The ceiling must not hide a
+    // real block *below* the banner, which is the direction it could be wrong.
+    expect(screenState(screen('a stray line', '▛ Claude Code v2.1.271', INPUT, HINT)))
+      .toBe('nothing')
+    expect(
+      screenState(screen('▛ Claude Code v2.1.271', '● Reading files', INPUT, HINT)),
+    ).toBe('busy')
+  })
+
   it('reads an unreadable screen as busy rather than finished', () => {
     // An empty mirror has no input box. Answering `done` there is how a session
     // whose repaint never arrived came to show as finished.
@@ -432,6 +476,12 @@ describe('classify', () => {
 
   it('lets an in-turn transcript overrule a screen that looks finished', () => {
     expect(classify({ ...base, turn: 'in-turn' })).toBe('working')
+  })
+
+  it('calls a fresh session with no transcript yet idle, not working', () => {
+    // The whole failure, end to end: a brand-new session has written no
+    // transcript, so `turn` is `unknown` and only the screen can speak for it.
+    expect(classify({ ...base, turn: 'unknown', tailText: () => screen(...SPLASH) })).toBe('idle')
   })
 
   it('calls a finished turn idle', () => {

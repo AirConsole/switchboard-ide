@@ -3,12 +3,59 @@
 /**
  * Where a project's files and processes live.
  *
- * Only `local` is implemented. It is named now because it decides how ids are
- * derived, and worktree ids are recorded inside tmux -- so adding the remote
- * case later must not change the local derivation or every running session is
- * orphaned. See `idFor` in server/src/git/worktree.ts.
+ * Both are implemented. The distinction decides how ids are derived, and
+ * worktree ids are recorded inside tmux -- so the local derivation must never
+ * change or every running session is orphaned. A remote project's *pointer*
+ * hashes the base URL too, because the same path on two machines hashes
+ * identically. See `idFor` in server/src/git/worktree.ts.
  */
-export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string; token?: string }
+export type ProjectHost =
+  | { kind: 'local' }
+  /** `name` is what that machine calls itself, so the strip can say where. */
+  | { kind: 'remote'; baseUrl: string; name?: string }
+
+/**
+ * A machine this one can read projects from.
+ *
+ * The credential lives here, once per machine, and never on a project: several
+ * projects on one peer would otherwise be several copies of one secret to keep
+ * in step, and `Project` is in every snapshot the browser receives. Nothing on
+ * this type but `baseUrl` and `name` is ever sent to a client.
+ */
+/**
+ * The last thing a machine said about the projects we hold on it.
+ *
+ * Worktrees are discovered and never stored -- that is the rule, and for a
+ * local project git is the truth so a stored copy could only disagree with it.
+ * A peer that is switched off offers no truth to discover, and the cost of
+ * having none is not a blank tile: the UI prunes stored layout for worktrees it
+ * cannot see, so one failed read on a cold start deletes a worktree's panels,
+ * its open files and its expanded tree, and writes that back. Sessions are
+ * deliberately not kept -- liveness is a live fact, and a remembered one would
+ * claim an agent was running on a machine that is off.
+ */
+export interface RemoteCache {
+  baseUrl: string
+  projects: Project[]
+  worktrees: Worktree[]
+}
+
+export interface RemoteServer {
+  baseUrl: string
+  /**
+   * HTTP Basic credentials for a proxy in front of that machine, if it has one.
+   *
+   * Kept apart from `baseUrl` rather than left in it, because the base URL is
+   * hashed into the key that scopes every id from that machine, shown in the
+   * picker, and written into log lines -- none of which a password should be
+   * in. Never sent to a client, for the same reason `token` is not.
+   */
+  basic?: string
+  /** What the peer calls itself, as of when it was added. */
+  name: string
+  token?: string
+  addedAt: number
+}
 
 /** A registered git repository. Every registered project is open. */
 export interface Project {
@@ -37,7 +84,9 @@ export interface Project {
  * remembered so the picker can offer it back.
  *
  * Only local projects have one: it is keyed by root path, which is what
- * `openProject` takes. A remote project will arrive by base URL instead.
+ * `openProject` takes. A remote project is found again by picking its machine
+ * in the open dialog and browsing that machine's disk -- there is no recent
+ * for it on either side, since the peer never closed its own copy.
  */
 export interface RecentProject {
   /** Absolute path to the repository root, as it was registered. */
@@ -450,6 +499,18 @@ export interface FileContent {
    * answer.
    */
   binary?: boolean
+  /**
+   * The media type to render it as, when `binary` and the browser draws this
+   * kind itself -- `image/png` and the rest of the image table in
+   * `server/src/files.ts`.
+   *
+   * Set from the extension rather than from the bytes, and only for types the
+   * browser has a renderer for: it says "fetch this from `/raw` and show it",
+   * not "here is what the file is". A binary with no entry in that table is
+   * still `binary` alone, which is the reader being told there is nothing to
+   * see.
+   */
+  media?: string
   /**
    * Over `SWB_MAX_FILE_BYTES`.
    *

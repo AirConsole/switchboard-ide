@@ -51,13 +51,20 @@ describe('ids', () => {
     expect(projectIdFor('/tmp/x')).not.toBe(worktreeIdFor('/tmp/x'))
   })
 
-  it('namespaces a remote host without disturbing the local derivation', () => {
-    // The empty host key is what keeps every id already in tmux exactly as it
-    // was; a remote one has to differ, or two machines silently alias.
-    expect(worktreeIdFor('/home/a/src/ide', '')).toBe(worktreeIdFor('/home/a/src/ide'))
-    expect(worktreeIdFor('/home/a/src/ide', 'https://other/')).not.toBe(
-      worktreeIdFor('/home/a/src/ide'),
-    )
+  /*
+   * The derivation is the path and nothing else, and it must stay that way:
+   * these ids are recorded inside tmux's own metadata, so changing how they are
+   * computed orphans every running session.
+   *
+   * It carried a `host` parameter for a while, against the day a project could
+   * live on another machine. That day came, and the answer turned out to be one
+   * layer up -- a linked machine's ids arrive already made and are namespaced by
+   * `remote/scope.ts` -- so what this guards now is that nothing crept back in.
+   */
+  it('hashes the path and nothing else', () => {
+    expect(worktreeIdFor('/home/a/src/ide')).toBe(worktreeIdFor('/home/a/src/ide/'))
+    expect(worktreeIdFor('/home/a/src/ide')).not.toBe(worktreeIdFor('/home/a/src/other'))
+    expect(worktreeIdFor('/home/a/src/ide')).toMatch(/^wt-[0-9a-f]{10}$/)
   })
 })
 
@@ -277,6 +284,28 @@ describe('against a real remote', () => {
       'origin/feature',
     )
     expect((await remoteBranches(repo.path, 'origin/main')).has('feature')).toBe(false)
+  })
+
+  it('does not call the default branch the copy of a never-pushed branch', async () => {
+    /*
+     * The bug this records deleted the wrong branch on the remote, unasked.
+     *
+     * `git branch feat origin/main` sets `branch.feat.merge` to
+     * `refs/heads/main` -- an upstream is the branch you merge *from*, not a
+     * copy of yours -- and nothing has been pushed. Reading that as "feat's
+     * copy on the remote is main" made the removal dialog report the copy as
+     * spent (main is merged into itself), which is the path that goes without
+     * being asked about, and the removal ran
+     * `push --delete origin refs/heads/main`. Measured against GitHub, the only
+     * thing that stopped it was the remote's own `! [remote rejected] master
+     * (refusing to delete the current branch)`; a branch created from any
+     * *deletable* origin ref would have gone.
+     */
+    await repo.git('branch', 'feat', 'origin/main')
+    expect(
+      (await repo.git('for-each-ref', '--format=%(upstream:remoteref)', 'refs/heads/feat')).trim(),
+    ).toBe('refs/heads/main')
+    expect((await remoteBranches(repo.path, 'origin/main')).has('feat')).toBe(false)
   })
 
   it('finds a branch pushed without an upstream, by its name on the one remote', async () => {

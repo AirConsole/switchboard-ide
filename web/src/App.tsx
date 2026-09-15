@@ -18,7 +18,7 @@ import {
   terminalSessions,
   worktreeStatus,
 } from './selectors.js'
-import type { MoveGroup } from './views/TodoPane.js'
+import type { MoveTarget } from './views/TodoPane.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -204,27 +204,30 @@ export const App = (): React.ReactElement => {
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
 
   /**
-   * Where a todo can be moved to: every worktree the IDE knows, in the top
-   * bar's own order.
+   * Where a todo can be moved to, per project: that project's own worktrees, in
+   * the top bar's own order.
    *
-   * Sleeping ones included, and that is the point -- parking work against an
-   * agent you are not running today is most of what a todo is for, and the row
-   * only holds the awake ones.
+   * By project because a todo is work on a repository, and another repository's
+   * worktrees are not somewhere it could be done. Sleeping ones are in, and
+   * that is the point -- parking work against an agent you are not running
+   * today is most of what a todo is for, and the row only holds the awake ones.
    */
-  const moveTo = useMemo<MoveGroup[]>(
+  const moveTo = useMemo<Record<string, MoveTarget[]>>(
     () =>
-      groups.map((group) => ({
-        project: group.project,
-        targets: [
-          ...group.awake.map((worktree) => ({ worktree, sleeping: false })),
-          ...group.asleep.map((worktree) => ({ worktree, sleeping: true })),
-        ].map(({ worktree, sleeping }) => ({
-          worktree,
-          sleeping,
-          status: worktreeStatus(sessions, worktree.id),
-          queued: queuedTodoCount(todos, worktree.id),
-        })),
-      })),
+      Object.fromEntries(
+        groups.map((group) => [
+          group.project.id,
+          [
+            ...group.awake.map((worktree) => ({ worktree, sleeping: false })),
+            ...group.asleep.map((worktree) => ({ worktree, sleeping: true })),
+          ].map(({ worktree, sleeping }) => ({
+            worktree,
+            sleeping,
+            status: worktreeStatus(sessions, worktree.id),
+            queued: queuedTodoCount(todos, worktree.id),
+          })),
+        ]),
+      ),
     [groups, sessions, todos],
   )
 
@@ -382,6 +385,44 @@ export const App = (): React.ReactElement => {
       newTerminal(worktreeId)
     }
   }
+
+  /**
+   * A worktree's last terminal has exited.
+   *
+   * The same close `closeTerminal` does, for the terminal that closed itself:
+   * the server drops a shell session as soon as its pane dies, and a panel with
+   * no terminals in it is a column holding a spot in the row for nothing. So
+   * typing `exit` narrows the window exactly as clicking the × does, and the
+   * keyboard goes back to that worktree's Claude -- the pane it was in no
+   * longer exists, and leaving focus on the document would take the arrow keys
+   * with it.
+   *
+   * Not while the worktree is on its way to sleep: sleeping kills its terminals
+   * too, and this would read that as the panel closing itself and forget the
+   * panel the worktree is supposed to wake up with. `awake` loses it on the
+   * click, before the sessions go.
+   */
+  const terminalsGone = useCallback(
+    (worktreeId: string): void => {
+      const ui = uiRef.current
+      if (ui.awake !== null && !ui.awake.includes(worktreeId)) return
+      setUi({
+        panels: {
+          ...ui.panels,
+          [worktreeId]: (ui.panels[worktreeId] ?? []).filter((panel) => panel !== 'terminals'),
+        },
+      })
+      // Written out rather than calling `reveal`, for the reason given below:
+      // both setters are stable, and `reveal` is a fresh function every render.
+      setActive({ id: worktreeId, pane: 'claude' })
+      setScrollTo((previous) => ({
+        id: worktreeId,
+        pane: 'claude',
+        nonce: (previous?.nonce ?? 0) + 1,
+      }))
+    },
+    [setUi],
+  )
 
   /**
    * A worktree's todo queue has emptied itself into Claude.
@@ -754,6 +795,7 @@ export const App = (): React.ReactElement => {
         onExpandDir={expandDir}
         onFilesMode={filesMode}
         onCloseTerminal={closeTerminal}
+        onNoTerminalsLeft={terminalsGone}
       />
 
       {dialogs}
