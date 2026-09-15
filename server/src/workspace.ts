@@ -75,10 +75,14 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * a remote project is known by the peer's own id, which is what lets every
  * route address it through the ordinary proxy.
  */
-const localTo = (snapshot: Omit<AppSnapshot, 'ui'>, baseUrl: string): Omit<AppSnapshot, 'ui'> => {
+const localTo = (
+  snapshot: Omit<AppSnapshot, 'ui'>,
+  baseUrl: string,
+  name: string,
+): Omit<AppSnapshot, 'ui'> => {
   const projects = snapshot.projects
     .filter((project) => project.host.kind === 'local')
-    .map((project) => ({ ...project, host: { kind: 'remote' as const, baseUrl } }))
+    .map((project) => ({ ...project, host: { kind: 'remote' as const, baseUrl, name } }))
   const mine = new Set(projects.map((project) => project.id))
   const worktrees = snapshot.worktrees.filter((worktree) => mine.has(worktree.projectId))
   const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
@@ -331,7 +335,11 @@ export class Workspace {
     return Promise.all(
       this.peers().map(async (peer) => {
         try {
-          const slice = localTo(await peer.snapshot(), peer.baseUrl)
+          const slice = localTo(
+            await peer.snapshot(),
+            peer.baseUrl,
+            this.store.server(peer.baseUrl)?.name ?? peer.baseUrl,
+          )
           this.lastGood.set(peer.baseUrl, slice)
           /*
            * Written through, so the guarantee survives this process. In memory

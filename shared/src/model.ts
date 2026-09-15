@@ -9,7 +9,10 @@
  * hashes the base URL too, because the same path on two machines hashes
  * identically. See `idFor` in server/src/git/worktree.ts.
  */
-export type ProjectHost = { kind: 'local' } | { kind: 'remote'; baseUrl: string }
+export type ProjectHost =
+  | { kind: 'local' }
+  /** `name` is what that machine calls itself, so the strip can say where. */
+  | { kind: 'remote'; baseUrl: string; name?: string }
 
 /**
  * A machine this one can read projects from.
