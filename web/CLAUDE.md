@@ -741,10 +741,30 @@ wrong place.
 **A finger dragged up or down scrolls the app.** There is no wheel and no Page
 Up key, and on the alternate screen there is no scrollback for the browser to
 move — the app owns its history. Claude scrolls on Page Up / Page Down, so a
-vertical drag on a terminal sends those, half a pane's worth of drag to the
-page; horizontal drags are left to the row. `.term-host` carries
-`touch-action: pan-x` so the browser hands over the vertical axis instead of
-claiming it for a pan that has nowhere to go.
+vertical drag on a terminal sends those; horizontal drags are left to the row.
+`.term-host` carries `touch-action: pan-x` so the browser hands over the
+vertical axis instead of claiming it for a pan that has nowhere to go.
+
+**An eighth of the pane's height buys a page**, and that number is the whole
+feel of reading back on a phone. It was half the height, which is more than a
+drag: a finger travels comfortably about 300px, and at 341px per page —
+measured on a 400×800 screen, where the terminal is 682px — a 300px pull sent
+**nothing at all** and the gesture read as broken, while a full-height 640px
+pull bought one screenful. Reading back a long turn that way is a dozen
+full-screen drags. At 85px the same screen gives 1 page for a 100px pull, 3 for
+the comfortable 300, and 7 for the full 640, with a 40px nudge still ignored as
+the noise of holding a phone. It stays **linear**, so it stays reversible —
+drag back exactly as far and you are where you started — rather than growing a
+velocity curve that would make one gesture mean different amounts depending on
+how hard it was flicked. The 48px floor is for a short pane: without it a 200px
+terminal would page on 25px of drag.
+
+Measure it by counting what goes down the socket, not by looking: the payload
+is JSON, so an escape is the six characters `\u001b[5~` and a regex for a raw
+ESC byte matches nothing. Wrap `WebSocket.prototype.send`, then drive the drag
+with CDP `Input.dispatchTouchEvent` — `Input.synthesizeScrollGesture` moved
+neither the row nor the terminal in headless Chromium, and a `page.mouse.wheel`
+over a terminal is eaten by xterm's own handler before the row sees it.
 
 This is not the wheel rule in reverse. Turning the wheel into keystrokes was
 wrong because the wheel is how you scroll what is under the pointer; a finger

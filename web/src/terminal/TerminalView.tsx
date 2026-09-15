@@ -393,7 +393,26 @@ export const TerminalView = ({
        * binding, which `tmux.conf` deliberately does not have (`prefix None`,
        * every key unbound so the app gets them all). Worth doing, separately.
        */
-      const page = Math.max(120, host.clientHeight / 2)
+      /*
+       * An eighth of the pane's height per page, not half of it.
+       *
+       * Half the height was more than a drag: a finger on a phone travels
+       * comfortably about 300px, and at 341px per page -- measured on a 400x800
+       * screen -- a 300px pull sent **nothing at all** and the whole gesture
+       * read as broken. A full-height 640px pull bought exactly one screenful.
+       * Reading back through a long turn that way is a dozen full-screen drags.
+       *
+       * So the finger buys about four times the distance: 85px per page on that
+       * screen, which is 3 pages for the comfortable drag and 7 for the full
+       * one. It stays linear and so stays reversible -- drag back exactly as
+       * far and you are where you started -- rather than growing a velocity
+       * curve, which would make the same gesture mean different amounts
+       * depending on how hard you flicked.
+       *
+       * The floor is what a short pane needs: without it a 200px terminal would
+       * page on 25px of drag, which is inside the noise of holding a phone.
+       */
+      const page = Math.max(48, host.clientHeight / 8)
       while (carried >= page) {
         send(PAGE_UP)
         carried -= page
