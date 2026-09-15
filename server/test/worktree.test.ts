@@ -279,6 +279,28 @@ describe('against a real remote', () => {
     expect((await remoteBranches(repo.path, 'origin/main')).has('feature')).toBe(false)
   })
 
+  it('does not call the default branch the copy of a never-pushed branch', async () => {
+    /*
+     * The bug this records deleted the wrong branch on the remote, unasked.
+     *
+     * `git branch feat origin/main` sets `branch.feat.merge` to
+     * `refs/heads/main` -- an upstream is the branch you merge *from*, not a
+     * copy of yours -- and nothing has been pushed. Reading that as "feat's
+     * copy on the remote is main" made the removal dialog report the copy as
+     * spent (main is merged into itself), which is the path that goes without
+     * being asked about, and the removal ran
+     * `push --delete origin refs/heads/main`. Measured against GitHub, the only
+     * thing that stopped it was the remote's own `! [remote rejected] master
+     * (refusing to delete the current branch)`; a branch created from any
+     * *deletable* origin ref would have gone.
+     */
+    await repo.git('branch', 'feat', 'origin/main')
+    expect(
+      (await repo.git('for-each-ref', '--format=%(upstream:remoteref)', 'refs/heads/feat')).trim(),
+    ).toBe('refs/heads/main')
+    expect((await remoteBranches(repo.path, 'origin/main')).has('feat')).toBe(false)
+  })
+
   it('finds a branch pushed without an upstream, by its name on the one remote', async () => {
     // `git push origin <branch>` leaves a copy on the remote and no config
     // saying so, and that copy is still the one the human means.
