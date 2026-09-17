@@ -26,7 +26,14 @@ import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
-import { LEGEND_LEARNED, isModHeld, landingHint, modArrow, showsHint } from './keyLegend.js'
+import {
+  LEGEND_LEARNED,
+  isModHeld,
+  landingHint,
+  modArrow,
+  showsHere,
+  showsHint,
+} from './keyLegend.js'
 import {
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
@@ -623,6 +630,15 @@ interface WorktreeTileProps {
    * right unless you are already inside it, and then only one side of it is.
    */
   hint: { dir: 'left' | 'right'; pane: PaneKind; teaching: boolean } | null
+  /**
+   * The pane of this worktree that has the keyboard, while the modifier is
+   * held. Null in every other window, and in this one whenever the key is up
+   * or the hints are still teaching -- see `showsHere`.
+   *
+   * It is drawn as a line under that pane, which is what the two arrows are
+   * arrows *from*: the row says where a step goes, and this says where from.
+   */
+  here: PaneKind | null
   /** The commit whose patch is showing, in Commits mode. Null for none. */
   commit: string | null
   /** The scroller, so the tile can tell whether it is worth mounting. */
@@ -692,6 +708,7 @@ const WorktreeTile = ({
   markdownPreview,
   keysLit,
   hint,
+  here,
   commit,
   scroller,
   onStart,
@@ -1010,7 +1027,13 @@ const WorktreeTile = ({
              * instead of through the pane's padding, so a column divider runs
              * the whole height and meets the tile's border.
              */
-            className={pane.kind === 'files' ? 'tile__pane tile__pane--files' : 'tile__pane'}
+            className={[
+              'tile__pane',
+              pane.kind === 'files' ? 'tile__pane--files' : '',
+              pane.kind === here ? 'tile__pane--here' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             key={pane.key}
             data-pane={pane.key}
           >
@@ -1941,6 +1964,11 @@ export const Overview = ({
    * because you reached for the key, and the keys are the whole answer.
    */
   const teaching = stepsTaken < LEGEND_LEARNED
+  /*
+   * Where you are, marked while the key is held and the teaching is over.
+   * One pane in the whole row wears it; see `showsHere`.
+   */
+  const here = showsHere({ steps: stepsTaken, held: keysLit }) ? (active ?? null) : null
   /**
    * Which arrow a cell wears, and over which of its panes. See `landingHint`.
    *
@@ -2175,7 +2203,11 @@ export const Overview = ({
                 <div className="slot__inner" style={{ width: slot.width }}>
                   {worktree === null ? (
                     <div
-                      className="tile tile--project"
+                      className={
+                        here?.id === slot.key
+                          ? 'tile tile--project tile__pane--here'
+                          : 'tile tile--project'
+                      }
                       data-pane={paneKey(slot.key, 'project')}
                       onFocus={() => onActivate(slot.key, 'project')}
                     >
@@ -2244,6 +2276,7 @@ export const Overview = ({
                       markdownPreview={markdownPreview}
                       keysLit={keysLit}
                       hint={hintFor(worktree.id)}
+                      here={here?.id === worktree.id ? here.pane : null}
                       commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}

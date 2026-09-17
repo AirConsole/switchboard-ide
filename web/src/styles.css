@@ -1664,6 +1664,33 @@ button {
 }
 
 /*
+ * Where you are, while the key is held: a line under the pane that has the
+ * keyboard.
+ *
+ * What it is for: the two arrows say where a step goes, and this is what they
+ * go *from*. Held down, the row is briefly a map, and a map with no "you are
+ * here" is a list of directions.
+ *
+ * A pseudo-element, and absolutely positioned like the hint, for the same
+ * reason: a pane's contents are a terminal, and anything in the flow here would
+ * take a row off the character grid and resize every pty in the row.
+ *
+ * `--rail` thick, which is the width the tile's own leading edge uses for the
+ * one other thing drawn as a line -- the worktree's state. Two lines of one
+ * weight, on two edges, saying two things that are both about this window.
+ */
+.tile__pane--here::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--rail);
+  background: var(--legend);
+  pointer-events: none;
+}
+
+/*
  * The keys, and what pressing them does.
  *
  * The keys keep --legend and the sentence steps down to --graphite, 1.33:1
