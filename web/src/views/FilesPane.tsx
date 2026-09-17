@@ -11,6 +11,7 @@ import {
   type ChangesState,
 } from './ChangesPane.js'
 import { ApiError, api } from '../api.js'
+import { useListKeys } from '../components/useListKeys.js'
 import type { EditorFile } from '../editor/CodeEditor.js'
 
 /*
@@ -1062,6 +1063,25 @@ export const FilesPane = ({
       default:
     }
   }
+
+  /*
+   * The other three lists walk with the arrows too, and they get the pane's
+   * own hook rather than the handler above.
+   *
+   * What the tree has that they do not is folding: left and right open and
+   * close a directory and step out to its parent, and moving the *cursor* is
+   * not opening, so its walk runs through state that the flat lists have no
+   * equivalent of. A hit, a change and a commit are each one row that does one
+   * thing, so focus is the whole of the selection there, and Enter is the
+   * browser's own on a button -- which is `useListKeys` exactly.
+   *
+   * Three of the four containers looked walkable and were not: they draw the
+   * same `.files__row` markup as the tree, and only the tree carried keys.
+   */
+  useListKeys(treeRef, {
+    rows: 'button.files__row, button.files__commit',
+    enabled: mode !== 'files' || searching,
+  })
 
   /*
    * An unsaved edit is not something to unmount. Off screen or not, it is the

@@ -1,95 +1,132 @@
 import { useEffect, type RefObject } from 'react'
 
+export interface ListKeys {
+  /**
+   * The column: the first control of every line, in the order they are drawn.
+   * Up and down walk these.
+   */
+  rows: string
+  /**
+   * The other controls on a line, where a line has more than one -- a
+   * worktree's × beside its name, a todo's three actions. Left and right walk
+   * these, and up and down keep the place in the line rather than dropping back
+   * to its start, which is what a column of like controls should do.
+   */
+  cells?: string
+  /** How to find a line from a control inside it. Required with `cells`. */
+  line?: string
+  /** Off where the pane draws something this does not describe. */
+  enabled?: boolean
+}
+
 /**
- * A pane that is a list answers to the arrows: up and down walk it, Enter takes
- * what you are on.
+ * A pane that is a list answers to the arrows: up and down walk it, left and
+ * right reach across a line, Enter takes what you are on.
  *
  * The vertical sibling of `useDialogKeys` -- which takes all four arrows too,
  * so a hand that reaches for one does not have to have looked at which way the
  * thing in front of it runs. The rules are the same ones said about a column
- * instead of a row: focus *is* the selection, Enter is the
- * browser's own on a real button, and `⏎` is drawn on what it would take. What
- * differs is the axis and the reach -- a dialog is modal and listens at the
- * window, while this is one pane among several, so it listens on its own box
- * and means nothing while the keyboard is somewhere else.
+ * instead of a row: focus *is* the selection, Enter is the browser's own on a
+ * real button, and `⏎` is drawn on what it would take. What differs is the
+ * reach: a dialog is modal and listens at the window, while this is one pane
+ * among several, so it listens on its own box and means nothing while the
+ * keyboard is somewhere else.
  *
- * It exists because Tab could not do this job here. The project pane's lists
- * come *before* its form in the markup -- the worktrees you might jump to, then
- * the field for a new one -- and arriving puts the caret in the field, which is
- * the right place to arrive. Tabbing forward from there reaches `Close project`
- * and then leaves the pane entirely: measured, the next stop was the following
- * window's TERMINAL. Everything this pane is *for* was behind Shift+Tab, which
- * is not where anybody looks.
+ * **A field keeps the arrows.** A caret in a text box owns every direction it
+ * can move in, so an event that starts in one is not this hook's -- which is
+ * also why a todo's prompt is not in its column, and why the project pane's
+ * branch box is in the column but hands the horizontal back.
  *
- * **Left and right reach the second control on a line.** A worktree's row is
- * its name and the × that puts it away, which is the same shape the tabs in the
- * top bar have; up and down move between worktrees, left and right between the
- * two things you can do to one.
+ * **No wrapping.** A list has a top and a bottom, and running off either end of
+ * one should feel like an end rather than a loop -- unlike a dialog's two or
+ * three answers, which are a ring you feel your way around.
  */
-export const useListKeys = (pane: RefObject<HTMLElement | null>): void => {
+export const useListKeys = (pane: RefObject<HTMLElement | null>, keys: ListKeys): void => {
+  const { rows, cells, line, enabled = true } = keys
   useEffect(() => {
     const box = pane.current
-    if (!box) return
+    if (!box || !enabled) return
 
-    /*
-     * The column, in the order it is drawn: every worktree, then the field, the
-     * button beside it, and the way out. Read live, because a pane's list is
-     * whatever the project has awake right now.
-     */
+    /** The column, read live: a pane's list is whatever it holds right now. */
     const column = (): HTMLElement[] =>
-      [
-        ...box.querySelectorAll<HTMLElement>(
-          '.projpane__list .tab__body, .projpane__foot .field__input, .projpane__foot .btn, .projpane__close',
-        ),
-      ].filter((el) => !(el as HTMLButtonElement).disabled)
+      [...box.querySelectorAll<HTMLElement>(rows)].filter(
+        (el) => !(el as HTMLButtonElement).disabled,
+      )
 
-    /** The × beside a row, where the row has one. */
-    const beside = (el: HTMLElement): HTMLElement | null =>
-      el.closest('.tab')?.querySelector<HTMLElement>('.tab__close') ?? null
+    /** The controls on one line, given anything inside it. */
+    const across = (el: HTMLElement): HTMLElement[] => {
+      if (cells === undefined || line === undefined) return [el]
+      const own = el.closest(line)
+      if (own === null) return [el]
+      return [...own.querySelectorAll<HTMLElement>(cells)].filter(
+        (cell) => !(cell as HTMLButtonElement).disabled,
+      )
+    }
 
-    const keys = (event: KeyboardEvent): void => {
+    /** The column entry a control belongs to, whichever of its line it is. */
+    const lineOf = (el: HTMLElement): HTMLElement => {
+      if (line === undefined) return el
+      return el.closest(line)?.querySelector<HTMLElement>(rows) ?? el
+    }
+
+    const keyed = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
       if (target === null || !box.contains(target)) return
+      /*
+       * A menu hung over the pane keeps its own keys. `useAnchoredMenu` draws
+       * it `position: fixed` but *inside* the row it belongs to, so it is in
+       * this box -- and walking the list underneath a menu somebody has open
+       * would step off it and leave it hanging there.
+       */
+      if (target.closest('.menu') !== null) return
+      // A caret owns every direction it can move in.
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return
+        if (target instanceof HTMLTextAreaElement) return
+      }
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         const all = column()
         if (all.length === 0) return
-        /*
-         * From the × back to its own row first, so a column walked through the
-         * second control does not skip the line it belongs to.
-         */
-        const from = target.closest('.tab')?.querySelector<HTMLElement>('.tab__body') ?? target
-        const here = all.indexOf(from)
+        const here = all.indexOf(lineOf(target))
         const step = event.key === 'ArrowDown' ? 1 : -1
         const to = here === -1 ? (step === 1 ? 0 : all.length - 1) : here + step
-        // No wrapping: a column has a top and a bottom, and running off either
-        // end of a *list* should feel like an end rather than a loop.
         if (to < 0 || to >= all.length) return
+        const landing = all[to]
+        if (landing === undefined) return
         event.preventDefault()
-        all[to]?.focus()
+        /*
+         * Keep the place in the line. Walking down a column of todos while
+         * standing on DELETE should stay on DELETE, the way a spreadsheet keeps
+         * its column -- a walk that dropped back to the first control every
+         * line would make the second and third reachable only sideways.
+         */
+        const was = across(target).indexOf(target)
+        const row = across(landing)
+        ;(row[was] ?? landing).focus()
         return
       }
 
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        // The caret owns the horizontal in a field.
-        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
-        const away = beside(target)
-        if (event.key === 'ArrowRight' && away !== null && target !== away) {
-          event.preventDefault()
-          away.focus()
-          return
-        }
-        if (event.key === 'ArrowLeft' && target === away) {
-          const body = target.closest('.tab')?.querySelector<HTMLElement>('.tab__body')
-          if (body) {
-            event.preventDefault()
-            body.focus()
-          }
-        }
-      }
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      const row = across(target)
+      if (row.length < 2) return
+      const here = row.indexOf(target)
+      if (here === -1) return
+      const to = here + (event.key === 'ArrowRight' ? 1 : -1)
+      if (to < 0 || to >= row.length) return
+      event.preventDefault()
+      row[to]?.focus()
     }
 
-    box.addEventListener('keydown', keys)
-    return () => box.removeEventListener('keydown', keys)
-  }, [pane])
+    /*
+     * Re-attached on every commit, which is why there is no dependency array.
+     * The box this listens on is not always a stable node: the files panel
+     * draws its list into a different element per mode, so an effect that only
+     * re-ran when its options changed would go on listening to a detached div
+     * the moment you switched from Changes to Commits. One listener added and
+     * removed per render is nothing beside the render.
+     */
+    box.addEventListener('keydown', keyed)
+    return () => box.removeEventListener('keydown', keyed)
+  })
 }

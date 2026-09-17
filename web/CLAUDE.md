@@ -12,6 +12,8 @@ components/TopBar    the tab strip: project heads, tabs, usage bars
 components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
 components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
 components/useAnchoredMenu  a menu hung under its trigger, kept on screen
+components/useDialogKeys    a dialog's foot, walked with the arrows
+components/useListKeys      a pane that is a list, walked with the arrows
 components/UsageBars    Claude's limits, as bars; polled once for both bars
 components/useNarrow    is this a phone -- one threshold, asked once
 views/Overview       the row: spot arithmetic, scrolling, what fits
@@ -920,6 +922,12 @@ Six things in it are load-bearing:
   it. Measured: the cursor jumped from line 3 to line 1. So the line being read
   is remembered by its text and looked for again near its old number.
 
+**All four lists walk with the arrows**, and only the tree walks with its own
+keys: the other three -- search hits, Changes, Commits -- take `useListKeys`,
+because a hit, a change and a commit are each one row that does one thing. They
+drew the same `.files__row` markup as the tree and carried no keys at all, which
+made three of the four look walkable and not be.
+
 Moving in the tree is not opening, unlike a click: arrowing past twenty files
 would otherwise read and render twenty of them, so Enter is the key that says
 you meant it. Opening a file expands its ancestors, which is what makes a
@@ -1300,12 +1308,49 @@ answer is `--danger`, when the way out takes the focus instead and reaching the
 red one is a deliberate arrow press. Measured: `Sleep feature-x?` starts on
 `Sleep`, `Remove worktree feature-x?` starts on `Keep it`.
 
-**The project pane is the same interface stood on end** (`useListKeys`). Up and
-down walk the column -- every awake and sleeping worktree, then the branch box,
-the button beside it and `Close project` -- and left and right reach the second
-control on a line, which is a row's × , the same shape a tab in the top bar has.
-No wrapping: a list has a top and a bottom, and running off either end of one
-should feel like an end rather than a loop.
+**Every pane that is a list is the same interface stood on end**
+(`useListKeys`): up and down walk the column, left and right reach the other
+controls on a line, and Enter is the browser's own on whatever button you are
+standing on. No wrapping -- a list has a top and a bottom, and running off
+either end of one should feel like an end rather than a loop, unlike a dialog's
+two or three answers, which are a ring you feel your way around.
+
+Three panes take it, and what each hands it says what a line is there:
+
+- **The project pane**: the column is every awake and sleeping worktree, then
+  the branch box, the button beside it and `Close project`; the second control
+  on a worktree's line is its ×, the same shape a tab in the top bar has.
+- **The todo panel**: the column is the todos and the line is the three things
+  you can do to one. **The prompt is deliberately not in it** -- it is a
+  textarea, where every arrow belongs to the caret, so a walk that stopped in
+  one would be a walk you could not get out of. Tab is how you reach the text,
+  and the buttons are the walk.
+- **The files panel's three flat lists** -- search hits, Changes, Commits.
+
+**The place in the line is kept when you walk between them.** Standing on
+DELETE and pressing down stays on DELETE, and so does a × in the project pane:
+a column of like controls is a column, and a walk that dropped back to the first
+control every line would make the second and third reachable only sideways. A
+line that does not have that control -- a sleeping `main` has no × -- lands on
+what it does have.
+
+**A menu hung over a pane keeps its own keys.** `useAnchoredMenu` draws MOVE
+TO's list `position: fixed` but *inside* the todo it belongs to, so it is inside
+the box this listens on; without that clause, down inside an open menu stepped
+the list underneath and left the menu hanging there.
+
+**The files tree is the one list that does not use it**, and the difference is
+folding: left and right there open and close a directory and step out to its
+parent, and moving the cursor is not opening, so its walk runs through state
+that a flat list has no equivalent of. A hit, a change and a commit are each one
+row that does one thing, so focus is the whole of the selection. Three of the
+panel's four containers looked walkable and were not -- they draw the same
+`.files__row` markup as the tree, and only the tree carried keys.
+
+**The hook re-attaches on every commit**, which is why it has no dependency
+array: the files panel draws its list into a *different* element per mode, so an
+effect that only re-ran when its options changed would go on listening to a
+detached div the moment you switched from Changes to Commits.
 
 It exists because **Tab could not do this job here**. The lists come *before*
 the form in the markup, and arriving puts the caret in the form, which is the
@@ -1316,10 +1361,16 @@ where anybody looks. The hook listens on the pane's own box rather than the
 window, because unlike a dialog it is one pane among several and means nothing
 while the keyboard is elsewhere.
 
-The `⏎` goes on the foot's buttons and not on the worktree rows: Enter on a row
-you are standing on obviously opens it, and the focus ring already says which.
-A disabled button is not in the walk at all, which is why `Create` is skipped
-until the branch box has something in it.
+The `⏎` goes on the foot's buttons and on nothing a pane's list draws: Enter on
+a row you are standing on obviously takes it, and the focus ring already says
+which. That is also what keeps the mark worth reading -- a dialog has two or
+three answers, and a mark reserved beside every control of every row of a list
+is not a mark. A disabled button is not in the walk at all, which is why
+`Create` is skipped until the branch box has something in it.
+
+The ring inside the todo's slab is drawn `outline-offset: -1px`, the way
+`.files__row`'s is: the shell clips its segments to its own curve, so a ring on
+the outer edge of one comes out as three sides of a ring.
 
 **On the window, in capture, like `useEscape`** -- and that is the half that
 makes "the dialog listens to Enter" true rather than "its focused button does".
@@ -1419,6 +1470,11 @@ prompts of 25px and 100px alike.
 
 MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
 and it hangs off the segment's own bottom-left corner.
+
+**The three segments are also the panel's keyboard.** Up and down walk the
+todos and left and right walk the segments -- see *Arrows choose, Enter does,
+Escape leaves*, where the rule and what the prompt does with the arrows are
+written down.
 
 **Its list is this project's worktrees and no others.** A todo is work on a
 repository, and another repository's worktrees are not somewhere it could be
