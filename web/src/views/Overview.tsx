@@ -752,6 +752,22 @@ const WorktreeTile = ({
   const running = isRunning(session)
   const exitOutput = useExitOutput(session)
   /*
+   * What this worktree's Claude had on screen when it went.
+   *
+   * The account of why an agent stopped is what it printed on its way out, and
+   * `useExitOutput` asks the *server* for it -- which can only answer while it
+   * still holds the dead session. A linked machine running an older version
+   * forgets it within a poll, and the reader is left with "Claude is no longer
+   * running" and no reason. This browser was watching, so the screen is kept
+   * here and shown when the server has nothing: see `onFarewell`.
+   *
+   * Not state: it is written from a terminal's teardown, which happens during
+   * an unmount, and setting state there would be a render inside a render. The
+   * pane that reads it re-renders anyway -- the session changing is what
+   * replaced the terminal with the placeholder.
+   */
+  const farewell = useRef<string[]>([])
+  /*
    * `done` is a running Claude that has come to rest, and it is the only one of
    * these that goes green. A worktree with no agent, or one that has exited,
    * stays `idle` and stays grey: nothing is running there, so nothing has been
@@ -1104,12 +1120,21 @@ const WorktreeTile = ({
                     primary={true}
                     fontSize={TERMINAL_FONT_SIZE}
                     focus={focusPane === 'claude' ? focus : null}
+                    onFarewell={(lines) => {
+                      farewell.current = lines
+                    }}
                   />
                 )
               ) : (
                 <IdleClaude
                   session={session}
-                  output={exitOutput}
+                  /*
+                   * The server's account first -- it survives a reload and is
+                   * the dead session's own tail -- and the screen this browser
+                   * kept when there is none, which is the case a machine that
+                   * has forgotten the session leaves behind.
+                   */
+                  output={exitOutput.length > 0 ? exitOutput : farewell.current}
                   onStart={onStart}
                   focus={focusPane === 'claude' ? focus : null}
                 />

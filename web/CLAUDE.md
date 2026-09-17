@@ -814,6 +814,31 @@ This is only safe because the server serialises its mirror on attach: a
 remounted terminal paints exactly what it would have shown, and with nothing
 attached the pty's geometry is left alone.
 
+**A dying terminal hands over its last screen** (`onFarewell`). What a Claude
+prints on its way out is the only account of why it stopped, and the placeholder
+that replaces it asks the *server* for that -- `/api/sessions/:id/tail`, the
+dead session's own tail, which is the better source: it survives a reload and it
+has the output even when nothing was watching. But it can only answer while the
+server still holds the dead session, and **a linked machine running an older
+version forgets it within a poll** -- measured on one, where the reader got
+"Claude is no longer running" and no reason at all, the message having flashed
+past with the terminal. This browser was watching, so `TerminalView` reads the
+bottom of its buffer on teardown and the tile keeps it; `IdleClaude` shows the
+server's account where there is one and the kept screen otherwise.
+
+Three details. It is taken on **every** unmount, not only on a death, because
+this view cannot tell one from the other and a live terminal's last screen is
+the same screen. It is a **ref**, not state: it is written during an unmount,
+where setting state would be a render inside a render, and the pane that reads
+it re-renders anyway -- the session dying is what put it there. And trailing
+blanks and tmux's own `Pane is dead (status 3, ...)` are dropped: a screen is 40
+rows whatever is on it, and the status is said in the interface's own words
+right above.
+
+It cannot help where the agent dies before the browser attaches -- measured with
+a stand-in that exited after 0.3s, the screen was never seen and the kept lines
+were empty. That is the case the server's tail covers.
+
 ## The files pane
 
 A search box sits at the foot of the sidebar in all three modes, filtering
