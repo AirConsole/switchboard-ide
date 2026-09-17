@@ -85,7 +85,13 @@ if [ -s "$PKG_LIST" ]; then
   fi
 fi
 
-systemctl start docker 2>/dev/null || true
+# Docker keeps its data on the encrypted volume, so it cannot be running
+# before this. It is restarted rather than started, because a daemon that came
+# up while /home was shut made its data root on the boot disk and the mount
+# then hid it -- measured: every `docker run` failed with "no such file or
+# directory" on a containers directory that existed, underneath.
+install -d -o "$SWB_USER" -g "$SWB_USER" "$HOME_DIR/.docker-data"
+systemctl restart docker 2>/dev/null || true
 
 # On a machine being built there is no password yet -- provision.sh sets it
 # next, as the user, and starts the IDE itself. The IDE refuses to start

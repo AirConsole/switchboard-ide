@@ -258,11 +258,31 @@ mkdir -p /etc/switchboard
 printf '%s\n' "$IP" > /etc/switchboard/public-ip
 
 # Every explicitly installed package, recorded on the *encrypted volume* so a
-# rebuilt boot disk can replay it. Post-Invoke rather than a timer: it costs
-# nothing, and a list written only periodically is a list that is wrong exactly
-# when the machine is rebuilt in a hurry.
+# rebuilt boot disk can replay it.
+#
+# The capture runs a few seconds *after* apt, not inside it: apt-mark needs the
+# dpkg lock, which apt is holding for as long as its own hook runs, so a hook
+# that calls it directly fails every time -- silently, in the version of this
+# that shipped first. A transient unit outlives apt and gets the lock.
+cat > /etc/switchboard/record-packages.sh <<'EOF'
+#!/bin/sh
+# What an agent has installed, so `provision.sh recreate` can put it back.
+set -eu
+mountpoint -q /home || exit 0
+DIR=/home/switchboard/.switchboard
+install -d -o switchboard -g switchboard "$DIR"
+# A tmp file of its own per run: two captures can overlap -- apt installing
+# several things in a row schedules several -- and with one shared name the
+# second run moves the first one's file out from under it and fails.
+TMP=$(mktemp "$DIR/packages.XXXXXX")
+apt-mark showmanual > "$TMP"
+chown switchboard:switchboard "$TMP"
+mv "$TMP" "$DIR/packages"
+EOF
+chmod 0755 /etc/switchboard/record-packages.sh
+
 cat > /etc/apt/apt.conf.d/99switchboard-packages <<'EOF'
-DPkg::Post-Invoke { "if mountpoint -q /home; then install -d -o switchboard -g switchboard /home/switchboard/.switchboard && apt-mark showmanual > /home/switchboard/.switchboard/packages.tmp 2>/dev/null && mv /home/switchboard/.switchboard/packages.tmp /home/switchboard/.switchboard/packages && chown switchboard:switchboard /home/switchboard/.switchboard/packages; fi || true"; };
+DPkg::Post-Invoke { "systemd-run --quiet --on-active=5s --unit=switchboard-record-packages /etc/switchboard/record-packages.sh >/dev/null 2>&1 || true"; };
 EOF
 
 # The unlock service and the post-unlock steps are the checkout's, so
