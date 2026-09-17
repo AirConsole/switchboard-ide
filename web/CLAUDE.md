@@ -1159,17 +1159,31 @@ coarse pointer: `esc ⇥ ← ↑ ↓ → ctrl`, 44px each in equal shares.
 
 Four things about it are load-bearing:
 
-- **The arrows have two encodings and the app picks.** DECCKM (`CSI ? 1 h`)
-  swaps `CSI A` for `SS3 A`, every full-screen app here turns it on, and one
-  that asked for the application form does not recognise the other. `arrowBytes`
-  takes the mode from the terminal's own `applicationCursorKeysMode`; measured
-  against a stand-in that sets `?1h`, the pty received `ESC O D/A/B/C`.
-- **Ctrl latches**, because there is nothing to hold it with. The next letter is
-  caught in `attachCustomKeyEventHandler` -- where the *soft keyboard's* letter
-  arrives -- and sent as `ctrlByte`; measured, ctrl then `c` put `0x03` on the
-  wire and cleared the latch, and the `x` after it arrived as `x`. Anything that
-  is not a letter disarms it rather than being swallowed, or a latch left
-  standing would turn the next word into control codes.
+- **The arrows have three encodings and the app picks between two of them.**
+  DECCKM (`CSI ? 1 h`) swaps `CSI A` for `SS3 A`, every full-screen app here
+  turns it on, and one that asked for the application form does not recognise
+  the other; `arrowBytes` takes the mode from the terminal's own
+  `applicationCursorKeysMode`. Held with Ctrl it is neither: a *modified* cursor
+  key is always the parameterised `CSI 1 ; 5 A`, because `SS3 A` has no room for
+  a modifier -- and that is the sequence a shell reads as word-left and
+  word-right, which is most of why you want Ctrl on a phone. Measured against a
+  stand-in that sets `?1h`: `ESC O D/A/B/C` plain, `ESC [ 1;5 D/C/A` latched.
+- **Ctrl latches**, because there is nothing to hold it with, and it modifies
+  the *next* key whether that comes from the bar or the keyboard. A letter is
+  caught in `attachCustomKeyEventHandler` -- where the soft keyboard's letter
+  arrives -- and sent as `ctrlByte`: measured, ctrl then `c` put `0x03` on the
+  wire and cleared the latch, and the `x` after it arrived as `x`. A key that is
+  not a letter disarms it rather than being swallowed, or a latch left standing
+  would turn the next word into control codes.
+
+  Two keys on the bar say no to it, and both are the honest answer rather than a
+  gap. **Escape ignores the latch** because Ctrl+[ *is* Escape -- the same byte,
+  so there is nothing to change. **Ctrl+Tab goes as `CSI 9 ; 5 u`**, the
+  extended form this view already uses for Shift+Enter, since the old encoding
+  has no byte for it; that reaches an app which asked for extended keys, as
+  Claude does (`modifyOtherKeys` at startup, see `server/tmux.conf`), and tmux
+  drops it for one that did not -- measured, the stand-in agent received nothing
+  for it while every other key arrived.
 - **A press must not move the focus.** `onPointerDown` with the default
   prevented, since blurring xterm's textarea closes the keyboard -- the row
   would take away the keyboard every time it was used, and `onClick` is too late

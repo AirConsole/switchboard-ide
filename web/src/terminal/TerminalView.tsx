@@ -6,7 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
-import { BAR_KEYS, ctrlByte } from './keyBar.js'
+import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
 
@@ -605,16 +605,23 @@ export const TerminalView = ({
   }, [focus])
 
   /**
-   * Send what a bar key stands for, in the form the app asked for.
+   * Send what a bar key stands for, in the form the app asked for, with the
+   * latch if it is on.
    *
    * Through the socket rather than through xterm: `term.input` would take the
    * same path a keystroke does, and there is no keystroke here -- and the
    * arrows' encoding is read off the terminal's own mode (see `arrowBytes`).
    */
-  const tap = (bytes: (applicationCursorKeys: boolean) => string): void => {
+  const tap = (bytes: BarKey['bytes']): void => {
     const term = termRef.current
     if (!term) return
-    terminalSocket.input(session.id, bytes(term.modes.applicationCursorKeysMode))
+    const ctrl = ctrlArmed.current
+    terminalSocket.input(
+      session.id,
+      bytes({ applicationCursorKeys: term.modes.applicationCursorKeysMode, ctrl }),
+    )
+    // One key, like the letters: the latch is spent by whatever it modified.
+    if (ctrl) armCtrl(false)
   }
 
   return (
