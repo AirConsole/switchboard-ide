@@ -28,7 +28,9 @@ closed, if need be -- and Move to hands the todo itself to another worktree, whe
 the work turns out to belong to a different agent. It is **awake** or
 **asleep**. Awake means it has a window in the row; asleep means it is behind
 the top bar and, unless you said otherwise, nothing of it is running. Waking
-continues the conversation it was having rather than starting a new one.
+continues the conversation it was having rather than starting a new one. Which
+of the two it is belongs to the worktree, recorded on the machine it lives on,
+so every browser and every machine linking that one shows the same answer.
 
 The row of windows is a strip you scroll along, and it is laid out in **units**
 of half a pane. Claude is two units, and so is a terminal or the todo list. The
@@ -404,6 +406,11 @@ Everything else follows from those two sentences:
   757ms after the gateway had ceased to exist.
 - **The layout is yours.** `ui` is read and written only on the server that
   served the page; a peer's copy is dropped at the boundary.
+- **Awake is not layout.** Whether a worktree has a window is the worktree's,
+  recorded by its own machine and carried on it in the snapshot, and waking or
+  sleeping one is a request to that machine. It was a list in each viewer's
+  `ui`, and a Mac linking this machine came up with every worktree asleep --
+  agents mid-turn included -- while this machine's page showed them awake.
 - **A machine that is off keeps its tab**, with the worktrees it last had and
   **no sessions**. The UI prunes stored layout for worktrees it cannot see, so
   losing them costs panels and open files permanently — and liveness recalled

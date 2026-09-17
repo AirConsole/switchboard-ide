@@ -158,6 +158,18 @@ export interface Worktree {
    * has never run.
    */
   prompt?: string
+  /**
+   * Whether this worktree has a window in the row.
+   *
+   * Decided by the machine the worktree lives on, not by whoever is looking:
+   * it used to be a list in each viewer's own layout, so a machine linked from
+   * somewhere else came up with every worktree asleep -- agents mid-turn
+   * included -- and waking one there said nothing to this machine's own page.
+   * One answer per worktree now, the same in every browser and on every
+   * machine that links it. Absent from a machine too old to say, where the
+   * viewer falls back to "awake if anything is running in it".
+   */
+  awake?: boolean
 }
 
 /**
@@ -265,21 +277,6 @@ export type FilesMode = 'changes' | 'commits' | 'files'
 
 /** Everything needed to restore the UI exactly as the user left it. */
 export interface UiState {
-  /**
-   * The worktrees that are awake, by id. Everything else is asleep.
-   *
-   * A set, not an order: a tile's place in the row comes from its project and
-   * its name, so it is always where you last saw it. Nothing is hidden to make
-   * room -- the row overflows and scrolls -- so this says only what is running,
-   * never what happened to fit.
-   *
-   * Null until seeded, which is not the same as empty. Empty means every
-   * worktree was put to sleep; null means this is a first run, and a worktree
-   * is taken to be awake if it already has live sessions. That way the IDE can
-   * be dropped on a repository with twenty worktrees and start with all twenty
-   * asleep and nothing running.
-   */
-  awake: string[] | null
   /** Panels open per worktree, in the order they sit beside Claude. */
   panels: Record<string, PanelName[]>
   /** Selected terminal per worktree, so its panel reopens where you left it. */
@@ -362,7 +359,6 @@ export interface UiState {
 }
 
 export const defaultUiState = (): UiState => ({
-  awake: null,
   panels: {},
   activeTerminalByWorktree: {},
   openPathByWorktree: {},

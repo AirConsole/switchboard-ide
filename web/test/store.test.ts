@@ -110,9 +110,9 @@ describe('the store', () => {
   })
 
   it('adopts the server’s UI state on the first load', async () => {
-    api.snapshot.mockResolvedValue(emptySnapshot({ awake: ['wt-1'] }))
+    api.snapshot.mockResolvedValue(emptySnapshot({ panels: { 'wt-1': ['todo'] } }))
     await useStore.getState().refresh()
-    expect(useStore.getState().ui.awake).toEqual(['wt-1'])
+    expect(useStore.getState().ui.panels).toEqual({ 'wt-1': ['todo'] })
     expect(useStore.getState().adopted).toBe(true)
   })
 
@@ -123,11 +123,11 @@ describe('the store', () => {
      * the view to the overview and immediately refreshed, and the snapshot --
      * still carrying the old view -- put you back into a different worktree.
      */
-    api.snapshot.mockResolvedValue(emptySnapshot({ awake: ['wt-1'] }))
+    api.snapshot.mockResolvedValue(emptySnapshot({ panels: { 'wt-1': ['todo'] } }))
     await useStore.getState().refresh()
-    useStore.getState().setUi({ awake: ['wt-2'] })
+    useStore.getState().setUi({ panels: { 'wt-2': ['todo'] } })
     await useStore.getState().refresh()
-    expect(useStore.getState().ui.awake).toEqual(['wt-2'])
+    expect(useStore.getState().ui.panels).toEqual({ 'wt-2': ['todo'] })
   })
 
   it('adopts on the first load that actually succeeds, not the first attempt', async () => {
@@ -141,9 +141,9 @@ describe('the store', () => {
     expect(useStore.getState().loaded).toBe(true)
     expect(useStore.getState().adopted).toBe(false)
 
-    api.snapshot.mockResolvedValue(emptySnapshot({ awake: ['wt-1'] }))
+    api.snapshot.mockResolvedValue(emptySnapshot({ panels: { 'wt-1': ['todo'] } }))
     await useStore.getState().refresh()
-    expect(useStore.getState().ui.awake).toEqual(['wt-1'])
+    expect(useStore.getState().ui.panels).toEqual({ 'wt-1': ['todo'] })
   })
 
   it('takes the stored state over the defaults, never instead of them', async () => {
@@ -151,7 +151,7 @@ describe('the store', () => {
     // would arrive as undefined where the code expects a record it can index.
     api.snapshot.mockResolvedValue({
       ...emptySnapshot(),
-      ui: { awake: ['wt-1'] } as unknown as UiState,
+      ui: { panels: { 'wt-1': ['todo'] } } as unknown as UiState,
     })
     await useStore.getState().refresh()
     expect(useStore.getState().ui.openFilesByWorktree).toEqual({})
@@ -163,27 +163,27 @@ describe('the store', () => {
      * selects a terminal -- and sending only the last one silently dropped the
      * first, so the mode never reached the server and did not survive a reload.
      */
-    useStore.getState().setUi({ awake: ['wt-1'] })
+    useStore.getState().setUi({ panels: { 'wt-1': ['todo'] } })
     useStore.getState().setUi({ activeTerminalByWorktree: { 'wt-1': 's1' } })
     await vi.advanceTimersByTimeAsync(250)
     expect(api.patchUi).toHaveBeenCalledOnce()
     expect(api.patchUi).toHaveBeenCalledWith({
-      awake: ['wt-1'],
+      panels: { 'wt-1': ['todo'] },
       activeTerminalByWorktree: { 'wt-1': 's1' },
     })
   })
 
   it('does not keep sending a patch it has already sent', async () => {
-    useStore.getState().setUi({ awake: ['wt-1'] })
+    useStore.getState().setUi({ panels: { 'wt-1': ['todo'] } })
     await vi.advanceTimersByTimeAsync(250)
-    useStore.getState().setUi({ awake: ['wt-2'] })
+    useStore.getState().setUi({ panels: { 'wt-2': ['todo'] } })
     await vi.advanceTimersByTimeAsync(250)
-    expect(api.patchUi).toHaveBeenLastCalledWith({ awake: ['wt-2'] })
+    expect(api.patchUi).toHaveBeenLastCalledWith({ panels: { 'wt-2': ['todo'] } })
   })
 
   it('caches the layout locally so a reload paints it without waiting', () => {
-    useStore.getState().setUi({ awake: ['wt-1'] })
-    expect(JSON.parse(localStorage.getItem('swb.ui') ?? '{}').awake).toEqual(['wt-1'])
+    useStore.getState().setUi({ panels: { 'wt-1': ['todo'] } })
+    expect(JSON.parse(localStorage.getItem('swb.ui') ?? '{}').panels).toEqual({ 'wt-1': ['todo'] })
   })
 
   it('reports a failed load rather than leaving the page blank', async () => {

@@ -2,26 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { defaultUiState } from '../src/model.js'
 
 describe('defaultUiState', () => {
-  it('starts awake as null, which is not the same as empty', () => {
-    /*
-     * Empty means every worktree was put to sleep; null means this is a first
-     * run, and a worktree is taken to be awake if it already has live sessions.
-     * That is what lets the IDE be dropped on a repository with twenty
-     * worktrees and start with all twenty asleep.
-     */
-    expect(defaultUiState().awake).toBeNull()
-  })
-
   it('gives every per-worktree map a record to index into', () => {
     // A missing one arrives as undefined where the code expects a record, which
     // is what `refresh()` spreads these under the server's stored copy for.
     const ui = defaultUiState()
     for (const [key, value] of Object.entries(ui)) {
-      // The three that are not per-worktree maps, named rather than detected by
-      // their type: `awake` is a set as a list and null until seeded, and
-      // `markdownPreview` and `stepsTaken` are both about the reader rather
-      // than about any worktree. A fourth has to be added here on purpose.
-      if (key === 'awake' || key === 'markdownPreview' || key === 'stepsTaken') continue
+      // The two that are not per-worktree maps, named rather than detected by
+      // their type: `markdownPreview` and `stepsTaken` are both about the
+      // reader rather than about any worktree. A third has to be added here on
+      // purpose.
+      if (key === 'markdownPreview' || key === 'stepsTaken') continue
       expect(value, key).toEqual({})
     }
   })
