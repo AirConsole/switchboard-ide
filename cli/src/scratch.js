@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import {
   assertScratchPaths,
+  checkTools,
   deriveScratch,
   isOurServer,
   portCandidates,
@@ -153,6 +154,13 @@ export const start = async (opts = {}) => {
   }
   if (!existsSync(serverScript)) {
     console.error('swb: server/dist is missing -- run `pnpm build` first')
+    process.exit(1)
+  }
+  // Same reason as the service half: a missing tmux surfaces twenty retries
+  // deep, in a log file, as something that does not mention tmux being absent.
+  const { missing } = checkTools()
+  if (missing.length > 0) {
+    console.error(`swb: ${missing.join(' and ')} not on your PATH -- a scratch instance needs both`)
     process.exit(1)
   }
 

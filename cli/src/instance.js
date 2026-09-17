@@ -233,6 +233,46 @@ export const assertScratchPaths = (instance) => {
   }
 }
 
+/**
+ * Is this command resolvable on the PATH we would hand the server?
+ *
+ * A lookup rather than an invocation: `claude` is slow to start and `tmux -V`
+ * would be a second thing to be wrong about. Walks PATH the way execvp does.
+ *
+ * This exists because the server resolves `git`, `tmux` and `claude` by bare
+ * name, and a missing one surfaces far from its cause -- a missing tmux threw
+ * "tmux server did not become ready", twenty retries later, into a log file,
+ * on the first machine this was ever installed on.
+ *
+ * @param {string} command
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export const onPath = (command, env = process.env) => {
+  // An explicit path is not a PATH lookup; ask the filesystem instead.
+  if (command.includes('/')) return existsSync(command)
+  for (const dir of (env.PATH ?? '').split(':')) {
+    if (dir !== '' && existsSync(join(dir, command))) return true
+  }
+  return false
+}
+
+/**
+ * The external commands the server needs, and whether each one is there.
+ *
+ * `tmux` and `git` are fatal: every session lives in one and every project is
+ * read with the other. The agent command is not -- the IDE is still a usable
+ * set of terminals without it, and a scratch instance deliberately substitutes
+ * something else -- so it is reported and not enforced.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{missing: string[], agent: string, agentMissing: boolean}}
+ */
+export const checkTools = (env = process.env) => {
+  const missing = ['tmux', 'git'].filter((tool) => !onPath(tool, env))
+  const agent = env.SWB_CLAUDE_CMD ?? 'claude'
+  return { missing, agent, agentMissing: !onPath(agent, env) }
+}
+
 // ---------------------------------------------------------------------------
 // Identity
 // ---------------------------------------------------------------------------

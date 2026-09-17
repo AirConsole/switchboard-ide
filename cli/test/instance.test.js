@@ -3,8 +3,10 @@ import {
   PORT_FLOOR,
   PORT_SPAN,
   assertScratchPaths,
+  checkTools,
   deriveScratch,
   isOurServer,
+  onPath,
   portCandidates,
   scratchEnv,
   validateName,
@@ -181,5 +183,30 @@ describe('assertScratchPaths', () => {
 
   it('accepts what it derives itself', () => {
     expect(() => assertScratchPaths(deriveScratch('/repo/ide'))).not.toThrow()
+  })
+})
+
+describe('checkTools', () => {
+  /*
+   * The first machine this was ever installed on did not have tmux, and the
+   * failure it produced was "tmux server did not become ready on <socket>" --
+   * twenty retries deep, inside a detached process, in a log file, without the
+   * word tmux appearing as something you might need to install. The server
+   * resolves tmux, git and the agent by bare name, so the question has to be
+   * asked before anything is spawned.
+   */
+  it('names what is missing, from the PATH the server would be given', () => {
+    const none = checkTools({ PATH: '' })
+    expect(none.missing).toEqual(['tmux', 'git'])
+    expect(none.agentMissing).toBe(true)
+  })
+
+  it('takes the agent from SWB_CLAUDE_CMD, because a scratch instance substitutes one', () => {
+    expect(checkTools({ PATH: '', SWB_CLAUDE_CMD: 'vim' }).agent).toBe('vim')
+  })
+
+  it('asks the filesystem when the command is a path, not the PATH', () => {
+    expect(onPath('/bin/sh', { PATH: '' })).toBe(true)
+    expect(onPath('/bin/definitely-not-here', { PATH: '/bin' })).toBe(false)
   })
 })

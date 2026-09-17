@@ -16,6 +16,7 @@ import {
   configPath,
   inLinkedWorktree,
   isOurServer,
+  checkTools,
   logPath,
   psArgsFor,
   readConfig,
@@ -360,6 +361,36 @@ const nodePtyGate = () => {
   }
 }
 
+/**
+ * Refuse before spawning if the server could not possibly work.
+ *
+ * The server resolves `tmux`, `git` and the agent by bare name, so a missing
+ * one fails deep inside startup: a machine without tmux got "tmux server did
+ * not become ready", twenty retries and a log file away from the word `brew`.
+ * Checked here, where the answer fits on one line.
+ */
+const WHY = {
+  tmux: 'every session lives in a tmux session, which is what lets agents survive a restart',
+  git: 'every project and its worktrees are read with git',
+}
+
+const preflight = () => {
+  const { missing, agent, agentMissing } = checkTools()
+  if (missing.length > 0) {
+    const lines = [`${missing.join(' and ')} not on your PATH.`]
+    for (const tool of missing) lines.push(`  ${tool}: ${WHY[/** @type {'tmux'|'git'} */ (tool)]}`)
+    lines.push(
+      process.platform === 'darwin'
+        ? `  install: brew install ${missing.join(' ')}`
+        : `  install ${missing.length > 1 ? 'them' : 'it'} with your package manager`,
+    )
+    fail(lines.join('\n'))
+  }
+  if (agentMissing) {
+    console.log(`note: "${agent}" is not on your PATH, so terminals will work and agents will not.`)
+  }
+}
+
 /** @param {number} port */
 const sessionSummary = async (port) => {
   try {
@@ -377,6 +408,7 @@ const sessionSummary = async (port) => {
 export const start = async (opts = {}) => {
   guard('start', opts.force)
   if (!existsSync(serverScript)) fail('server/dist is missing -- run `pnpm build` first')
+  preflight()
 
   const run = readRun()
   if (run !== undefined) {
