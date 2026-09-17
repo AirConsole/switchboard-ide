@@ -1171,7 +1171,13 @@ The shortcuts are only worth having if you can find them, and a printed list of
 five is a list nobody reads. So the modifier being held is treated as the
 question "what can I do from here", and the answer is written on the controls
 themselves: each panel toggle **of the window you are in** lights its letter --
-TERM**I**NAL, T**O**DO, **F**ILES. The letters are one window's because the
+TERM**I**NAL, T**O**DO, **F**ILES -- and the × at the end of that bar lights
+whole, since Cmd+X (`AWAY_KEY`) is a shortcut like the other three and the
+legend's promise is that what lights up is what the held key reaches. It takes
+`tile__key` over the glyph, which is the same case as a label with no letter to
+light. The pointer's own `--danger` red steps aside for as long as the key is
+held -- while the legend is up the bar is answering "what does this key do", and
+the red comes back the moment you let go. The letters are one window's because the
 shortcut is: it opens a panel on the worktree that has the keyboard, and the
 same three letters lit across the row would promise something the key does not
 do. Nothing is armed by it; the keys work whether the legend is on screen or
