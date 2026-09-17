@@ -39,6 +39,17 @@ export const IS_MAC = /mac|iphone|ipad/i.test(
 export const MOD_LABEL = IS_MAC ? '⌘' : 'Alt'
 
 /**
+ * The whole chord, as the hint prints it: `⌘→` on a Mac, `Alt+→` elsewhere.
+ *
+ * The plus is there off the Mac and not on it, which is how each platform
+ * writes its own shortcuts: the Mac's modifier glyphs run together because they
+ * are pictures of keys, and a word needs the plus to read as a chord rather
+ * than as the word "Alt" followed by an arrow.
+ */
+export const modArrow = (dir: 'left' | 'right'): string =>
+  `${MOD_LABEL}${IS_MAC ? '' : '+'}${dir === 'left' ? '←' : '→'}`
+
+/**
  * Cmd on a Mac, Alt everywhere else, and nothing else held with it.
  *
  * **Never Ctrl**, and that is not a preference -- see PANEL_KEYS in
@@ -78,6 +89,15 @@ export const isModHeld = (
     : event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
 
 /**
+ * What the key that commits a text field is called here.
+ *
+ * Not the row's modifier: this one is typed into a text field, where Ctrl costs
+ * the terminal nothing and every platform's own habit is the same chord. The
+ * handlers take Cmd and Ctrl alike, so the label says the one the reader has.
+ */
+export const COMMIT_LABEL = IS_MAC ? 'Cmd' : 'Ctrl'
+
+/**
  * How many steps it takes to have learned the walk.
  *
  * Ten, which is a handful of sessions rather than a handful of minutes: the
@@ -107,3 +127,36 @@ export const showsHint = ({
   held: boolean
   narrow: boolean
 }): boolean => !narrow && (held || steps < LEGEND_LEARNED)
+
+/**
+ * Which arrow a cell of the row wears, and over which of its panes.
+ *
+ * The walk runs through panes, not windows, so where a step lands is a pane --
+ * and that is what the hint has to name. Saying only which window it lands in
+ * put the arrow at the window's edge, which is right for the two windows beside
+ * you and wrong for the one you are in: with a panel open, Cmd+Right goes to
+ * that panel, and the arrow was drawn at the tile's leading edge, under the
+ * Claude you were already in. It is drawn over the pane it lands in now, on the
+ * side you are coming from.
+ *
+ * `at` is where you are, as an index into the same list; -1 is "nowhere the
+ * walk knows" -- no pane holds the keyboard and nothing has been scrolled to --
+ * and then nothing is drawn rather than an end being guessed at.
+ */
+export const landingHint = <K extends string>(
+  stops: readonly { id: string; kind: K }[],
+  at: number,
+  id: string,
+): { dir: 'left' | 'right'; pane: K } | null => {
+  if (at === -1) return null
+  const left = stops[at - 1]
+  const right = stops[at + 1]
+  /*
+   * Left first when a cell is both, which one tile cannot be today -- a step
+   * goes to the pane next door and a tile holds at most two panes -- but the
+   * rule is written down rather than left to the layout to keep true.
+   */
+  if (left && left.id === id) return { dir: 'left', pane: left.kind }
+  if (right && right.id === id) return { dir: 'right', pane: right.kind }
+  return null
+}

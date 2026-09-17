@@ -1108,25 +1108,43 @@ not.
 
 **The arrows do not wait to be asked.** A legend answers a question you put to
 it by reaching for a key, and that question cannot occur to somebody who does
-not know the key does anything. So the two windows a step would land in show
-`⌘←` and `⌘→` -- the modifier's own name beside the arrow, the whole gesture
-rather than half of it -- with nothing held, until the walk has been used
-`LEGEND_LEARNED` (10) times. After that they appear only while the key is held,
-like the letters. The count is `ui.stepsTaken`, and the row stops incrementing
-it at the threshold, so this is one bounded counter and not a stream of writes.
-A phone never shows it: there is no modifier key there, and its row is one
-window per screen, so the windows the arrows point at are not on it.
+not know the key does anything. So the two stops a step would land in show the
+arrow with nothing held, until the walk has been used `LEGEND_LEARNED` (10)
+times. After that they appear only while the key is held, like the letters. The
+count is `ui.stepsTaken`, and the row stops incrementing it at the threshold, so
+this is one bounded counter and not a stream of writes. A phone never shows it:
+there is no modifier key there, and its row is one window per screen, so the
+windows the arrows point at are not on it.
 
-**At the bottom of the window, over Claude, not in the bar.** The bar was where
-this started and it was wrong twice: it had room for the arrow alone, so it
-annotated half a gesture, and a window scrolled so that only its far edge shows
-is a window whose bar you are not reading. Each of the two sits at the edge
-nearest you -- the window on your left wears it on its right -- so the pair
-flank where you are. `.tile__hint` is absolutely positioned, `pointer-events:
-none`, 2px up so it lies mostly in the pane's own 8px padding, and carries
-`--terminal-bg` so the glyphs are never read against Claude's output. **Absolute
-is load-bearing**: anything in the pane's flow takes a row off the character
-grid, and every pty in the row would be resized by a legend appearing.
+**While it is teaching, it is a sentence**: `Alt+→ to switch to these todos`,
+the keys in `--legend` and the words a rung down in `--graphite` (10.28 and 7.72
+on the terminal's ground). The keys alone are a reminder, and a reminder only
+works on somebody with something to be reminded of. Once the walk is learned the
+sentence goes and the keys stay -- 178px to 43px, measured -- because by then it
+only appears because you reached for the key. `LANDS_IN` names each kind of pane
+the way the rest of the interface names it, and `modArrow` writes the chord the
+way each platform writes its own: `⌘→` on a Mac, where the glyphs are pictures
+of keys and run together, `Alt+→` elsewhere, where a word needs the plus to read
+as a chord. (`COMMIT_LABEL` does the same job for the todo composer's
+`Cmd`/`Ctrl`+Enter, whose handler has always taken either.)
+
+**At the bottom of the pane the step lands in, not in the bar and not at the
+window's edge.** Three tries, and each one fixed a case the one before it broke.
+The bar had room for the arrow alone, so it annotated half a gesture, and a
+window scrolled so that only its far edge shows is a window whose bar you are
+not reading. Always-Claude put the left-hand window's arrow at **x=-40** on a
+1600px screen, because with a panel open it is that window's Claude that has
+scrolled past. The window's near edge fixed that and broke the step that lands
+*inside* the window you are in: with a panel open, a step right goes to that
+panel, and the arrow sat at the tile's leading edge under the Claude you had not
+left. The landing pane is all three at once -- it is the neighbour's near edge
+when the step crosses a window, and it is the panel when it does not -- which is
+why `landingHint` carries the pane and not only the window. `.tile__hint` is
+absolutely positioned in `.tile__pane`, `pointer-events: none`, 2px up so it
+lies mostly in the pane's own 8px padding, and carries `--terminal-bg` so the
+glyphs are never read against Claude's output. **Absolute is load-bearing**:
+anything in the pane's flow takes a row off the character grid, and every pty in
+the row would be resized by a legend appearing.
 
 **It is coloured, and that is the one exception to the greyscale rule.**
 `--legend` (#9dc0ff) is the third colour in the chrome and the only one that is
