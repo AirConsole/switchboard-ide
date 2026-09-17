@@ -156,7 +156,10 @@ starts.
 ```
 
 `recreate` replaces the machine and keeps the data disk, which is how an OS
-upgrade and a rescue both work; `--from-snapshot` restores a backup. The boot
+upgrade and a rescue both work; `--from-snapshot` restores a backup. `destroy`
+keeps the data disk too unless you add `--delete-data`, which asks you to type
+the machine's name — in a terminal, with no flag to skip it, because that disk
+and its snapshots are the only copy. The boot
 disk is disposable, so packages installed on the machine are recorded on the
 data disk and reinstalled after a rebuild.
 

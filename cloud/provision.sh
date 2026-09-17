@@ -115,8 +115,19 @@ POLICY_NAME="switchboard-$NAME-touched"
 g() { gcloud --project "$PROJECT" "$@"; }
 gq() { gcloud --project "$PROJECT" "$@" >/dev/null 2>&1; }
 
+# /dev/tty and not stdin, because this is also piped and redirected -- the same
+# reason install.sh reads from it. Where there is no terminal at all (CI, a
+# hook, a container) that has to be said plainly: the shell's own "cannot open
+# /dev/tty" is otherwise the last thing anyone sees.
+have_tty() { (: </dev/tty) 2>/dev/null; }
+
 ask() {
   [ "$ASSUME_YES" -eq 1 ] && return 0
+  if ! have_tty; then
+    say "No terminal to ask on. Nothing was changed."
+    say "  re-run with --yes to proceed without asking."
+    exit 1
+  fi
   printf '%s [y/N] ' "$1"
   read -r reply </dev/tty || reply=n
   case "$reply" in y|Y|yes|YES) return 0 ;; *) say "Nothing was changed."; exit 1 ;; esac
@@ -422,6 +433,15 @@ cmd_destroy() {
     say "--delete-data: the data disk AND its snapshots go too. They are the only"
     say "copy of everything on this machine. This cannot be undone."
     say ""
+    # No --yes past this point, on purpose: --yes means "do not ask me about
+    # the ordinary things", and deleting the only copy of a machine's data is
+    # not one of them. A caller with no terminal is told so rather than given
+    # a flag to get around it.
+    if ! have_tty; then
+      say "Deleting the data disk needs a terminal to confirm on: it is the only copy"
+      say "of everything on this machine, and there is no flag for it. Nothing was changed."
+      exit 1
+    fi
     printf 'Type the machine name to confirm: '
     read -r typed </dev/tty || typed=""
     [ "$typed" = "$NAME" ] || die "that is not the name; nothing was changed"
