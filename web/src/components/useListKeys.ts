@@ -72,6 +72,9 @@ export const useListKeys = (pane: RefObject<HTMLElement | null>, keys: ListKeys)
     const keyed = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
       if (target === null || !box.contains(target)) return
+      // A chord is somebody else's: Cmd+arrow walks the row, Shift+arrow
+      // extends a selection.
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       /*
        * A menu hung over the pane keeps its own keys. `useAnchoredMenu` draws
        * it `position: fixed` but *inside* the row it belongs to, so it is in
@@ -108,14 +111,22 @@ export const useListKeys = (pane: RefObject<HTMLElement | null>, keys: ListKeys)
       }
 
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      /*
+       * Taken whether or not there is anywhere to go, and that is the fix for a
+       * real bug. A key this hook leaves alone gets the browser's default,
+       * which for a sideways arrow is to scroll the nearest sideways scroller
+       * -- and every pane is inside the row, which is one. So → on a line with
+       * nothing to its right (a sleeping worktree has no ×; a todo's DELETE is
+       * its last segment) slid the whole row a window along while the focus
+       * stayed put: measured, `.grid` went 0 -> 397 with the keyboard still on
+       * the sleeping `main`. The row moves on Cmd+arrow; a plain arrow inside a
+       * list is about the list, and at its edge it is an edge.
+       */
+      event.preventDefault()
       const row = across(target)
-      if (row.length < 2) return
       const here = row.indexOf(target)
       if (here === -1) return
-      const to = here + (event.key === 'ArrowRight' ? 1 : -1)
-      if (to < 0 || to >= row.length) return
-      event.preventDefault()
-      row[to]?.focus()
+      row[here + (event.key === 'ArrowRight' ? 1 : -1)]?.focus()
     }
 
     /*

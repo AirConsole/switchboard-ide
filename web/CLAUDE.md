@@ -309,6 +309,17 @@ The pieces, and why each is the way it is:
   pane that did not exist — and the Cmd+arrow walk counts from `active`. The
   walk itself is deliberately *not* routed through this: its stops are panes, and
   a panel that shut as you stepped into it would be a stop you could never reach.
+- **A + follows the project's name, while its tabs are showing.** It goes
+  where the name goes -- the project's pane, where arriving puts the caret in
+  the branch box -- because that pane is where a worktree is made, and this is
+  the door to it that says so. It is a segment of the expanded slab, 24px and
+  seamed like the tabs, and it is hidden at exactly the rungs they are: a + on a
+  collapsed head would be a control on something no longer drawn, and going
+  with the tabs keeps every rung narrower than the last, which is what the
+  sweep stops on. Measured across 1600 -> 390px: at every width each project's
+  + was shown exactly when at least one of its tabs was, and the strip never
+  overflowed. With nothing awake it is not rendered at all -- there are no tabs
+  to show, and that is a count rather than a rung, so it is React's to decide.
 - **A tab has no ×; putting a worktree away is on the worktree.** The control
   is the last thing in the window's own bar, past the panel toggles, and it
   still opens the sleep dialog — which is also where deleting lives, so it is
@@ -1344,6 +1355,27 @@ is the rule the panel toggles' legend keeps for the same reason. **Not on a
 phone**: there the mark answers a question nobody asked, and `content: none`
 takes its reserved space with it, since there are no arrows to step with either.
 
+**On a phone the answers stand in a column**, full-width and 44px each. In a
+row they had nowhere to go: the foot is `justify-content: flex-end`, so a row
+wider than the dialog overflows to the *left*, where nothing scrolls to it --
+measured at 320px, "Delete worktree…" started at x=-4 and "Cancel" at x=-31,
+and every label that did fit had wrapped inside a 58px button. The column keeps
+the markup's order, so the answer you came for lands at the bottom under the
+thumb, where the right-hand corner is on a desktop, and a split footer's
+irreversible door goes to the top with a gap under it. The arrows already walk
+up and down as well as across, so nothing is lost to a keyboard.
+
+Three more things a phone needed, all in the shared styles so every dialog has
+them. **The scrim is the app's box**, not `inset: 0`: a fixed element is placed
+against the layout viewport whatever its parent is, and that is the one the
+keyboard is drawn over, so it copies `#root`'s `--app-offset`/`--app-height`
+and safe-area insets rather than inheriting them. **The dialog is `max-height:
+100%`** of that, not `80vh` -- `vh` is the large viewport, taller than what is
+on screen whenever the browser's chrome or the keyboard is showing. Measured
+with `--app-height` forced to 400px, the open-project dialog came to 376px with
+its body scrolling. And **a field is 16px**, because Safari zooms the page on
+focus for anything smaller and does not zoom back out.
+
 **Focus is the selection**, with a roving `tabIndex` rather than an index beside
 it: the browser's own Enter, its focus ring and a screen reader then all agree
 with the mark without being told.
@@ -1379,6 +1411,15 @@ a column of like controls is a column, and a walk that dropped back to the first
 control every line would make the second and third reachable only sideways. A
 line that does not have that control -- a sleeping `main` has no × -- lands on
 what it does have.
+
+**A sideways arrow is taken even where it has nowhere to go.** A key the hook
+leaves alone gets the browser's default, and for → that is to scroll the nearest
+sideways scroller -- which, for every pane, is the row. So → on a sleeping
+worktree (no × beside it), or on the last control of any line, slid the row a
+window along while the keyboard stayed where it was: measured, `.grid` went
+0 -> 397 with focus still on the sleeping `main`. The row moves on Cmd+arrow; a
+plain arrow inside a list is about the list, and at its edge it is an edge. A
+chord is never taken, for the same reason the other way round.
 
 **A menu hung over a pane keeps its own keys.** `useAnchoredMenu` draws MOVE
 TO's list `position: fixed` but *inside* the todo it belongs to, so it is inside
