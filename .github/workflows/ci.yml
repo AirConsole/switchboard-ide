@@ -1,0 +1,39 @@
+# The two gates, on every pull request into master.
+#
+# There is no linter in this project on purpose -- `pnpm typecheck` and
+# `pnpm test` are the whole of it, so the compiler does the work a linter would.
+# Running anything else here would be inventing a third gate that the repository
+# does not have.
+name: gates
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # node-pty has no linux-x64 prebuilt and compiles from source; the runner
+      # has the toolchain, and `postinstall` drives it.
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # Not a third gate: the build is what `typecheck` deliberately does not
+      # do (it runs with --noEmit), and a broken emit is a broken deploy.
+      - run: pnpm build
