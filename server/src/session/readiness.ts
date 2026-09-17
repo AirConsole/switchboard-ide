@@ -26,9 +26,6 @@ import type { TurnState } from './claude.js'
  */
 export const SETTLE_MS = 2500
 
-/** Silence from the human before the keyboard is taken from them. */
-export const USER_QUIET_MS = 10_000
-
 /** After sending, before this session is considered again. */
 export const COOLDOWN_MS = 5000
 
@@ -38,7 +35,7 @@ export type NotReady =
   | 'no-pty'
   | 'cooling-down'
   | 'output-recent'
-  | 'user-typing'
+  | 'typed-after-queue'
   | 'mid-turn'
   | 'busy'
   | 'needs-you'
@@ -55,6 +52,8 @@ export interface ReadinessInput {
   lastOutputAt: number
   /** Epoch ms of the last byte a browser sent to it. */
   lastUserInputAt: number
+  /** Epoch ms at which the todo being considered was queued. */
+  queuedAt: number
   /** The rendered screen, as-is. */
   tail: string
   /** The rendered screen with dim (hint) cells blanked out. */
@@ -93,10 +92,23 @@ export const readiness = (input: ReadinessInput): Readiness => {
   if (input.dead) return no('dead')
   // Null during a reattach, where a write is silently dropped.
   if (!input.hasPty) return no('no-pty')
+  /*
+   * Typing into Claude after pressing RUN NEXT is steering it by hand, and a
+   * prompt parked before that was written against a conversation that has
+   * since moved on. Never sent; the dispatcher hands it back to the human.
+   *
+   * Checked ahead of the clocks below because typing echoes: output-recent
+   * would otherwise hold this verdict back until the human stopped.
+   *
+   * There is deliberately no "the human typed recently" hold for the opposite
+   * order. It was ten seconds, and it made a RUN NEXT pressed straight after
+   * typing wait out the full ten seconds against an idle Claude. Pressing it
+   * is itself the human saying they are done at this keyboard, and a draft they
+   * left behind is still caught by the input-box test at the bottom.
+   */
+  if (input.lastUserInputAt > input.queuedAt) return no('typed-after-queue')
   if (now < input.notBefore) return no('cooling-down')
   if (now - input.lastOutputAt < SETTLE_MS) return no('output-recent')
-  // Someone is at this keyboard. Their draft may be in the box, or on its way.
-  if (now - input.lastUserInputAt < USER_QUIET_MS) return no('user-typing')
 
   /*
    * The transcript is the precise signal: it says whether the last thing asked
