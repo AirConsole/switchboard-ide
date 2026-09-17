@@ -135,25 +135,25 @@ export const showsHint = ({
 }): boolean => !narrow && (held || steps < LEGEND_LEARNED)
 
 /**
- * Whether the pane you are in marks itself while the modifier is held.
+ * Whether the pane you are in marks itself with a line along its bottom.
  *
- * A line under it, so the two arrows have something to be two arrows *from*:
- * held down, the row says where a step would go, and "from here" was the one
- * part of that sentence it did not say. It is the same claim `active` already
- * makes to the top bar, drawn where you are looking.
+ * It is not part of the legend, which is why this asks nothing about the key or
+ * the count. Where you are is true whether or not you are asking, and it is the
+ * fact the rest of the row is read against: which window a panel toggle would
+ * open, which pane a step counts from, which of four agents your typing is
+ * about to reach. It was drawn only while the modifier was held for a while,
+ * and that made a permanent fact answer a passing question -- you had to press
+ * a key to find out where you already were.
  *
- * **Not while it is still teaching.** The unasked hints are on screen then,
- * each with a sentence beside it, and a third mark added to that is one more
- * thing to read rather than one more thing understood -- and the line answers a
- * question ("which of these is *here*") that only comes up once the sentences
- * have gone. So it starts exactly where the teaching stops.
+ * It is also what the arrows are arrows *from*, so the pair still read as one
+ * sentence when the legend is up: here, and the two steps out of here.
  *
- * Unlike the arrows, this has nothing to say about a phone: it points at no
- * neighbour, and a phone with a keyboard attached can hold the key like
- * anything else.
+ * The one place it says nothing is a phone, where the row is one window per
+ * screen with no gap and no padding -- the window is the glass, there is
+ * nothing beside it to be picked out from, and the only pane on screen does not
+ * need underlining to be found.
  */
-export const showsHere = ({ steps, held }: { steps: number; held: boolean }): boolean =>
-  held && steps >= LEGEND_LEARNED
+export const showsHere = ({ narrow }: { narrow: boolean }): boolean => !narrow
 
 /**
  * Which arrow a cell of the row wears, and over which of its panes.

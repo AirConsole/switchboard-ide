@@ -1224,24 +1224,28 @@ glyphs are never read against Claude's output. **Absolute is load-bearing**:
 anything in the pane's flow takes a row off the character grid, and every pty in
 the row would be resized by a legend appearing.
 
-**Once the teaching is over, the key also says where you are**: `showsHere` puts
-a `--rail`-thick `--legend` line under the pane that has the keyboard, for as
-long as the modifier is down. The two arrows say where a step *goes*, and that
-was the one part of the sentence the row did not say -- held down it is briefly
-a map, and a map with no "you are here" is a list of directions. It is drawn as
-`.tile__pane--here::after`, absolutely positioned for the same reason the hint
-is: anything in a pane's flow takes a row off the character grid. Measured off
-the rendered pixels rather than the stylesheet, since a 2px line is exactly what
-a resampled screenshot loses: the bottom two rows of the pane are `#9dc0ff`
-across it, on `#0e1116` above.
+**Where you are is drawn permanently, and is not part of the legend.**
+`showsHere` puts a `--rail`-thick `--legend` line under the pane that has the
+keyboard, always -- `.tile__pane--here::after`, absolutely positioned for the
+same reason the hint is: anything in a pane's flow takes a row off the character
+grid. Four windows of terminal look alike, and everything else the row does is
+read against which one your typing reaches; the top bar says which *worktree* by
+lighting its tab, and this says which pane, at the place you are looking rather
+than 800px above it. It spent a version gated on the modifier being held and the
+teaching being over, which made a permanent fact answer a passing question --
+you had to press a key to find out where you already were. With the key down it
+is still what the two arrows are arrows *from*, so the three read as one
+sentence: here, and the two steps out of here.
 
-**Not while the hints are still teaching**, which is the whole of why
-`showsHere` is a second predicate and not `keysLit`. The unasked hints are on
-screen then, one per neighbour and each with a sentence beside it; a third mark
-added to that is one more thing to read rather than one more thing understood.
-The line answers a question -- which of these is *here* -- that only comes up
-once the sentences have gone, so it starts exactly where the teaching stops. It
-also says nothing about a phone, unlike the arrows: it points at no neighbour.
+Measured off the rendered pixels rather than the stylesheet, since a 2px line is
+exactly what a resampled screenshot loses: the bottom two rows of the pane are
+`#9dc0ff` across it, on `#0e1116` above.
+
+**The one place it says nothing is a phone**, where the row is one window per
+screen with no gap and no padding. The window is the glass, there is nothing
+beside it to be picked out from, and the only pane on screen does not need
+underlining to be found. That is the whole of `showsHere`, and it is why it asks
+about `narrow` and nothing else.
 
 **It is coloured, and that is the one exception to the greyscale rule.**
 `--legend` (#9dc0ff) is the third colour in the chrome and the only one that is

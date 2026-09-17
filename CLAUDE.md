@@ -310,10 +310,9 @@ line below is a mistake made in this codebase, not a hypothetical:
   green (`--done`). Nothing running is not done, and stays grey. The two are
   matched in luminance so neither outshouts the other. The keyboard legend is
   the one thing in the chrome that is coloured and is not a state: `--legend`, a
-  blue, lights the letter that opens each panel of the window you are in, draws
-  `⌘←` and `⌘→` at the bottom of the two panes a step would land in, and once
-  those have stopped teaching, underlines the pane you are in while the key is
-  held -- where a step goes, and where from. It
+  blue, underlines the pane that has the keyboard, lights the letter that opens
+  each panel of the window you are in, and draws `⌘←` and `⌘→` at the bottom of
+  the two panes a step would land in -- where you are, and where a step goes. It
   is allowed because it can never be read as a state — it sits *below* both in
   luminance, it is blue where they are amber and green, and it is drawn only in
   the window you are already in and the two beside it, never across a row you
