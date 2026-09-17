@@ -821,6 +821,16 @@ const WorktreeTile = ({
    * looking at rather than for everything it could show.
    */
   const filesOpen = shownPanes.has('files')
+  /*
+   * A closed files panel forgets that its list was asked for. The tap is part
+   * of one trip round shut, file, list, shut; left set, the next FILES opened
+   * onto the list rather than the file -- measured on a phone -- which is the
+   * cycle starting in its middle. An effect rather than the toggle's click,
+   * because the shortcut and a tab in the top bar close the panel too.
+   */
+  useEffect(() => {
+    if (!filesOpen && showList) onShowList(false)
+  }, [filesOpen, showList, onShowList])
   const changes = useChangesState({
     worktreeId: worktree.id,
     revision,

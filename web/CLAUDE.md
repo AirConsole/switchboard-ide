@@ -501,7 +501,9 @@ at 79. The measured wrap is 81 now. A file of a thousand lines still loses one
 to a four-digit gutter.
 
 **Where only one of them fits, FILES means "show me the list".** Shut, file,
-list, shut — the toggle's first press brings the tree back rather than closing
+list, shut -- and closing the panel, by any route (the toggle, its shortcut, a
+tab in the top bar), forgets the tap, or the next FILES opened onto the list and
+the trip started in its middle — the toggle's first press brings the tree back rather than closing
 the panel, and opening anything from it hands the pane back to the file. The tap
 is remembered as *only that*, a tap, and resolved last: a flag saying which half
 is showing would go stale the moment the last tab closed, and the panel would
@@ -825,7 +827,7 @@ invalidated. Two derivations of one fact agree best when there is one of them.
 **Not text, but the browser can draw it: draw it.** A `.png` picked in the tree
 opens as a picture rather than as the note saying it is not a text file. The
 server decides from the extension and before it reads a byte (`MEDIA_TYPES` in
-`server/src/files.ts`), answering `binary: true` with a `media` type; the bytes
+`shared/src/media.ts`, which the panel reads too), answering `binary: true` with a `media` type; the bytes
 never travel as JSON, because an `<img src>` is exactly a GET the browser makes
 on its own -- `GET /api/worktrees/:id/raw`, whose URL carries the file's rev, so
 an image the agent regenerates is a *different* URL and repaints on the next
@@ -974,6 +976,18 @@ file comes back** to its row, moving the tree's cursor with the focus so the
 next arrow steps from where you are. CodeMirror spends an Escape collapsing a
 selection and says so by preventing it, so a selection goes first and the
 second press leaves.
+
+**Something only to be looked at does not take the keyboard.** A picture, or a
+Markdown file shown rendered, has nothing to type into, and handing it focus
+took the keyboard off the one thing in the panel that does something with keys.
+So arriving at one -- opening the panel onto it, or → on its row -- leaves the
+keyboard on that row, where ↑ and ↓ go on to the next file; where the tree is
+not drawn (a phone), on nothing. It is decided from the path, before the read
+answers, which is why `mediaTypeOf` and its table moved from `server/files.ts`
+to `shared/media.ts`: the server decides from it how to read a file and what
+`/raw` serves it as, and the panel decides from it where the keyboard goes, and
+two tables would be two answers. A click into the rendered page still focuses
+it, so the arrows can scroll it; Escape comes back to the row as from the editor.
 
 **The editor's focus request is handed over once.** Both the editor and the
 rendered Markdown page act on the nonce when they *mount*, deliberately, since
