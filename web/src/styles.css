@@ -2582,13 +2582,22 @@ button {
  * reason. `::after` rather than a span, because the four dialogs write their
  * buttons themselves and none of them should have to know about this.
  */
-.dialog__foot .btn::after {
+/*
+ * The project pane's foot wears it for the same reason: it is a column walked
+ * with the arrows (`useListKeys`) rather than a row, and the question -- what
+ * does Enter do from here -- is the same one.
+ */
+.dialog__foot .btn::after,
+.projpane__foot .btn::after,
+.projpane__close::after {
   content: ' \21b5';
   margin-left: 2px;
   visibility: hidden;
 }
 
-.dialog__foot .btn:focus::after {
+.dialog__foot .btn:focus::after,
+.projpane__foot .btn:focus::after,
+.projpane__close:focus::after {
   visibility: visible;
 }
 
@@ -2601,7 +2610,9 @@ button {
  * that stepping along the row with the arrows must not move the row, and there
  * are no arrows here either.
  */
-.app[data-narrow] .dialog__foot .btn::after {
+.app[data-narrow] .dialog__foot .btn::after,
+.app[data-narrow] .projpane__foot .btn::after,
+.app[data-narrow] .projpane__close::after {
   content: none;
 }
 
@@ -2609,7 +2620,15 @@ button {
  * The ring is the browser's own, kept rather than reset: it is what a keyboard
  * user's eye already looks for, and this row is now walked with the arrows.
  */
-.dialog__foot .btn:focus-visible {
+/*
+ * The ring is the browser's own, kept rather than reset: it is what a keyboard
+ * user's eye already looks for, and these rows are now walked with the arrows.
+ */
+.dialog__foot .btn:focus-visible,
+.projpane__list .tab__body:focus-visible,
+.projpane__list .tab__close:focus-visible,
+.projpane__foot .btn:focus-visible,
+.projpane__close:focus-visible {
   outline: 2px solid var(--legend);
   outline-offset: 1px;
 }

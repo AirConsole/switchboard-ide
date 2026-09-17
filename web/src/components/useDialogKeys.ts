@@ -79,14 +79,23 @@ export const useDialogKeys = (
         (target instanceof HTMLTextAreaElement ||
           (target instanceof HTMLInputElement && target.type !== 'checkbox'))
 
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const back = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+      const on = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+      if (back || on) {
         // A caret in a field owns the arrows; the answers are not where the
         // hand is.
         if (typing) return
         const row = answers()
         if (row.length === 0) return
         const here = row.findIndex((button) => button === document.activeElement)
-        const step = event.key === 'ArrowRight' ? 1 : -1
+        /*
+         * Up and down as well as left and right, though the answers are drawn
+         * in a row. The hand that reaches for an arrow in a dialog has not
+         * looked at which way the buttons run, and the project pane's column
+         * takes the same four keys from the other side -- one interface, four
+         * keys, whichever way the thing in front of you happens to be laid out.
+         */
+        const step = on ? 1 : -1
         // Wrapping, because a row of two or three is a ring you feel your way
         // around rather than a line you can run off the end of.
         const to = here === -1 ? start(row) : (here + step + row.length) % row.length

@@ -1,6 +1,8 @@
+import { useRef } from 'react'
 import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import { NewWorktreeForm } from './NewWorktreeForm.js'
 import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
+import { useListKeys } from './useListKeys.js'
 import { queuedTodoCount, worktreeStatus } from '../selectors.js'
 
 export interface ProjectPaneProps {
@@ -52,8 +54,11 @@ export const ProjectPane = ({
   onSleep,
   onCreated,
   onCloseProject,
-}: ProjectPaneProps): React.ReactElement => (
-  <div className="projpane">
+}: ProjectPaneProps): React.ReactElement => {
+  const box = useRef<HTMLDivElement | null>(null)
+  useListKeys(box)
+  return (
+  <div className="projpane" ref={box}>
     <div className="projpane__bar">
       <span className="projpane__name" title={project.root}>
         {project.name}
@@ -144,4 +149,5 @@ export const ProjectPane = ({
       </button>
     </div>
   </div>
-)
+  )
+}
