@@ -124,8 +124,19 @@ export const askSecret = (prompt) =>
       } catch {
         // already closed
       }
-      input.pause()
       input.removeAllListeners('data')
+      /*
+       * Destroyed, not paused. A paused tty stream still holds its handle, and
+       * that handle alone keeps the event loop alive -- so the password was
+       * written and the command then sat there forever, which reads exactly
+       * like a hang in the middle of setting it. Measured through a
+       * pseudo-terminal: the record was on disk, and the process was still
+       * running four seconds later.
+       *
+       * Destroying the stream closes the libuv handle; node never closes the
+       * underlying stdio descriptors, so a second prompt can open fd 0 again.
+       */
+      input.destroy()
       if (fd !== 0) closeSync(fd)
       process.off('exit', restore)
     }
