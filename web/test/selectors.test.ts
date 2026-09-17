@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import {
   worktreeToWakeOnOpen,
+  machineHasProjects,
   claudeSession,
   drainTakesKeyboard,
   isRunning,
@@ -467,5 +468,22 @@ describe('worktreeToWakeOnOpen', () => {
 
   it('says nothing for a project it cannot see', () => {
     expect(worktreeToWakeOnOpen('p2', [wt('main', { isMain: true })], [])).toBeNull()
+  })
+})
+
+describe('machineHasProjects', () => {
+  const project = (id: string, host: Project['host']): Project =>
+    ({ id, name: id, host }) as unknown as Project
+
+  it('is true only for a project that machine contributed', () => {
+    const projects = [
+      project('here', { kind: 'local' }),
+      project('there', { kind: 'remote', baseUrl: 'https://box.example:83', name: 'box' }),
+    ]
+    expect(machineHasProjects(projects, 'https://box.example:83')).toBe(true)
+    expect(machineHasProjects(projects, 'https://other.example:83')).toBe(false)
+    // A local project never counts, whatever its path: the machine just linked
+    // is by definition not this one.
+    expect(machineHasProjects([projects[0]!], 'https://box.example:83')).toBe(false)
   })
 })

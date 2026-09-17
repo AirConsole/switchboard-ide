@@ -4,6 +4,7 @@ import { ApiError, api, type BrowseResult, type ServerRow } from '../api.js'
 import { useEscape } from './useEscape.js'
 import { useDialogKeys } from './useDialogKeys.js'
 import { useStore } from '../store.js'
+import { machineHasProjects } from '../selectors.js'
 
 export interface OpenProjectDialogProps {
   onClose: () => void
@@ -241,7 +242,20 @@ export const OpenProjectDialog = ({
     setBusy(true)
     void api
       .addServer({ baseUrl, password })
-      .then((server) => {
+      .then(async (server) => {
+        /*
+         * Its projects reach the row through the snapshot, so read it before
+         * deciding. A machine with projects open is done: they are in the row
+         * now, and the dialog closes onto them. See `machineHasProjects`.
+         */
+        await useStore
+          .getState()
+          .refresh()
+          .catch(() => {})
+        if (machineHasProjects(useStore.getState().projects, server.baseUrl)) {
+          onOpened()
+          return
+        }
         setBusy(false)
         setAdding(false)
         setRelinking(null)

@@ -1,4 +1,4 @@
-import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 
 /** The Claude session for a worktree. There is at most one. */
 export const claudeSession = (sessions: Session[], worktreeId: string): Session | undefined =>
@@ -341,3 +341,15 @@ export const worktreeToWakeOnOpen = (
   if (mine.some(isAwake)) return null
   return (mine.find((w) => w.isMain) ?? mine[0])?.id ?? null
 }
+
+/**
+ * Whether a machine just linked already brings something into the row.
+ *
+ * Linking is how its projects arrive -- everything open there is open here --
+ * so a machine with projects open needs nothing more from the open dialog, and
+ * leaving the dialog up over the row it just filled asked for a second step
+ * that had nothing to do. A machine with none open is the other case: the
+ * dialog stays on its disk, because picking one there is what comes next.
+ */
+export const machineHasProjects = (projects: readonly Project[], baseUrl: string): boolean =>
+  projects.some((project) => project.host.kind === 'remote' && project.host.baseUrl === baseUrl)
