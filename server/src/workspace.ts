@@ -18,7 +18,7 @@ import type {
 } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { config } from './config.js'
-import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl } from './remote/peer.js'
+import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl, plainHttpAllowed } from './remote/peer.js'
 import { hostKeyFor, unscopeId } from './remote/scope.js'
 import { findFiles, listDirectory, mediaFile, readTextFile, writeTextFile } from './files.js'
 import type { StateStore } from './state.js'
@@ -342,6 +342,7 @@ export class Workspace {
             this.store.server(peer.baseUrl)?.name ?? peer.baseUrl,
           )
           this.lastGood.set(peer.baseUrl, slice)
+          this.refused.delete(peer.baseUrl)
           /*
            * Written through, so the guarantee survives this process. In memory
            * alone it only held *after* one successful read, and the case that
@@ -362,8 +363,9 @@ export class Workspace {
             this.store.setRemoteCache(entry)
           }
           return slice
-        } catch {
+        } catch (err) {
           // Unreachable, refused, or a protocol mismatch.
+          if (err instanceof HttpError && err.code === 'link-refused') this.refused.add(peer.baseUrl)
           /*
            * Through `remembered` whichever memory answers, because it is the
            * one that strips the sessions -- returning `lastGood` directly put
@@ -376,6 +378,20 @@ export class Workspace {
   }
 
   private readonly lastGood = new Map<string, Omit<AppSnapshot, 'ui'>>()
+
+  /**
+   * Machines that answered but no longer accept this one's link token.
+   *
+   * Remembered so the picker can say "link it again" rather than leave a
+   * machine looking merely quiet: its worktrees stay on screen from the last
+   * good read either way, and without this nothing says the fix is to type its
+   * password once more. Cleared by the next read that succeeds.
+   */
+  private readonly refused = new Set<string>()
+
+  linkRefused(baseUrl: string): boolean {
+    return this.refused.has(normalizeBaseUrl(baseUrl))
+  }
 
   /**
    * Projects with their derived base ref attached, so the UI can name the ref a
@@ -479,7 +495,7 @@ export class Workspace {
    * the whole value of it. Opening a project on it later must not, which is
    * why that is a separate call.
    */
-  async addServer(input: { baseUrl: string; token: string }): Promise<RemoteServer> {
+  async addServer(input: { baseUrl: string; password?: string; token?: string }): Promise<RemoteServer> {
     const baseUrl = normalizeBaseUrl(input.baseUrl)
     /*
      * Taken out of the address before anything else sees it. `normalizeBaseUrl`
@@ -488,16 +504,49 @@ export class Workspace {
      * vanish, then get a bare 401 from the proxy with no hint why".
      */
     const basic = basicFrom(input.baseUrl)
-    const identity = await new PeerClient(baseUrl, input.token, basic).identify().catch((err: unknown) => {
-      /*
-       * 504, not 500. The proxy goes to trouble to make this distinction --
-       * "that machine did not answer" rather than "this one is broken" -- and
-       * the one place a human types an address was the place that did not,
-       * because `PeerUnreachable` is not an `HttpError` and Fastify defaults.
-       */
+    /*
+     * 504, not 500. The proxy goes to trouble to make this distinction --
+     * "that machine did not answer" rather than "this one is broken" -- and
+     * the one place a human types an address was the place that did not,
+     * because `PeerUnreachable` is not an `HttpError` and Fastify defaults.
+     */
+    const unreachable = (err: unknown): never => {
       if (err instanceof PeerUnreachable) throw new HttpError(504, err.message, 'unreachable')
       throw err
-    })
+    }
+
+    let token = input.token
+    if (input.password !== undefined) {
+      /*
+       * One password opens a whole machine, so a typo in the address is the
+       * password sent wherever the typo points. Refused before anything is
+       * sent, not after.
+       */
+      if (!plainHttpAllowed(new URL(baseUrl))) {
+        throw new HttpError(
+          400,
+          'that address would send the password in clear over a network you may not own -- use https://, or a name on your own network',
+          'insecure-link',
+        )
+      }
+      const anonymous = new PeerClient(baseUrl, undefined, basic)
+      // Health first: an address that is off or wrong is told apart from a
+      // wrong password, and never receives the password at all.
+      await anonymous.health().catch(unreachable)
+      token = await anonymous.login(input.password).catch((err: unknown): never => {
+        if (err instanceof HttpError && err.code === 'bad-password') {
+          // Not 401: the page asking is signed in here, and a 401 is how it
+          // learns that it is not.
+          throw new HttpError(400, 'that machine did not take the password', 'bad-password')
+        }
+        if (err instanceof HttpError && err.code === 'password-not-set') {
+          throw new HttpError(409, 'that machine has no password yet -- run `pnpm password` on it', 'peer-password-not-set')
+        }
+        return unreachable(err)
+      })
+    }
+    if (token === undefined) throw new HttpError(400, 'that machine’s password', 'bad-request')
+    const identity = await new PeerClient(baseUrl, token, basic).identify().catch(unreachable)
     /*
      * Not this machine. Linking one to itself is accepted at every other step
      * and is a meltdown: the relay opens a socket to itself, which is accepted
@@ -518,11 +567,13 @@ export class Workspace {
     const server: RemoteServer = {
       baseUrl,
       name: identity.name,
-      token: input.token,
+      token,
       ...(basic === undefined ? {} : { basic }),
       addedAt: Date.now(),
     }
     this.store.addServer(server)
+    // Linking again is the fix for a refusal; say so now, not on the next read.
+    this.refused.delete(baseUrl)
     this.invalidate()
     return server
   }
@@ -541,6 +592,7 @@ export class Workspace {
     this.store.removeServer(normalized)
     // Or the memory of it outlives the link and reappears if it is re-added.
     this.lastGood.delete(normalized)
+    this.refused.delete(normalized)
     this.store.clearRemoteCache(normalized)
     this.invalidate()
   }

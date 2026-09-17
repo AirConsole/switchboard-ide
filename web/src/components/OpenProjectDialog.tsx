@@ -57,36 +57,39 @@ const readStrings = (value: unknown): string[] =>
  * that cost.
  */
 /**
- * Address and token for a machine to add.
+ * Address and password for a machine to link.
  *
- * The token is this server's credential for the peer, not the user's: it is
- * handed over once and never comes back, which is why the field is emptied the
- * moment it is submitted rather than left to be read off the screen.
+ * The password is that machine's, typed once. It goes to this server, which
+ * logs in to the machine with it and keeps the link token it gets back -- the
+ * password itself is kept nowhere. It is emptied from the field the moment it
+ * is submitted rather than left to be read off the screen.
  */
 const AddServer = ({
   busy,
+  initialUrl,
   onAdd,
 }: {
   busy: boolean
-  onAdd: (baseUrl: string, token: string) => void
+  /** Filled in when linking a machine again, which is the same form. */
+  initialUrl?: string
+  onAdd: (baseUrl: string, password: string) => void
 }): React.ReactElement => {
-  const [baseUrl, setBaseUrl] = useState('')
-  const [token, setToken] = useState('')
+  const [baseUrl, setBaseUrl] = useState(initialUrl ?? '')
+  const [password, setPassword] = useState('')
   const submit = (): void => {
-    // Both, because a machine with no token cannot be read: it answers only to
-    // loopback and its own published names, and a gateway is neither.
-    if (baseUrl.trim() === '' || token.trim() === '') return
-    onAdd(baseUrl.trim(), token)
-    setToken('')
+    if (baseUrl.trim() === '' || password === '') return
+    onAdd(baseUrl.trim(), password)
+    setPassword('')
   }
   return (
-    <div className="addserver">
+    // Its Enter is its own; see `useDialogKeys`.
+    <div className="addserver" data-own-enter>
       <input
         className="field__input"
         placeholder="http://box.local:8084"
         value={baseUrl}
         spellCheck={false}
-        autoFocus
+        autoFocus={initialUrl === undefined}
         onChange={(event) => setBaseUrl(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') submit()
@@ -94,11 +97,12 @@ const AddServer = ({
       />
       <input
         className="field__input"
-        placeholder="token"
+        placeholder="its password"
         type="password"
-        value={token}
-        spellCheck={false}
-        onChange={(event) => setToken(event.target.value)}
+        autoComplete="off"
+        value={password}
+        autoFocus={initialUrl !== undefined}
+        onChange={(event) => setPassword(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') submit()
         }}
@@ -106,15 +110,14 @@ const AddServer = ({
       <button
         className="btn"
         onClick={submit}
-        disabled={busy || baseUrl.trim() === '' || token.trim() === ''}
+        disabled={busy || baseUrl.trim() === '' || password === ''}
       >
-        Add
+        {initialUrl === undefined ? 'Link' : 'Link again'}
       </button>
       <span className="field__hint">
-        That machine&apos;s <code>SWB_TOKEN</code>, which is what makes it readable as a machine at
-        all. It is kept here and sent from this server; your browser never talks to it. If a proxy
-        in front of it asks for a password, put it in the address:{' '}
-        <code>https://user:pw@box.local</code>.
+        That machine&apos;s own password. This server signs in to it once and keeps the link it
+        gets back, not the password; your browser never talks to that machine. Over plain{' '}
+        <code>http://</code> only addresses on your own network are accepted.
       </span>
     </div>
   )
@@ -146,6 +149,8 @@ export const OpenProjectDialog = ({
    */
   const [host, setHost] = useState<string | undefined>(undefined)
   const [servers, setServers] = useState<ServerRow[]>([])
+  /** The machine being linked again, if any. */
+  const [relinking, setRelinking] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
 
   /*
@@ -230,14 +235,15 @@ export const OpenProjectDialog = ({
    * keeps it and speaks to the peer itself. Nothing about a peer is ever
    * reached from the browser.
    */
-  const addServer = (baseUrl: string, token: string): void => {
+  const addServer = (baseUrl: string, password: string): void => {
     if (busy) return
     setBusy(true)
     void api
-      .addServer({ baseUrl, token: token.trim() })
+      .addServer({ baseUrl, password })
       .then((server) => {
         setBusy(false)
         setAdding(false)
+        setRelinking(null)
         setError(null)
         /*
          * Added to the list in the same render that selects it. Refreshing the
@@ -248,7 +254,9 @@ export const OpenProjectDialog = ({
          * in the wrong place.
          */
         setServers((rows) =>
-          rows.some((row) => row.key === server.key) ? rows : [...rows, server],
+          rows.some((row) => row.key === server.key)
+            ? rows.map((row) => (row.key === server.key ? { ...row, ...server, refused: false } : row))
+            : [...rows, { ...server, refused: false }],
         )
         setHost(server.key)
       })
@@ -432,6 +440,24 @@ export const OpenProjectDialog = ({
                   >
                     {server.name}
                   </button>
+                  {server.refused && (
+                    /*
+                     * No colour: a machine that stopped accepting this one is
+                     * not an agent blocked on you. Said in words, with the fix
+                     * one click away.
+                     */
+                    <button
+                      className="chip"
+                      title={`${server.baseUrl} no longer accepts this machine -- its password probably changed`}
+                      disabled={busy}
+                      onClick={() => {
+                        setAdding(false)
+                        setRelinking(server.baseUrl)
+                      }}
+                    >
+                      link again
+                    </button>
+                  )}
                   <button
                     className="chip chip--drop"
                     title={`Forget ${server.baseUrl}`}
@@ -461,6 +487,9 @@ export const OpenProjectDialog = ({
               </button>
             </div>
             {adding && <AddServer busy={busy} onAdd={addServer} />}
+            {relinking !== null && (
+              <AddServer key={relinking} busy={busy} initialUrl={relinking} onAdd={addServer} />
+            )}
           </div>
 
           {recents.length > 0 && (

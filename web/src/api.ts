@@ -68,6 +68,8 @@ export interface ServerRow {
   key: string
   baseUrl: string
   name: string
+  /** That machine no longer accepts this one; linking it again fixes it. */
+  refused?: boolean
 }
 
 export const api = {
@@ -121,7 +123,7 @@ export const api = {
    * that machine's own id.
    */
   servers: () => request<ServerRow[]>('/api/servers'),
-  addServer: (input: { baseUrl: string; token: string }) =>
+  addServer: (input: { baseUrl: string; password: string }) =>
     request<ServerRow>('/api/servers', {
       method: 'POST',
       body: JSON.stringify(input),

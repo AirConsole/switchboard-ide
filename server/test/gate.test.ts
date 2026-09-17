@@ -6,7 +6,7 @@ process.env.SWB_TOKEN = 'the-secret'
 const { withPassword, writePassword } = await import('./helpers/password.js')
 const STATE = withPassword()
 const { allowRequest, allowSocket, hasPeerToken } = await import('../src/gate.js')
-const { mintSession } = await import('../src/auth.js')
+const { mintLink, mintSession, newTicket, spendTicket } = await import('../src/auth.js')
 
 /**
  * Only what the gate reads. A real request always carries a Host and a method.
@@ -172,6 +172,59 @@ describe('who may open a peer’s socket', () => {
     expect(allowSocket(req({}, '127.0.0.1'))).toBe(false)
     // The gateway, which is what this function is now for.
     expect(allowSocket(req({ 'x-swb-token': 'the-secret' }, '10.0.0.7'))).toBe(true)
+  })
+})
+
+describe('the two kinds of token', () => {
+  /*
+   * The header skips the origin and name checks, which is right for another
+   * machine and wrong for a browser. A session token is what sits in a
+   * browser's cookie, so accepting one in the header would turn any leaked
+   * cookie value into a credential that no longer has to come from our page.
+   */
+  it('takes a link token in the header and never a session token', () => {
+    expect(allowRequest(req({ 'x-swb-token': mintLink() as string }, '10.0.0.7'))).toBe(true)
+    expect(allowRequest(req({ 'x-swb-token': mintSession() as string }, '10.0.0.7'))).toBe(false)
+    expect(allowSocket(req({ 'x-swb-token': mintSession() as string }, '10.0.0.7'))).toBe(false)
+  })
+
+  it('never takes a link token as a cookie', () => {
+    const cookie = `swb_session=${mintLink()}`
+    expect(allowRequest(req({ cookie, 'sec-fetch-site': 'same-origin' }))).toBe(false)
+  })
+
+  /*
+   * A link does not expire -- the machine holding it keeps no password to log
+   * in with again -- so the only thing that ends one is the password changing.
+   */
+  it('ends every link when the password changes', async () => {
+    const link = mintLink() as string
+    expect(allowRequest(req({ 'x-swb-token': link }, '10.0.0.7'))).toBe(true)
+    writePassword(STATE, 'yet another password here')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(allowRequest(req({ 'x-swb-token': link }, '10.0.0.7'))).toBe(false)
+  })
+})
+
+describe('socket tickets', () => {
+  /*
+   * A ticket issued before the password changed must not open a socket after
+   * it. This was promised once by a function nothing called; an adversarial
+   * pass found it. A ticket now carries its session and dies with it.
+   */
+  it('refuses a ticket whose session was revoked in the meantime', async () => {
+    const early = newTicket(mintSession() as string)
+    writePassword(STATE, 'and one more password')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(spendTicket(early)).toBeNull()
+    // A ticket issued now is fine, so this is revocation rather than breakage.
+    expect(spendTicket(newTicket(mintSession() as string))).not.toBeNull()
+  })
+
+  it('is spent once', () => {
+    const ticket = newTicket(mintSession() as string)
+    expect(spendTicket(ticket)).not.toBeNull()
+    expect(spendTicket(ticket)).toBeNull()
   })
 })
 

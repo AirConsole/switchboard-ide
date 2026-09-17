@@ -426,7 +426,7 @@ Testing needs two instances:
 
 ```sh
 pnpm scratch start             # the gateway
-pnpm scratch start peer        # the machine to link; prints its token
+pnpm scratch start peer        # the machine to link; prints its password
 pnpm scratch stop peer         # each one goes down by name
 ```
 

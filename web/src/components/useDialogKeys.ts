@@ -37,7 +37,10 @@ export const useDialogKeys = (
     /** The answers, in the order they are drawn; disabled ones are not answers. */
     const answers = (): HTMLButtonElement[] =>
       [...box.querySelectorAll<HTMLButtonElement>('.dialog__foot .btn')].filter(
-        (button) => !button.disabled,
+        // An aside is in the foot but is not an answer to the question on
+        // screen -- `Sign out` must never be where an arrow press lands, or
+        // what a stray Enter takes.
+        (button) => !button.disabled && !button.classList.contains('dialog__aside'),
       )
 
     const roving = (): void => {
@@ -110,6 +113,15 @@ export const useDialogKeys = (
       // neither is this hook's to take, when they are this dialog's.
       if (inside && event.target instanceof HTMLTextAreaElement) return
       if (inside && event.target instanceof HTMLButtonElement) return
+      /*
+       * A form inside the dialog that answers its own Enter. Without this the
+       * dialog's answer was taken instead -- and in the open dialog that is
+       * "Open project" on whatever folder is listed: pressing Enter in the
+       * link-a-machine form never linked anything, and offered to turn the
+       * home directory into a git repository. Found by driving the form in a
+       * browser.
+       */
+      if (inside && target?.closest('[data-own-enter]') !== null) return
       /*
        * Everything else -- the body, a checkbox, a dialog nobody has touched --
        * means the answer on screen. This is the half that makes "the dialog

@@ -6,8 +6,8 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
-import { spendTicket } from '../auth.js'
-import { allowSocket, cookieSession } from '../gate.js'
+import { spendTicket, verifySession } from '../auth.js'
+import { allowSocket } from '../gate.js'
 import { RELAY_HEADER } from '../remote/peer.js'
 import { Relay } from '../remote/relay.js'
 import type { Workspace } from '../workspace.js'
@@ -186,7 +186,8 @@ export const registerWs = (
      */
     const origin = request.headers.origin
     const originOk = origin === undefined || config.publicOrigins.has(origin)
-    const byTicket = !byToken && originOk && spendTicket(ticket)
+    const ticketSession = !byToken && originOk ? spendTicket(ticket) : null
+    const byTicket = ticketSession !== null
 
     // Refused *before* the sink joins `sinks`: every session's liveness and
     // attention is broadcast to everything in that set, session ids included,
@@ -238,7 +239,9 @@ export const registerWs = (
      * closes them within the minute.
      */
     const recheck = setInterval(() => {
-      const still = byToken ? allowSocket(request) : cookieSession(request) !== null
+      // The session the ticket was issued to, not whatever cookie happened to
+      // ride on the upgrade.
+      const still = byToken ? allowSocket(request) : verifySession(ticketSession ?? undefined) !== null
       if (!still) socket.close(4401, 'not signed in')
     }, 60_000)
     recheck.unref()
