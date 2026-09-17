@@ -260,12 +260,78 @@ export const verifySession = (token: string | undefined): Session | null => {
 }
 
 // ---------------------------------------------------------------------------
+// Link tokens: what another machine holds
+// ---------------------------------------------------------------------------
+
+/**
+ * A separate domain, so the two kinds can never stand in for each other.
+ *
+ * A browser session and a machine's link are different promises. A session
+ * expires, slides, and lives in a cookie that is only believed from our own
+ * page. A link does not expire -- a gateway holds no password to log in again
+ * with, so an expiring token would be a machine that silently drops out of the
+ * row one night -- and it is only believed in a header, from a caller that is
+ * not a browser. Signing them under different domains means a cookie value is
+ * not a link token and a link token is not a cookie, which the gate relies on:
+ * a stolen cookie must not become a credential that skips the origin and name
+ * checks.
+ *
+ * Revoked the same way as sessions -- a new password or a generation bump
+ * changes the key. There is no per-link revocation yet; `pnpm password
+ * --revoke-sessions` ends every link along with every browser.
+ */
+const LINK_DOMAIN = Buffer.from('swb-link-v1')
+
+const linkMac = (key: Buffer, payload: Buffer): Buffer =>
+  createHmac('sha256', key).update(LINK_DOMAIN).update(payload).digest()
+
+export const mintLink = (): string | null => {
+  const rec = load()
+  if (rec === null) return null
+  const payload = Buffer.alloc(PAYLOAD_BYTES)
+  payload.writeUInt8(2, 0)
+  payload.writeBigUInt64BE(BigInt(Date.now()), 1)
+  // No expiry: the field stays zero and is not read. See above.
+  randomBytes(16).copy(payload, 17)
+  return `l1.${b64(payload)}.${b64(linkMac(rec.sessionKey, payload))}`
+}
+
+export const verifyLink = (token: string | undefined): boolean => {
+  if (token === undefined || token.length > 256) return false
+  const rec = load()
+  if (rec === null) return false
+  const parts = token.split('.')
+  if (parts.length !== 3 || parts[0] !== 'l1') return false
+  const [, payloadText, macText] = parts
+  if (payloadText === undefined || macText === undefined) return false
+  const payload = Buffer.from(payloadText, 'base64url')
+  const mac = Buffer.from(macText, 'base64url')
+  if (payload.length !== PAYLOAD_BYTES || mac.length !== 32) return false
+  // One spelling per token, for the same reason as sessions.
+  if (b64(payload) !== payloadText || b64(mac) !== macText) return false
+  if (!timingSafeEqual(linkMac(rec.sessionKey, payload), mac)) return false
+  return payload.readUInt8(0) === 2
+}
+
+// ---------------------------------------------------------------------------
 // The socket's own credential
 // ---------------------------------------------------------------------------
 
 const TICKET_MS = 30_000
 const MAX_TICKETS = 64
-const tickets = new Map<string, number>()
+interface Ticket {
+  expires: number
+  /**
+   * The session it was issued to, and the reason it is kept: a ticket is good
+   * only while that session is. A password change or a generation bump
+   * invalidates the session, and with it every ticket issued under it -- which
+   * an earlier version promised from a function that nothing ever called. It is
+   * also what the socket's own re-check judges, so a ticket socket no longer
+   * depends on the browser having sent the cookie on the upgrade.
+   */
+  session: string
+}
+const tickets = new Map<string, Ticket>()
 
 /**
  * A single-use ticket for one WebSocket upgrade.
@@ -289,9 +355,9 @@ const tickets = new Map<string, number>()
  * set a header on an upgrade, and a query string is written to every access log
  * on the way.
  */
-export const newTicket = (): string => {
+export const newTicket = (session: string): string => {
   const now = Date.now()
-  for (const [value, expires] of tickets) if (expires <= now) tickets.delete(value)
+  for (const [value, ticket] of tickets) if (ticket.expires <= now) tickets.delete(value)
   // A cap, because a valid session could otherwise mint these forever. Oldest
   // first, which is what `Map` iteration already gives.
   while (tickets.size >= MAX_TICKETS) {
@@ -300,21 +366,22 @@ export const newTicket = (): string => {
     tickets.delete(oldest.value)
   }
   const value = randomBytes(32).toString('base64url')
-  tickets.set(value, now + TICKET_MS)
+  tickets.set(value, { expires: now + TICKET_MS, session })
   return value
 }
 
-/** Spends a ticket. False for one already used, expired, or never issued. */
-export const spendTicket = (value: string | undefined): boolean => {
-  if (value === undefined) return false
-  const expires = tickets.get(value)
-  if (expires === undefined) return false
+/**
+ * Spends a ticket, returning the session it was issued to -- or null for one
+ * already used, expired, never issued, or whose session has since been revoked.
+ */
+export const spendTicket = (value: string | undefined): string | null => {
+  if (value === undefined) return null
+  const ticket = tickets.get(value)
+  if (ticket === undefined) return null
   tickets.delete(value)
-  return expires > Date.now()
+  if (ticket.expires <= Date.now()) return null
+  return verifySession(ticket.session) === null ? null : ticket.session
 }
-
-/** Every outstanding ticket, dropped. Called when the password changes. */
-export const dropTickets = (): void => tickets.clear()
 
 // ---------------------------------------------------------------------------
 // What a guess costs
@@ -496,7 +563,9 @@ export const localFile = (): string => join(config.stateDir, 'local.json')
  * there. It dies with the password, like everything else.
  */
 export const writeLocalToken = (): void => {
-  const token = mintSession()
+  // A link token, because `swb` sends it as a header like a gateway does, and
+  // the gate only believes link tokens there.
+  const token = mintLink()
   if (token === null) return
   mkdirSync(config.stateDir, { recursive: true })
   const target = localFile()

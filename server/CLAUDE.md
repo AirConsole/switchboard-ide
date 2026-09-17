@@ -397,7 +397,9 @@ Three callers, and the password is behind all of them. `gate.ts` decides,
 - **Our own socket**, opened with a single-use ticket from `POST /api/ws-ticket`
   -- never with the cookie. See below.
 - **A gateway**, which is this same program on another machine reading this
-  one. Not a browser; it presents a token in `x-swb-token`.
+  one. Not a browser; it presents a **link token** in `x-swb-token`, obtained
+  by logging in once with this machine's password. A static `SWB_TOKEN` is
+  still honoured for a machine set up that way.
 
 **There is no unauthenticated way in, from anywhere, including loopback.** The
 server will not start without a password (`index.ts`, checked before
@@ -448,7 +450,15 @@ and one of them has no auth. Hence:
   list on anything that is not GET or HEAD. That last one rests on **no GET
   mutating anything** -- check that when adding a route.
 
-`local.json` in the state directory holds a session token for `swb`, which
+**Link tokens and session tokens are signed under different domains**, so
+neither verifies as the other. A link does not expire -- the machine holding it
+keeps no password to sign in again with -- and is believed only in the header;
+a session expires and is believed only as a cookie from our own page. The
+header skips the origin and name checks, so accepting a session there would
+turn a leaked cookie value into a credential that no longer has to come from
+our page. Both die when the password changes.
+
+`local.json` in the state directory holds a link token for `swb`, which
 `status` and the restart's readiness poll need now that `/api/server` is gated.
 It adds nothing: whatever can read it can already read `auth.json` and attach to
 the tmux socket.
@@ -518,6 +528,26 @@ need to in order to act.
 Linking another machine makes everything open there open here, and this server
 is the gateway: it forwards, and the browser talks to one origin. See the root
 `CLAUDE.md` for why that shape, and why linking rather than per-project.
+
+**Linking is a login, once.** `addServer` takes the machine's password and, in
+this order: refuses plain `http://` to anything that is not on a network you
+likely own, since one password now opens a whole machine and a typo in the
+address would send it wherever the typo points; asks `/api/health`, which needs
+no credential, so an address that is off or wrong never receives the password;
+logs in with `machine: true` and keeps the **link token** it gets back; and only
+then identifies the machine with that token. The password is an argument and
+nothing more -- it is not stored, logged, or returned. A wrong one is a 400,
+not a 401: the page asking is signed in *here*, and a 401 is how it learns it
+is not.
+
+A machine whose password changed answers our reads with 401. That becomes
+`link-refused` (a 502) rather than being forwarded, for the same reason, and
+the machine is remembered as refused: its windows stay on screen from the last
+good read, and `GET /api/servers` says `refused` so the dialog can offer to
+link it again. Linking again is the same call; the stored row is replaced in
+place, so nothing about the machine's windows is lost. A gateway's refused
+reads never touch the peer's login throttle, so a stale link cannot lock that
+machine's owner out.
 
 Two pieces do the work, and both are small for one reason -- **a peer runs this
 same program**, so the path that answers here answers there and the whole of the

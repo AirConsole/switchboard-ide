@@ -49,6 +49,16 @@ const storedPort = (instance) => {
 }
 
 /** @param {import('./instance.js').Scratch} instance */
+/** @param {import('./instance.js').Scratch} instance */
+const storedPassword = (instance) => {
+  try {
+    return readFileSync(instance.passwordFile, 'utf8').trim()
+  } catch {
+    return undefined
+  }
+}
+
+/** @param {import('./instance.js').Scratch} instance */
 const storedToken = (instance) => {
   try {
     return readFileSync(instance.tokenFile, 'utf8').trim()
@@ -207,18 +217,10 @@ export const start = async (opts = {}) => {
   }
   writeFileSync(instance.portFile, `${port}\n`)
 
-  // A named instance is somebody's peer, so it gets the token that makes it
-  // answer one. The unnamed instance stays as it was: no token, no gate.
-  let token
-  if (instance.name !== '') {
-    token = randomBytes(32).toString('base64').replace(/[=/+]/g, '')
-    writeFileSync(instance.tokenFile, token, { mode: 0o600 })
-  }
-
   const log = openSync(instance.logFile, 'a', 0o600)
   const child = spawn(process.execPath, [serverScript], {
     cwd: join(repoRoot, 'server'),
-    env: scratchEnv(process.env, instance, port, token),
+    env: scratchEnv(process.env, instance, port),
     detached: true,
     stdio: ['ignore', log, log],
   })
@@ -353,8 +355,8 @@ export const status = async (opts = {}) => {
   } else {
     console.log(`http://127.0.0.1:${port}${live ? '' : '   (not running)'}`)
     console.log(`  checkout: ${repoRoot}`)
-    const token = storedToken(instance)
-    if (token !== undefined) console.log(`  token:    ${token}`)
+    const password = storedPassword(instance)
+    if (password !== undefined) console.log(`  password: ${password}   (what a gateway links this with)`)
     console.log(`  state:    ${instance.stateDir}`)
     console.log(`  log:      ${instance.logFile}`)
     console.log(`  tmux:     tmux -S ${instance.tmuxSocket} ls`)

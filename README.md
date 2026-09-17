@@ -96,7 +96,7 @@ arriving through it is refused. Settings live in
 `~/.config/switchboard/config.json`:
 
 ```json
-{ "port": 8084, "host": "ide.example.com:84", "token": "..." }
+{ "port": 8084, "host": "ide.example.com:84" }
 ```
 
 `start` and `restart` check that name afterwards rather than trusting it,
@@ -110,17 +110,23 @@ here — its projects, worktrees, sessions and queued prompts join the row. Ther
 is no per-project subscription: an agent blocked on you is blocked on you
 wherever it is.
 
-The machine being linked sets a `token`, which is what lets a gateway read it
-and what makes binding an address other than loopback safe. Your browser never
-talks to it; the server you have open forwards everything, so there is no CORS,
-no cookie and no second login.
+The machine being linked has its own password, like any instance. Make it
+reachable from the machine you use by binding an address other than loopback:
 
 ```jsonc
 // on the machine to link, in ~/.config/switchboard/config.json
-{ "token": "...", "bind": "0.0.0.0" }
+{ "bind": "0.0.0.0" }
 ```
 
-Then add it in the open dialog, with its address and that token.
+Then add it in the open dialog with its address and **its** password. Your
+server signs in to it once and keeps the link it gets back, never the password.
+Your browser never talks to that machine; the server you have open forwards
+everything, so there is no CORS and no second login.
+
+Over plain `http://`, only addresses on your own network are accepted — a
+password that opens a shell should not cross the internet in clear. If that
+machine's password changes, its windows stay where they are and the dialog
+offers to link it again.
 
 ## What it is not
 

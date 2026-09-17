@@ -5,12 +5,13 @@ import {
   clearedCookies,
   cookieFor,
   hasPassword,
+  mintLink,
   mintSession,
   newTicket,
   verifyPassword,
 } from '../auth.js'
 import { config } from '../config.js'
-import { cookieSession, isOwnPage } from '../gate.js'
+import { cookieToken, isOwnPage } from '../gate.js'
 
 const loginBody = z.object({
   password: z.string().min(1, 'a password'),
@@ -97,7 +98,8 @@ export const registerAuth = (app: FastifyInstance): void => {
       return reply.status(401).send({ error: 'wrong password', code: 'bad-password' })
     }
 
-    const token = mintSession()
+    // A machine gets a link, which does not expire; a browser gets a session.
+    const token = parsed.data.machine === true ? mintLink() : mintSession()
     if (token === null) {
       return reply.status(503).send({ error: 'no password is set', code: 'password-not-set' })
     }
@@ -120,9 +122,23 @@ export const registerAuth = (app: FastifyInstance): void => {
    * already taken is unaffected. Real revocation is `pnpm password` or
    * `pnpm password --revoke-sessions`, both of which change the signing key.
    */
-  app.post('/api/logout', async (request, reply) =>
-    reply.header('set-cookie', clearedCookies(request.headers.host)).send({ ok: true }),
-  )
+  app.post('/api/logout', async (request, reply) => {
+    /*
+     * The same origin rule as the login. Without it any page you visited could
+     * sign you out, and keep doing it: a `Set-Cookie` on a response is stored
+     * whatever `SameSite` says, because `SameSite` governs sending, not
+     * storing. Found by an adversarial pass, from a page on another port.
+     */
+    const site = request.headers['sec-fetch-site']
+    const origin = request.headers.origin
+    if (
+      (site !== undefined && !isOwnPage(request)) ||
+      (origin !== undefined && !config.publicOrigins.has(origin))
+    ) {
+      return reply.status(403).send({ error: 'not allowed', code: 'bad-origin' })
+    }
+    return reply.header('set-cookie', clearedCookies(request.headers.host)).send({ ok: true })
+  })
 
   /**
    * A single-use ticket for one socket upgrade.
@@ -132,9 +148,10 @@ export const registerAuth = (app: FastifyInstance): void => {
    * and why the socket takes a ticket rather than the cookie. See `newTicket`.
    */
   app.post('/api/ws-ticket', async (request, reply) => {
-    if (cookieSession(request) === null) {
+    const session = cookieToken(request)
+    if (session === null) {
       return reply.status(401).send({ error: 'not allowed', code: 'auth-required' })
     }
-    return reply.send({ ticket: newTicket() })
+    return reply.send({ ticket: newTicket(session) })
   })
 }
