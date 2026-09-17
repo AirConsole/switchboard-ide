@@ -56,6 +56,22 @@ the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
 
+**A limit says how much is left in colour**: `usageLevel` is amber from 75% and
+red from 90%, inclusive, and the class goes on the *row* so the number wears it
+as well as the bar -- the track is the first thing to go at rung 1, and a colour
+that lived only on the fill would go out exactly when the window is too small to
+show it. Measured at each boundary against a stubbed `/api/usage`: 74 grey, 75
+amber, 89 amber, 90 red, on the fill and the number alike, and read 1:1 off the
+rendered pixels (`#ffb454` and `#e5707a` across a 3px track, over `#222833`
+where the fill stops).
+
+This is the one thing in the chrome that wears amber without being an agent that
+wants you, and it replaced a step up the grey ladder at 80% where the fill went
+`--bone`. That step was the wrong instrument twice: it arrived after the number
+that matters, and one rung of grey is not visible without the other two bars
+beside it to compare against. Both colours clear the floor where they are drawn
+-- amber 11.03:1 and red 6.42 on the frame, 8.39 and 4.88 on the track.
+
 **How the rung is chosen, and why it is not React state.** `.tabstrip` is
 `flex: 1; min-width: 0`, so it takes what the other two leave, and it says it is
 out of room by `scrollWidth > clientWidth`. Each rung either hands it more room
@@ -978,16 +994,34 @@ bare `9999...8888` arriving in a prompt.
 Everything below is something the desktop never exercises, and every number in
 it was measured on a 390×800 screen rather than reasoned about:
 
-**Below 640px the row is one window, edge to edge.** `useNarrow` asks
-`matchMedia` once, in `App`, and hands the answer to the row; `NARROW_MAX` is
-where the number lives, in TS, and CSS is told the *answer* through
-`data-narrow` on `.app` rather than being given the number to repeat, which is
-the `data-tight` arrangement the tab strip already uses. It reads the **layout**
-viewport, not `visualViewport`: the keyboard and a pinch both change the visual
-one and neither turns a phone into a desktop. And it is `useSyncExternalStore`
-rather than state written from an effect, which is one render late — late enough
-to build every terminal in the row at the wrong width and then resize every pty
-behind it.
+**Below the width where Claude loses its eightieth column, the row is one
+window, edge to edge.** `narrowBelow` computes it rather than naming it: one
+pane's floor, the tile's own edges, and the two gaps a single window pays for --
+685px at an 8px cell, and eighty px more for every pixel the cell grows.
+`useNarrow` asks `matchMedia` once, in `App`, and hands the answer to the row;
+CSS is told the *answer* through `data-narrow` on `.app` rather than being given
+the number to repeat, which is the `data-tight` arrangement the tab strip
+already uses. It reads the **layout** viewport, not `visualViewport`: the
+keyboard and a pinch both change the visual one and neither turns a phone into a
+desktop. And it is `useSyncExternalStore` rather than state written from an
+effect, which is one render late — late enough to build every terminal in the
+row at the wrong width and then resize every pty behind it.
+
+**It was a flat 640, and 640 described a top bar that no longer has a
+breakpoint.** The strip gives things up by the rung now, measured against the
+room it has, and the number it left behind was 45px low: between 640 and 685 the
+row kept paying for a 12px gap either side of a single window that could not
+afford it. Measured on a scratch instance, one pixel apart: at 685 the pane is
+658px and the pty 78 columns, at 684 it is 681px and **83** — five columns for a
+pixel of window, which is the discontinuity being put where it belongs.
+
+Those 78 are the second half of the measurement and a separate bug:
+`PANE_CHROME_WIDTH` counts the 16px inset and the border, and xterm's own
+`FitAddon` reserves about 17px more for the scrollbar it always makes room for.
+So every pane in the row is about two columns short of the 80 this layout
+promises, at every width, and the threshold inherits it -- which is an argument
+for deriving the threshold rather than naming it, since fixing the constant
+moves this with it.
 
 Deliberately not the 440px the todo panel uses. That one is about how narrow a
 column of prose can be; this one is about a row of windows. Two questions, two
@@ -1179,7 +1213,13 @@ The shortcuts are only worth having if you can find them, and a printed list of
 five is a list nobody reads. So the modifier being held is treated as the
 question "what can I do from here", and the answer is written on the controls
 themselves: each panel toggle **of the window you are in** lights its letter --
-TERM**I**NAL, T**O**DO, **F**ILES. The letters are one window's because the
+TERM**I**NAL, T**O**DO, **F**ILES -- and the × at the end of that bar lights
+whole, since Cmd+X (`AWAY_KEY`) is a shortcut like the other three and the
+legend's promise is that what lights up is what the held key reaches. It takes
+`tile__key` over the glyph, which is the same case as a label with no letter to
+light. The pointer's own `--danger` red steps aside for as long as the key is
+held -- while the legend is up the bar is answering "what does this key do", and
+the red comes back the moment you let go. The letters are one window's because the
 shortcut is: it opens a panel on the worktree that has the keyboard, and the
 same three letters lit across the row would promise something the key does not
 do. Nothing is armed by it; the keys work whether the legend is on screen or
@@ -1232,24 +1272,28 @@ glyphs are never read against Claude's output. **Absolute is load-bearing**:
 anything in the pane's flow takes a row off the character grid, and every pty in
 the row would be resized by a legend appearing.
 
-**Once the teaching is over, the key also says where you are**: `showsHere` puts
-a `--rail`-thick `--legend` line under the pane that has the keyboard, for as
-long as the modifier is down. The two arrows say where a step *goes*, and that
-was the one part of the sentence the row did not say -- held down it is briefly
-a map, and a map with no "you are here" is a list of directions. It is drawn as
-`.tile__pane--here::after`, absolutely positioned for the same reason the hint
-is: anything in a pane's flow takes a row off the character grid. Measured off
-the rendered pixels rather than the stylesheet, since a 2px line is exactly what
-a resampled screenshot loses: the bottom two rows of the pane are `#9dc0ff`
-across it, on `#0e1116` above.
+**Where you are is drawn permanently, and is not part of the legend.**
+`showsHere` puts a `--rail`-thick `--legend` line under the pane that has the
+keyboard, always -- `.tile__pane--here::after`, absolutely positioned for the
+same reason the hint is: anything in a pane's flow takes a row off the character
+grid. Four windows of terminal look alike, and everything else the row does is
+read against which one your typing reaches; the top bar says which *worktree* by
+lighting its tab, and this says which pane, at the place you are looking rather
+than 800px above it. It spent a version gated on the modifier being held and the
+teaching being over, which made a permanent fact answer a passing question --
+you had to press a key to find out where you already were. With the key down it
+is still what the two arrows are arrows *from*, so the three read as one
+sentence: here, and the two steps out of here.
 
-**Not while the hints are still teaching**, which is the whole of why
-`showsHere` is a second predicate and not `keysLit`. The unasked hints are on
-screen then, one per neighbour and each with a sentence beside it; a third mark
-added to that is one more thing to read rather than one more thing understood.
-The line answers a question -- which of these is *here* -- that only comes up
-once the sentences have gone, so it starts exactly where the teaching stops. It
-also says nothing about a phone, unlike the arrows: it points at no neighbour.
+Measured off the rendered pixels rather than the stylesheet, since a 2px line is
+exactly what a resampled screenshot loses: the bottom two rows of the pane are
+`#9dc0ff` across it, on `#0e1116` above.
+
+**The one place it says nothing is a phone**, where the row is one window per
+screen with no gap and no padding. The window is the glass, there is nothing
+beside it to be picked out from, and the only pane on screen does not need
+underlining to be found. That is the whole of `showsHere`, and it is why it asks
+about `narrow` and nothing else.
 
 **It is coloured, and that is the one exception to the greyscale rule.**
 `--legend` (#9dc0ff) is the third colour in the chrome and the only one that is

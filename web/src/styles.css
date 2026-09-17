@@ -725,10 +725,36 @@ button {
   background: var(--graphite);
 }
 
-/* Louder once most of it is gone: the same greyscale ladder, one step up. No
-   colour -- amber and green are what say an agent wants you. */
-.usage__fill--high {
-  background: var(--bone);
+/*
+ * Running out, and nearly gone. See `usageLevel` for the two numbers and for
+ * why this is the one reading in the chrome allowed to wear amber.
+ *
+ * The number takes the colour as well as the bar, and that is not decoration:
+ * the track is the first thing the top bar gives up as it runs out of room
+ * (rung 1, below), so a colour that lived only on the fill would go out exactly
+ * when the window is too small to show it. Both clear the floor on the ground
+ * each sits on -- amber 11.03:1 and red 6.42 on the frame the readout is drawn
+ * against, 8.39 and 4.88 on the track behind the fill.
+ *
+ * This replaced a step up the grey ladder at 80%, where the fill went --bone.
+ * One rung of grey is not visible without the other two bars beside it to
+ * compare against, which is a poor way to say "the session you are about to
+ * start may end early".
+ */
+.usage__row--low .usage__fill {
+  background: var(--signal);
+}
+
+.usage__row--low .usage__percent {
+  color: var(--signal);
+}
+
+.usage__row--spent .usage__fill {
+  background: var(--danger);
+}
+
+.usage__row--spent .usage__percent {
+  color: var(--danger);
 }
 
 .usage__percent {
@@ -1664,12 +1690,18 @@ button {
 }
 
 /*
- * Where you are, while the key is held: a line under the pane that has the
- * keyboard.
+ * Where you are: a line under the pane that has the keyboard, always.
  *
- * What it is for: the two arrows say where a step goes, and this is what they
- * go *from*. Held down, the row is briefly a map, and a map with no "you are
- * here" is a list of directions.
+ * What it is for: four windows of terminal look alike, and every other thing
+ * the row does is read against which one your typing reaches -- which window a
+ * panel toggle opens, which pane a step counts from. The top bar says which
+ * *worktree* by lighting its tab; this says which pane, at the place you are
+ * looking rather than 800px above it.
+ *
+ * It is not part of the legend, and it spent a version being one: drawn only
+ * while the modifier was held, it made a permanent fact answer a passing
+ * question. It is still what the two arrows are arrows *from*, so with the key
+ * down the three of them read as one sentence.
  *
  * A pseudo-element, and absolutely positioned like the hint, for the same
  * reason: a pane's contents are a terminal, and anything in the flow here would
@@ -1678,6 +1710,12 @@ button {
  * `--rail` thick, which is the width the tile's own leading edge uses for the
  * one other thing drawn as a line -- the worktree's state. Two lines of one
  * weight, on two edges, saying two things that are both about this window.
+ *
+ * It is the one permanent thing in --legend, and it stays inside the colour
+ * rule for the same reason the rest of the legend does: there is exactly one of
+ * it in the row, on the window you are already in, so nothing about scanning a
+ * row of agents for amber or green changes. On a phone it is not drawn at all
+ * -- see `showsHere`.
  */
 .tile__pane--here::after {
   content: '';

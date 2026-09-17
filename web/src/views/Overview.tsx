@@ -974,7 +974,20 @@ const WorktreeTile = ({
         onClick={onSleep}
         title={`Put this worktree away (${modChord('X')})`}
       >
-        <span aria-hidden="true">×</span>
+        {/*
+          * Lit with the three letters, because it is a shortcut like they are:
+          * Cmd+X is AWAY_KEY, and the legend's promise is that what lights up
+          * is what the key you are holding would reach. It wears `tile__key`
+          * over the whole glyph rather than a letter inside a word, which is
+          * the same case as a label with no letter to light -- there is nothing
+          * here to dim around it.
+          *
+          * The span is there in both states, like the labels': markup that
+          * changed at the threshold would move the bar when the key went down.
+          */}
+        <span aria-hidden="true" className={keysLit && current ? 'tile__key' : undefined}>
+          ×
+        </span>
       </button>
     </div>
   )
@@ -2000,10 +2013,10 @@ export const Overview = ({
    */
   const teaching = stepsTaken < LEGEND_LEARNED
   /*
-   * Where you are, marked while the key is held and the teaching is over.
-   * One pane in the whole row wears it; see `showsHere`.
+   * Where you are. One pane in the whole row wears it, always -- it is a fact
+   * about the row rather than part of the legend; see `showsHere`.
    */
-  const here = showsHere({ steps: stepsTaken, held: keysLit }) ? (active ?? null) : null
+  const here = showsHere({ narrow }) ? (active ?? null) : null
   /**
    * Which arrow a cell wears, and over which of its panes. See `landingHint`.
    *

@@ -75,20 +75,22 @@ describe('showsHint', () => {
 
 describe('showsHere', () => {
   /*
-   * The line and the sentences are never on screen together. While the hints
-   * are still teaching they are already unasked, one per neighbour and each
-   * with a sentence beside it; a third mark added to that is one more thing to
-   * read. The line starts exactly where the teaching stops -- so the two are
-   * complements, not layers.
+   * Where you are is not part of the legend, and this is the assertion that
+   * says so: it takes neither the key nor the count. It was gated on both for
+   * a while, which made a permanent fact answer a passing question -- you had
+   * to press a key to find out where you already were.
    */
-  it('stays away for as long as the hints are teaching', () => {
-    expect(showsHere({ steps: LEGEND_LEARNED - 1, held: true })).toBe(false)
-    expect(showsHere({ steps: LEGEND_LEARNED, held: true })).toBe(true)
+  it('marks where you are without being asked', () => {
+    expect(showsHere({ narrow: false })).toBe(true)
   })
 
-  // Only while the key is down: with it up there is no step to be from.
-  it('needs the key, not only the count', () => {
-    expect(showsHere({ steps: LEGEND_LEARNED * 10, held: false })).toBe(false)
+  /*
+   * Except on a phone, where the row is one window per screen with no gap and
+   * no padding: the window is the glass, and the only pane on screen does not
+   * need underlining to be found.
+   */
+  it('says nothing where the window is the screen', () => {
+    expect(showsHere({ narrow: true })).toBe(false)
   })
 })
 
