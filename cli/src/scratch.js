@@ -15,6 +15,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, 
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { passwordFileFor, recordFor } from './password.js'
 import {
   assertScratchPaths,
   checkTools,
@@ -165,7 +166,22 @@ export const start = async (opts = {}) => {
   }
 
   await stop({ name: opts.name, quiet: true })
-  mkdirSync(instance.stateDir, { recursive: true })
+  mkdirSync(instance.stateDir, { recursive: true, mode: 0o700 })
+  /*
+   * Every instance gets its own password, generated, because the server refuses
+   * to start without one -- and a throwaway must stay one command.
+   *
+   * Not an "unsafe, no password" flag: that would be a branch of the gate which
+   * production never takes, and every hole ever measured in this gate lived in
+   * exactly such a branch. It would also end up pasted into a real config.
+   *
+   * It rides `SWB_STATE_DIR`, which `scratchEnv` already strips from the parent
+   * and re-sets, so a shell that exported one cannot make a throwaway verify
+   * against the real machine's password.
+   */
+  const password = randomBytes(18).toString('base64url')
+  writeFileSync(passwordFileFor(instance.stateDir), recordFor(password), { mode: 0o600 })
+  writeFileSync(instance.passwordFile, `${password}\n`, { mode: 0o600 })
 
   const pinned = process.env.SWB_SCRATCH_PORT
   let port
@@ -236,13 +252,31 @@ export const start = async (opts = {}) => {
     process.exit(1)
   }
 
+  /*
+   * Exchange the generated password for a session token, which is what the two
+   * project calls below authenticate with. Exactly the production flow: there
+   * is no back door for the harness, so the harness exercises the real path.
+   */
+  const login = await fetch(`http://127.0.0.1:${port}/api/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
+    body: JSON.stringify({ password, machine: true }),
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!login.ok) {
+    console.error(`swb: could not sign in to the scratch instance (${login.status})`)
+    process.exit(1)
+  }
+  const { token: sessionToken } = /** @type {any} */ (await login.json())
+  writeFileSync(instance.tokenFile, sessionToken, { mode: 0o600 })
+
   await makeProject(instance, port, join(instance.root, 'one'), ['feature-x', 'fourth', 'two-terms'])
   await makeProject(instance, port, join(instance.root, 'two'), ['alpha'])
 
   if (opts.quiet) return
   console.log(`up on http://127.0.0.1:${port}${instance.name ? `  (${instance.name})` : ''}`)
   console.log(`  checkout: ${repoRoot}`)
-  if (token !== undefined) console.log(`  token:    ${token}`)
+  console.log(`  password: ${password}`)
   console.log('  projects: one (main + 3 worktrees), two (main + 1)')
   console.log(`  log:      ${instance.logFile}`)
   console.log(`  tmux:     tmux -S ${instance.tmuxSocket} ls`)

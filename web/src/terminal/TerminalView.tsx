@@ -55,10 +55,11 @@ export const TERMINAL_FONT_FAMILY = 'Menlo, monospace'
  * it again to fit another window in; nothing about the arithmetic changed.
  *
  * The arithmetic is worth keeping, though, for whoever asks the same question
- * next. The other two candidates cannot reach it: `PANE_CHROME_WIDTH` is 18px
- * of the 658 a pane needs, so zeroing the padding outright still leaves 1920 at
- * two and a half windows, and doing it on columns means dropping
- * MIN_PANE_COLUMNS to 75, which is the promise the layout exists to keep.
+ * next. The other two candidates cannot reach it: the chrome is 32px of the 672
+ * a pane needs -- and 14 of those are xterm's own, which no stylesheet can give
+ * back -- so zeroing the padding outright still leaves 1920 at two and a half
+ * windows, and doing it on columns means dropping MIN_PANE_COLUMNS to 75, which
+ * is the promise the layout exists to keep.
  */
 export const TERMINAL_FONT_SIZE = 14
 

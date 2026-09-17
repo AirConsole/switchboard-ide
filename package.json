@@ -15,6 +15,7 @@
     "restart": "node cli/bin/swb.js restart",
     "status": "node cli/bin/swb.js status",
     "scratch": "node cli/bin/swb.js scratch",
+    "password": "node cli/bin/swb.js password",
     "typecheck": "pnpm --filter @switchboard/shared build && pnpm -r typecheck",
     "test": "pnpm --filter @switchboard/shared build && vitest run",
     "test:watch": "pnpm --filter @switchboard/shared build && vitest",

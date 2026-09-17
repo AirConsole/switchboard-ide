@@ -6,7 +6,8 @@ import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
 import type { SessionEngine, Sink } from '../session/engine.js'
 import { config } from '../config.js'
-import { allowSocket } from '../gate.js'
+import { spendTicket } from '../auth.js'
+import { allowSocket, cookieSession } from '../gate.js'
 import { RELAY_HEADER } from '../remote/peer.js'
 import { Relay } from '../remote/relay.js'
 import type { Workspace } from '../workspace.js'
@@ -95,6 +96,38 @@ class SocketSink implements Sink {
  * one of ours. See `publicOrigins` in config.ts for why it is a list and not a
  * comparison against `Host`.
  */
+/**
+ * How `@fastify/websocket` must be registered for this route to work.
+ *
+ * Exported so `index.ts` and the tests cannot drift: the subprotocol echo is
+ * what carries the socket ticket, and an app that registers the plugin without
+ * it gets a handshake the browser refuses -- silently, as a socket that never
+ * opens. This codebase has already paid for a test hand-copying a server rule
+ * and diverging from it; there is one copy of this one.
+ */
+export const wsPluginOptions = {
+  options: {
+    // Terminal output frames are small; the default 100MB limit is pointless
+    // here, and a lower cap bounds the damage from a malformed frame.
+    maxPayload: 8 * 1024 * 1024,
+    /*
+     * Echo back whatever subprotocol the client offered.
+     *
+     * A browser refuses the connection unless the server names one of the
+     * protocols it asked for -- and that list is the browser's only way to put
+     * a credential on an upgrade, since it cannot set a header. So this is what
+     * carries the single-use ticket. It is deliberately not validated here: the
+     * route below spends it, because a handshake hook has nowhere to report a
+     * verdict to. `false` would refuse the upgrade outright and take the
+     * gateway's no-subprotocol connection down with it.
+     */
+    handleProtocols: (protocols: Set<string>): string | false => {
+      const [first] = protocols
+      return first ?? false
+    },
+  },
+}
+
 export const registerWs = (
   app: FastifyInstance,
   engine: SessionEngine,
@@ -122,10 +155,43 @@ export const registerWs = (
   })
 
   app.get('/ws', { websocket: true }, (socket, request) => {
+    /*
+     * Two ways in, and a browser has only the second.
+     *
+     * A gateway presents its token. A browser presents a **single-use ticket**
+     * in the WebSocket subprotocol -- not the session cookie, and that is the
+     * whole design. Cookies are scoped by host and ignore the port, so a page
+     * on a sibling port of this hostname is same-site and the browser attaches
+     * our cookie to a socket that page opens; a WebSocket is exempt from CORS,
+     * so nothing else stands in the way. Measured end to end on the previous
+     * attempt at a password here: from a page the user merely visited, `attach`,
+     * `focus` and `input` were accepted and a shell command ran as them.
+     *
+     * A ticket is obtained over `/api`, where the origin *is* checked, so the
+     * hostile page cannot get one -- and what the browser does with the cookie
+     * on its socket stops mattering.
+     */
+    const offered = request.headers['sec-websocket-protocol']
+    const ticket = typeof offered === 'string' ? offered.split(',')[0]?.trim() : undefined
+    const byToken = allowSocket(request)
+    /*
+     * The origin is checked here too, even though a ticket is already proof.
+     *
+     * Not redundant so much as cheap: a hostile page cannot obtain a ticket at
+     * all -- `/api/ws-ticket` is behind the gate's own origin rule -- so this
+     * layer should never be the one that fires. It exists because the previous
+     * attempt at a password here died of a *single* check being load-bearing
+     * and turning out not to hold, and because a browser cannot lie about
+     * `Origin` on an upgrade. A gateway sends none and takes the branch above.
+     */
+    const origin = request.headers.origin
+    const originOk = origin === undefined || config.publicOrigins.has(origin)
+    const byTicket = !byToken && originOk && spendTicket(ticket)
+
     // Refused *before* the sink joins `sinks`: every session's liveness and
     // attention is broadcast to everything in that set, session ids included,
     // and a refused client must not be handed one on its way out.
-    if (!allowSocket(request)) {
+    if (!byToken && !byTicket) {
       /*
        * Logged, and at warn, because the other thing that reaches here is our
        * own page behind a proxy whose origin nobody configured -- and that
@@ -142,13 +208,41 @@ export const registerWs = (
         },
         'refused a socket -- was --host passed, and is this machine meant to reach it?',
       )
+      /*
+       * 4401 when a browser asked and had no usable ticket, 1008 otherwise.
+       * The distinction is the difference between two failures that were
+       * indistinguishable before: a signed-out tab, which should stop retrying
+       * and show a login, and a misconfigured `--host`, which should keep
+       * retrying because the row will paint as soon as somebody fixes it.
+       * Keyed on a code rather than a reason string, which is brittle.
+       */
+      // The origin first: a page we do not serve is told so whatever it
+      // brought, which is also what lets `swb` check `--host` with a ticket
+      // that was never issued.
+      if (ticket !== undefined && originOk) socket.close(4401, 'not signed in')
       // 1008 is "policy violation", said out loud rather than dropped silently.
-      socket.close(1008, 'origin not allowed')
+      else socket.close(1008, 'origin not allowed')
       return
     }
 
     const sink = new SocketSink(socket)
     sinks.add(sink)
+
+    /*
+     * The credential is checked once, at the upgrade, and the socket then lives
+     * for days -- so without this, `pnpm password` would revoke every cookie
+     * and an intruder's already-open terminal would keep typing into a live
+     * agent forever. `attach` plus `input` is command execution; a revocation
+     * that does not reach open sockets is the appearance of one rather than the
+     * thing. Re-judged against the *current* signing key, so a password change
+     * closes them within the minute.
+     */
+    const recheck = setInterval(() => {
+      const still = byToken ? allowSocket(request) : cookieSession(request) !== null
+      if (!still) socket.close(4401, 'not signed in')
+    }, 60_000)
+    recheck.unref()
+    socket.on('close', () => clearInterval(recheck))
 
     /*
      * This browser's own links to the other machines its windows live on.

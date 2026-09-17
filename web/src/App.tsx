@@ -3,6 +3,7 @@ import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
 import { useNarrow } from './components/useNarrow.js'
+import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
@@ -11,6 +12,7 @@ import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
   claudeSession,
+  drainTakesKeyboard,
   orderWorktrees,
   queuedTodoCount,
   removalLanding,
@@ -30,7 +32,7 @@ export interface ProjectGroup {
 }
 
 export const App = (): React.ReactElement => {
-  const { projects, worktrees, sessions, todos, ui, loaded, error, refresh, setUi, setError } =
+  const { projects, worktrees, sessions, todos, ui, loaded, error, authed, signedIn, refresh, setUi, setError } =
     useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
@@ -136,6 +138,15 @@ export const App = (): React.ReactElement => {
    */
   const uiRef = useRef(ui)
   uiRef.current = ui
+
+  /*
+   * Where the keyboard is, for callbacks that must not be rebuilt when it
+   * moves. `queueDrained` is the one that matters: the drain effect depends on
+   * its identity, and reading `active` directly would give it a new one every
+   * time focus moved anywhere in the row.
+   */
+  const activeRef = useRef(active)
+  activeRef.current = active
 
   /**
    * Which worktrees are awake.
@@ -476,12 +487,18 @@ export const App = (): React.ReactElement => {
         },
       })
       /*
-       * The panel is going, so the keyboard goes to that worktree's Claude --
-       * which is exactly who the queue was just typed into, and where you would
-       * be looking to see what it does with it. Written out rather than calling
-       * `reveal`, whose identity changes every render and would defeat the
-       * memoisation the drain effect depends on; both setters are stable.
+       * ...and the keyboard goes with it, but only out of the pane that is
+       * going: see `drainTakesKeyboard`. A queue drains on the server whether
+       * or not a browser is open, so this fires in windows you are not in --
+       * and it used to scroll the row to them and take the caret out of
+       * whatever you were writing.
+       *
+       * Written out rather than calling `reveal`, whose identity changes every
+       * render and would defeat the memoisation the drain effect depends on;
+       * both setters are stable, and `active` is read through a ref for the
+       * same reason.
        */
+      if (!drainTakesKeyboard(activeRef.current, worktreeId)) return
       setActive({ id: worktreeId, pane: 'claude' })
       setScrollTo((previous) => ({
         id: worktreeId,
@@ -636,6 +653,15 @@ export const App = (): React.ReactElement => {
     },
     [setUi],
   )
+
+  /*
+   * Before `loaded`, because `loaded` goes true in the refresh catch as well --
+   * keying on it alone drops a signed-out browser into the main view with an
+   * empty row and no way to act. Replaces the view rather than overlaying it: a
+   * row of tiles that looks alive and can no longer refresh is the failure this
+   * project keeps fixing elsewhere.
+   */
+  if (authed === false) return <LoginScreen onSignedIn={signedIn} />
 
   if (!loaded) {
     return (

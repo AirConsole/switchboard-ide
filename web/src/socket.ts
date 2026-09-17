@@ -1,4 +1,5 @@
 import { decodeOutputFrame, type ClientMsg, type ServerMsg } from '@switchboard/shared'
+import { api } from './api.js'
 
 export interface ConsumerOptions {
   /** Size authority. True for the focused detail view, false for overview tiles. */
@@ -43,11 +44,53 @@ class TerminalSocket {
   private readonly invalidateListeners = new Set<() => void>()
   private reconnectTimer: number | null = null
   private reconnectDelay = 500
+  private connecting = false
+  private readonly authListeners = new Set<() => void>()
+
+  /** Told when the session is gone, so the app can show a login rather than a dead row. */
+  onUnauthorized(listener: () => void): () => void {
+    this.authListeners.add(listener)
+    return () => this.authListeners.delete(listener)
+  }
+
+  private unauthorized(): void {
+    for (const listener of this.authListeners) listener()
+  }
 
   connect(): void {
     if (this.ws && this.ws.readyState <= WebSocket.OPEN) return
+    if (this.connecting) return
+    this.connecting = true
+    void this.open()
+  }
+
+  /**
+   * A ticket first, then the socket.
+   *
+   * The session cookie is deliberately not what opens this. Cookies ignore the
+   * port, so a page on a sibling port of this hostname is same-site and the
+   * browser would hand it our cookie on a socket it opened -- and a WebSocket
+   * is exempt from CORS. A ticket is fetched over `/api`, where the origin is
+   * checked, so that page cannot get one.
+   *
+   * It travels in the subprotocol because that is the only thing a browser can
+   * put on an upgrade; a query string would be written to every access log.
+   */
+  private async open(): Promise<void> {
+    let ticket: string
+    try {
+      ticket = await api.wsTicket()
+    } catch {
+      this.connecting = false
+      // A ticket needs a session, so failing to get one means signed out. Say
+      // so rather than retrying forever behind a row that never paints.
+      this.unauthorized()
+      return
+    }
+    this.connecting = false
+    if (this.ws && this.ws.readyState <= WebSocket.OPEN) return
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${location.host}/ws`)
+    const ws = new WebSocket(`${proto}//${location.host}/ws`, [ticket])
     ws.binaryType = 'arraybuffer'
     this.ws = ws
 
@@ -69,13 +112,25 @@ class TerminalSocket {
       this.handleJson(JSON.parse(event.data) as ServerMsg)
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       // Only react if this is still the live socket. Without the check, a close
       // event arriving for an already-replaced socket cleared `this.ws` and
       // scheduled another connect, leaving two open sockets attached to the same
       // sessions -- and a stale one competing for terminal geometry.
       if (this.ws !== ws) return
       this.ws = null
+      /*
+       * 4401 is "not signed in" and 1008 is "origin not allowed". Before these
+       * were told apart, both were an invisible forever-retry: a signed-out tab
+       * and a misconfigured `--host` looked identical from here, and neither
+       * said anything. A signed-out tab must stop and show a login; a
+       * misconfigured host must keep retrying, because the row will paint the
+       * moment somebody fixes it.
+       */
+      if (event.code === 4401) {
+        this.unauthorized()
+        return
+      }
       this.scheduleReconnect()
     }
     ws.onerror = () => ws.close()

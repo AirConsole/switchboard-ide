@@ -39,6 +39,11 @@ const USAGE = `swb -- Switchboard
   pnpm scratch restart [name]
   pnpm scratch [name]            its URL, plus any other instance on this machine
 
+  pnpm password                  set it, or change it; asks for the old one first
+  pnpm password --reset          set it without the old one
+  pnpm password --status         is one set, and when
+  pnpm password --revoke-sessions  sign every browser out, keeping the password
+
   pnpm ensure-native             rebuild node-pty if a Node upgrade left it stale
 
 Options
@@ -63,6 +68,10 @@ const main = async () => {
         'skip-build': { type: 'boolean' },
         force: { type: 'boolean' },
         url: { type: 'boolean' },
+        reset: { type: 'boolean' },
+        stdin: { type: 'boolean' },
+        status: { type: 'boolean' },
+        'revoke-sessions': { type: 'boolean' },
       },
     })
   } catch (err) {
@@ -86,6 +95,16 @@ const main = async () => {
     url: values.url,
   }
   const [first, ...rest] = positionals
+
+  if (first === 'password') {
+    const { password } = await import('../src/password.js')
+    return password({
+      reset: values.reset,
+      stdin: values.stdin,
+      status: values.status,
+      revokeSessions: values['revoke-sessions'],
+    })
+  }
 
   if (first === 'ensure-native') {
     const { ensureNodePty } = await import('../src/ensure-node-pty.js')

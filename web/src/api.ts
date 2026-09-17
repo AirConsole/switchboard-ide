@@ -71,6 +71,29 @@ export interface ServerRow {
 }
 
 export const api = {
+  /**
+   * A single-use ticket for the next socket upgrade.
+   *
+   * The socket does not take the session cookie -- see `socket.ts` -- so this
+   * is what opens it. Throwing on 401 is load-bearing: the caller reads that as
+   * "signed out" and shows a login, rather than retrying forever.
+   */
+  async wsTicket(): Promise<string> {
+    const { ticket } = await request<{ ticket: string }>('/api/ws-ticket', { method: 'POST' })
+    return ticket
+  },
+
+  async login(password: string): Promise<void> {
+    await request<{ ok: true }>('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  async logout(): Promise<void> {
+    await request<{ ok: true }>('/api/logout', { method: 'POST' })
+  },
+
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
 
   /** Claude's usage limits. The server caches these for five minutes. */

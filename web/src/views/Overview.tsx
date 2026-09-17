@@ -37,7 +37,7 @@ import {
 } from './keyLegend.js'
 import {
   MIN_PANE_COLUMNS,
-  PANE_CHROME_WIDTH,
+  PANE_CHROME,
   EDITOR_FONT_SIZE,
   FILES_EDITOR_CHROME,
   FILES_TREE_MIN,
@@ -1494,7 +1494,7 @@ export const Overview = ({
   }
 
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
-  const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
+  const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME
   /*
    * The row is a grid of units, and every tile is a whole number of them: a
    * tile of u units is `u * pitch - gap` wide, swallowing the gaps between the

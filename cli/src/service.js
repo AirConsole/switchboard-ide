@@ -29,6 +29,23 @@ import {
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * The session token the server writes for local tooling.
+ *
+ * `status` and the readiness poll both ask `/api/server`, which is behind the
+ * password now -- so without this, turning the gate on would break `pnpm
+ * restart` and the symptom would be a restart that hangs and then says the
+ * server never came back. Reading it requires being the user, who can already
+ * attach to the tmux socket.
+ */
+const localToken = () => {
+  try {
+    return JSON.parse(readFileSync(join(stateDir(), 'local.json'), 'utf8')).token
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * @typedef {object} Run
  * @property {number} pid
  * @property {number} port
@@ -129,6 +146,16 @@ const askServer = async (port, hostHeader) => {
   /** @type {Record<string,string>} */
   const headers = { 'sec-fetch-site': 'same-origin' }
   if (hostHeader !== undefined) headers.Host = hostHeader
+  /*
+   * The token is sent for `status`, and deliberately **not** when a Host is
+   * being probed: a token short-circuits the gate before it ever looks at the
+   * name, so a token-bearing probe would pass whatever `--host` says -- which
+   * is the one thing `verifyHost` exists to test.
+   */
+  if (hostHeader === undefined) {
+    const token = localToken()
+    if (token !== undefined) headers['x-swb-token'] = token
+  }
   const res = await get(port, '/api/server', headers)
   const protocol = res.headers['x-swb-protocol']
   let body
@@ -208,7 +235,15 @@ export const verifyHost = async (port, host) => {
       protocol: null,
       body: undefined,
     }))
-    if (status !== 200) {
+    /*
+     * 401, not 200, is the good answer now. This probe carries no credential on
+     * purpose -- a token short-circuits the gate before it looks at the name,
+     * so it would pass whatever `--host` says -- and without one the gate
+     * answers 401 for a name it serves and 404 for one it does not. Expecting
+     * 200 here reported the first deploy behind the password as a wrong host,
+     * after the server had come up correctly.
+     */
+    if (status !== 401 && status !== 200) {
       problems.push(`--host looks wrong: /api answered ${status} for Host: ${bare}`)
       continue
     }
@@ -251,7 +286,13 @@ const probeSocket = async (port, origin) => {
     return 'skip'
   }
   return new Promise((resolve) => {
-    const socket = new WebSocketImpl(`ws://127.0.0.1:${port}/ws`, { origin })
+    /*
+     * With a ticket that was never issued. The server spends a ticket only for
+     * an origin it serves, so it answers 4401 ("not signed in") for a page it
+     * would admit and 1008 ("origin not allowed") for one it would not -- which
+     * is the question being asked, without needing a real session.
+     */
+    const socket = new WebSocketImpl(`ws://127.0.0.1:${port}/ws`, ['verify-host-probe'], { origin })
     let done = false
     /** @param {'ok' | 'refused'} verdict */
     const say = (verdict) => {
@@ -272,6 +313,7 @@ const probeSocket = async (port, origin) => {
      */
     // 1008 is "policy violation" -- the gate saying no, rather than a network fault.
     socket.on('close', (/** @type {number} */ code) => say(code === 1008 ? 'refused' : 'ok'))
+    // 4401 arrives as a close, above, and means the origin was accepted.
     socket.on('error', () => say('refused'))
     setTimeout(() => say(socket.readyState === 1 ? 'ok' : 'refused'), 700)
   })
@@ -375,6 +417,13 @@ const WHY = {
 }
 
 const preflight = () => {
+  if (!existsSync(join(stateDir(), 'auth.json'))) {
+    fail(
+      'no password is set, and the server will not start without one.\n' +
+        '  set one:  pnpm password\n' +
+        '  it is asked for once per browser, and is what a linked machine logs in with.',
+    )
+  }
   const { missing, agent, agentMissing } = checkTools()
   if (missing.length > 0) {
     const lines = [`${missing.join(' and ')} not on your PATH.`]
@@ -394,7 +443,11 @@ const preflight = () => {
 /** @param {number} port */
 const sessionSummary = async (port) => {
   try {
-    const res = await get(port, '/api/snapshot', { 'sec-fetch-site': 'same-origin' })
+    const token = localToken()
+    const res = await get(port, '/api/snapshot', {
+      'sec-fetch-site': 'same-origin',
+      ...(token === undefined ? {} : { 'x-swb-token': token }),
+    })
     if (res.status !== 200) return undefined
     const snap = /** @type {any} */ (JSON.parse(res.text))
     const live = snap.sessions.filter((/** @type {any} */ s) => s.liveness === 'live').length
@@ -546,6 +599,19 @@ export const restart = async (opts = {}) => {
     build()
     nodePtyGate()
   }
+  /*
+   * Everything that could make the new process refuse to start is checked
+   * *before* the old one is stopped.
+   *
+   * `start` runs these too, but it runs them after `stop` has already happened
+   * -- so a missing password took a running IDE down and then declined to
+   * bring it back. Caught before it shipped: the live machine had no password
+   * set, and `pnpm restart` would have left it dark. It is the same rule the
+   * build above already follows: what is running stays running unless the thing
+   * replacing it is known to be able to start.
+   */
+  if (!existsSync(serverScript)) fail('server/dist is missing -- run `pnpm build` first')
+  preflight()
   const before = readRun()?.instanceId
   await stop({ ...opts, quiet: true })
   // force: the worktree guard above has already run, and running it again here

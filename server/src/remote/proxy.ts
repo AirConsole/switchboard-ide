@@ -126,6 +126,17 @@ const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
   '/api/health',
   '/api/ui',
   '/api/servers',
+  /*
+   * The credential routes, and this is not a formality. `POST /api/login?host=B`
+   * would forward the password to whatever machine B is -- you would be typing
+   * your password into another box's log. The same shape as the two this file
+   * already records: `?host=B` on `/api/servers` linked B to a machine of the
+   * caller's choosing, and a body id steered `PATCH /api/ui` onto a peer.
+   * A ticket is for this machine's socket and means nothing on another.
+   */
+  '/api/login',
+  '/api/logout',
+  '/api/ws-ticket',
 ])
 
 /**
