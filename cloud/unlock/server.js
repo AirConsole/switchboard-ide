@@ -21,13 +21,40 @@
  *   - counted, never outcome-keyed: a ramp that resets on success answers the
  *     previous guess for the attacker.
  */
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { promisify } from 'node:util'
 import { deriveKey, volumeSalt } from './derive.js'
 
 const run = promisify(execFile)
+
+/**
+ * Run a command with something on its stdin.
+ *
+ * `execFile`'s options have no `input` -- that belongs to `execFileSync`, and
+ * passing it to the async one is silently ignored. Measured: the unlock page
+ * hung for the whole of a 60-second timeout, because cryptsetup was waiting on
+ * a stdin nobody was ever going to close.
+ *
+ * @param {string} cmd
+ * @param {string[]} args
+ * @param {string} input
+ * @returns {Promise<void>}
+ */
+const runWithInput = (cmd, args, input) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['pipe', 'ignore', 'pipe'] })
+    let stderr = ''
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+    child.on('error', reject)
+    child.on('close', (code) =>
+      code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}: ${stderr.trim()}`)),
+    )
+    child.stdin.end(input)
+  })
 const PORT = Number(process.env.SWB_UNLOCK_PORT ?? 7998)
 const DEVICE = process.env.SWB_DATA_DEV ?? '/dev/disk/by-id/google-switchboard-data'
 const MAPPER = process.env.SWB_MAPPER ?? 'switchboard-data'
@@ -43,7 +70,7 @@ const unlocked = () => existsSync(`/dev/mapper/${MAPPER}`)
 
 const openVolume = async (password) => {
   const key = await deriveKey(password, volumeSalt(DEVICE))
-  await run('cryptsetup', ['open', '--key-file=-', DEVICE, MAPPER], { input: key })
+  await runWithInput('cryptsetup', ['open', '--key-file=-', DEVICE, MAPPER], key)
   await run('mount', [`/dev/mapper/${MAPPER}`, MOUNT])
   // Everything that could not happen while the volume was shut: the user's
   // home, the IDE's settings, the packages an agent installed before the last
