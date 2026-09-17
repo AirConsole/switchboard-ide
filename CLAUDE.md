@@ -52,9 +52,9 @@ pnpm install     # also compiles node-pty from source for this platform
 pnpm build       # shared -> web -> server, in that order
 pnpm typecheck   # a gate; builds shared first because the others import it
 pnpm test        # the other gate: vitest over all four packages
-pnpm dev         # vite on :5240 proxying the server on :8084
+pnpm dev         # vite on :5240 proxying the server on :8083
 
-pnpm start       # bring the machine's instance up, detached, on :8084
+pnpm start       # bring the machine's instance up, detached, on :8083
 pnpm stop        # stop it; the tmux sessions and their agents keep running
 pnpm restart     # build, then stop and start -- this is the deploy
 pnpm status      # what it is, and whether its public name is right
@@ -119,7 +119,7 @@ cost. Every test in the suite was checked that way once.
 ## The IDE is probably serving somebody while you work on it
 
 This project is used to develop itself, so a checkout usually has a live
-instance running from it -- by default `127.0.0.1:8084`, serving `server/dist`
+instance running from it -- by default `127.0.0.1:8083`, serving `server/dist`
 and `web/dist`, often behind a reverse proxy. Assume that is true unless you
 have checked. Consequences:
 

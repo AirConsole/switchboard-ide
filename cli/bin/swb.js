@@ -53,7 +53,7 @@ Options
   --url           scratch: print only the URL, for scripting
 
 Settings live in ~/.config/switchboard/config.json:
-  { "port": 8084, "host": "ide.example.com:84", "token": "..." }
+  { "port": 8083, "host": "ide.example.com:83" }
 `
 
 const main = async () => {

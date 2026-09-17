@@ -136,7 +136,7 @@ describe('isOurServer', () => {
    * same `ps` line, because the shell started them after a `cd server` with a
    * relative path:
    *
-   *   3944799 node dist/index.js --host ide.example.com:84
+   *   3944799 node dist/index.js --host ide.example.com:83
    *
    * so the pid file's pid was killed on nothing but trust. Spawning by absolute
    * path is what makes the question answerable at all.
@@ -144,7 +144,7 @@ describe('isOurServer', () => {
   const script = '/home/andrin/src/ide/server/dist/index.js'
 
   it('refuses the relative line the shell version produced', () => {
-    expect(isOurServer('node dist/index.js --host ide.example.com:84', script)).toBe(false)
+    expect(isOurServer('node dist/index.js --host ide.example.com:83', script)).toBe(false)
   })
 
   it('refuses another checkout whose path is a near miss', () => {
@@ -155,7 +155,7 @@ describe('isOurServer', () => {
   })
 
   it('accepts our own line, including a path with a space in it', () => {
-    expect(isOurServer(`node ${script} --host x:84`, script)).toBe(true)
+    expect(isOurServer(`node ${script} --host x:83`, script)).toBe(true)
     const spaced = '/Users/me/My Projects/ide/server/dist/index.js'
     expect(isOurServer(`node ${spaced}`, spaced)).toBe(true)
   })

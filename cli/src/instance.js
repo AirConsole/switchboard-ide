@@ -49,7 +49,7 @@ export const logPath = () => join(stateDir(), 'server.log')
  * Read `config.json`, or return an empty config.
  *
  * Every key is optional and a missing file is not an error: with no config at
- * all this serves loopback on 8084 with no token, which is exactly what
+ * all this serves loopback on 8083, which is exactly what
  * `server/src/config.ts` defaults to and exactly what the old `deploy.sh` did
  * with no `deploy.env`.
  * @returns {Config}
@@ -73,7 +73,7 @@ export const readConfig = () => {
 // Scratch instances
 // ---------------------------------------------------------------------------
 
-/** 8200-8499, clear of the live instance on 8084 and of Vite on 5240. */
+/** 8200-8499, clear of the live instance on 8083 and of Vite on 5240. */
 export const PORT_FLOOR = 8200
 export const PORT_SPAN = 300
 

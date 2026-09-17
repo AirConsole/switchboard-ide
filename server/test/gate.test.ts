@@ -15,7 +15,7 @@ const { mintLink, mintSession, newTicket, spendTicket } = await import('../src/a
  * fail-closed reading and is what this fixture originally tripped over.
  */
 const req = (headers: Record<string, string>, ip = '127.0.0.1'): FastifyRequest =>
-  ({ headers: { host: '127.0.0.1:8084', ...headers }, ip, method: 'GET' }) as unknown as FastifyRequest
+  ({ headers: { host: '127.0.0.1:8083', ...headers }, ip, method: 'GET' }) as unknown as FastifyRequest
 
 /** A browser holding a valid session, which is now the only way our page gets in. */
 const signedIn = (extra: Record<string, string> = {}): Record<string, string> => ({
@@ -24,7 +24,7 @@ const signedIn = (extra: Record<string, string> = {}): Record<string, string> =>
 })
 
 /** The port `config` derives its default allow-list from. */
-const OURS = 'http://127.0.0.1:8084'
+const OURS = 'http://127.0.0.1:8083'
 
 describe('who may reach a peer’s API', () => {
   it('lets a gateway in with the token, from anywhere', () => {
@@ -45,7 +45,7 @@ describe('who may reach a peer’s API', () => {
    * it likes, so on a peer bound off loopback --- which is the deployment the
    * token exists to make safe --- one forged header was the whole of it:
    *
-   *   curl -H 'Sec-Fetch-Site: none' http://box:8084/api/snapshot   -> 200
+   *   curl -H 'Sec-Fetch-Site: none' http://box:8083/api/snapshot   -> 200
    *
    * and from there `PUT /api/worktrees/<id>/file` writes into a worktree and
    * `POST /api/sessions` spawns a shell in it. Fetch Metadata can only narrow
@@ -142,7 +142,7 @@ describe('who may open a peer’s socket', () => {
    * a token set: accepted, before this.
    */
   it('refuses a forged Origin from off this machine', () => {
-    for (const origin of [OURS, 'http://localhost:8084']) {
+    for (const origin of [OURS, 'http://localhost:8083']) {
       expect(allowSocket(req({ origin }, '10.0.0.7'))).toBe(false)
     }
     expect(allowSocket(req({}, '10.0.0.7'))).toBe(false)
@@ -242,13 +242,13 @@ describe('a name we never published', () => {
    * check closes, reached through `/api` instead.
    */
   it('refuses a request addressed to a name we do not answer to', () => {
-    for (const host of ['evil.example', 'evil.example:8084', 'attacker.test']) {
+    for (const host of ['evil.example', 'evil.example:8083', 'attacker.test']) {
       expect(allowRequest(req({ host, 'sec-fetch-site': 'same-origin' }))).toBe(false)
     }
   })
 
   it('answers to loopback, by every spelling', () => {
-    for (const host of ['127.0.0.1:8084', 'localhost:8084', '[::1]:8084', '127.0.0.1']) {
+    for (const host of ['127.0.0.1:8083', 'localhost:8083', '[::1]:8083', '127.0.0.1']) {
       expect(allowRequest(req(signedIn({ host, 'sec-fetch-site': 'same-origin' })))).toBe(true)
     }
   })
@@ -256,7 +256,7 @@ describe('a name we never published', () => {
   it('lets a gateway address a peer by whatever name reaches it', () => {
     // A peer has no reason to have published the name a gateway uses for it,
     // and rebinding is not a thing that happens to a server. The token speaks.
-    expect(allowRequest(req({ host: 'box.local:8084', 'x-swb-token': 'the-secret' }, '10.0.0.7'))).toBe(
+    expect(allowRequest(req({ host: 'box.local:8083', 'x-swb-token': 'the-secret' }, '10.0.0.7'))).toBe(
       true,
     )
   })
