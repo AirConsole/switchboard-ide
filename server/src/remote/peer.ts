@@ -327,6 +327,16 @@ export class PeerClient {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method,
         signal: controller.signal,
+        /*
+         * Never followed. `plainHttpAllowed` judged the address that was typed,
+         * and a redirect goes wherever the answering server says: measured, a
+         * 307 to another origin received `x-swb-token` -- a link token that
+         * never expires and is a shell on the peer -- and, at link time, the
+         * login body with the password in it. Node drops `Authorization` on a
+         * cross-origin redirect but not a header of our own. A captive portal
+         * answering 302 is enough to trigger it. A peer never redirects.
+         */
+        redirect: 'error',
         headers: {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...this.headers(),
@@ -410,6 +420,8 @@ export class PeerClient {
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         signal: controller.signal,
+        // Never followed; see `request`.
+        redirect: 'error',
         headers: this.headers(),
       })
       await this.checkProtocol(response)

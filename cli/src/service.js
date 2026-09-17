@@ -54,7 +54,7 @@ const localToken = () => {
  * @property {string} script
  * @property {string} [host]
  * @property {string} [instanceId]
- * @property {string} [commit] what was checked out when it started, so `pull` can tell whether it is behind
+ * @property {string} [commit] the commit its server/dist was built from, so `pull` can tell whether it is behind
  * @property {string} startedAt
  */
 
@@ -379,14 +379,37 @@ const invocation = (/** @type {{host?: string}} */ opts) => {
   return { port, host, argv, env }
 }
 
+/**
+ * Which commit `server/dist` was built from, written by `build` below.
+ *
+ * What `start` records as running. The checkout's HEAD is not the same thing:
+ * `git pull` by hand followed by a plain `start` serves the old build under the
+ * new commit, and `pnpm pull` then believed it had nothing to do. A build run
+ * by hand leaves the stamp behind, which errs the safe way -- `pull` sees an
+ * older commit and rebuilds.
+ */
+const buildStamp = () => join(repoRoot, 'server', 'dist', '.swb-commit')
+
+const builtCommit = () => {
+  try {
+    return readFileSync(buildStamp(), 'utf8').trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** `pnpm build`, and a failure here restarts nothing. */
 const build = () => {
   console.log('building...')
+  const commit = headCommit()
   try {
     execFileSync('pnpm', ['build'], { cwd: repoRoot, stdio: 'inherit' })
   } catch {
     fail('build failed -- nothing was restarted, and what is running is still the last thing that built')
   }
+  // The commit from *before* the build: that is what was compiled, even if
+  // HEAD moved while it ran.
+  if (commit !== undefined) writeFileSync(buildStamp(), `${commit}\n`)
 }
 
 /**
@@ -480,7 +503,12 @@ export const running = () => {
   const run = readRun()
   if (run === undefined) return { running: false }
   const args = psArgsFor(run.pid)
-  return { running: args !== undefined && isOurServer(args, run.script), commit: run.commit }
+  // Another checkout's instance says nothing about what this one built.
+  const ours = run.repo === repoRoot
+  return {
+    running: args !== undefined && isOurServer(args, run.script),
+    commit: ours ? run.commit : undefined,
+  }
 }
 
 /** @param {{host?: string, force?: boolean, quiet?: boolean}} opts */
@@ -533,7 +561,7 @@ export const start = async (opts = {}) => {
     repo: repoRoot,
     script: serverScript,
     host,
-    commit: headCommit(),
+    commit: builtCommit(),
     startedAt: new Date().toISOString(),
   })
 
@@ -553,14 +581,15 @@ export const start = async (opts = {}) => {
 
   if (opts.quiet) return
   let where = `live on :${port}`
-  try {
-    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    }).trim()
-    where += ` at ${sha}`
-  } catch {
-    // not a git checkout; the port is still the useful half
+  // What was built, not what is checked out: after a `git pull` with no build
+  // the two differ, and this line is where somebody looks to find out.
+  const served = builtCommit()
+  const head = headCommit()
+  if (served !== undefined) {
+    where += ` at ${served.slice(0, 7)}`
+    if (head !== undefined && head !== served) where += ` (checkout is at ${head.slice(0, 7)}; pnpm restart builds it)`
+  } else if (head !== undefined) {
+    where += ` at ${head.slice(0, 7)}, build not stamped`
   }
   console.log(host !== undefined && host !== '' ? `${where}, for ${host}` : `${where}, this machine only`)
   if (host === undefined || host === '') {

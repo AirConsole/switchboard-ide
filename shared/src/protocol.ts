@@ -9,7 +9,12 @@ import type { AttentionState, SessionLiveness } from './model.js'
  * `undefined` on the other, and a worktree simply looks wrong rather than
  * broken. Refusing loudly and naming the version is the cheaper answer.
  */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
+/*
+ * 2: `Worktree.awake`. A machine on 1 sends none, and the viewer's fallback --
+ * awake if anything runs there -- turns "sleep, but keep Claude running" into a
+ * window that comes back on the next refresh.
+ */
 
 /**
  * Terminal traffic rides one WebSocket for the whole app. Control messages are
