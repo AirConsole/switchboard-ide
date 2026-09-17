@@ -96,7 +96,13 @@ export const BAR_KEYS: readonly BarKey[] = [
    * `extended-keys on`. An app that does not understand it ignores it, which is
    * the same as the plain Tab it would otherwise have been given wrongly.
    */
-  { label: '⇥', name: 'Tab', bytes: ({ ctrl }) => (ctrl ? '\x1b[9;5u' : '\t') },
+  /*
+   * The word, not `⇥`: at a glyph's size that arrow-into-a-bar is a right arrow
+   * with a line on it, sitting two keys from the actual right arrow. `esc` and
+   * `ctrl` are words for the same reason -- what a key says matters more than
+   * that the row is all symbols.
+   */
+  { label: 'tab', name: 'Tab', bytes: ({ ctrl }) => (ctrl ? '\x1b[9;5u' : '\t') },
   { label: '←', name: 'Left', bytes: (held) => arrowBytes('left', held) },
   { label: '↑', name: 'Up', bytes: (held) => arrowBytes('up', held) },
   { label: '↓', name: 'Down', bytes: (held) => arrowBytes('down', held) },

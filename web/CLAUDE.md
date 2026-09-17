@@ -1180,6 +1180,19 @@ Four things about it are load-bearing:
   a modifier -- and that is the sequence a shell reads as word-left and
   word-right, which is most of why you want Ctrl on a phone. Measured against a
   stand-in that sets `?1h`: `ESC O D/A/B/C` plain, `ESC [ 1;5 D/C/A` latched.
+- **Ctrl with ← or → is the row's, not the app's.** That walk is Cmd+arrow on a
+  desktop and a phone has no Cmd; with one window on the glass at a time,
+  reaching the next worktree is worth more than the `ESC [ 1;5 D` it would
+  otherwise send, which a shell reads as word-left and Claude ignores. It is the
+  *same* walk, not a second one: `stepRow` was lifted out of the Cmd+arrow
+  listener in `Overview` and reaches the terminal through the `RowStep` context,
+  rather than being threaded through `WorktreeTile` and `TerminalsPane`, which
+  have nothing to do with walking the row. Up and down keep their modified form,
+  where nothing is competing for them.
+- **Tab says `tab`.** It was `⇥`, which at a glyph's size is a right arrow with
+  a line on it -- sitting two keys along from the actual right arrow. `esc` and
+  `ctrl` are words for the same reason: what a key says matters more than the
+  row being all symbols.
 - **Ctrl latches**, because there is nothing to hold it with, and it modifies
   the *next* key whether that comes from the bar or the keyboard. A letter is
   caught in `attachCustomKeyEventHandler` -- where the soft keyboard's letter

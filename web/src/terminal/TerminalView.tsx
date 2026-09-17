@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -8,6 +8,7 @@ import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
 import { useSoftKeyboard } from './softKeyboard.js'
+import { RowStep } from '../views/rowStep.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
 
@@ -123,6 +124,12 @@ export const TerminalView = ({
    */
   const [holdsKeyboard, setHoldsKeyboard] = useState(false)
   const keyboardUp = useSoftKeyboard()
+  /*
+   * The row's own walk, for ctrl+← and ctrl+→ on the key row: a phone has no
+   * Cmd to hold, and getting to the next worktree matters more on a screen that
+   * shows one at a time than the word-left it would otherwise send.
+   */
+  const stepRow = useContext(RowStep)
   /*
    * Ctrl is latched rather than held -- there is nothing to hold it with. Armed
    * here and read in the key handler below, which is where the *next* letter
@@ -614,13 +621,27 @@ export const TerminalView = ({
    * same path a keystroke does, and there is no keystroke here -- and the
    * arrows' encoding is read off the terminal's own mode (see `arrowBytes`).
    */
-  const tap = (bytes: BarKey['bytes']): void => {
+  const tap = (key: BarKey): void => {
     const term = termRef.current
     if (!term) return
     const ctrl = ctrlArmed.current
+    /*
+     * Ctrl with an arrow left or right is the row's, not the app's.
+     *
+     * On a desktop that walk is Cmd+arrow; a phone has no Cmd, and with one
+     * window on the glass at a time, getting to the next worktree is worth more
+     * than `ESC [ 1;5 D` -- which a shell reads as word-left and Claude ignores.
+     * Up and down keep their modified form, where nothing is competing for
+     * them.
+     */
+    if (ctrl && stepRow !== null && (key.name === 'Left' || key.name === 'Right')) {
+      armCtrl(false)
+      stepRow(key.name === 'Left' ? 'left' : 'right')
+      return
+    }
     terminalSocket.input(
       session.id,
-      bytes({ applicationCursorKeys: term.modes.applicationCursorKeysMode, ctrl }),
+      key.bytes({ applicationCursorKeys: term.modes.applicationCursorKeysMode, ctrl }),
     )
     // One key, like the letters: the latch is spent by whatever it modified.
     if (ctrl) armCtrl(false)
@@ -699,7 +720,7 @@ export const TerminalView = ({
                */
               onPointerDown={(event) => {
                 event.preventDefault()
-                tap(key.bytes)
+                tap(key)
               }}
             >
               {key.label}
