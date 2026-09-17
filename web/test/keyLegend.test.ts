@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { LEGEND_LEARNED, isModHeld, landingHint, showsHint } from '../src/views/keyLegend.js'
+import {
+  LEGEND_LEARNED,
+  isModHeld,
+  landingHint,
+  showsHere,
+  showsHint,
+} from '../src/views/keyLegend.js'
 
 /** A keydown as the two row handlers read it. */
 const key = (over: Partial<KeyboardEvent> = {}): Pick<
@@ -64,6 +70,25 @@ describe('showsHint', () => {
   it('never shows on a phone, held or not', () => {
     expect(showsHint({ steps: 0, held: false, narrow: true })).toBe(false)
     expect(showsHint({ steps: 0, held: true, narrow: true })).toBe(false)
+  })
+})
+
+describe('showsHere', () => {
+  /*
+   * The line and the sentences are never on screen together. While the hints
+   * are still teaching they are already unasked, one per neighbour and each
+   * with a sentence beside it; a third mark added to that is one more thing to
+   * read. The line starts exactly where the teaching stops -- so the two are
+   * complements, not layers.
+   */
+  it('stays away for as long as the hints are teaching', () => {
+    expect(showsHere({ steps: LEGEND_LEARNED - 1, held: true })).toBe(false)
+    expect(showsHere({ steps: LEGEND_LEARNED, held: true })).toBe(true)
+  })
+
+  // Only while the key is down: with it up there is no step to be from.
+  it('needs the key, not only the count', () => {
+    expect(showsHere({ steps: LEGEND_LEARNED * 10, held: false })).toBe(false)
   })
 })
 

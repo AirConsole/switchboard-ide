@@ -135,6 +135,27 @@ export const showsHint = ({
 }): boolean => !narrow && (held || steps < LEGEND_LEARNED)
 
 /**
+ * Whether the pane you are in marks itself while the modifier is held.
+ *
+ * A line under it, so the two arrows have something to be two arrows *from*:
+ * held down, the row says where a step would go, and "from here" was the one
+ * part of that sentence it did not say. It is the same claim `active` already
+ * makes to the top bar, drawn where you are looking.
+ *
+ * **Not while it is still teaching.** The unasked hints are on screen then,
+ * each with a sentence beside it, and a third mark added to that is one more
+ * thing to read rather than one more thing understood -- and the line answers a
+ * question ("which of these is *here*") that only comes up once the sentences
+ * have gone. So it starts exactly where the teaching stops.
+ *
+ * Unlike the arrows, this has nothing to say about a phone: it points at no
+ * neighbour, and a phone with a keyboard attached can hold the key like
+ * anything else.
+ */
+export const showsHere = ({ steps, held }: { steps: number; held: boolean }): boolean =>
+  held && steps >= LEGEND_LEARNED
+
+/**
  * Which arrow a cell of the row wears, and over which of its panes.
  *
  * The walk runs through panes, not windows, so where a step lands is a pane --
