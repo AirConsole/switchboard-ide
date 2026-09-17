@@ -41,8 +41,15 @@ Everything above is `server/src/gate.ts`, and it is about 90 lines.
 Requires Node 22+, pnpm, git, tmux, and the `claude` CLI on your `PATH` — the
 server spawns it by name, so an agent that cannot start is usually this.
 
+`install.sh` checks what is missing, tells you what it is about to do, and does
+nothing until you agree. `--check` reports and changes nothing:
+
+```sh
+sh install.sh            # macOS or Linux
+```
+
 On Linux `pnpm install` compiles `node-pty` from source and needs a C toolchain.
-macOS uses the prebuilt binary that ships with it and needs none:
+macOS uses the prebuilt binary that ships with it and needs none. By hand:
 
 ```sh
 brew install node pnpm tmux
