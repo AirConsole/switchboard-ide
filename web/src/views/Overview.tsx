@@ -31,6 +31,7 @@ import {
   isModHeld,
   landingHint,
   modArrow,
+  modChord,
   showsHere,
   showsHint,
 } from './keyLegend.js'
@@ -115,6 +116,15 @@ const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
 const PANEL_KEYS: Record<PanelName, string> = { terminals: 'i', todo: 'o', files: 'f' }
 
 /** The same table read the way a keystroke arrives. */
+/**
+ * The key that puts a worktree away: the × at the end of its own bar.
+ *
+ * Not in `PANEL_KEYS`, because it is not a panel -- it opens the dialog that
+ * asks whether to sleep or delete. It is in the same handler for the thing they
+ * do share, which is that all four act on the window the keyboard is in.
+ */
+const AWAY_KEY = 'x'
+
 const PANEL_FOR_KEY = new Map<string, PanelName>(
   Object.entries(PANEL_KEYS).map(([panel, key]) => [key, panel as PanelName]),
 )
@@ -220,12 +230,13 @@ const stepHintFor = (
 )
 
 /** What a panel is called in prose, for the toggle's tooltip. */
-/** The key that opens each panel, for a title that has to stand in for a word. */
-const PANEL_KEY: Record<PanelName, string> = {
-  todo: '\u2318O',
-  files: '\u2318F',
-  terminals: '\u2318I',
-}
+/**
+ * The chord that opens each panel, for a title that has to stand in for a word
+ * where the toggle is a glyph. Written the way the reader's own platform writes
+ * it -- `⌘O` on a Mac, `Alt+O` elsewhere -- which is also which key actually
+ * works there.
+ */
+const panelChord = (panel: PanelName): string => modChord(PANEL_KEYS[panel].toUpperCase())
 
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
@@ -647,6 +658,8 @@ interface WorktreeTileProps {
   /** Bring this worktree wholly into view. */
   onReveal: () => void
   onTogglePanel: (panel: PanelName) => void
+  /** Put this worktree away: the sleep dialog, where deleting also lives. */
+  onSleep: () => void
   /**
    * Show the file list in place of the file, where only one of them fits.
    *
@@ -714,6 +727,7 @@ const WorktreeTile = ({
   onStart,
   onReveal,
   onTogglePanel,
+  onSleep,
   onShowList,
   showList,
   compact,
@@ -925,7 +939,7 @@ const WorktreeTile = ({
                 : on
                   ? `Close ${PANEL_NOUN[panel]}`
                   : `Show ${PANEL_NOUN[panel]}`
-            } (${PANEL_KEY[panel]})`}
+            } (${panelChord(panel)})`}
           >
             {/*
               * Word and glyph both, always, with CSS choosing between them.
@@ -941,6 +955,27 @@ const WorktreeTile = ({
           </button>
         )
       })}
+      {/*
+        * Putting this worktree away, at the end of its own bar.
+        *
+        * It was the × on the tab in the strip, and a tab up there is an index
+        * entry: it says which worktree and what its agent is doing, and the one
+        * destructive door in the row sat on a 62px target right beside the name
+        * you were aiming for. Here it is on the window it acts on, at the far
+        * end of the controls, past everything that merely shows you something.
+        *
+        * It opens the sleep dialog, which is also where deleting lives -- so
+        * this is one control for both questions rather than the trashcan *and*
+        * the zZ that used to be here. That pair is why the × went up to the tab
+        * in the first place; the bar has since given both of them up.
+        */}
+      <button
+        className="tile__toggle tile__away"
+        onClick={onSleep}
+        title={`Put this worktree away (${modChord('X')})`}
+      >
+        <span aria-hidden="true">×</span>
+      </button>
     </div>
   )
 
@@ -1988,7 +2023,15 @@ export const Overview = ({
     const open = (event: KeyboardEvent): void => {
       if (!isModHeld(event)) return
       const panel = PANEL_FOR_KEY.get(event.key)
-      if (panel === undefined) return
+      /*
+       * X puts the worktree away, which is the fourth control in the same row
+       * and so the fourth key in the same handler: every one of these acts on
+       * the window the keyboard is in, and finding that window is the whole
+       * body below. X because it *is* the ×, which is the only name that
+       * control has.
+       */
+      const away = event.key === AWAY_KEY
+      if (panel === undefined && !away) return
       // A dialog keeps its keys for the same reason it keeps Cmd+arrow: it is
       // modal, and opening a panel behind the scrim acts on something nobody
       // asked about.
@@ -2011,11 +2054,12 @@ export const Overview = ({
 
       event.preventDefault()
       event.stopPropagation()
-      onTogglePanel(here.id, panel)
+      if (panel === undefined) onSleep(here.id)
+      else onTogglePanel(here.id, panel)
     }
     document.addEventListener('keydown', open, true)
     return () => document.removeEventListener('keydown', open, true)
-  }, [stops, cells, active, onTogglePanel])
+  }, [stops, cells, active, onTogglePanel, onSleep])
 
   /*
    * Keep your place across a resize.
@@ -2282,6 +2326,7 @@ export const Overview = ({
                       onStart={() => onStart(worktree.id)}
                       onReveal={() => onReveal(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
+                      onSleep={() => onSleep(worktree.id)}
                       onQueueDrained={() => onQueueDrained(worktree.id)}
                       onSelectTerminal={(sessionId) => onSelectTerminal(worktree.id, sessionId)}
                       onNewTerminal={() => onNewTerminal(worktree.id)}

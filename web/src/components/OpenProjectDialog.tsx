@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { RecentProject } from '@switchboard/shared'
 import { ApiError, api, type BrowseResult, type ServerRow } from '../api.js'
 import { useEscape } from './useEscape.js'
+import { useDialogKeys } from './useDialogKeys.js'
 
 export interface OpenProjectDialogProps {
   onClose: () => void
@@ -123,6 +124,10 @@ export const OpenProjectDialog = ({
   onOpened,
 }: OpenProjectDialogProps): React.ReactElement => {
   useEscape(onClose)
+  const box = useRef<HTMLDivElement | null>(null)
+  /* No initial focus: this one is a form, and the hand that opened it is
+     aiming at the path field rather than at an answer. */
+  useDialogKeys(box, { focus: false })
   const [listing, setListing] = useState<BrowseResult | null>(null)
   const [recents, setRecents] = useState<RecentProject[]>([])
   const [path, setPath] = useState('')
@@ -318,7 +323,7 @@ export const OpenProjectDialog = ({
   if (proposal) {
     return (
       <div className="scrim" onClick={onClose}>
-        <div className="dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
           <div className="dialog__head">
             <h2 className="dialog__title">
               {proposal.kind === 'create' ? 'Create this project?' : 'Start a project here?'}
@@ -395,7 +400,7 @@ export const OpenProjectDialog = ({
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
         <div className="dialog__head">
           <h2 className="dialog__title">Open project</h2>
         </div>

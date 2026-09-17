@@ -2301,6 +2301,37 @@ button {
   padding: 0 10px;
 }
 
+/*
+ * Put this worktree away, at the end of its own bar.
+ *
+ * A toggle's shape, because it sits in their row and a second shape there would
+ * read as a second kind of thing -- but it is not one of them: it opens a
+ * dialog rather than showing a panel, so it never wears the lit underline, and
+ * it keeps its × at every width where the toggles give up their words. A glyph
+ * is what this always was.
+ *
+ * The red is on hover only, the way DELETE in the todo panel is: the one door
+ * in this bar that leads somewhere irreversible says so under the pointer, and
+ * says nothing while you are reading the bar for anything else.
+ */
+.tile__away {
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 0;
+  padding: 0 12px;
+}
+
+.tile__away:hover {
+  color: var(--danger);
+}
+
+/* It is the × at every width: the words the others give up are labels, and this
+   has none to give. */
+.tile__controls[data-compact] .tile__away .tile__word,
+.tile__controls[data-compact] .tile__away {
+  display: flex;
+}
+
 .tile__toggle--on {
   /* 11.59:1 on a quiet bar and 7.48 on the lit one, against the 1.25 and 1.24
      of the --rule-bright it replaces. */
@@ -2535,6 +2566,52 @@ button {
   justify-content: flex-end;
   padding: 12px 16px;
   border-top: 1px solid var(--rule);
+}
+
+/*
+ * `⏎` on the answer Enter would take.
+ *
+ * A dialog's foot is a toolbar -- left and right choose, Enter does, Escape
+ * leaves (`useDialogKeys`) -- and a keyboard nobody can see is a keyboard
+ * nobody uses. The mark says which of the two or three answers the key is
+ * currently aimed at, which is also where the focus ring is: one selection,
+ * said twice, because the ring says *there* and the mark says *what happens*.
+ *
+ * Drawn at every width and merely hidden, so stepping along the row does not
+ * move the row -- the same rule the panel toggles' legend keeps, for the same
+ * reason. `::after` rather than a span, because the four dialogs write their
+ * buttons themselves and none of them should have to know about this.
+ */
+.dialog__foot .btn::after {
+  content: ' \21b5';
+  margin-left: 2px;
+  visibility: hidden;
+}
+
+.dialog__foot .btn:focus::after {
+  visibility: visible;
+}
+
+/*
+ * Not on a phone, where there is no key to press.
+ *
+ * The mark is an answer to "what does Enter do", and on a touch screen nobody
+ * asked: a finger is already on the button. It is `content: none` rather than
+ * hidden, so the space it reserves goes too -- the reason to keep that space is
+ * that stepping along the row with the arrows must not move the row, and there
+ * are no arrows here either.
+ */
+.app[data-narrow] .dialog__foot .btn::after {
+  content: none;
+}
+
+/*
+ * The ring is the browser's own, kept rather than reset: it is what a keyboard
+ * user's eye already looks for, and this row is now walked with the arrows.
+ */
+.dialog__foot .btn:focus-visible {
+  outline: 2px solid var(--legend);
+  outline-offset: 1px;
 }
 
 /*

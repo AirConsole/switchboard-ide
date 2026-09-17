@@ -47,7 +47,13 @@ export const MOD_LABEL = IS_MAC ? '⌘' : 'Alt'
  * than as the word "Alt" followed by an arrow.
  */
 export const modArrow = (dir: 'left' | 'right'): string =>
-  `${MOD_LABEL}${IS_MAC ? '' : '+'}${dir === 'left' ? '←' : '→'}`
+  modChord(dir === 'left' ? '←' : '→')
+
+/**
+ * The same chord around any key, for the controls that name theirs in a
+ * tooltip rather than by lighting a letter.
+ */
+export const modChord = (key: string): string => `${MOD_LABEL}${IS_MAC ? '' : '+'}${key}`
 
 /**
  * Cmd on a Mac, Alt everywhere else, and nothing else held with it.
