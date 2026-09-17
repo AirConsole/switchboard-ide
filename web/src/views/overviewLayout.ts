@@ -28,6 +28,53 @@ export const MIN_PANE_COLUMNS = 80
  */
 export const PANE_CHROME_WIDTH = 18
 
+/**
+ * What the files pane spends before a character of code, in px.
+ *
+ * Both are the stylesheet's, and must move with it: `--files-tree-min` is the
+ * narrowest the tree may be -- three sentence-case mode labels measured 157px,
+ * below which the switch clips -- and `--files-editor-chrome` is the editor's
+ * line-number gutter plus the inset on each line, asked for on top of its 80
+ * columns rather than out of them.
+ *
+ * They are here because the *row* decides whether the tree fits beside the
+ * file, and it decides before either exists.
+ */
+export const FILES_TREE_MIN = 158
+export const FILES_EDITOR_CHROME = 50
+
+/**
+ * The narrowest bar segment that can still say its toggles in words, in px.
+ *
+ * Measured rather than guessed: `TERMINAL` is 86.98px (the legend's own
+ * measurement, `Overview.tsx`), and the worst realistic set -- `2 TERMINALS`,
+ * `3 QUEUED`, `FILES 12±` with the fork -- comes to about 295. A worktree's
+ * name and its prompt want ~125 beside them, which is the point of the swap:
+ * they are what gives way otherwise, being the only things in the bar that can.
+ *
+ * Below this the toggles are glyphs. It fires on a single-pane tile under about
+ * 450px of window -- a phone, or a desktop window dragged that far -- and never
+ * on a two-unit Claude segment, which is 664px at the width where three windows
+ * first fit.
+ */
+export const TOGGLE_WORDS_MIN = 420
+
+/**
+ * What a tile spends on itself horizontally, in px: a 1px border on the right
+ * and the 2px `--rail` on the left, which is the leading edge its state is
+ * drawn on. `.tile__pane`'s own inset is counted in PANE_CHROME_WIDTH instead.
+ */
+export const TILE_CHROME = 3
+
+/**
+ * The editor's type size, from `editor/theme.ts`.
+ *
+ * A point smaller than the terminal's, and that is deliberate there; it is here
+ * because eighty columns of editor is eighty of *this*, and measuring it at the
+ * terminal's 14px would ask for 9% more room than the file needs.
+ */
+export const EDITOR_FONT_SIZE = 13
+
 let cachedKey = ''
 let cachedWidth = 0
 
@@ -50,16 +97,31 @@ let cachedWidth = 0
  * it is the cell the terminal will actually use, on whatever font this resolves
  * to, which a fixed correction would not be.
  */
-export const measureMonoCharWidth = (fontSize: number, fontFamily: string): number => {
+export const measureMonoCharWidth = (fontSize: number, fontFamily: string): number =>
+  Math.floor(monoAdvance(fontSize, fontFamily))
+
+/**
+ * The same measurement, **unfloored**.
+ *
+ * The floor above is not a fudge factor, it is what xterm does -- it blits
+ * glyphs from an atlas per cell, so a cell is a whole number of pixels. The
+ * editor is not a grid: CodeMirror lays text out on real metrics, and its own
+ * width is `calc(80ch + …)` in CSS, where `ch` is the true advance. Flooring
+ * that question answers it wrong by the fraction times eighty -- 7px against
+ * 7.83 is sixty-six pixels of an eighty-column measure, which is ten columns.
+ *
+ * So: this is what a character is, and `measureMonoCharWidth` is what a
+ * terminal cell is. Ask for the one you mean.
+ */
+export const monoAdvance = (fontSize: number, fontFamily: string): number => {
   const key = `${fontSize}px ${fontFamily}`
   if (key === cachedKey && cachedWidth > 0) return cachedWidth
   const fallback = fontSize * 0.6
   const context = document.createElement('canvas').getContext('2d')
   if (!context) return fallback
   context.font = key
-  // Averaged over several characters to shrug off sub-pixel rounding, then
-  // floored to the cell the terminal will really lay out.
-  const width = Math.floor(context.measureText('M'.repeat(20)).width / 20)
+  // Averaged over several characters to shrug off sub-pixel rounding.
+  const width = context.measureText('M'.repeat(20)).width / 20
   if (!(width > 0)) return fallback
   cachedKey = key
   cachedWidth = width

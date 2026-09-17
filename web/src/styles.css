@@ -2126,6 +2126,43 @@ button {
  * open". The line says the same thing without competing, and says it in the
  * vocabulary the top bar already taught.
  */
+/*
+ * Where the segment is tight, the toggles are glyphs.
+ *
+ * Both are in the markup at every width and this chooses -- see the comment on
+ * `compact` in Overview.tsx for why the choice is not React's. The glyph keeps
+ * the word's own box: same padding, same lit underline, same 4px gap to the
+ * fork, so a toggle is the same control said shorter rather than a different
+ * one.
+ *
+ * The Cmd legend lights nothing here, and that is the cost. It works by
+ * brightening one letter inside a word, and a glyph has no letter to brighten
+ * -- swapping the word back while Cmd is held would move three controls and
+ * reflow the name beside them, which is the one thing "a legend must not move
+ * what it annotates" forbids. The mnemonic is in the `title` instead, and the
+ * widths where this fires are overwhelmingly a phone, where there is no Cmd
+ * key to hold.
+ */
+.tile__glyph {
+  display: none;
+  flex: none;
+  margin-top: -1px;
+}
+
+.tile__controls[data-compact] .tile__word {
+  display: none;
+}
+
+.tile__controls[data-compact] .tile__glyph {
+  display: block;
+}
+
+/* A glyph needs less room around it than a word does, and the three of them
+   are what the segment could not afford. */
+.tile__controls[data-compact] .tile__toggle {
+  padding: 0 10px;
+}
+
 .tile__toggle--on {
   /* 11.59:1 on a quiet bar and 7.48 on the lit one, against the 1.25 and 1.24
      of the --rule-bright it replaces. */
@@ -3213,10 +3250,17 @@ button {
   --files-tree-min: 158px;
   /*
    * What the editor spends on itself before any code: the line-number gutter
-   * (3ch plus 12px of padding, ~36px) and the 14px inset on each line. Asked
-   * for on top of the 80 columns rather than out of them.
+   * (3ch plus 12px of padding and a 1px rule, 36.5px) and the 14px inset on
+   * each line. Asked for on top of the 80 columns rather than out of them.
+   *
+   * 52 and not 50, which was half a pixel short and cost the column it was
+   * protecting: at 13px Menlo a character is 7.827px, so 80ch is 626.1 and the
+   * old sum left 625.6 of room -- 79.94 columns, which wraps at 79. A file of a
+   * thousand lines still loses one to a four-digit gutter; a constant 4ch
+   * gutter would fix that and cost every short file 8px, which is the worse
+   * trade.
    */
-  --files-editor-chrome: 50px;
+  --files-editor-chrome: 52px;
   --files-row-h: 20px;
   display: flex;
   height: 100%;
@@ -3548,6 +3592,20 @@ button {
  * `0 1` rather than `0 0`, so a pane too narrow for 80 columns plus a usable
  * tree shrinks the code rather than overflowing the pane.
  */
+/*
+ * With no tree beside it the file takes the pane.
+ *
+ * Its basis is what it *asks* for -- 80 columns and its own chrome -- and with
+ * `flex-grow: 0` that is also its ceiling, which is right while a tree is there
+ * to have the rest. Alone, the same ceiling would leave the remainder as empty
+ * ground: at a 833px pane the file would draw 676 and waste 157. So when it is
+ * the only child it grows, and the row hands it a pane it only ever gets when
+ * the tree could not fit anyway.
+ */
+.files__file:only-child {
+  flex: 1 1 auto;
+}
+
 .files__file {
   flex: 0 1 calc(80ch + var(--files-editor-chrome));
   min-width: 0;

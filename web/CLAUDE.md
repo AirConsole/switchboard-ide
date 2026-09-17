@@ -282,6 +282,14 @@ The pieces, and why each is the way it is:
   exactly what collapsing gives up. `.tabgroup--current` is "holds the row or is
   its own pane", and it is also what rung 3 uses to decide which project keeps
   its tabs.
+- **A tab means "take me to this agent", and now keeps that promise.** It closes
+  whatever panel that worktree has open and lands the keyboard in Claude. It
+  used to ask for Claude's pane and nothing more, which on a narrow window asked
+  for a pane that is not rendered: with a panel open `panesOf` gives the whole
+  tile to the panel, so the keyboard went **nowhere** while `active` pointed at a
+  pane that did not exist — and the Cmd+arrow walk counts from `active`. The
+  walk itself is deliberately *not* routed through this: its stops are panes, and
+  a panel that shut as you stepped into it would be a stop you could never reach.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -423,6 +431,37 @@ came to 56–63 columns, under the 80 the layout exists to guarantee. Measured,
 and worse the wider the monitor: 57 columns at 3440px, because more spots fit
 and a two-pane tile is always two of them. At three units it is 90–107 columns
 from 1687px up, and 82 once the editor asks for exactly 80.
+
+**The tree gives way to the file, not the other way round.** `.files__file`
+asks for `80ch + --files-editor-chrome` and `.files__side` has a 158px floor, so
+a pane under **835px** cannot hold both — and the stylesheet used to say, in as
+many words, that it was the editor that gave up its 80 columns. On a phone that
+left the code with a fraction of a 390px screen. Now the tree hides and the file
+takes the pane, at every width rather than under a breakpoint: `roomForTree` is
+computed in the row from the pane's own pixels, because the pane's width is the
+row's answer and a pane that measured itself would be deciding from a number it
+had caused.
+
+It bites at exactly one boundary, and the measurements say where: at a 866px
+window the pane is 839px and the tree is 163px wide beside 81 columns of
+editor; at 860px the pane is 833px, the tree is gone and the editor is **101
+columns**. Narrowing the window by six pixels widens the code by twenty columns,
+which is what "the file takes the pane" means. On a phone it is 44 columns where
+the tree used to leave about 22. Above that boundary nothing moved: a desktop
+files pane is 997–1373px and has always had room for both.
+
+`--files-editor-chrome` went 50 → 52 in the same pass, because it was half a
+pixel short and cost the column it exists to protect: at 13px a character is
+7.827px, so 80ch is 626.1 and the old sum left 625.6 — 79.94 columns, wrapping
+at 79. The measured wrap is 81 now. A file of a thousand lines still loses one
+to a four-digit gutter.
+
+**Where only one of them fits, FILES means "show me the list".** Shut, file,
+list, shut — the toggle's first press brings the tree back rather than closing
+the panel, and opening anything from it hands the pane back to the file. The tap
+is remembered as *only that*, a tap, and resolved last: a flag saying which half
+is showing would go stale the moment the last tab closed, and the panel would
+render neither.
 
 **The files panel is one unit while it is only its tree**, and a project's own
 pane is one always. They are the two exceptions to "nothing may ask for one
@@ -721,9 +760,12 @@ row, which in a tree is usually a directory on the way to something.
 
 **The content pane comes and goes.** The panel opens as its list alone and grows
 a second column only once you pick something, which is where the one-unit width
-above comes from. Each mode says "something is open" differently, and
-`contentOpen` in the pane and `filesContentOpen` in the row must give the same
-answer or the tile is laid out for a column it does not render:
+above comes from. Each mode says "something is open" differently — and that
+answer is now the **row's**, handed down as a prop. It used to be worked out in
+both places from the same state, each with a comment saying the two had to
+agree, and in Commits they could not: the row read the stored hash while the
+pane read `useChangesState`, whose stale check clears a selection an amend has
+invalidated. Two derivations of one fact agree best when there is one of them.
 
 - **Files keeps tabs**, `ui.openFilesByWorktree`, in the worktree's bar above the
   editor and wearing the terminal strip's own classes — it is the same object, a
@@ -807,12 +849,29 @@ Six things in it are load-bearing:
 - **The error notice is in the sidebar, not in the content pane.** A tree that
   failed to read has no content pane to say so in. The *conflict* notice stays
   beside the file, because it can only happen while one is open.
-- **The draft lives in a ref, and only a boolean reaches state.** The editor is
+- **The draft outlives the pane, and only a boolean reaches state.** The editor is
   uncontrolled: it is handed the file as it is on disk and reports its buffer
   back, never the reverse. If the buffer were state, every keystroke would
   re-render the tile -- and the tile holds two live terminals. It also makes
   "unsaved" mean *differs from disk*, so undoing back to the file's own text
   clears it for free.
+
+  It lives in a module-level `Map` keyed by worktree and path, not in a ref
+  inside the pane — a ref inside a pane dies with the pane, so closing the panel
+  threw the edit away, which is the opposite of the rule two bullets down. That
+  was a deliberate second click on FILES before; now a tab in the top bar closes
+  panels, so it was a keystroke away from happening by accident. Switching files
+  and coming back returns what you typed for the same reason.
+
+  One thing had to move with it, and it is the trap: the editor follows the file
+  on disk when `file` arrives with the same path, and a **remounted** editor gets
+  exactly that — a fresh object, same path, same text — so it overwrote the
+  draft it had just been created with, and the resulting update reported a
+  document identical to disk, which cleared the flag too. Measured: 608
+  characters typed, 602 written back, one frame later. `followDisk` is now
+  skipped while a draft is held, which is the poll's own rule (*the document you
+  are editing must not be rewritten underneath you*) applied to the one path the
+  poll cannot see.
 - **Following a file keeps your place by the line's text, not its offset.**
   Trimming the common prefix and suffix is enough while a change is one
   contiguous region, but an agent that adds an import at the top *and* a
@@ -1042,6 +1101,13 @@ same three letters lit across the row would promise something the key does not
 do. The arrows are the opposite case -- they are about arriving somewhere else,
 so they are drawn where you would arrive. Nothing is armed by it; the keys work whether the legend is on screen or
 not.
+
+**Where the toggles are glyphs, the legend lights nothing**, and the mnemonic
+moves into the `title` (`Show terminals (⌘I)`). The legend works by brightening
+one letter inside a word and a glyph has no letter to brighten; swapping the
+word back while Cmd is held would move three controls and reflow the name beside
+them, which is the one thing this rule forbids. The widths where that happens
+are overwhelmingly a phone, where there is no Cmd key to hold.
 
 It is greyscale, and that is the colour rule rather than an accident: amber and
 green are the two states you scan a row of agents for, and where a key would
@@ -1325,6 +1391,22 @@ is what makes the tab and the bar one sentence rather than two. It drifted
 twice: the tab went up for the strip's redesign and this stayed, then the ladder
 moved it again, and the gap grew 1.07 → 1.24 → 1.33 while this paragraph went on
 promising they matched.
+
+**And they are glyphs where the bar is tight.** The three of them are `flex:
+none` and come to about 200px, in a bar segment that on a phone is the whole
+screen — so what gave way instead was the worktree's own name and its prompt,
+which are the only things in there that can. Below `TOGGLE_WORDS_MIN` of segment
+they are drawn as one glyph each: 110px for the three, measured, and 92px back
+to the name.
+
+Both the word and the glyph are in the markup at every width, with CSS choosing
+— the row hands down `compact`, computed from the same pitch it laid the tile
+out with, and markup that changed at the threshold would put the bar's width in
+React's hands. It is **not** the top bar's ladder, and the difference is worth
+keeping straight: that one measures the content it is about to change, so the
+rung cannot be known before rendering; this one is a width the row already knew,
+and nothing the toggles do can move it — the bar's grid tracks are
+`minmax(0, Nfr)`, so content cannot widen one.
 
 **The three panel names are white, and one white rule says which is open.**
 `TERMINAL`, `TODO` and `FILES` all read `--bone` — 11.59:1 on a quiet bar,

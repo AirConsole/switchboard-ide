@@ -29,14 +29,21 @@ import { ForkIcon } from '../components/ForkIcon.js'
 import {
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
+  EDITOR_FONT_SIZE,
+  FILES_EDITOR_CHROME,
+  FILES_TREE_MIN,
+  TILE_CHROME,
+  TOGGLE_WORDS_MIN,
   gapFor,
   measureMonoCharWidth,
+  monoAdvance,
   nearestOffset,
   rowMetrics,
   wholeOnScreen,
 } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
+import { PanelIcon } from '../components/PanelIcon.js'
 import { useNearViewport } from './useNearViewport.js'
 
 /** How the add tile is identified in the layout. */
@@ -152,6 +159,13 @@ const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => 
 }
 
 /** What a panel is called in prose, for the toggle's tooltip. */
+/** The key that opens each panel, for a title that has to stand in for a word. */
+const PANEL_KEY: Record<PanelName, string> = {
+  todo: '\u2318O',
+  files: '\u2318F',
+  terminals: '\u2318I',
+}
+
 const PANEL_NOUN: Record<PanelName, string> = {
   todo: 'todos',
   files: 'files and changes',
@@ -334,7 +348,20 @@ const useMetaHeld = (): boolean => {
 
 type Pane =
   | { kind: 'claude'; key: string; worktree: Worktree; units: number }
-  | { kind: PanelName; key: string; worktree: Worktree; units: number }
+  | {
+      kind: PanelName
+      key: string
+      worktree: Worktree
+      units: number
+      /**
+       * The files panel only: whether it has something open, and whether its
+       * tree fits beside that. Both are the row's answers -- the first is what
+       * it sized this pane by, the second is what that size bought -- and they
+       * travel with the pane so nothing downstream works them out again.
+       */
+      contentOpen?: boolean
+      treeFits?: boolean
+    }
   | { kind: 'project'; key: string; units: number }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
@@ -474,6 +501,14 @@ interface WorktreeTileProps {
   /** Claude's pane and one for each open panel, in display order. */
   panes: Pane[]
   /**
+   * Whether the files panel can show its tree beside the file.
+   *
+   * Computed by the row from this pane's own width -- see `treeNeeds`. It is
+   * the row's to answer because the width is the row's answer: a pane that
+   * measured itself would be deciding from a number it had caused.
+   */
+  roomForTree: boolean
+  /**
    * Hand Claude the keyboard when this changes. Null for every worktree but
    * the one just navigated to.
    *
@@ -531,6 +566,20 @@ interface WorktreeTileProps {
   /** Bring this worktree wholly into view. */
   onReveal: () => void
   onTogglePanel: (panel: PanelName) => void
+  /**
+   * Show the file list in place of the file, where only one of them fits.
+   *
+   * Not "which half is showing" -- only that you asked. It is resolved last, so
+   * a tap that went stale (the last tab closed, an amend cleared the commit)
+   * cannot leave the panel rendering neither half.
+   */
+  onShowList: (show: boolean) => void
+  showList: boolean
+  /**
+   * Say the toggles in glyphs rather than words: the row's answer, from the
+   * width of the bar segment they sit in.
+   */
+  compact: boolean
   /** This worktree's queue ran itself out; the pane has nothing left to do. */
   onQueueDrained: () => void
   onSelectTerminal: (sessionId: string) => void
@@ -563,6 +612,7 @@ const WorktreeTile = ({
   todos,
   moveTo,
   panes,
+  roomForTree,
   focus,
   focusPane,
   session,
@@ -580,6 +630,9 @@ const WorktreeTile = ({
   onStart,
   onReveal,
   onTogglePanel,
+  onShowList,
+  showList,
+  compact,
   onQueueDrained,
   onSelectTerminal,
   onNewTerminal,
@@ -627,6 +680,18 @@ const WorktreeTile = ({
   const near = useNearViewport(tileRef, scroller)
 
   const shownPanes = new Set(panes.map((pane) => pane.kind))
+  /*
+   * Whether the files panel has something open, handed down rather than worked
+   * out twice.
+   *
+   * The row needs this to size the pane and the pane needs it to render, and
+   * the two used to derive it separately from the same state -- with a comment
+   * on each saying they must agree. The `commits` arm is where they could not:
+   * the row read the stored hash while the pane read `useChangesState`, whose
+   * stale check clears a selection an amend has invalidated. One answer now,
+   * computed where the sizing happens.
+   */
+  const contentOpen = panes.some((pane) => pane.kind === 'files' && pane.contentOpen)
   /*
    * The bar and the body are grids over these same columns, so each panel's
    * controls sit exactly above the pane they drive. Weighted by units rather
@@ -760,20 +825,53 @@ const WorktreeTile = ({
    * open begins.
    */
   const controls = (
-    <div className="tile__controls">
+    <div className="tile__controls" data-compact={compact ? '' : undefined}>
       {TOGGLES.map((panel) => {
         // Lit when this panel's pane is the one on screen, which is the only
         // thing the toggle ever claims -- and with one panel at a time, the lit
         // one is also the only one.
         const on = shownPanes.has(panel)
+        /*
+         * FILES means "show me the list" while the list is what is missing.
+         *
+         * On a pane too narrow for both, the tree steps aside for the file --
+         * so the first press brings it back rather than closing the panel, and
+         * the press after that closes as it always did: shut, file, list, shut.
+         * Where both fit there is nothing to bring back and this is the plain
+         * toggle. The tile decides it because `roomForTree` is a fact about
+         * this pane's width, and nothing above here knows it.
+         */
+        const backToList = panel === 'files' && on && !roomForTree && !showList
         return (
           <button
             key={panel}
             className={on ? 'tile__toggle tile__toggle--on' : 'tile__toggle'}
-            onClick={() => onTogglePanel(panel)}
-            title={on ? `Close ${PANEL_NOUN[panel]}` : `Show ${PANEL_NOUN[panel]}`}
+            onClick={() => (backToList ? onShowList(true) : onTogglePanel(panel))}
+            /*
+             * The word is in here too, because where the toggle is a glyph this
+             * is the only place left that says what it opens -- and the key
+             * with it, since the legend cannot light a letter that is not
+             * drawn.
+             */
+            title={`${
+              backToList
+                ? 'Show the file list'
+                : on
+                  ? `Close ${PANEL_NOUN[panel]}`
+                  : `Show ${PANEL_NOUN[panel]}`
+            } (${PANEL_KEY[panel]})`}
           >
-            {panelLabel(panel, counts, keysLit && current)}
+            {/*
+              * Word and glyph both, always, with CSS choosing between them.
+              *
+              * Rendering one or the other would put the bar's width in React's
+              * hands, and the row is what decides that -- it hands down
+              * `compact`, computed from the pitch it laid the tile out with.
+              * Markup that changed at the threshold would take the legend's own
+              * spans with it.
+              */}
+            <span className="tile__word">{panelLabel(panel, counts, keysLit && current)}</span>
+            <PanelIcon panel={panel} />
           </button>
         )
       })}
@@ -898,6 +996,9 @@ const WorktreeTile = ({
             {pane.kind === 'files' && (
               <FilesPane
                 mode={filesMode}
+                contentOpen={contentOpen}
+                roomForTree={roomForTree}
+                showList={showList}
                 onMode={onFilesMode}
                 files={files}
                 changes={changes}
@@ -1197,11 +1298,13 @@ export const Overview = ({
     const panel = openPanelsOf(worktree)[0]
     if (panel === undefined) return [claude]
 
+    const open = filesContentOpen(worktree)
     const pane = (units: number): Pane => ({
       kind: panel,
       key: paneKey(worktree.id, panel),
       worktree,
       units,
+      ...(panel === 'files' ? { contentOpen: open } : {}),
     })
     const wants = fits(panel)
     // Two units is every pane's floor, and a panel that asks for less than that
@@ -1243,8 +1346,81 @@ export const Overview = ({
    * about 1017px, at either gap, so crossing the breakpoint moves `pitch` and
    * every tile's width and nothing else.
    */
+  /*
+   * Which worktrees asked to see their file list, where only one of the two
+   * fits. Not persisted, for the reason the commit selection is not: it answers
+   * a tap you made at a window width you may not have next time.
+   */
+  const [listAsked, setListAsked] = useState<Record<string, boolean>>({})
+  const askList = (worktreeId: string, show: boolean): void => {
+    setListAsked((previous) =>
+      (previous[worktreeId] ?? false) === show ? previous : { ...previous, [worktreeId]: show },
+    )
+  }
+
   const gap = gapFor(narrow)
   const { units, pitch } = rowMetrics(width, gap, minPaneWidth)
+
+  /*
+   * Whether a files pane has room for its tree *beside* the file.
+   *
+   * The file is the content and the tree is a list of names, so when only one of
+   * them can have what it needs it is the tree that gives way. The stylesheet
+   * used to say the opposite in as many words -- "on a pane too narrow for both
+   * it is the editor that gives up its 80 columns" -- and on a phone that left
+   * the code with a fraction of a 390px screen.
+   *
+   * The numbers are the stylesheet's own: `--files-tree-min` is the narrowest
+   * the mode switch fits in, `--files-editor-chrome` is the gutter and the
+   * line inset, and the 80 columns are `.files__file`'s own `80ch` basis. In
+   * the editor's 13px, not the terminal's 14, and through `monoAdvance` rather
+   * than `measureMonoCharWidth`: `ch` is a real advance, and the floored cell
+   * would claim eighty columns need sixty-six pixels less than they do.
+   *
+   * Decided here rather than in the pane, because the pane's width is this
+   * row's answer -- a pane that measured itself would be deciding from a number
+   * it had caused.
+   */
+  const treeNeeds =
+    FILES_TREE_MIN +
+    FILES_EDITOR_CHROME +
+    MIN_PANE_COLUMNS * monoAdvance(EDITOR_FONT_SIZE, TERMINAL_FONT_FAMILY)
+
+  /*
+   * That, against the pixels this cell's files pane will actually get.
+   *
+   * The body is a grid of `minmax(0, Nfr)` over the panes, so a pane's width is
+   * the tile's share of it by units -- the tile swallows the gaps between the
+   * units it spans, and `TILE_CHROME` is the border it draws around them.
+   */
+  /*
+   * Whether the toggles have to give up their words.
+   *
+   * They are `flex: none` and about 200px of them, in a bar segment that on a
+   * phone is the whole screen -- so what gives way instead is the worktree's
+   * own name and its prompt, which is the wrong thing to lose. The width is the
+   * segment the controls sit in: the bar is a grid over the same units as the
+   * body, and they ride with Claude's pane, or the only pane there is.
+   *
+   * A number the row already has, rather than the top bar's sweep. That ladder
+   * exists because the bar's input is a measurement of the very content it is
+   * about to change; here nothing the toggles do can move this number -- the
+   * grid tracks are `minmax(0, Nfr)`, so content cannot widen one -- so there
+   * is no loop to break and nothing to pay for breaking it.
+   */
+  const compact = (cell: { panes: Pane[]; units: number }): boolean => {
+    const first = cell.panes[0]
+    if (first === undefined) return false
+    const tile = cell.units * pitch - gap - TILE_CHROME
+    return (tile * first.units) / cell.units < TOGGLE_WORDS_MIN
+  }
+
+  const roomForTree = (cell: { panes: Pane[]; units: number }): boolean => {
+    const files = cell.panes.find((pane) => pane.kind === 'files')
+    if (files === undefined) return true
+    const tile = cell.units * pitch - gap - TILE_CHROME
+    return (tile * files.units) / cell.units >= treeNeeds
+  }
 
   /*
    * `group` rather than a project id, because a leaving slot outlives the list
@@ -1911,6 +2087,10 @@ export const Overview = ({
                       todos={worktreeTodos(todos, worktree.id)}
                       moveTo={moveTo[worktree.projectId] ?? EMPTY_MOVE}
                       panes={slot.data.panes}
+                      roomForTree={roomForTree(slot.data)}
+                      showList={listAsked[worktree.id] ?? false}
+                      onShowList={(show) => askList(worktree.id, show)}
+                      compact={compact(slot.data)}
                       /*
                        * Non-null only for the worktree just navigated to, and a
                        * fresh number each time it is asked for, so going back
@@ -1949,9 +2129,24 @@ export const Overview = ({
                       onNewTerminal={() => onNewTerminal(worktree.id)}
                       onNoTerminalsLeft={() => onNoTerminalsLeft(worktree.id)}
                       onCloseTerminal={(sessionId) => onCloseTerminal(worktree.id, sessionId)}
-                      onOpenPath={(path) => onOpenPath(worktree.id, path)}
+                      /*
+                       * Opening something is how you get back from the list to
+                       * the file, and this is the one place every way of doing
+                       * it goes through: a click in the tree, a search hit,
+                       * Enter on a row, a changed file, and the file tabs in
+                       * the bar -- which stay put while the list is showing, so
+                       * they are the easiest of them to forget. An empty path
+                       * is a *close*, which leaves the list up.
+                       */
+                      onOpenPath={(path) => {
+                        askList(worktree.id, path === '')
+                        onOpenPath(worktree.id, path)
+                      }}
                       onCloseFile={(path) => onCloseFile(worktree.id, path)}
-                      onSelectCommit={(hash) => selectCommit(worktree.id, hash)}
+                      onSelectCommit={(hash) => {
+                        askList(worktree.id, hash === null)
+                        selectCommit(worktree.id, hash)
+                      }}
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                       onExpandDir={(dir) => onExpandDir(worktree.id, dir)}
                       onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
