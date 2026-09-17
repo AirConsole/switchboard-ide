@@ -1685,6 +1685,14 @@ export const Overview = ({
   const restRef = useRef(rest)
   restRef.current = rest
 
+  /*
+   * The cells as they are now, for the scroll handler: it runs between renders
+   * and a closure over `cells` would be measuring the row as it was.
+   */
+  const restTimer = useRef<number | undefined>(undefined)
+  const cellsRef = useRef<Cell[]>([])
+  cellsRef.current = cells
+
   const slots: Slot<Cell>[] = cells.map((cell) => ({
     key: cell.key,
     width: Math.max(0, cell.units * pitch - gap),
@@ -1946,6 +1954,48 @@ export const Overview = ({
     },
     [stops, active, pitch, width, gap, onReveal, stepsTaken, onStepTaken],
   )
+
+  /*
+   * Scrolling to a window says you are in it, where it is the only one there.
+   *
+   * The lit tab in the top bar and the lit window bar both come from `active`,
+   * which is written when something takes the keyboard -- and a swipe takes
+   * nothing. On a desktop that is right: the row shows several windows, you can
+   * see which one your caret is in, and a scroll is you looking around. On a
+   * phone the row shows **one**, so a swipe is not looking around, it is going
+   * somewhere: the strip went on lighting the worktree you had scrolled away
+   * from, which is the one thing it exists to answer.
+   *
+   * So it follows the row only when exactly one window is wholly on screen, and
+   * only when the keyboard is not in one that is -- what holds the keyboard is
+   * the better answer wherever there is one, and this never overrides it.
+   *
+   * It says where you are without handing anything the keyboard, which is the
+   * difference between this and `onReveal`: a swipe must not open a keyboard,
+   * and on a phone focus is what opens one.
+   */
+  const settleActive = useCallback((): void => {
+    const grid = gridRef.current
+    if (!grid || pitch <= 0) return
+    const seen = cellsRef.current.filter((cell) =>
+      wholeOnScreen({ at: cell.at, units: cell.units }, grid.scrollLeft, pitch, width, gap),
+    )
+    const only = seen.length === 1 ? seen[0] : undefined
+    if (only === undefined) return
+    const held = (document.activeElement as HTMLElement | null)
+      ?.closest('[data-pane]')
+      ?.getAttribute('data-pane')
+    if (held !== undefined && held !== null) {
+      const owner = only.panes.some((pane) => pane.key === held)
+      // The keyboard is in this window already, or in one you have scrolled
+      // away from -- in which case moving the mark to what you are looking at
+      // is exactly the point.
+      if (owner) return
+    }
+    const first = only.panes[0]
+    if (first === undefined) return
+    onActivate(only.key, first.kind === 'project' ? 'project' : first.kind)
+  }, [pitch, width, gap, onActivate])
 
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
@@ -2211,7 +2261,18 @@ export const Overview = ({
         onScroll={(event) => {
           const el = event.currentTarget
           if (pitch > 0) unitRef.current = Math.round(el.scrollLeft / pitch)
+          /*
+           * When it stops, not while it moves: a swipe crosses every window
+           * between here and where it lands, and marking each one in turn would
+           * light three tabs on the way to the fourth -- and each is a write of
+           * `ui`. `scrollend` is the honest signal and Chrome has it; the
+           * timeout is for the browsers that do not, and is harmless where both
+           * fire because `activate` bails when nothing changed.
+           */
+          window.clearTimeout(restTimer.current)
+          restTimer.current = window.setTimeout(settleActive, 140)
         }}
+        onScrollEnd={settleActive}
       >
         {/*
           * One marker per place the row may rest -- see `rest`: each pane's
