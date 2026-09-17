@@ -134,7 +134,7 @@ describe('isOurServer', () => {
    * same `ps` line, because the shell started them after a `cd server` with a
    * relative path:
    *
-   *   3944799 node dist/index.js --host andrin.ide.n-dream.com:84
+   *   3944799 node dist/index.js --host ide.example.com:84
    *
    * so the pid file's pid was killed on nothing but trust. Spawning by absolute
    * path is what makes the question answerable at all.
@@ -142,7 +142,7 @@ describe('isOurServer', () => {
   const script = '/home/andrin/src/ide/server/dist/index.js'
 
   it('refuses the relative line the shell version produced', () => {
-    expect(isOurServer('node dist/index.js --host andrin.ide.n-dream.com:84', script)).toBe(false)
+    expect(isOurServer('node dist/index.js --host ide.example.com:84', script)).toBe(false)
   })
 
   it('refuses another checkout whose path is a near miss', () => {
