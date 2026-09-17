@@ -974,7 +974,20 @@ const WorktreeTile = ({
         onClick={onSleep}
         title={`Put this worktree away (${modChord('X')})`}
       >
-        <span aria-hidden="true">×</span>
+        {/*
+          * Lit with the three letters, because it is a shortcut like they are:
+          * Cmd+X is AWAY_KEY, and the legend's promise is that what lights up
+          * is what the key you are holding would reach. It wears `tile__key`
+          * over the whole glyph rather than a letter inside a word, which is
+          * the same case as a label with no letter to light -- there is nothing
+          * here to dim around it.
+          *
+          * The span is there in both states, like the labels': markup that
+          * changed at the threshold would move the bar when the key went down.
+          */}
+        <span aria-hidden="true" className={keysLit && current ? 'tile__key' : undefined}>
+          ×
+        </span>
       </button>
     </div>
   )
