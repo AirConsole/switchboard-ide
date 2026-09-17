@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   COOLDOWN_MS,
   SETTLE_MS,
-  USER_QUIET_MS,
   inputBox,
   readiness,
   type ReadinessInput,
@@ -16,7 +15,8 @@ const resting: ReadinessInput = {
   dead: false,
   hasPty: true,
   lastOutputAt: NOW - SETTLE_MS - 1,
-  lastUserInputAt: NOW - USER_QUIET_MS - 1,
+  lastUserInputAt: NOW - 60_000,
+  queuedAt: NOW - 30_000,
   tail: ['● Did the thing', '✻ Baked for 2s · done 3:01 PM', '❯ ', '  shift+tab to cycle'].join(
     '\n',
   ),
@@ -82,10 +82,18 @@ describe('readiness', () => {
     expect(why({ ...resting, lastOutputAt: NOW - SETTLE_MS })).toBe(true)
   })
 
-  it('refuses while a person is at the keyboard', () => {
-    // Their draft may be in the box, or still on its way to it.
-    expect(why({ ...resting, lastUserInputAt: NOW - USER_QUIET_MS + 1 })).toBe('user-typing')
-    expect(why({ ...resting, lastUserInputAt: NOW - USER_QUIET_MS })).toBe(true)
+  it('does not make a RUN NEXT pressed straight after typing wait', () => {
+    // A ten-second hold on the last keystroke kept an idle Claude waiting for
+    // exactly that long after RUN NEXT. Pressing it is the human finishing.
+    const typedAt = NOW - SETTLE_MS - 2
+    expect(why({ ...resting, lastUserInputAt: typedAt, queuedAt: typedAt + 1 })).toBe(true)
+  })
+
+  it('refuses a todo the human has typed past', () => {
+    expect(why({ ...resting, lastUserInputAt: NOW - 29_999 })).toBe('typed-after-queue')
+    expect(why({ ...resting, lastUserInputAt: NOW - 30_000 })).toBe(true)
+    // Ahead of the settle clock, which the typing's own echo keeps resetting.
+    expect(why({ ...resting, lastUserInputAt: NOW, lastOutputAt: NOW })).toBe('typed-after-queue')
   })
 
   it('refuses mid-turn on the transcript alone', () => {

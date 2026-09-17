@@ -139,7 +139,6 @@ const saveFileBody = z.object({
  */
 export const uiShape = z
   .object({
-    awake: z.array(z.string()).nullable(),
     // The panel and mode names are the shared unions; anything else in the
     // list would be filtered by the client anyway, and storing it helps nobody.
     panels: z.record(z.string(), z.array(z.enum(['todo', 'files', 'terminals']))),
@@ -323,6 +322,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.post('/api/worktrees', async (request) => {
     const body = createWorktreeBody.parse(request.body)
     const worktree = await workspace.createWorktree(body)
+    // A worktree you just made is one you want to work in.
+    await workspace.setAwake([worktree.id], true)
     // The point of the feature is going from nothing to a working agent in one
     // click, so the session is created here rather than in a second round trip.
     if (body.startClaude) {
@@ -483,12 +484,11 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   )
 
   /*
-   * Put a worktree to sleep: stop what it is running.
+   * Put a worktree to sleep: record it, and stop what it is running.
    *
-   * The awake/asleep list itself is the client's -- what is on screen is a UI
-   * question -- but killing processes is not something a client can do, and
-   * neither is the invalidate that tells every other client the sessions have
-   * gone. A kill emits no event of its own.
+   * Asleep is recorded here, on the machine the worktree lives on, so every
+   * browser and every machine linking this one agrees -- see `Worktree.awake`.
+   * The kill needs the invalidate too: a kill emits no event of its own.
    */
   /*
    * Todos ride the snapshot rather than having a GET of their own: the client
@@ -525,6 +525,7 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const kinds: SessionKind[] = []
     if (!keepClaude) kinds.push('claude')
     if (!keepTerminals) kinds.push('shell')
+    await workspace.setAwake([worktree.id], false)
     if (kinds.length > 0) await engine.killForWorktree(worktree.id, kinds)
     broadcastInvalidate()
     return { ok: true, sessions: engine.listForWorktree(worktree.id) }
@@ -543,11 +544,15 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.post('/api/worktrees/:id/wake', async (request) => {
     const { id } = request.params as { id: string }
     const { worktree } = await workspace.resolve(id)
+    await workspace.setAwake([worktree.id], true)
     const existing = engine
       .listForWorktree(worktree.id)
       .find((session) => session.kind === 'claude')
 
     if (existing && existing.liveness !== 'dead') {
+      // Awake changed even though nothing was spawned, and every other viewer
+      // has to hear it.
+      broadcastInvalidate()
       return { ok: true, session: existing }
     }
     const args = await claudeArgs(worktree.path, true)

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import {
+  worktreeToWakeOnOpen,
+  machineHasProjects,
   claudeSession,
   drainTakesKeyboard,
   isRunning,
@@ -436,5 +438,52 @@ describe('drainTakesKeyboard', () => {
   it('does not move within the same worktree', () => {
     expect(drainTakesKeyboard({ id: 'wt-1', pane: 'claude' }, 'wt-1')).toBe(false)
     expect(drainTakesKeyboard({ id: 'wt-1', pane: 'files' }, 'wt-1')).toBe(false)
+  })
+})
+
+describe('worktreeToWakeOnOpen', () => {
+  const wt = (id: string, extra: Partial<Worktree> = {}): Worktree =>
+    ({ id, projectId: 'p1', name: id, isMain: false, ...extra }) as Worktree
+
+  /*
+   * Opening a folder the IDE had never seen put nothing in the row: its
+   * worktrees were all asleep, so the click looked like it had done nothing.
+   */
+  it('wakes the main worktree of a project with nothing awake', () => {
+    const worktrees = [wt('feature', { awake: false }), wt('main', { isMain: true, awake: false })]
+    expect(worktreeToWakeOnOpen('p1', worktrees, [])).toBe('main')
+  })
+
+  it('leaves a project that already has something awake as it was', () => {
+    const worktrees = [wt('feature', { awake: true }), wt('main', { isMain: true, awake: false })]
+    expect(worktreeToWakeOnOpen('p1', worktrees, [])).toBeNull()
+  })
+
+  it('reads a machine too old to say by what is running there', () => {
+    const worktrees = [wt('feature'), wt('main', { isMain: true })]
+    const sessions = [{ id: 's', worktreeId: 'feature' }] as Session[]
+    expect(worktreeToWakeOnOpen('p1', worktrees, sessions)).toBeNull()
+    expect(worktreeToWakeOnOpen('p1', worktrees, [])).toBe('main')
+  })
+
+  it('says nothing for a project it cannot see', () => {
+    expect(worktreeToWakeOnOpen('p2', [wt('main', { isMain: true })], [])).toBeNull()
+  })
+})
+
+describe('machineHasProjects', () => {
+  const project = (id: string, host: Project['host']): Project =>
+    ({ id, name: id, host }) as unknown as Project
+
+  it('is true only for a project that machine contributed', () => {
+    const projects = [
+      project('here', { kind: 'local' }),
+      project('there', { kind: 'remote', baseUrl: 'https://box.example:83', name: 'box' }),
+    ]
+    expect(machineHasProjects(projects, 'https://box.example:83')).toBe(true)
+    expect(machineHasProjects(projects, 'https://other.example:83')).toBe(false)
+    // A local project never counts, whatever its path: the machine just linked
+    // is by definition not this one.
+    expect(machineHasProjects([projects[0]!], 'https://box.example:83')).toBe(false)
   })
 })

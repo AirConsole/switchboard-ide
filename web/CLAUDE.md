@@ -1722,8 +1722,14 @@ a bug where a debounced write raced a refresh. Writes are debounced 200ms and
 fire-and-forget, so a change made immediately before a reload can be lost. Do
 not "fix" the divergence without reading why it is there.
 
-`awake: null` means first run, not "none awake": it seeds from worktrees that
-already have live sessions, so sleep arriving on a busy machine is invisible.
+**Which worktrees are awake is not in `ui`.** It is `Worktree.awake`, decided
+by the machine the worktree lives on, so two tabs -- and two machines, one
+linking the other -- agree on it. A click is a request: `changeAwake` in `App`
+holds what was clicked until the refresh after the request lands, or a poll
+arriving in between flicks the window back for a beat. A machine too old to say
+is read the way a first run is: awake if anything is running in it. The server's
+own list is null until something is woken or slept (see `PersistedState.awake`),
+and the old `ui.awake` is carried over once on load.
 `scrollTo` carries a **nonce**, because asking twice for the same worktree is two
 requests — opening a second panel on the tile you are already looking at changes
 its width, and a bare id compares equal and scrolls nowhere.
