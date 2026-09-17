@@ -309,6 +309,17 @@ The pieces, and why each is the way it is:
   pane that did not exist — and the Cmd+arrow walk counts from `active`. The
   walk itself is deliberately *not* routed through this: its stops are panes, and
   a panel that shut as you stepped into it would be a stop you could never reach.
+- **A + follows the project's name, while its tabs are showing.** It goes
+  where the name goes -- the project's pane, where arriving puts the caret in
+  the branch box -- because that pane is where a worktree is made, and this is
+  the door to it that says so. It is a segment of the expanded slab, 24px and
+  seamed like the tabs, and it is hidden at exactly the rungs they are: a + on a
+  collapsed head would be a control on something no longer drawn, and going
+  with the tabs keeps every rung narrower than the last, which is what the
+  sweep stops on. Measured across 1600 -> 390px: at every width each project's
+  + was shown exactly when at least one of its tabs was, and the strip never
+  overflowed. With nothing awake it is not rendered at all -- there are no tabs
+  to show, and that is a count rather than a rung, so it is React's to decide.
 - **A tab has no ×; putting a worktree away is on the worktree.** The control
   is the last thing in the window's own bar, past the panel toggles, and it
   still opens the sleep dialog — which is also where deleting lives, so it is

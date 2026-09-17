@@ -80,6 +80,27 @@ const OpenProjectIcon = (): React.ReactElement => (
 )
 
 /**
+ * A new worktree: a bare plus, where the open-project glyph is a plus in a
+ * square. Same stroke, same box -- the square is what says "a project", and
+ * this one adds to a project that is already here.
+ */
+const NewWorktreeIcon = (): React.ReactElement => (
+  <svg
+    className="topbar__icon"
+    viewBox="0 0 16 16"
+    width="12"
+    height="12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <path d="M8 3.5v9M3.5 8h9" />
+  </svg>
+)
+
+/**
  * One project: its name, its awake worktrees, its sleeping ones, and a way to
  * add another.
  *
@@ -224,6 +245,34 @@ const Group = ({
           */}
         {awake.length > 0 && <span className="tabgroup__count">{awake.length}</span>}
       </button>
+
+      {/*
+        * A new worktree, as the segment after the name.
+        *
+        * It goes to the same place the name does -- the project's pane, where
+        * arriving puts the caret in the branch box -- and that is the point:
+        * the pane is where a worktree is made, and this is the door to it that
+        * says so, rather than one you have to know the name leads to.
+        *
+        * Only where the project's tabs are showing. It is a segment of the
+        * expanded slab, and a collapsed head is a summary: a + beside a pill
+        * standing for four windows would be a control on a thing that is no
+        * longer drawn. So it is hidden at exactly the rungs the tabs are (see
+        * `data-stage` in the stylesheet), which also keeps every rung narrower
+        * than the last -- the property the sweep stops on. And not rendered at
+        * all with nothing awake, since then there are no tabs to show; that is
+        * a count, not a rung, so it is React's to decide.
+        */}
+      {awake.length > 0 && (
+        <button
+          className="tabgroup__add"
+          onClick={() => onRevealProject(project)}
+          title={`New worktree in ${project.name}`}
+          aria-label={`New worktree in ${project.name}`}
+        >
+          <NewWorktreeIcon />
+        </button>
+      )}
 
       {awake.map((worktree) => tab(worktree, false))}
     </div>

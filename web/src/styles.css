@@ -579,6 +579,33 @@ button {
   white-space: nowrap;
 }
 
+/*
+ * The + after a project's name: a segment of the slab like the tabs either side
+ * of it, square and seamed, and only as wide as its glyph. Quiet until pointed
+ * at, the way the open-project button is.
+ */
+.tabgroup__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  align-self: stretch;
+  width: 24px;
+  padding: 0;
+  background: var(--level-object);
+  color: var(--graphite);
+}
+
+.tabgroup__add:hover {
+  background: var(--level-hover);
+  color: var(--bone);
+}
+
+/* Drawn inside: the shell clips its segments. */
+.tabgroup__add:focus-visible {
+  outline-offset: -1px;
+}
+
 .tabgroup__pill--on {
   background-color: var(--level-lit);
   /* --graphite is 3.90:1 on --level-lit, under the floor -- the same wall every
@@ -1407,7 +1434,10 @@ button {
  */
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab,
 .topbar[data-stage='4'] .tab,
-.topbar[data-stage='5'] .tab {
+.topbar[data-stage='5'] .tab,
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__add,
+.topbar[data-stage='4'] .tabgroup__add,
+.topbar[data-stage='5'] .tabgroup__add {
   display: none;
 }
 
