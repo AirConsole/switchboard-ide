@@ -121,12 +121,13 @@ const publicOrigins = (): ReadonlySet<string> => {
 
 export const config = {
   /**
-   * The address to listen on, and loopback is the answer unless this machine is
-   * somebody's peer.
+   * The address to listen on, and loopback is the answer unless another
+   * machine has to reach this one directly -- a gateway on the same network.
    *
-   * There is no password: a reverse proxy in front of the public name is what
-   * authenticates a person, and `SWB_TOKEN` is what authenticates a gateway.
-   * Binding anything else without the token serves the network with neither.
+   * Binding elsewhere is safe only because nothing here is served without the
+   * password (`gate.ts`), and the server will not start without one. Over plain
+   * HTTP on a network you do not own, though, the password and the session
+   * cross it in clear; put TLS in front, or keep it to a network you trust.
    *
    * Named `bind`, not `host`: `--host` is the *public* name a browser types,
    * and one word meaning both the address we answer on and the name we answer
