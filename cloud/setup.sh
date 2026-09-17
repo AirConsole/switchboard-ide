@@ -7,12 +7,13 @@
 # by hand over ssh is the supported way to debug a machine, which is the whole
 # reason the work is here and not in the cloud-config.
 #
-# Measured on the spike VM (see cloud/README-spike.md for the raw output):
+# Measured on a throwaway VM before any of this was written:
 #   - Ubuntu 24.04's GCP image runs cloud-init from the `user-data` metadata
-#     key. Debian's images do not ship cloud-init at all.
-#   - Caddy VERSION_PLACEHOLDER gets a Let's Encrypt certificate for a bare IP
-#     address under the `shortlived` profile. That profile is not optional:
-#     Let's Encrypt issues IP certificates under no other one.
+#     key. Debian's images do not ship cloud-init at all, which is why this
+#     repository is developed on Debian and its machines run Ubuntu.
+#   - Caddy 2.11.4 gets a Let's Encrypt certificate for a bare IP address under
+#     the `shortlived` profile, over HTTP-01, on the first try. That profile is
+#     not optional: Let's Encrypt issues IP certificates under no other.
 #
 # Two rules this file exists to keep:
 #   - The boot disk holds nothing of the user's. /home is a LUKS volume whose
@@ -231,11 +232,19 @@ BUILD_HOME=/var/lib/switchboard
 install -d -o "$SWB_USER" -g "$SWB_USER" "$BUILD_HOME"
 as_swb() { sudo -u "$SWB_USER" env HOME="$BUILD_HOME" PATH=/usr/local/bin:/usr/bin:/bin "$@"; }
 
+# Cloning and building are separate questions, because a machine interrupted
+# during the build -- a reboot, a dropped ssh session -- has a checkout and no
+# `dist`. Keyed on the checkout alone, every later boot skipped the build and
+# the machine stayed broken with no sign of why. Measured: exactly that, on the
+# first machine built with this script.
 if [ ! -d "$IDE_DIR/.git" ]; then
-  log "installing the IDE into $IDE_DIR"
+  log "cloning the IDE into $IDE_DIR"
   mkdir -p "$IDE_DIR"
   chown "$SWB_USER:$SWB_USER" "$IDE_DIR"
   as_swb git clone --branch "$REPO_REF" "$REPO_URL" "$IDE_DIR"
+fi
+if [ ! -f "$IDE_DIR/server/dist/index.js" ] || [ ! -f "$IDE_DIR/web/dist/index.html" ]; then
+  log "building the IDE (several minutes: node-pty compiles here)"
   as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
 fi
 

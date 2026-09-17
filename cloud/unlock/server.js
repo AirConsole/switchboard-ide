@@ -138,6 +138,18 @@ const server = createServer(async (req, res) => {
     res.end(html)
   }
 
+  /*
+   * This service answers every path Caddy could not reach the IDE on, so it
+   * must not answer *as* the IDE. `/api/health` is what `provision.sh` and
+   * anything else asks to find out whether the IDE is up, and a page saying
+   * "locked" with a 200 on it is a machine reporting itself healthy while it
+   * is shut. Everything under /api is 503 here, which is what it is.
+   */
+  if (req.url?.startsWith('/api/')) {
+    res.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify({ error: 'locked', message: 'the data volume is not open' }))
+  }
+
   if (req.method === 'GET') {
     // Once it is open, this service has nothing to say; the IDE answers on its
     // own port and Caddy stops falling through to here.
