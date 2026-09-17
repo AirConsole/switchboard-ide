@@ -103,7 +103,7 @@ describe('linking a machine by its password', () => {
    */
   it('refuses to send a password over plain http to a public address', async () => {
     const failed = await workspace
-      .addServer({ baseUrl: 'http://93.184.216.34:8084', password: PASSWORD })
+      .addServer({ baseUrl: 'http://93.184.216.34:8083', password: PASSWORD })
       .catch((e: unknown) => e)
     expect((failed as InstanceType<typeof HttpError>).code).toBe('insecure-link')
   })
@@ -138,9 +138,9 @@ describe('plainHttpAllowed', () => {
   it('takes https anywhere and plain http only on a network you likely own', () => {
     expect(ok('https://ide.example.com')).toBe(true)
     for (const url of [
-      'http://127.0.0.1:8084',
-      'http://localhost:8084',
-      'http://[::1]:8084',
+      'http://127.0.0.1:8083',
+      'http://localhost:8083',
+      'http://[::1]:8083',
       'http://10.1.2.3',
       'http://172.16.0.9',
       'http://192.168.1.20',

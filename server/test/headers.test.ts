@@ -19,7 +19,7 @@ const app = async () => {
 describe('security headers', () => {
   it('forbids framing, because clickjacking an IDE that types into shells is real', async () => {
     const server = await app()
-    const res = await server.inject({ url: '/page', headers: { host: 'ide.example:84' } })
+    const res = await server.inject({ url: '/page', headers: { host: 'ide.example:83' } })
     expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
     expect(res.headers['x-frame-options']).toBe('DENY')
     expect(res.headers['content-security-policy']).toContain("script-src 'self'")
@@ -32,23 +32,23 @@ describe('security headers', () => {
    */
   it('leaves a stricter policy a route set for itself alone', async () => {
     const server = await app()
-    const res = await server.inject({ url: '/raw', headers: { host: 'ide.example:84' } })
+    const res = await server.inject({ url: '/raw', headers: { host: 'ide.example:83' } })
     expect(res.headers['content-security-policy']).toBe("default-src 'none'; sandbox")
     await server.close()
   })
 
   it('names the socket host outright, since not every browser reads self as covering ws', async () => {
     const server = await app()
-    const res = await server.inject({ url: '/page', headers: { host: 'ide.example:84' } })
-    expect(res.headers['content-security-policy']).toContain('wss://ide.example:84')
+    const res = await server.inject({ url: '/page', headers: { host: 'ide.example:83' } })
+    expect(res.headers['content-security-policy']).toContain('wss://ide.example:83')
     await server.close()
   })
 
   it('sends HSTS for a public name and never for loopback', async () => {
     const server = await app()
-    const pub = await server.inject({ url: '/page', headers: { host: 'ide.example:84' } })
+    const pub = await server.inject({ url: '/page', headers: { host: 'ide.example:83' } })
     expect(pub.headers['strict-transport-security']).toBe('max-age=31536000')
-    for (const host of ['127.0.0.1:8084', 'localhost:8084', '[::1]:8084']) {
+    for (const host of ['127.0.0.1:8083', 'localhost:8083', '[::1]:8083']) {
       const local = await server.inject({ url: '/page', headers: { host } })
       expect(local.headers['strict-transport-security'], host).toBeUndefined()
     }

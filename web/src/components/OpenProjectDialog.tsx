@@ -86,7 +86,7 @@ const AddServer = ({
     <div className="addserver" data-own-enter>
       <input
         className="field__input"
-        placeholder="http://box.local:8084"
+        placeholder="http://box.local:8083"
         value={baseUrl}
         spellCheck={false}
         autoFocus={initialUrl === undefined}

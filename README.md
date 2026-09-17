@@ -39,7 +39,7 @@ cd switchboard-ide
 pnpm install        # compiles node-pty; Linux needs a C toolchain, macOS does not
 pnpm build
 pnpm password       # the server will not start without one
-pnpm start          # http://127.0.0.1:8084
+pnpm start          # http://127.0.0.1:8083
 ```
 
 Then open it, add a project — any directory inside a git repository works — and
@@ -96,7 +96,7 @@ arriving through it is refused. Settings live in
 `~/.config/switchboard/config.json`:
 
 ```json
-{ "port": 8084, "host": "ide.example.com:84" }
+{ "port": 8083, "host": "ide.example.com:83" }
 ```
 
 `start` and `restart` check that name afterwards rather than trusting it,
@@ -151,7 +151,7 @@ the first person to hit something.
 ## Development
 
 ```sh
-pnpm dev        # vite on :5240, proxying the server on :8084
+pnpm dev        # vite on :5240, proxying the server on :8083
 pnpm typecheck  # a gate
 pnpm test       # the other gate
 ```

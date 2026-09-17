@@ -356,7 +356,7 @@ const guard = (verb, force) => {
 /** What the child will run and with what. One place, so `start` and `restart` agree. */
 const invocation = (/** @type {{host?: string}} */ opts) => {
   const cfg = readConfig()
-  const port = Number(process.env.SWB_PORT ?? cfg.port ?? 8084)
+  const port = Number(process.env.SWB_PORT ?? cfg.port ?? 8083)
   const host = opts.host ?? cfg.host
   const argv = [serverScript]
   /*
@@ -640,7 +640,7 @@ const passwordState = () => {
 export const status = async () => {
   const run = readRun()
   const cfg = readConfig()
-  const port = Number(process.env.SWB_PORT ?? cfg.port ?? 8084)
+  const port = Number(process.env.SWB_PORT ?? cfg.port ?? 8083)
 
   if (existsSync(join(repoRoot, 'scripts', 'deploy.env'))) {
     console.log(`note: scripts/deploy.env is no longer read; its settings belong in ${configPath()}`)

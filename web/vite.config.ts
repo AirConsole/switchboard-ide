@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const serverPort = Number(process.env.SWB_PORT ?? 8084)
+const serverPort = Number(process.env.SWB_PORT ?? 8083)
 const target = `http://127.0.0.1:${serverPort}`
 
 export default defineConfig({
