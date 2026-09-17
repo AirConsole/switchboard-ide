@@ -20,6 +20,10 @@
  *     timing says nothing;
  *   - counted, never outcome-keyed: a ramp that resets on success answers the
  *     previous guess for the attacker.
+ *
+ * The count resets when this service does, which is once per boot -- and a
+ * boot is also the only thing that makes it reachable again, since it answers
+ * only while the volume is shut.
  */
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
