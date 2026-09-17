@@ -77,8 +77,10 @@ other than the default and uncommitted changes, fast-forwards only, and names a
 rewritten history with the command that recovers from it. It is not `update`:
 pnpm runs its own `update` -- dependency upgrades -- instead of a script by that
 name, and the same goes for `upgrade`, `self-update` and `deploy`. With nothing
-new, it restarts only if what is running is older than what is checked out,
-which `start` records in `run.json`.
+new, it restarts only if what is running was built from an older commit than
+the one checked out: `restart` stamps `server/dist/.swb-commit` when it builds,
+and `start` records that stamp in `run.json` -- not HEAD, which after a `git
+pull` by hand names code that was never built.
 
 Each is an alias for one command, `cli/bin/swb.js`; `pnpm swb` prints its usage.
 It is plain JavaScript with no build step,

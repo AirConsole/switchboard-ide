@@ -872,6 +872,39 @@ describe('awake', () => {
     expect(store.awake?.sort()).toEqual([main!.id, 'wt-other'].sort())
   })
 
+  it('keeps both of two first changes made at once', async () => {
+    // Both seeded from the same empty start, and the second write dropped the
+    // first -- measured, only `wt-b` was stored.
+    await workspace.openProject(repo.path)
+    await Promise.all([workspace.setAwake(['wt-a'], true), workspace.setAwake(['wt-b'], true)])
+    expect(store.awake?.sort()).toEqual(['wt-a', 'wt-b'])
+  })
+
+  /*
+   * An agent removing its own worktree with git is routine, and ids are hashed
+   * from the path -- so one made again at that path came back awake.
+   */
+  it('forgets a worktree removed behind its back, and keeps the rest', async () => {
+    const { id: projectId } = await workspace.openProject(repo.path)
+    const made = await workspace.createWorktree({ projectId, branch: 'gone-soon' })
+    const [main] = (await workspace.worktrees()).filter((w) => w.isMain)
+    await workspace.setAwake([made.id, main!.id], true)
+    await repo.git('worktree', 'remove', made.path)
+    workspace.invalidate()
+    await workspace.worktrees()
+    expect(store.awake).toEqual([main!.id])
+  })
+
+  it('keeps the marks of a project that was closed, for when it opens again', async () => {
+    const { id: projectId } = await workspace.openProject(repo.path)
+    const [main] = await workspace.worktrees()
+    await workspace.setAwake([main!.id], true)
+    await workspace.closeProject(projectId)
+    workspace.invalidate()
+    await workspace.worktrees()
+    expect(store.awake).toEqual([main!.id])
+  })
+
   it('is answered after the worktree cache, so a wake shows at once', async () => {
     await workspace.openProject(repo.path)
     const [main] = await workspace.worktrees()

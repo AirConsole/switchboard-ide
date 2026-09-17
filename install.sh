@@ -13,14 +13,23 @@ set -eu
 REPO_URL="https://github.com/AirConsole/switchboard-ide.git"
 RAW_URL="https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/install.sh"
 DIR="${SWB_INSTALL_DIR:-$HOME/src/switchboard-ide}"
+DIR_GIVEN=0
+[ -n "${SWB_INSTALL_DIR:-}" ] && DIR_GIVEN=1
 # Run as ./install.sh from inside a checkout, it works on that checkout rather
 # than cloning a second one into the default place. Under `curl | sh` there is
-# no file, and $0 is the shell's own name.
+# no file, and $0 is the shell's own name. Only a main checkout counts: in a
+# linked worktree `.git` is a file, and the clone branch below would then try
+# to clone into it.
+SELF_WORKTREE=0
 case "$0" in
   */install.sh|install.sh)
     SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
-    if [ -z "${SWB_INSTALL_DIR:-}" ] && [ -n "$SELF_DIR" ] && [ -e "$SELF_DIR/.git" ] && [ -f "$SELF_DIR/cli/bin/swb.js" ]; then
-      DIR="$SELF_DIR"
+    if [ -n "$SELF_DIR" ] && [ -f "$SELF_DIR/cli/bin/swb.js" ]; then
+      if [ -d "$SELF_DIR/.git" ]; then
+        [ "$DIR_GIVEN" -eq 0 ] && DIR="$SELF_DIR"
+      elif [ -f "$SELF_DIR/.git" ]; then
+        SELF_WORKTREE=1
+      fi
     fi
     ;;
 esac
@@ -31,7 +40,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -y|--yes) ASSUME_YES=1 ;;
     --check) CHECK_ONLY=1 ;;
-    --dir) DIR="$2"; shift ;;
+    --dir) DIR="$2"; DIR_GIVEN=1; shift ;;
     -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install.sh: unknown option $1" >&2; exit 1 ;;
   esac
@@ -39,6 +48,12 @@ while [ $# -gt 0 ]; do
 done
 
 say() { printf '%s\n' "$*"; }
+
+if [ "$SELF_WORKTREE" -eq 1 ] && [ "$DIR_GIVEN" -eq 0 ]; then
+  say "install.sh: this is a git worktree. Worktrees develop, the main checkout deploys."
+  say "  run it from the main checkout, or name one with --dir"
+  exit 1
+fi
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- what this machine is ---------------------------------------------------
@@ -96,7 +111,13 @@ if [ -n "$MISSING" ]; then
   fi
   say "Will install with $PM:$MISSING"
 fi
-say "Will clone $REPO_URL into $DIR, then build it."
+UPDATING=0
+[ -d "$DIR/.git" ] && UPDATING=1
+if [ "$UPDATING" -eq 1 ]; then
+  say "Will update $DIR to the newest version (fast-forward only), then build and restart it."
+else
+  say "Will clone $REPO_URL into $DIR, then build it."
+fi
 if [ "$ASSUME_YES" -eq 0 ]; then
   # `/dev/tty` and not stdin, because under `curl | sh` stdin is the script.
   # Where there is no terminal to ask on -- CI, a hook, a container -- say so
@@ -155,17 +176,31 @@ if ! have pnpm; then
 fi
 
 # --- get the source ---------------------------------------------------------
-if [ -d "$DIR/.git" ]; then
-  say "updating $DIR"
-  git -C "$DIR" pull --ff-only
+# An update goes through `pnpm pull`, which refuses another branch, local
+# changes and a rewritten history with a way out, and restarts on what it
+# built -- a bare build here would swap web/dist under a running server that is
+# still the old one. A checkout from before `pnpm pull` existed is brought up to
+# it by git first.
+if [ "$UPDATING" -eq 1 ]; then
+  cd "$DIR"
+  if [ ! -f cli/src/pull.js ]; then
+    git pull --ff-only
+    pnpm install
+  fi
+  if [ -f cli/src/pull.js ]; then
+    node cli/bin/swb.js pull
+    say ""
+    say "Updated $DIR. From now on: pnpm pull"
+    exit 0
+  fi
+  pnpm build
 else
   mkdir -p "$(dirname "$DIR")"
   git clone "$REPO_URL" "$DIR"
+  cd "$DIR"
+  pnpm install
+  pnpm build
 fi
-
-cd "$DIR"
-pnpm install
-pnpm build
 
 say ""
 say "Installed in $DIR"
@@ -177,7 +212,7 @@ say "  pnpm status"
 say "  pnpm stop"
 say ""
 say "To update later: pnpm pull -- it fetches, installs if needed, builds and"
-say "restarts. If it was already running, run pnpm restart now to serve this build."
+say "restarts."
 say ""
 say "Nothing starts it at boot. Settings, if you need them, go in"
 say "  ~/.config/switchboard/config.json"
