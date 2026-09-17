@@ -125,7 +125,26 @@ describe('openProject', () => {
     }
   })
 
+  /*
+   * An identity for the production code path, which runs a real `git commit`.
+   *
+   * Without this the test borrows whatever the developer has in their global
+   * git config and passes for the wrong reason -- it passed here for months and
+   * failed the first time it ran on a machine that had none, which is also the
+   * state every new user's machine is in. A test that depends on the config of
+   * the box it runs on is not testing what it claims to.
+   */
   it('creates and initialises a directory when asked to', async () => {
+    const identity = {
+      GIT_AUTHOR_NAME: 'Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+    }
+    const restore = Object.fromEntries(
+      Object.keys(identity).map((k) => [k, process.env[k]]),
+    ) as Record<string, string | undefined>
+    Object.assign(process.env, identity)
     const fresh = join(repo.path, '..', `swb-fresh-${Date.now()}`)
     try {
       const project = await workspace.openProject(fresh, { create: true })
@@ -135,6 +154,10 @@ describe('openProject', () => {
       expect(await workspace.createWorktree({ projectId: project.id, branch: 'wt' })).toBeDefined()
     } finally {
       await rm(fresh, { recursive: true, force: true })
+      for (const [key, value] of Object.entries(restore)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
     }
   })
 
