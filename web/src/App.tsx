@@ -376,6 +376,31 @@ export const App = (): React.ReactElement => {
    * part of it before. Opening replaces rather than appends, which is also what
    * makes the toggles a set of alternatives instead of a row of switches.
    */
+  /**
+   * Go to a worktree's agent, which is what its tab means.
+   *
+   * A tab used to reveal the tile and ask for Claude's pane, and on a narrow
+   * window that asked for a pane which is not rendered: with a panel open
+   * `panesOf` gives the whole tile to the panel, so the keyboard was handed to
+   * nothing while `active` pointed at a pane that did not exist -- and the
+   * Cmd+arrow walk counts from `active`. Closing the panel first makes Claude
+   * exist again, which is the only way the promise can be kept.
+   *
+   * Deliberately not what `reveal` does everywhere: the Cmd+arrow walk steps
+   * through *panes*, and a panel that shut itself as you stepped into it would
+   * be a stop you could never reach. Waking, creating and `refocus` keep their
+   * own meaning too -- a dialog closing must put you back where you were,
+   * panel and all.
+   */
+  const revealClaude = (worktreeId: string): void => {
+    // Skipped when there is nothing open, so a tab click on a plain worktree
+    // does not cost a debounced UI write and a row re-render.
+    if ((ui.panels[worktreeId] ?? []).length > 0) {
+      setUi({ panels: { ...ui.panels, [worktreeId]: [] } })
+    }
+    reveal(worktreeId, 'claude')
+  }
+
   const togglePanel = (worktreeId: string, panel: PanelName): void => {
     const open = ui.panels[worktreeId] ?? []
     const wasOpen = open.includes(panel)
@@ -633,7 +658,7 @@ export const App = (): React.ReactElement => {
        */
       onRevealProject={(project) => reveal(projectKey(project.id), 'project')}
       onWake={wake}
-      onReveal={reveal}
+      onReveal={revealClaude}
       onSleep={setSleeping}
       activeId={active?.id ?? null}
     />

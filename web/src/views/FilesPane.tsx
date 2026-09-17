@@ -248,14 +248,15 @@ export const useFilesState = (opts: {
   const [fileNonce, setFileNonce] = useState(0)
 
   /*
-   * The unsaved buffer lives in a ref, and only a boolean reaches state.
+   * The unsaved buffer is in `drafts`, outside this component, and only a
+   * boolean reaches state.
    *
    * If it were state, every keystroke would re-render the whole tile -- and the
    * tile holds two live terminals beside this pane. It also makes "dirty" mean
    * *the buffer differs from disk* rather than *something was typed*, so
    * undoing back to the file's own text clears it for nothing.
    */
-  const draftRef = useRef<string | null>(null)
+  const key = draftKey(worktreeId, path)
   /** The rev of what `file` holds; the stale-write guard's half of the bargain. */
   const revRef = useRef<string | null>(null)
   /** The rev the server reported when it refused a save. */
@@ -360,7 +361,7 @@ export const useFilesState = (opts: {
     }
     let live = true
     const read = (): void => {
-      if (draftRef.current !== null) return
+      if (drafts.has(key)) return
       void api
         .readFile(worktreeId, filePath, revRef.current ?? undefined)
         .then((result) => {
@@ -431,14 +432,19 @@ export const useFilesState = (opts: {
     }
   }, [worktreeId, filePath, revision, fileNonce, enabled, onOpen])
 
-  // A different file starts with a clean slate; the old draft belonged to the
-  // old file and there is nowhere sensible to put it.
+  /*
+   * A different file shows whatever is being held for *it*.
+   *
+   * It used to throw the buffer away here, on the grounds that the old draft
+   * belonged to the old file and there was nowhere sensible to put it. There is
+   * now: `drafts` is keyed by file, so switching away and back returns what you
+   * typed, and so does closing this panel and opening it again.
+   */
   useEffect(() => {
-    draftRef.current = null
     freshRevRef.current = null
-    setDirty(false)
+    setDirty(drafts.has(draftKey(worktreeId, filePath ?? '')))
     setConflict(false)
-  }, [filePath])
+  }, [worktreeId, filePath])
 
   /*
    * What is on disk, read by `edited` below without being a dependency of it: a
@@ -448,17 +454,21 @@ export const useFilesState = (opts: {
   const lastDiskRef = useRef<string | null>(null)
   lastDiskRef.current = file?.text ?? null
 
-  const edited = useCallback((text: string): void => {
-    const clean = text === lastDiskRef.current
-    draftRef.current = clean ? null : text
-    setDirty((was) => (was === !clean ? was : !clean))
-  }, [])
+  const edited = useCallback(
+    (text: string): void => {
+      const clean = text === lastDiskRef.current
+      if (clean) drafts.delete(key)
+      else drafts.set(key, text)
+      setDirty((was) => (was === !clean ? was : !clean))
+    },
+    [key],
+  )
 
-  const draft = useCallback((): string | null => draftRef.current, [])
+  const draft = useCallback((): string | null => drafts.get(key) ?? null, [key])
 
   const put = useCallback(
     (ifRev: string): void => {
-      const text = draftRef.current
+      const text = drafts.get(key) ?? null
       if (text === null || filePath === null) return
       const saved = filePath
       setSaving(true)
@@ -477,7 +487,7 @@ export const useFilesState = (opts: {
           if (saved !== pathRef.current) return
           revRef.current = result.rev
           freshRevRef.current = null
-          draftRef.current = null
+          drafts.delete(draftKey(worktreeId, saved))
           setDirty(false)
           setConflict(false)
           setError(null)
@@ -514,7 +524,7 @@ export const useFilesState = (opts: {
   }, [put])
 
   const revert = useCallback((): void => {
-    draftRef.current = null
+    drafts.delete(key)
     freshRevRef.current = null
     setDirty(false)
     setConflict(false)
@@ -774,7 +784,50 @@ const MODES: readonly { mode: FilesMode; label: string }[] = [
   { mode: 'commits', label: 'Commits' },
 ]
 
+/*
+ * Unsaved buffers, by worktree and file, held outside React.
+ *
+ * It was a ref inside the pane, and a ref inside a pane dies with the pane --
+ * so closing the panel with an edit in flight threw the edit away, which is the
+ * opposite of what this file says two hundred lines down: *an unsaved edit is
+ * not something to unmount; off screen or not, it is the thing you are working
+ * on.* The top bar's tabs close panels now, so what used to take a deliberate
+ * second click on FILES became something you could do by navigating.
+ *
+ * A plain Map rather than state or context, because nothing may re-render when
+ * it changes: the tile around this pane holds live terminals, and a keystroke
+ * that re-rendered them would be paid for at every keystroke. Entries go on
+ * save, on revert, and when the text matches disk again -- so an untouched
+ * worktree holds nothing, and the map is as long as the list of files you have
+ * edited and not saved.
+ */
+const drafts = new Map<string, string>()
+
+/** Worktree and path together; a path alone collides across worktrees. */
+const draftKey = (worktreeId: string, path: string): string => `${worktreeId}\u0000${path}`
+
+/** Whether anything is being held for this file, for callers outside the pane. */
+export const hasDraft = (worktreeId: string, path: string): boolean =>
+  drafts.has(draftKey(worktreeId, path))
+
 export interface FilesPaneProps {
+  /**
+   * Whether this panel has something open.
+   *
+   * The row's answer, not this pane's. It used to be worked out in both places
+   * from the same state, each with a comment saying the two must agree -- and
+   * in Commits they could not, because the row read the stored hash while this
+   * read `useChangesState`, whose stale check clears a selection an amend has
+   * invalidated. Two derivations of one fact agree best when there is one.
+   */
+  contentOpen: boolean
+  /**
+   * Whether the tree may sit beside the file -- the row's answer, from this
+   * pane's width. False means one at a time: the file, or the list.
+   */
+  roomForTree: boolean
+  /** With no room for both, show the list rather than the file. */
+  showList: boolean
   mode: FilesMode
   onMode: (mode: FilesMode) => void
   /**
@@ -804,6 +857,9 @@ export interface FilesPaneProps {
  */
 export const FilesPane = ({
   mode,
+  contentOpen,
+  roomForTree,
+  showList,
   onMode,
   files,
   changes,
@@ -885,12 +941,18 @@ export const FilesPane = ({
    * editor away; the other two count their one selection, which is what
    * clicking it again or the collapse button clears.
    */
-  const contentOpen =
-    mode === 'files'
-      ? openFiles.length > 0
-      : mode === 'commits'
-        ? changes.commit !== null
-        : files.path !== ''
+  /*
+   * With no room for both, the panel is one thing at a time.
+   *
+   * The file is what you opened the panel for and the tree is a list of names,
+   * so the file has the pane and the tree steps aside -- `.files__file` asks
+   * for 80 columns and the stylesheet used to let the *editor* give them up,
+   * which on a phone left the code with a fraction of the screen. FILES brings
+   * the list back (`showList`), and opening something from it hands the pane
+   * back to the file.
+   */
+  const sideShown = roomForTree || !contentOpen || showList
+  const fileShown = contentOpen && (roomForTree || !showList)
 
   /*
    * Arriving from the row: the file you are reading, or the box you would type
@@ -907,7 +969,14 @@ export const FilesPane = ({
    * next Cmd+arrow still steps.
    */
   const wantsEditorRef = useRef(false)
-  wantsEditorRef.current = mode === 'files' && contentOpen && files.path !== '' && !searching
+  /*
+   * The editor, or the search box under the tree -- and where there is no tree
+   * there is no box, so the file takes the keyboard whatever the mode. Without
+   * that last clause, arriving at a pane too narrow for both aimed focus at an
+   * input that is not rendered and left it on the document.
+   */
+  wantsEditorRef.current =
+    !sideShown || (mode === 'files' && contentOpen && files.path !== '' && !searching)
   useEffect(() => {
     if (focus === null) return
     const bump = (n: number | null): number => (n ?? 0) + 1
@@ -1202,6 +1271,7 @@ export const FilesPane = ({
         }
       }}
     >
+      {sideShown && (
       <div className="files__side">
         <div className="files__modes">
           {MODES.map(({ mode: name, label }) => (
@@ -1276,8 +1346,9 @@ export const FilesPane = ({
           />
         </div>
       </div>
+      )}
 
-      {contentOpen && (
+      {fileShown && (
         <div className="files__file">
           {files.conflict && (
             <div className="files__notice">

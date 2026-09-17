@@ -285,9 +285,21 @@ export const CodeEditor = ({
       const extensions = extensionsRef.current ?? []
       view.setState(EditorState.create({ doc: draft() ?? file.text, extensions }))
       view.dispatch({ effects: language.reconfigure(loadedLanguageFor(file.path) ?? []) })
-    } else {
+    } else if (draft() === null) {
       followDisk(view, file.text)
     }
+    /*
+     * Not while there is an unsaved edit, which is the rule the poll behind
+     * this already keeps: *the document you are editing must not be rewritten
+     * underneath you.* The poll stops asking once there is a draft, so this
+     * only fires on the path the poll cannot see -- an editor **remounted**
+     * onto a file it is already holding edits for, where `file` is a fresh
+     * object with the same path and the same disk text. Following it there
+     * replaced the draft the editor had just been created with, and the
+     * resulting update reported a document identical to disk, which is how the
+     * edit was thrown away rather than kept: measured, 608 characters typed and
+     * 602 written back, one frame later.
+     */
     shownRef.current = file
     // `draft` is read once per document, on purpose; it is not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps

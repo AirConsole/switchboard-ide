@@ -6,6 +6,7 @@ import {
   PANE_CHROME_WIDTH,
   gapFor,
   measureMonoCharWidth,
+  monoAdvance,
   nearestOffset,
   rowMetrics,
   wholeOnScreen,
@@ -45,14 +46,18 @@ describe('measureMonoCharWidth', () => {
     expect(measureMonoCharWidth(14, 'floor-test')).toBe(8)
   })
 
-  it('falls back to a ratio when there is no canvas to measure with', () => {
+  it('floors the fallback too, because a cell is always whole', () => {
     stubCanvas(null)
-    expect(measureMonoCharWidth(14, 'no-canvas')).toBeCloseTo(14 * 0.6)
+    expect(measureMonoCharWidth(14, 'no-canvas')).toBe(Math.floor(14 * 0.6))
+    // The raw one keeps the fraction, which is what an 80ch measure needs.
+    expect(monoAdvance(14, 'no-canvas')).toBeCloseTo(14 * 0.6)
   })
 
   it('falls back rather than returning zero when the measurement is empty', () => {
+    // Also floored: 14 * 0.6 is 8.4, and no terminal lays out four tenths of a
+    // pixel. `monoAdvance` is where the fraction is kept.
     stubCanvas(0)
-    expect(measureMonoCharWidth(14, 'zero-width')).toBeCloseTo(14 * 0.6)
+    expect(measureMonoCharWidth(14, 'zero-width')).toBe(Math.floor(14 * 0.6))
   })
 
   it('measures with the font it was given', () => {
@@ -187,5 +192,37 @@ describe('nearestOffset and wholeOnScreen', () => {
     // With room for more, the row moves as little as it can.
     const wide = [0, 2, 4, 6]
     expect(nearestOffset({ at: 6, units: 2 }, 0, 4, wide)).toBe(4)
+  })
+})
+
+/*
+ * The two questions a monospace measurement can answer, and why they are not
+ * the same function.
+ *
+ * A terminal cell is a whole number of pixels because xterm blits glyphs from
+ * an atlas per cell. A character in the editor is not: CodeMirror lays out on
+ * real metrics, and `.files__file` asks for `calc(80ch + …)`, where `ch` is the
+ * true advance. Answering the second question with the first is wrong by the
+ * fraction times eighty -- ten columns of an eighty-column measure.
+ */
+describe('monoAdvance against measureMonoCharWidth', () => {
+  it('keeps the fraction where the cell floors it', () => {
+    stubCanvas(7.83)
+    expect(monoAdvance(13, 'split-a')).toBeCloseTo(7.83)
+    expect(measureMonoCharWidth(13, 'split-b')).toBe(7)
+  })
+
+  it('agrees when the measurement is already whole', () => {
+    stubCanvas(8)
+    expect(monoAdvance(14, 'whole-a')).toBe(8)
+    expect(measureMonoCharWidth(14, 'whole-b')).toBe(8)
+  })
+
+  it('is what an eighty-column measure must be built on', () => {
+    stubCanvas(7.83)
+    // 80 columns is 626px, not the 560 the floored cell would claim -- and the
+    // 66px between them is the whole question of whether a tree fits beside it.
+    expect(Math.round(80 * monoAdvance(13, 'eighty-a'))).toBe(626)
+    expect(Math.round(80 * measureMonoCharWidth(13, 'eighty-b'))).toBe(560)
   })
 })
