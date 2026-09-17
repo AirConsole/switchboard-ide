@@ -142,6 +142,49 @@ const TodoRow = ({
   const prompt = draft ?? todo.prompt
   const grow = useAutoGrow(prompt)
   const move = useAnchoredMenu<HTMLButtonElement>()
+  const runNext = useRef<HTMLButtonElement | null>(null)
+  const rowRef = useRef<HTMLDivElement | null>(null)
+
+  /*
+   * Out of the prompt and onto the row's first action, which is where ← came
+   * in from. The blur this causes is what saves the edit (or, after Escape,
+   * throws it away), so leaving the text and committing it are one gesture.
+   */
+  const backToActions = (): void => {
+    runNext.current?.focus()
+  }
+
+  /*
+   * Into the prompt from the actions, with the caret at the end -- where you
+   * would be to add to it, which is what going back into a prompt is for.
+   */
+  const intoPrompt = (): void => {
+    const field = grow.current
+    if (!field) return
+    field.focus()
+    const end = field.value.length
+    field.setSelectionRange(end, end)
+  }
+
+  /*
+   * Where the keyboard goes when this row is deleted from under it. Deleting is
+   * a click that removes the thing that has focus, and a focus left on nothing
+   * is a list the arrows no longer walk -- so it moves first, to the same
+   * action on the row below, or above when this was the last, or the box you
+   * add the next one in.
+   */
+  const handOff = (): void => {
+    const row = rowRef.current
+    if (!row) return
+    const pick = (other: Element | null): HTMLElement | null =>
+      other?.querySelector<HTMLElement>('.todo__remove') ?? null
+    const next =
+      pick(row.nextElementSibling) ??
+      pick(row.previousElementSibling) ??
+      row.closest('.todo')?.querySelector<HTMLElement>('.todo__new .todo__prompt') ??
+      null
+    next?.focus()
+  }
 
   // The server agreed with what we sent: hand control back to the snapshot.
   useEffect(() => {
@@ -177,7 +220,7 @@ const TodoRow = ({
   const queued = position !== null
 
   return (
-    <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'}>
+    <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'} ref={rowRef}>
       {/*
        * The three things you can do to a todo: the tab strip's own object,
        * stood on end.
@@ -191,8 +234,19 @@ const TodoRow = ({
        * taller prompt: an empty segment under DELETE is a fourth thing you can
        * do to a todo, drawn and doing nothing.
        */}
-      <div className="todo__controls">
+      <div
+        className="todo__controls"
+        onKeyDown={(event) => {
+          // ← leaves the actions for the text they act on, which is drawn to
+          // their left -- and on a phone, above them, which is still "back".
+          if (event.key !== 'ArrowLeft') return
+          if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+          event.preventDefault()
+          intoPrompt()
+        }}
+      >
         <button
+          ref={runNext}
           className={queued ? 'todo__act todo__next todo__next--on' : 'todo__act todo__next'}
           aria-pressed={queued}
           onClick={() => {
@@ -237,7 +291,8 @@ const TodoRow = ({
         )}
         <button
           className="todo__act todo__remove"
-          onClick={() => {
+          onClick={(event) => {
+            if (document.activeElement === event.currentTarget) handOff()
             onError(null)
             onLeaving(todo.id)
             void api.deleteTodo(todo.id).catch((err: unknown) => {
@@ -296,14 +351,20 @@ const TodoRow = ({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
-          // Enter is a newline here: this is the text Claude will be given, and
-          // it is often several lines.
+          /*
+           * Enter is a newline here: this is the text Claude will be given, and
+           * it is often several lines. Cmd+Enter is done -- it saves, and hands
+           * the keyboard to RUN NEXT, the thing you most likely edited the
+           * prompt in order to do. Escape is the same exit with the edit thrown
+           * away.
+           */
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.currentTarget.blur()
+            event.preventDefault()
+            backToActions()
           }
           if (event.key === 'Escape') {
             abandon.current = true
-            event.currentTarget.blur()
+            backToActions()
           }
         }}
       />
@@ -362,6 +423,23 @@ const NewTodo = ({
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) add()
+          /*
+           * ↑ with the caret at the very start is the one arrow a textarea has
+           * no use for, so it means the list above -- the same key the files
+           * panel's search box uses for the same thing. Anywhere else in the
+           * text it is the caret's.
+           */
+          if (event.key === 'ArrowUp' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+            const field = event.currentTarget
+            if (field.selectionStart !== 0 || field.selectionEnd !== 0) return
+            const buttons = field
+              .closest('.todo')
+              ?.querySelectorAll<HTMLElement>('.todo__list .todo__act')
+            const last = buttons?.[buttons.length - 1]
+            if (!last) return
+            event.preventDefault()
+            last.focus()
+          }
         }}
       />
       <div className="todo__newfoot">
@@ -443,23 +521,24 @@ export const TodoPane = ({
   }, [queuedIds, onQueueDrained])
 
   /*
-   * The panel is a list, so it answers to the arrows like the project pane:
-   * up and down walk the todos, left and right walk the three things you can
-   * do to the one you are on, and walking down while standing on DELETE stays
-   * on DELETE -- the slab is a column of like controls, and a walk that
-   * dropped back to RUN NEXT every row would make the other two reachable only
-   * sideways.
+   * The panel is a list of buttons, walked one button at a time.
    *
-   * The prompt is deliberately not in the column. It is a textarea, where every
-   * arrow belongs to the caret, and a walk that stopped in one would be a walk
-   * you could not get out of; the hook leaves a field's keys alone, so the
-   * three buttons are the walk and Tab is how you reach the text.
+   * ↑ and ↓ go to the next action whichever row it is on -- RUN NEXT, MOVE TO,
+   * DELETE, then the next todo's RUN NEXT -- because the actions are drawn as
+   * one column, and a column is walked down, not across. ← goes into that
+   * todo's prompt (see `intoPrompt`), and Cmd+Enter or Escape comes back out
+   * onto its RUN NEXT. ↓ past the last action reaches the box you add the next
+   * todo in, and ↑ from the start of that box comes back.
+   *
+   * A row's prompt is not a stop. It is a textarea, where every arrow belongs to
+   * the caret, so a walk that stopped in one could not leave it again; you go
+   * in with ← and out with Cmd+Enter instead, which says what you meant. The
+   * new-todo box is a stop only as the end of the walk, for the same reason:
+   * once in it, ↑ at its start is the only arrow that leaves.
    */
   const box = useRef<HTMLDivElement | null>(null)
   useListKeys(box, {
-    rows: '.todo__controls .todo__act:first-child',
-    cells: '.todo__act',
-    line: '.todo__row',
+    rows: '.todo__list .todo__act, .todo__new .todo__prompt',
   })
 
   return (

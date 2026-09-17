@@ -2756,6 +2756,20 @@ button {
 }
 
 /*
+ * The same ring on every other list the arrows walk, drawn inside because each
+ * of these is clipped by its container: the files panel's lists scroll, and the
+ * todo's actions are segments of a shell that clips them to its curve. They had
+ * the browser's own ring, 1px of --pulse -- easy to lose, and it is the only
+ * thing that moves when you walk the tree, since moving is not opening.
+ */
+.files__row:focus-visible,
+.files__commit:focus-visible,
+.todo__act:focus-visible {
+  outline: 2px solid var(--legend);
+  outline-offset: -2px;
+}
+
+/*
  * The way out that cannot be undone, alone in the far corner.
  *
  * For a footer that offers a second outcome beside its main one: "Delete
@@ -3427,11 +3441,6 @@ button {
   color: var(--bone);
 }
 
-/* Drawn inside: the slab clips its segments to the shell's curve, so a ring on
-   the outer edge of one would come out as three sides of a ring. */
-.todo__act:focus-visible {
-  outline-offset: -1px;
-}
 
 /*
  * Queued, filled in reverse.
@@ -3940,11 +3949,6 @@ button {
   color: var(--bone);
 }
 
-/* Drawn inside: the tree clips, and a ring on the outer edge of a row at the
-   top of a scroller would be half a ring. */
-.files__row:focus-visible {
-  outline-offset: -1px;
-}
 
 /*
  * The disclosure triangle, in a fixed box whether or not there is one in it, so
