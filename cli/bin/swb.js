@@ -16,6 +16,17 @@
  */
 import { parseArgs } from 'node:util'
 
+/*
+ * `swb status | head -2` closes the pipe while we are still writing to it, and
+ * an unhandled EPIPE turns an ordinary pipeline into a stack trace. Reading
+ * output through `head` or `grep -q` is the normal thing to do here, so it is
+ * not an error -- it means the reader has what it wanted.
+ */
+process.stdout.on('error', (err) => {
+  if (/** @type {NodeJS.ErrnoException} */ (err).code === 'EPIPE') process.exit(0)
+  throw err
+})
+
 const USAGE = `swb -- Switchboard
 
   pnpm start                     bring the instance up (does not build)
