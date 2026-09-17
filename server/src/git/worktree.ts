@@ -275,19 +275,17 @@ export const defaultBranchRef = async (root: string): Promise<string | null> => 
  * `git diff master HEAD` was empty. Every worktree in the row wore a fork glyph
  * saying it had work to contribute, having contributed it.
  *
- * So the count is confirmed against the *content*: identical trees mean the
- * merge would bring nothing, whatever the commits say. A rebase-and-merge lies
- * the same way and is fixed by the same check.
+ * So the count is confirmed against the *content* (`bringsNothing`): a merge
+ * that would leave the default branch's tree exactly as it is brings nothing,
+ * whatever the commits say. A rebase-and-merge lies the same way and is fixed
+ * by the same check.
  *
  * Zero for the default branch itself, and zero when there is nothing to compare
  * against -- a repository with no default branch cannot have anything unmerged
  * from it.
  *
- * Two things this deliberately does not do. It does not reach for
- * `merge-tree`, which would also catch a branch that is ahead *and* behind
- * where the ahead part is already in -- that costs a real merge of two trees
- * per worktree per refresh, and nothing has hit it yet. And it does not run the
- * diff unless the count is non-zero, so the common answer stays one `rev-list`.
+ * The content check runs only where the count is non-zero, so the common
+ * answer stays one `rev-list`.
  */
 export const unmergedCount = async (path: string, defaultRef: string | null): Promise<number> => {
   if (defaultRef === null) return 0
@@ -295,7 +293,7 @@ export const unmergedCount = async (path: string, defaultRef: string | null): Pr
     const out = await git(path, 'rev-list', '--count', `${defaultRef}..HEAD`)
     const count = Number(out.trim())
     if (!Number.isFinite(count) || count === 0) return 0
-    return (await differs(path, defaultRef, 'HEAD')) ? count : 0
+    return (await bringsNothing(path, defaultRef)) ? 0 : count
   } catch {
     // A detached HEAD, an unborn branch, or a default ref that has gone.
     return 0
@@ -303,20 +301,51 @@ export const unmergedCount = async (path: string, defaultRef: string | null): Pr
 }
 
 /**
- * Whether two revisions hold different content.
+ * Whether merging HEAD into `defaultRef` would leave the default branch as it is.
  *
- * `git diff --quiet` says so by exiting 1, which `execFile` reports as a
- * failure rather than as an answer -- so the throw is the answer. Any *other*
- * failure lands here too, and is answered "they differ": this decides whether
- * to show a mark saying there is work here, and git falling over is not a
- * reason to tell somebody their work is already merged.
+ * Two questions, cheapest first.
+ *
+ * **Identical trees** (`git diff --quiet`) is the whole answer right after a
+ * squash merge, and it is a tree comparison rather than a walk -- 2ms here.
+ * It stops being enough the moment the default branch moves on: the branch
+ * then lacks the newer work, so the trees differ, while everything the branch
+ * *has* is already in. Measured on this branch an hour after its fix for the
+ * squash case shipped: one more pull request landed on master, and the fork
+ * came back with 19 commits behind it and nothing to contribute.
+ *
+ * **The merge itself** (`git merge-tree --write-tree`) answers that: a merge
+ * whose result is the default branch's own tree brings nothing. It is a real
+ * three-way merge, in memory and without touching any checkout -- 7ms on this
+ * repository -- so it runs only where the trees differ. It does write the
+ * merged tree into the object store, which is content-addressed: the same
+ * pair of inputs writes nothing the second time, and a tree nothing points at
+ * is pruned by gc like any other. A conflict exits 1, and a merge that
+ * conflicts brings something by definition.
+ *
+ * `git diff --quiet` and a conflicting `merge-tree` both answer by exiting 1,
+ * which `execFile` reports as a failure rather than as an answer -- so a throw
+ * is read as "it brings something". Any *other* failure lands there too, and
+ * that is the safe direction: this decides whether to show a mark saying there
+ * is work here, and git falling over is not a reason to tell somebody their
+ * work is already merged. (`merge-tree --write-tree` needs git 2.38; older git
+ * throws here and the mark stays, which is the behaviour before this check.)
  */
-const differs = async (path: string, from: string, to: string): Promise<boolean> => {
+const bringsNothing = async (path: string, defaultRef: string): Promise<boolean> => {
   try {
-    await git(path, 'diff', '--quiet', from, to)
-    return false
-  } catch {
+    await git(path, 'diff', '--quiet', defaultRef, 'HEAD')
     return true
+  } catch {
+    // They differ -- or git could not say. Ask the merge.
+  }
+  try {
+    const [merged, base] = await Promise.all([
+      git(path, 'merge-tree', '--write-tree', defaultRef, 'HEAD'),
+      git(path, 'rev-parse', `${defaultRef}^{tree}`),
+    ])
+    const tree = merged.split('\n')[0]?.trim()
+    return tree !== undefined && tree !== '' && tree === base.trim()
+  } catch {
+    return false
   }
 }
 

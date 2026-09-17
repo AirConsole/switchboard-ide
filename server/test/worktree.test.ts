@@ -211,6 +211,49 @@ describe('against a real repository', () => {
     expect(await unmergedCount(path, 'main')).toBe(0)
   })
 
+  it('counts nothing once the work is in, even after the default branch moved on', async () => {
+    /*
+     * The squash check above compared trees, and that stops being enough the
+     * moment another pull request lands: the branch then lacks the newer work,
+     * so the trees differ, while everything the branch has is already in.
+     * Measured on the branch this was written on -- one more merge to master
+     * and the fork came back with 19 commits and nothing to contribute.
+     */
+    const path = join(repo.path, '.claude', 'worktrees', 'behind')
+    await addWorktree({ root: repo.path, path, branch: 'behind' })
+    await writeFile(join(path, 'work.txt'), 'work\n', 'utf8')
+    await repo.git('-C', path, 'add', '-A')
+    await repo.git('-C', path, 'commit', '-m', 'the work')
+
+    await repo.git('merge', '--squash', 'behind')
+    await repo.git('commit', '-m', 'the work (#1)')
+    await repo.write('later.txt', 'somebody else\n')
+    await repo.commit('the next pull request (#2)')
+
+    expect((await repo.git('rev-list', '--count', 'main..behind')).trim()).toBe('1')
+    // The trees differ -- main has later.txt -- so only the merge can tell.
+    expect(await unmergedCount(path, 'main')).toBe(0)
+
+    // And real work on top of that still counts.
+    await writeFile(join(path, 'more.txt'), 'more\n', 'utf8')
+    await repo.git('-C', path, 'add', '-A')
+    await repo.git('-C', path, 'commit', '-m', 'more work')
+    expect(await unmergedCount(path, 'main')).toBe(2)
+  })
+
+  it('counts work that conflicts with the default branch', async () => {
+    // A merge that conflicts brings something by definition; merge-tree says so
+    // by exiting 1, which must not be read as "nothing to merge".
+    const path = join(repo.path, '.claude', 'worktrees', 'clash')
+    await addWorktree({ root: repo.path, path, branch: 'clash' })
+    await writeFile(join(path, 'README.md'), 'mine\n', 'utf8')
+    await repo.git('-C', path, 'add', '-A')
+    await repo.git('-C', path, 'commit', '-m', 'mine')
+    await repo.write('README.md', 'theirs\n')
+    await repo.commit('theirs')
+    expect(await unmergedCount(path, 'main')).toBe(1)
+  })
+
   it('counts nothing unmerged when there is no default branch to compare with', async () => {
     expect(await unmergedCount(repo.path, null)).toBe(0)
     expect(await unmergedCount(repo.path, 'origin/nope')).toBe(0)
