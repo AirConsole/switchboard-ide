@@ -13,6 +13,17 @@ set -eu
 REPO_URL="https://github.com/AirConsole/switchboard-ide.git"
 RAW_URL="https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/install.sh"
 DIR="${SWB_INSTALL_DIR:-$HOME/src/switchboard-ide}"
+# Run as ./install.sh from inside a checkout, it works on that checkout rather
+# than cloning a second one into the default place. Under `curl | sh` there is
+# no file, and $0 is the shell's own name.
+case "$0" in
+  */install.sh|install.sh)
+    SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
+    if [ -z "${SWB_INSTALL_DIR:-}" ] && [ -n "$SELF_DIR" ] && [ -e "$SELF_DIR/.git" ] && [ -f "$SELF_DIR/cli/bin/swb.js" ]; then
+      DIR="$SELF_DIR"
+    fi
+    ;;
+esac
 ASSUME_YES=0
 CHECK_ONLY=0
 
@@ -164,6 +175,9 @@ say "  pnpm password     # the server will not start without one"
 say "  pnpm start        # http://127.0.0.1:8083"
 say "  pnpm status"
 say "  pnpm stop"
+say ""
+say "To update later: pnpm pull -- it fetches, installs if needed, builds and"
+say "restarts. If it was already running, run pnpm restart now to serve this build."
 say ""
 say "Nothing starts it at boot. Settings, if you need them, go in"
 say "  ~/.config/switchboard/config.json"

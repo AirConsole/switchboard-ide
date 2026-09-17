@@ -49,6 +49,7 @@ its worktrees appear as windows.
 pnpm status         # is it up, and is its public name right
 pnpm stop           # leaves the tmux sessions and their agents running
 pnpm restart        # builds first; this is the deploy
+pnpm pull           # update to the newest version and restart on it
 ```
 
 `start` detaches from your shell, so closing the terminal does not take it down.

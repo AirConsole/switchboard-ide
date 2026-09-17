@@ -54,6 +54,7 @@ const localToken = () => {
  * @property {string} script
  * @property {string} [host]
  * @property {string} [instanceId]
+ * @property {string} [commit] what was checked out when it started, so `pull` can tell whether it is behind
  * @property {string} startedAt
  */
 
@@ -457,6 +458,31 @@ const sessionSummary = async (port) => {
   }
 }
 
+/** The checkout's HEAD, or undefined outside a git checkout. */
+const headCommit = () => {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Is the machine's instance up, and on which commit. For `pull`, which
+ * restarts only when what is running is not what is checked out.
+ * @returns {{ running: boolean, commit?: string }}
+ */
+export const running = () => {
+  const run = readRun()
+  if (run === undefined) return { running: false }
+  const args = psArgsFor(run.pid)
+  return { running: args !== undefined && isOurServer(args, run.script), commit: run.commit }
+}
+
 /** @param {{host?: string, force?: boolean, quiet?: boolean}} opts */
 export const start = async (opts = {}) => {
   guard('start', opts.force)
@@ -507,6 +533,7 @@ export const start = async (opts = {}) => {
     repo: repoRoot,
     script: serverScript,
     host,
+    commit: headCommit(),
     startedAt: new Date().toISOString(),
   })
 

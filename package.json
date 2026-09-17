@@ -13,6 +13,7 @@
     "start": "node cli/bin/swb.js start",
     "stop": "node cli/bin/swb.js stop",
     "restart": "node cli/bin/swb.js restart",
+    "pull": "node cli/bin/swb.js pull",
     "status": "node cli/bin/swb.js status",
     "scratch": "node cli/bin/swb.js scratch",
     "password": "node cli/bin/swb.js password",

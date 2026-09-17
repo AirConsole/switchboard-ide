@@ -59,6 +59,7 @@ pnpm dev         # vite on :5240 proxying the server on :8083
 pnpm start       # bring the machine's instance up, detached, on :8083
 pnpm stop        # stop it; the tmux sessions and their agents keep running
 pnpm restart     # build, then stop and start -- this is the deploy
+pnpm pull        # fast-forward to origin, install if the lockfile moved, then restart
 pnpm status      # what it is, and whether its public name is right
 
 pnpm test:watch  # the same, staying open
@@ -69,6 +70,15 @@ pnpm ensure-native   # rebuild node-pty if a Node upgrade left it ABI-stale
 **`restart` builds and `start` does not.** Restart is how you ship a change;
 start is how you bring something up. A failed build restarts nothing, so what is
 running stays running and it is the last thing that built.
+
+**`pull` is restart with the newest code first**, and its own verb because a
+restart that quietly fetches is not a restart. It refuses a worktree, a branch
+other than the default and uncommitted changes, fast-forwards only, and names a
+rewritten history with the command that recovers from it. It is not `update`:
+pnpm runs its own `update` -- dependency upgrades -- instead of a script by that
+name, and the same goes for `upgrade`, `self-update` and `deploy`. With nothing
+new, it restarts only if what is running is older than what is checked out,
+which `start` records in `run.json`.
 
 Each is an alias for one command, `cli/bin/swb.js`; `pnpm swb` prints its usage.
 It is plain JavaScript with no build step,
@@ -130,7 +140,7 @@ have checked. Consequences:
   The tmux sessions survive it — that is the whole point of the design — but
   ask before restarting unless they asked for the change.
 - **`pnpm restart` is the restart**, run from the main checkout after a merge
-  lands *and has been pulled*: it builds, and only if that succeeds stops the
+  lands *and has been pulled* -- `pnpm pull` does both: it builds, and only if that succeeds stops the
   port and starts it again detached. It is never automatic, and it **refuses to
   run from a worktree**.
   It passes `--host` from `~/.config/switchboard/config.json` when there is one;
@@ -183,14 +193,13 @@ and let the merge be what ships it.
 **Nothing reaches master except through a pull request.** `master` is protected
 on GitHub: direct pushes are refused for everybody, the `gates` check must pass,
 and the branch must be up to date first. So "merge into master" is now four
-steps, and the third is the one that is easy to forget:
+steps, and the last is the one that is easy to forget:
 
 ```sh
 git push -u origin <branch>       # from the worktree
 gh pr create --fill               # or open it in the browser
 gh pr merge --squash --delete-branch
-git -C <main checkout> pull       # master is only local-current after this
-pnpm restart                      # from the main checkout, which now deploys
+pnpm pull                         # from the main checkout: pull master, then restart on it
 ```
 
 Merging locally into master still works and still builds — but it cannot be
