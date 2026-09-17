@@ -2751,6 +2751,7 @@ button {
  */
 .files__row:focus-visible,
 .files__commit:focus-visible,
+.files__mode:focus-visible,
 .todo__act:focus-visible {
   outline: 2px solid var(--legend);
   outline-offset: -2px;
