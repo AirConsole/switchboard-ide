@@ -609,7 +609,6 @@ export const App = (): React.ReactElement => {
       onReveal={reveal}
       onSleep={setSleeping}
       activeId={active?.id ?? null}
-      onRefocus={refocus}
     />
   )
 

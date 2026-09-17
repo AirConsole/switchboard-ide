@@ -36,7 +36,8 @@ as fit to fill the screen, and two of them never fall below 80 columns; the
 tree by itself is the one thing allowed to have less, because it is names and
 not code. Navigation always lands on a pane's leading edge, so no pane is ever
 shown cut down the middle. On a phone the row is one window per screen with no
-chrome between them, and the top bar is a hamburger -- see `web/CLAUDE.md`.
+chrome between them, and the top bar gives things up in order as it runs out of
+room rather than switching layouts -- see `web/CLAUDE.md`.
 
 ## Commands
 
