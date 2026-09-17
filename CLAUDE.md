@@ -7,6 +7,12 @@ fast — a dispatcher, not a dashboard.
 The IDE is used to develop itself. If you are reading this in a worktree, you
 are probably one of the agents in one of its windows.
 
+`README.md` is the overview and how to run it. These three `CLAUDE.md` files are
+something else: the reasoning, and most of it was measured rather than argued.
+Where something looks arbitrary, the comment beside it says what it cost to
+learn — treat those as load-bearing, because they were each written after
+getting it wrong once.
+
 ## The model
 
 A **project** is a registered git repository. Every registered project is open;
@@ -45,14 +51,29 @@ room rather than switching layouts -- see `web/CLAUDE.md`.
 pnpm install     # also compiles node-pty from source for this platform
 pnpm build       # shared -> web -> server, in that order
 pnpm typecheck   # a gate; builds shared first because the others import it
-pnpm test        # the other gate: vitest over all three packages
-pnpm start       # serves web/dist from the server on :8084
+pnpm test        # the other gate: vitest over all four packages
 pnpm dev         # vite on :5240 proxying the server on :8084
+
+pnpm start       # bring the machine's instance up, detached, on :8084
+pnpm stop        # stop it; the tmux sessions and their agents keep running
+pnpm restart     # build, then stop and start -- this is the deploy
+pnpm status      # what it is, and whether its public name is right
 
 pnpm test:watch  # the same, staying open
 pnpm coverage    # with a per-file table
 pnpm ensure-native   # rebuild node-pty if a Node upgrade left it ABI-stale
 ```
+
+**`restart` builds and `start` does not.** Restart is how you ship a change;
+start is how you bring something up. A failed build restarts nothing, so what is
+running stays running and it is the last thing that built.
+
+Each is an alias for one command, `cli/bin/swb.js`; `pnpm swb` prints its usage.
+It is plain JavaScript with no build step,
+because `postinstall` runs it before anything has been built and because a
+`start` that must be compiled before it can start anything is circular. It is
+still typechecked: `cli/tsconfig.json` turns on `checkJs`, so the repository's
+one gate sees it.
 
 **There is no linter.** `pnpm lint` does not exist and fails with "Command not
 found" — do not report it as passing. `pnpm typecheck`, `pnpm test` and
@@ -77,7 +98,7 @@ output -- a hand-written fixture is only what we *think* git prints, and the
 
 What is not covered is the part you have to look at: React components, the pty
 and tmux engine, the routes and the socket. Those are driven in a browser
-against `scripts/scratch.sh`, and the traps in "Verifying changes" below are
+against a scratch instance, and the traps in "Verifying changes" below are
 still the rules there.
 
 **A test here records a bug that actually happened.** Most of them cite the
@@ -87,41 +108,54 @@ one that merely runs the code. When you add one, break the line it guards and
 watch it fail; a test that passes either way is documentation with a runtime
 cost. Every test in the suite was checked that way once.
 
-## A live instance is running on this machine
+## The IDE is probably serving somebody while you work on it
 
-The user runs this IDE on `127.0.0.1:8084`, serving `server/dist` and
-`web/dist` from this checkout, behind Caddy. Consequences:
+This project is used to develop itself, so a checkout usually has a live
+instance running from it -- by default `127.0.0.1:8084`, serving `server/dist`
+and `web/dist`, often behind a reverse proxy. Assume that is true unless you
+have checked. Consequences:
 
 - **A web change reaches them on reload.** A change under `server/` or `shared/`
   needs the server process restarted, which briefly drops every browser socket.
-  Their tmux sessions survive it — that is the whole point of the design — but
+  The tmux sessions survive it — that is the whole point of the design — but
   ask before restarting unless they asked for the change.
-- **`scripts/deploy.sh` is the restart**, run from the master checkout after a
-  merge lands: it builds, and only if that succeeds stops :8084 and starts it
-  again detached. It is never automatic and never run from a worktree. It also
-  passes `--host`, without which every socket arriving through Caddy is refused
-  and the row never paints.
-- **Never touch their project or its sessions.** Their worktrees have live
+- **`pnpm restart` is the restart**, run from the main checkout after a merge
+  lands: it builds, and only if that succeeds stops the port and starts it again
+  detached. It is never automatic, and it **refuses to run from a worktree**.
+  It passes `--host` from `~/.config/switchboard/config.json` when there is one;
+  without it every socket arriving through a proxy is refused and the row never
+  paints, which is why it checks afterwards rather than trusting the value —
+  automatically, at the end of every start and restart.
+- **Never touch somebody's project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
-  `tmux kill-server` on `~/.config/switchboard/tmux.sock`.
-- **Do not test against :8084.** Clicks there fight the user for the same UI
-  state, and a browser tab of your own competes for terminal geometry. Use:
+  `tmux kill-server` on the state directory's socket.
+- **Do not test against the live port.** Clicks there fight the user for the
+  same UI state, and a browser tab of your own competes for terminal geometry.
+  Use a scratch instance:
 
 ```sh
-scripts/scratch.sh up      # this checkout's own instance; prints its URL
-scripts/scratch.sh url     # that URL again, if you lost it
-scripts/scratch.sh down    # removes every trace
-scripts/scratch.sh list    # every scratch instance on the machine
-CLAUDE_CMD=vim scripts/scratch.sh up   # vim as the stand-in agent
+pnpm scratch start        # this checkout's own instance; prints its URL
+pnpm scratch              # that URL again, and anything else on the machine
+pnpm scratch stop         # removes every trace
+CLAUDE_CMD=vim pnpm scratch start   # vim as the stand-in agent
 ```
 
 Each checkout gets its own instance — its own state dir, tmux socket, scratch
 repositories and port, all derived from the checkout's path — so several
 worktrees can run one at once without reaching each other. **The port differs
-per worktree**, so read it from `up` or ask `url`; do not assume one. `vim` is
-the useful stand-in for anything about attention or resizing: silent at rest,
-full redraw on SIGWINCH. Close any browser tab you opened when you finish, and
-`down` before you go.
+per worktree**, so read it from `start` or ask `pnpm scratch`; do not assume
+one. `vim` is the useful stand-in for anything about attention or resizing:
+silent at rest, full redraw on SIGWINCH. Close any browser tab you opened when
+you finish, and `stop` before you go.
+
+**`pnpm start` is the machine's one instance; `pnpm scratch start` is the
+throwaway one.** A worktree uses the second and never the first — which is why
+`start`, `stop` and `restart` refuse to run from one, and why it is safe for the
+two to share verb names. The refusal is not only the deploy rule: a worktree has
+no settings of its own, so starting there would point at the machine's state
+directory and tmux socket, and `engine.start()` adopts every live session on that
+socket *before* `app.listen()` ever notices the port is taken. By then every one
+of somebody's agents has a second tmux client.
 
 ## If you are working in a worktree
 
@@ -132,7 +166,7 @@ Your worktree is its own checkout with its own `dist/`, so building, testing and
 running a scratch instance here cannot reach the running IDE. Nothing you do in
 a worktree deploys — the live instance serves `server/dist` and `web/dist` from
 the master checkout alone. So do not build, start, or restart anything in
-`/home/andrin/src/ide` itself, and do not restart :8084; finish on your branch
+the main checkout itself, and do not restart the live port; finish on your branch
 and let the merge into master be what ships it.
 
 A fresh worktree needs its own `pnpm install` before it can build, and `node-pty`
@@ -155,7 +189,7 @@ one, read a session id off the broadcast and type into a running agent. And
 **what name a request was addressed to**: a DNS-rebound page is same-origin with
 us afterwards, so `Host` is the only thing about it that is not the attacker's
 to choose. Both need `--host` behind a proxy -- the public name a browser types,
-which `deploy.sh` passes.
+which `swb` passes from its config file and checks after every restart.
 
 Without `SWB_TOKEN` this instance serves **this machine only** -- there is no
 credential, so the connection's own address is the whole of the boundary.
@@ -192,7 +226,7 @@ browser ── one WebSocket (JSON control + binary output frames) ──> serve
 recorded inside its tmux session's metadata, so changing how local ids are
 computed orphans every running session. Local ids keep hashing the bare path,
 deliberately; a peer's are namespaced **on the server**, by a short key derived
-from its base URL, because `/home/andrin/src/ide` on two machines hashes
+from its base URL, because `/home/you/src/ide` on two machines hashes
 identically.
 
 **One tmux client per session, owned by the server.** Browsers are never tmux
@@ -217,7 +251,7 @@ before a reload can be lost.
 ## Verifying changes
 
 Typecheck and build. Then, for anything you can see, drive it in the browser
-against `scripts/scratch.sh` and **measure the thing you are claiming**. Every
+against a scratch instance and **measure the thing you are claiming**. Every
 line below is a mistake made in this codebase, not a hypothetical:
 
 - **Presence in the DOM is not visibility.** A dropdown was "verified" twice
@@ -249,11 +283,16 @@ line below is a mistake made in this codebase, not a hypothetical:
   you is amber (`--signal`), and done — Claude running and come to rest — is
   green (`--done`). Nothing running is not done, and stays grey. The two are
   matched in luminance so neither outshouts the other. The keyboard legend is
-  what the rule looks like when it is kept: holding Cmd lights the letter that
-  opens each panel of the window you are in, and draws an arrow in the two
-  windows a Cmd+arrow step would land in, and all of it is the grey ladder -- --bone on a word stepped down to
-  --graphite -- because where a key would take you is not a state you scan a row
-  of agents for. The exceptions are all content rather than chrome, and are read the
+  the one thing in the chrome that is coloured and is not a state: `--legend`, a
+  blue, lights the letter that opens each panel of the window you are in, and
+  draws `⌘←` and `⌘→` at the bottom of the two windows a step would land in. It
+  is allowed because it can never be read as a state — it sits *below* both in
+  luminance, it is blue where they are amber and green, and it is drawn only in
+  the window you are already in and the two beside it, never across a row you
+  are scanning. It was the grey ladder once and that failed on its own terms:
+  `--bone` is what the row's own titles are written in, so the legend competed
+  with the text rather than standing out of it, and a shortcut nobody can find
+  is a shortcut nobody uses. The exceptions are all content rather than chrome, and are read the
   way terminal output is: a diff's own green and red, a source file's syntax
   colour, and an image the files pane is showing, which is the file itself and
   can be any colour a file is. The rule still governs the interface around them, and the two the
@@ -262,7 +301,10 @@ line below is a mistake made in this codebase, not a hypothetical:
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the
   interface says in its own voice. Neither names a font that may not be
-  installed — a stack of hopefuls renders differently on every machine.
+  installed — a stack of hopefuls renders differently on every machine. The one
+  thing that is a file and still speaks in the interface's face is a Markdown
+  file shown rendered: asking for the rendering is asking for the prose, and the
+  mono face comes back wherever it quotes code.
 - **Every text colour clears 4.5:1** on every ground it appears on, including
   `--slab-raised`. The three greys are a deliberate ladder: 13.4 : 7.0 : 5.2.
 - **The only motion is the terminal text**, plus 140ms for a window opening or
@@ -342,15 +384,19 @@ Everything else follows from those two sentences:
 Testing needs two instances:
 
 ```sh
-scripts/scratch.sh up          # the gateway
-scripts/scratch.sh up peer     # the machine to link; prints its token
-scripts/scratch.sh down peer   # each one goes down by name
+pnpm scratch start             # the gateway
+pnpm scratch start peer        # the machine to link; prints its token
+pnpm scratch stop peer         # each one goes down by name
 ```
 
 ## Not built yet
 
-- Installing and updating: there is no way to install this on a fresh box, so a
-  peer is a checkout someone built by hand.
+- Installing and updating: a peer is still a checkout someone built by hand.
+  `pnpm start` and `pnpm restart` now run one wherever it is, but nothing puts
+  it on a fresh box, and nothing brings it back after a reboot — `swb` owns the
+  process directly rather than registering a systemd unit or a launchd agent,
+  which is what keeps it inheriting the shell's `PATH` and therefore able to
+  find `claude`.
 - Telling you *why* a machine is quiet: an unreachable peer's project keeps its
   tab and shows the worktrees it last had, but nothing yet says which of those
   it is.

@@ -556,7 +556,27 @@ export const initRepository = async (
 ): Promise<void> => {
   await git(path, 'init')
   if (opts.commitExisting ?? true) await git(path, 'add', '-A')
-  await git(path, 'commit', '--allow-empty', '-m', 'Initial commit')
+  try {
+    await git(path, 'commit', '--allow-empty', '-m', 'Initial commit')
+  } catch (err) {
+    /*
+     * git refuses to commit with no author configured, which is the state a
+     * freshly installed machine is in -- and this is the first thing a new user
+     * does, so it is the first thing that breaks. The commit lands in *their*
+     * repository, so inventing an identity here would be worse than failing:
+     * they would find a stranger's name on the first commit of their own
+     * project. Say what to run instead.
+     */
+    const text = err instanceof Error ? `${err.message}` : String(err)
+    if (/empty ident|Author identity unknown|Please tell me who you are/i.test(text)) {
+      throw new Error(
+        'git has no author identity on this machine, so the first commit could not be made. Set one:\n' +
+          '  git config --global user.name "Your Name"\n' +
+          '  git config --global user.email "you@example.com"',
+      )
+    }
+    throw err
+  }
 }
 
 /** Root of the repository containing `path`, or null when there is none. */

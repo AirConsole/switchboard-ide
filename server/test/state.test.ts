@@ -162,12 +162,20 @@ describe('loading', () => {
         projects: [],
         todos: [],
         recents: [],
-        ui: { awake: ['wt-1'], retiredThing: 'x' },
+        ui: { awake: ['wt-1'], stepsTaken: 7, retiredThing: 'x' },
       }),
     )
     expect(store.ui.awake).toEqual(['wt-1'])
     expect(store.ui.openFilesByWorktree).toEqual({})
     expect('retiredThing' in store.ui).toBe(false)
+    /*
+     * A key the shape declares but `defaultUiState()` does not is dropped here
+     * exactly like a retired one, silently -- `pickKnownUiKeys` walks the
+     * default's keys, not the type's, and a type is not there at runtime. The
+     * legend's counter is the one that would have gone that way, and a counter
+     * reset on every boot is a hint that never stops being shown.
+     */
+    expect(store.ui.stepsTaken).toBe(7)
   })
 
   it('names a recent after its directory when the stored name is gone', async () => {

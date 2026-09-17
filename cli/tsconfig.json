@@ -1,0 +1,31 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    /*
+     * One tsconfig, not the two that `server` and `shared` carry: those split
+     * build from test because their build emits. This package emits nothing --
+     * it is the entry point that must run before anything has been built -- so
+     * there is one config and it checks everything.
+     */
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    /*
+     * The source is plain JavaScript, so the only gate this repo has would
+     * otherwise see none of it. `checkJs` buys the whole gate back: this is the
+     * code that spawns processes, derives paths and issues kills, and it is the
+     * least forgiving of a typo in the repository.
+     */
+    "allowJs": true,
+    "checkJs": true,
+    /*
+     * The base says `bundler`, which is right for code Vite or tsc will process
+     * and wrong for a file Node loads directly by path -- these files carry
+     * their own `.js` extensions in imports and must resolve the way Node does.
+     */
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"]
+  },
+  "include": ["bin", "src", "test"]
+}

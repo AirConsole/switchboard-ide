@@ -137,7 +137,7 @@ const saveFileBody = z.object({
  * {"awake":"everything"}` used to stick, and no later call could undo it
  * because a patch can only overwrite a key with another unchecked value.
  */
-const uiShape = z
+export const uiShape = z
   .object({
     awake: z.array(z.string()).nullable(),
     // The panel and mode names are the shared unions; anything else in the
@@ -148,6 +148,13 @@ const uiShape = z
     expandedByWorktree: z.record(z.string(), z.array(z.string())),
     filesModeByWorktree: z.record(z.string(), z.enum(['files', 'changes', 'commits'])),
     openFilesByWorktree: z.record(z.string(), z.array(z.string())),
+    markdownPreview: z.boolean(),
+    /*
+     * How many times the keyboard walk has been used, which the row reads to
+     * decide whether to draw the shortcut unasked. A count, so: a whole number
+     * and not a negative one.
+     */
+    stepsTaken: z.number().int().min(0),
   })
   .partial()
 

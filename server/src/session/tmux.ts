@@ -61,20 +61,49 @@ export const tmux = async (...args: string[]): Promise<TmuxResult> => {
  */
 export const startServer = async (): Promise<void> => {
   await mkdir(dirname(tmuxSocketPath), { recursive: true })
+  let last: unknown
   try {
     await tmux('start-server')
-  } catch {
-    // start-server is a no-op when the server is already up.
+  } catch (err) {
+    // start-server is a no-op when the server is already up, so this is not
+    // evidence on its own -- but it is the *only* evidence if the probe below
+    // never succeeds either, so it is kept rather than dropped.
+    last = err
   }
   for (let attempt = 0; attempt < 20; attempt++) {
     try {
       await tmux('display-message', '-p', 'ok')
       return
-    } catch {
+    } catch (err) {
+      last = err
       await new Promise((r) => setTimeout(r, 50))
     }
   }
-  throw new Error(`tmux server did not become ready on ${tmuxSocketPath}`)
+  /*
+   * Say what tmux actually said.
+   *
+   * This used to throw the bare sentence and discard every error behind it,
+   * which made the three causes indistinguishable -- tmux missing, tmux
+   * refusing the config, and the socket path being unusable all produced one
+   * message with nothing in it. It was the first thing this project hit on a
+   * machine that was not the one it was written on, and there was nothing to go
+   * on. The config file is named because a rejected option is the likeliest
+   * cause on a tmux older or newer than the one these settings were measured
+   * against.
+   */
+  throw new Error(
+    `tmux server did not become ready on ${tmuxSocketPath} (config ${config.tmuxConf}): ${tmuxWhy(last)}`,
+  )
+}
+
+/** What went wrong with a `tmux` invocation, in the fewest useful words. */
+const tmuxWhy = (err: unknown): string => {
+  if (err === undefined) return 'no error reported'
+  const e = err as { code?: unknown; stderr?: unknown; message?: unknown }
+  if (e.code === 'ENOENT') return 'tmux is not installed, or not on the PATH this server was started with'
+  const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : ''
+  if (stderr !== '') return stderr
+  return typeof e.message === 'string' ? e.message : String(err)
 }
 
 /** tmux exits non-zero for "no such session", which is a normal answer here. */
