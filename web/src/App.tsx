@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
+import { useNarrow } from './components/useNarrow.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
@@ -75,6 +76,13 @@ export const App = (): React.ReactElement => {
    * what the next stop is.
    */
   const [active, setActive] = useState<{ id: string; pane: PaneKind } | null>(null)
+  /*
+   * A phone. Asked once here and handed to both halves of the interface -- the
+   * bar, which becomes a hamburger, and the row, which drops its gaps -- so the
+   * two cannot disagree about what a phone is. CSS is told the answer through
+   * `data-narrow` on `.app` rather than being given the number again.
+   */
+  const narrow = useNarrow()
   /**
    * Focus moved; remember where, unless it is where we already were.
    *
@@ -601,6 +609,7 @@ export const App = (): React.ReactElement => {
       onReveal={reveal}
       onSleep={setSleeping}
       activeId={active?.id ?? null}
+      onRefocus={refocus}
     />
   )
 
@@ -720,7 +729,7 @@ export const App = (): React.ReactElement => {
 
   if (projects.length === 0) {
     return (
-      <div className="app">
+      <div className="app" data-narrow={narrow ? '' : undefined}>
         {topBar}
         <div className="empty">
           <h1 className="empty__title">No project open</h1>
@@ -738,7 +747,7 @@ export const App = (): React.ReactElement => {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-narrow={narrow ? '' : undefined}>
       {topBar}
 
       {error && (
@@ -751,6 +760,7 @@ export const App = (): React.ReactElement => {
       )}
 
       <Overview
+        narrow={narrow}
         worktrees={rowWorktrees}
         projects={projects}
         todos={todos}

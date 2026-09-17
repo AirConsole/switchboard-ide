@@ -17,11 +17,20 @@ import { useEffect, useState, type RefObject } from 'react'
  *
  * The margin is generous because scrolling should not be a race: by the time a
  * tile reaches the edge of the scrollport its terminal has already painted.
+ *
+ * Wider sideways than up and down, and that 10% is not a cushion -- it is the
+ * difference between mounting and not. The row scrolls sideways, so the
+ * neighbour that matters is the one a screen to the left or right; with no gap
+ * between tiles its leading edge lands *exactly* on the edge of the expanded
+ * root rect, and an intersection rectangle of zero width is not an
+ * intersection. At a plain `100%` the next worktree along stays unmounted until
+ * the scroll actually begins, and you arrive at a terminal that is only then
+ * attaching and repainting.
  */
 export const useNearViewport = (
   target: RefObject<Element | null>,
   scroller: RefObject<Element | null>,
-  rootMargin = '100%',
+  rootMargin = '100% 110%',
 ): boolean => {
   const [near, setNear] = useState(false)
   /*

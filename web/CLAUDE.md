@@ -12,6 +12,9 @@ components/TopBar    the tab strip: project heads, tabs, usage bars
 components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
 components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
 components/useAnchoredMenu  a menu hung under its trigger, kept on screen
+components/MobileBar    the phone's bar: a hamburger, and the strip as a sheet
+components/UsageBars    Claude's limits, as bars; polled once for both bars
+components/useNarrow    is this a phone -- one threshold, asked once
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, RUN NEXT, and Move to
 views/TerminalsPane  a worktree's terminals and their tab strip
@@ -27,6 +30,17 @@ views/tileMotion       keeps a departing tile alive while it animates out
 ```
 
 ## The top bar is Chrome's tab strip
+
+**Under 640px it is one button.** A 390px screen cannot hold `Open project`, a
+project head, its tabs and 189px of usage bars in a 38px band, and what gets
+squeezed out is the tabs -- which are the part the bar is *for*. So the strip
+collapses to a hamburger and its contents stand up vertically in a sheet; see
+**On a phone**. `TopBar` branches to `MobileBar` *inside itself* rather than
+`App` choosing between two components, and that is not a nicety: `useUsage` is
+called above the branch, so swapping siblings would unmount it on every
+rotation, drop the reading it holds and ask again -- and a request that lands
+outside the server's five-minute cache runs `claude -p /usage` for a turn of the
+phone. Measured across two rotations: **zero** further requests.
 
 Copied on purpose, and closely: everyone already knows what a tab strip is,
 which tab they are in, and what the × on one does. Chromium's own constants are
@@ -456,6 +470,31 @@ Measured across the band, with a file open: 1400px and 1500px (four units) hide
 Claude and give the panel the window; 1687px and up (five) show both. Every one
 of them lands the editor at 82 columns.
 
+**The gap is a number, not a constant** (`gapFor` in `overviewLayout.ts`): 12px
+normally, and **0 on a phone**, where the window is the screen and a gap says
+"these are separate windows in a row" to nobody. `.grid`'s padding and its
+`scroll-padding-left` used to be a hand-kept copy of it -- the stylesheet said
+so -- and now the row *hands* the number down as `--gap` on the element. It has
+to travel one way: the padding is where the first tile starts, the scroll
+padding is what makes a snap land on a stop rather than a gap into it, and the
+markers are placed from the same arithmetic, so a second copy is a copy that
+drifts.
+
+`rowMetrics`, `wholeOnScreen` and `nearestOffset` moved to `overviewLayout.ts`
+with it, which is the one layout file that has a test -- the phone's arithmetic
+was never exercised before because `units` is pinned at 2 below about 1017px and
+nothing about a narrow window reached a browser check.
+
+`EDGE_SLACK` exists because of that move. `wholeOnScreen` used to carry ±12px of
+*accidental* tolerance: a tile was a gap narrower than the scrollport at each
+end. At gap 0 the tile **is** the scrollport and the two clauses collapse to an
+equality within a pixel -- so a row resting fractionally off a stop (a
+fractional `pitch` at 393px, a smooth scroll still settling, a leaving tile
+mid-collapse) reads as "not here", and everything gated on it changes character:
+reveal, the growth reveal, and the Cmd+arrow walk's fallback, whose own comment
+records that falling through "threw the walk back to a tile you had already
+left". It is 2px, written down, and a test fails at 1.
+
 Two consequences to preserve. **The row comes to rest on a pane's leading
 edge**, so a pane is never shown cut down the middle; the snap points are one
 out-of-flow `.grid__spot` marker per pane start, listed in `rest`, plus the far
@@ -755,7 +794,66 @@ bare `9999...8888` arriving in a prompt.
 
 ## On a phone
 
-Two things the desktop never exercises, both measured:
+Everything below is something the desktop never exercises, and every number in
+it was measured on a 390×800 screen rather than reasoned about:
+
+**Below 640px the interface is one window and one button.** `useNarrow` asks
+`matchMedia` once, in `App`, and hands the answer to both halves -- the bar,
+which becomes a hamburger, and the row, which drops its gaps -- so the two
+cannot disagree about what a phone is. `NARROW_MAX` is where the number lives,
+in TS; CSS is told the *answer* through `data-narrow` on `.app` rather than
+being given the number to repeat, which is the `data-tight` arrangement the tab
+strip already uses. It reads the **layout** viewport, not `visualViewport`: the
+keyboard and a pinch both change the visual one and neither turns a phone into a
+desktop. And it is `useSyncExternalStore` rather than state written from an
+effect, which is one render late -- late enough to build every terminal in the
+row at the wrong width and then resize every pty behind it.
+
+Deliberately not the 440px the todo panel uses. That one is about how narrow a
+column of prose can be; this one is about a strip of tabs. Two questions, two
+numbers, each free to move.
+
+**What the bar held, the sheet holds.** `Open project`, each project's head, its
+awake worktrees as stacked rows, and the usage bars pinned to the foot -- in the
+bar's own order, because it is the same thing rather than a summary of it. A
+project's *sleeping* worktrees and its new-worktree form are one tap further, in
+that project's own pane, which is where they already live and where tapping its
+head takes you. It borrows `.projpane__section` / `.projpane__heading` /
+`.projpane__list` rather than inventing a third way to stack a `WorktreeTab`.
+Fixed, like `.menu` and for the same reason -- every box between it and the root
+clips -- and therefore positioned against the *viewport*, which is the one place
+`#root`'s safe-area padding does not reach, so it carries the insets itself and
+takes its height from `--app-height`. Verified with 59px of notch and 34px of
+indicator overridden on `:root`: the sheet starts at y=97 and its foot ends at
+766 of 800.
+
+**Closed, the hamburger still says whether anything needs you.** That is the
+whole job of this interface and it cannot go behind a tap, so the button wears
+the aggregate band the project head wears -- `summaryClass` is now shared by
+both -- over every worktree of every project, awake and asleep. Amber or green
+only: measured, `tab--needs` resolves the band to `#ffb454` and `tab--idle` to
+`#4ade80`, while a row of agents all *working* leaves the button bare, because a
+summary that is always lit is not a summary.
+
+**And the window is the screen.** No grid padding, no gap between tiles, and no
+8px inset inside the pane -- 16px of a 390px window is two columns of terminal,
+and with one window on the glass there is no neighbour to hold the text away
+from. The tile's own border **stays**: its leading rail is recoloured `--signal`
+and `--done` per worktree, which is the per-window half of the only colour this
+interface spends, and it costs nothing -- the arithmetic rounds the same with or
+without it at 390 and 430. The project's own pane is two units on a phone rather
+than one, or the row would come to rest showing half of it beside half a
+worktree, which is the landing `rest` exists to prevent.
+
+Measured from the pty at 390px, which is the only honest place to read it:
+**41 × 42 before, 46 × 45 after** — five columns and three rows, a fifth more
+terminal. The `useNearViewport` margin went to `100% 110%` for it: at gap 0 the
+neighbouring tile's leading edge lands *exactly* on the edge of the expanded
+root rect, and an intersection rectangle of zero width is not an intersection,
+so the next worktree along would not mount until the scroll began. Four
+terminals are mounted at rest across six tiles, not one.
+
+Two more things, both older:
 
 **The keyboard must shrink the app, not cover it.** `height: 100%` means the
 window, and the on-screen keyboard is drawn over that, so the terminal and its

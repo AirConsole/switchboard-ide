@@ -730,6 +730,170 @@ button {
   background: var(--level-raised);
 }
 
+/* --------------------------------------------------------- the phone's bar -- */
+
+/*
+ * On a phone the bar is one button, and the strip it replaces is a sheet.
+ *
+ * It keeps `--bar-h`. A 38px band is the smallest comfortable touch target, so
+ * shrinking it to fit one button would cost the button, and the 8px it would
+ * save is a quarter of a terminal row -- where dropping the row's own padding
+ * saves six times that and costs nothing you can see.
+ */
+.topbar--narrow {
+  align-items: center;
+}
+
+/*
+ * The hamburger, wearing the same aggregate band the project head wears.
+ *
+ * Along its foot rather than down its leading edge, which is where a tab puts
+ * it: a tab's band says "this one", and there is no other button up here for
+ * this one to be told apart from -- what it has to read as is a state of the
+ * whole bar, so it underlines the bar. 3px, the weight of the strip's own rule.
+ */
+.mobilebar__menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  align-self: stretch;
+  width: 44px;
+  color: var(--graphite);
+  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
+  background-size: 100% 3px;
+  background-position: bottom left;
+  background-repeat: no-repeat;
+}
+
+.mobilebar__menu:hover,
+.mobilebar__menu[aria-expanded='true'] {
+  color: var(--bone);
+}
+
+/*
+ * What the bar was, stood on end.
+ *
+ * Fixed, like `.menu` and for the same reason -- every box between here and the
+ * root clips -- and therefore positioned against the *viewport*, which is the
+ * one place `#root`'s safe-area padding does not reach. So it carries the
+ * insets itself, and takes its height from `--app-height` rather than from the
+ * viewport, or the on-screen keyboard would cover its foot.
+ */
+.mobilesheet {
+  position: fixed;
+  z-index: 20;
+  top: calc(var(--app-offset, 0px) + var(--safe-top) + var(--bar-h));
+  left: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, 86vw);
+  padding-left: var(--safe-left);
+  padding-bottom: var(--safe-bottom);
+  border-right: 1px solid var(--rule-bright);
+  background: var(--level-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  font-family: var(--font-ui);
+}
+
+/* Dimmed rather than blocked: the row behind is still what you are working in,
+   and the scrim is what makes a tap anywhere else mean "close". */
+.mobilesheet__scrim {
+  position: fixed;
+  z-index: 19;
+  inset: 0;
+  background: rgb(0 0 0 / 45%);
+}
+
+/* The lists take the slack; the usage bars below them do not move. */
+.mobilesheet__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 10px;
+  overflow-y: auto;
+}
+
+.mobilesheet__foot {
+  flex: none;
+  border-top: 1px solid var(--rule);
+}
+
+.mobilesheet__foot .usage {
+  padding: 8px 10px;
+  border-left: 0;
+}
+
+/* Shaped like the strip's own head, because it is that: the project's name, and
+   a zZ when there is something behind it you cannot see. */
+.mobilesheet__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  background: var(--level-object);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.mobilesheet__head:hover {
+  background: var(--level-hover);
+  color: var(--bone);
+}
+
+.mobilesheet__list {
+  margin-top: 6px;
+}
+
+.mobilesheet__open {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  background: var(--level-object);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--graphite);
+}
+
+.mobilesheet__open:hover {
+  background: var(--level-hover);
+  color: var(--bone);
+}
+
+.mobilesheet__none {
+  margin: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--graphite-dim);
+}
+
+/*
+ * A phone's window is the screen, so the pane stops insetting its text.
+ *
+ * 8px either side is 16px of a 390px window -- two columns of terminal out of
+ * forty-eight -- and it buys nothing here: with one window on the glass there
+ * is no neighbour for the inset to hold the text away from. The tile's own
+ * border stays, and that is deliberate -- its leading rail is recoloured
+ * `--signal` and `--done` per worktree, which is the per-window half of the
+ * only colour this interface spends, and at 390 and 430 it costs no columns at
+ * all because the arithmetic rounds the same either way.
+ */
+.app[data-narrow] .tile__pane {
+  padding: 0;
+}
+
 /*
  * One tab.
  *
@@ -1106,12 +1270,18 @@ button {
   /* Rest on a spot boundary, never part-way through one; see .grid__spot. */
   scroll-snap-type: x mandatory;
   /* The leading inset once, matched by scroll-padding so a snap lands on the
-     spot rather than 12px into it. Each tile carries its own trailing margin,
+     spot rather than a gap into it. Each tile carries its own trailing margin,
      so a tile collapsing to nothing takes its gap with it. Relative, because
-     the spot markers are positioned against it. */
+     the spot markers are positioned against it.
+
+     `--gap` is written on this element by Overview.tsx, which is the only thing
+     that may know the number: it places the markers and sets every tile's
+     width, and a second copy here is a copy that drifts. It is 0 on a phone,
+     where the window is the screen -- the vertical inset goes with it, which is
+     another terminal row and a half. */
   position: relative;
-  padding: 12px 0 12px 12px;
-  scroll-padding-left: 12px;
+  padding: var(--gap, 12px) 0 var(--gap, 12px) var(--gap, 12px);
+  scroll-padding-left: var(--gap, 12px);
 }
 
 .grid::-webkit-scrollbar {

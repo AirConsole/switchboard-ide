@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
-import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
+import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
+import { UsageBars, useUsage } from './UsageBars.js'
+import { MobileBar } from './MobileBar.js'
+import { useNarrow } from './useNarrow.js'
 import { projectKey } from '../views/Overview.js'
 import {
   claudeSession,
@@ -34,6 +37,15 @@ export interface TopBarProps {
    * Claude has the keyboard. Null before anything has been navigated to.
    */
   activeId: string | null
+  /**
+   * Put the keyboard back in the pane it came from.
+   *
+   * Only the phone's sheet uses it, and for the reason every dialog does: it is
+   * the one thing here outside the row that takes focus away from it, so
+   * closing it without going anywhere has to hand the keyboard back rather than
+   * leave it on the document.
+   */
+  onRefocus: () => void
 }
 
 /**
@@ -122,12 +134,7 @@ const Group = ({
       />
     )
   }
-  const asleepSignal =
-    asleepStatus === 'needs-you'
-      ? 'tab--needs'
-      : asleepStatus === 'idle'
-        ? 'tab--idle'
-        : ''
+  const asleepSignal = summaryClass(asleepStatus)
 
   return (
     <div className="tabgroup">
@@ -190,143 +197,6 @@ const Group = ({
 }
 
 /**
- * How often the browser asks for Claude's usage limits.
- *
- * The same five minutes the server caches for, so a poll that lands inside the
- * window is answered from the last reading rather than starting another
- * `claude -p /usage`. The client is what decides when a reading is taken and
- * the cache is what stops several tabs taking several -- which is also why a
- * hidden page does not ask at all, and asks once when it comes back rather
- * than on a timer nobody is watching.
- */
-const USAGE_POLL_MS = 5 * 60 * 1000
-
-const useUsage = (): Usage | null => {
-  const [usage, setUsage] = useState<Usage | null>(null)
-  useEffect(() => {
-    let live = true
-    const read = (): void => {
-      if (document.hidden) return
-      void api
-        .usage()
-        .then((next) => {
-          if (live) setUsage(next)
-        })
-        // A failed read leaves the last numbers on screen; the server says so
-        // itself when its own read failed, and this is only the transport.
-        .catch(() => {})
-    }
-    read()
-    const timer = window.setInterval(read, USAGE_POLL_MS)
-    document.addEventListener('visibilitychange', read)
-    return () => {
-      live = false
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', read)
-    }
-  }, [])
-  return usage
-}
-
-/**
- * Claude's usage limits, as bars.
- *
- * One row per limit `/usage` reported, in its order: the session, the week, and
- * the week for whichever model has its own allowance. Greyscale, because these
- * are not attention -- amber and green mean an agent wants you -- but the fill
- * brightens once a limit is most of the way gone, which is the point at which
- * it starts to matter what you spend it on.
- *
- * Every row says when it comes back, because that is the second half of the
- * question the first half raises: 90% spent matters very differently at four
- * minutes to the hour than at four days. It is a countdown and not a clock
- * time -- `5h`, `4d` -- for width, which is the reason it used to be tooltip
- * only: one short cell costs 24px where `Sep 15, 8:59am` would cost the bar
- * more room than the bars themselves. The exact moment stays in the tooltip,
- * in the reader's own zone rather than the report's.
- */
-/**
- * How long until a limit comes back, in one cell.
- *
- * One unit, rounded, because this is a glance and not a stopwatch: hours until
- * a day is left, then days. Under a minute is `now` rather than `0m` -- the
- * reading is up to five minutes old, so a countdown that has just run out is
- * telling you it has already happened.
- */
-const untilText = (at: number, now: number): string => {
-  const ms = at - now
-  if (ms < 60_000) return 'now'
-  const minutes = ms / 60_000
-  if (minutes < 60) return `${Math.floor(minutes)}m`
-  const hours = minutes / 60
-  if (hours < 24) return `${Math.round(hours)}h`
-  return `${Math.round(hours / 24)}d`
-}
-
-/** The exact moment, in the reader's zone: `Tue 08:59`, or `17:29` for today. */
-const resetText = (at: number, now: number): string => {
-  const when = new Date(at)
-  const sameDay = when.toDateString() === new Date(now).toDateString()
-  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return sameDay ? time : `${when.toLocaleDateString([], { weekday: 'short' })} ${time}`
-}
-
-const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | null => {
-  /*
-   * A countdown that does not count is a small lie, and the reading itself is
-   * only taken every five minutes -- so `12m` would sit there for five of them
-   * and then jump to `6m`. One tick a minute is what the smallest unit shown
-   * needs; nothing here is per-second. Before the early return, because a hook
-   * cannot be conditional.
-   */
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-  if (usage.limits.length === 0) return null
-  const resetsOf = (limit: Usage['limits'][number]): string => {
-    if (limit.resetsAt !== null) {
-      const until = untilText(limit.resetsAt, now)
-      // "in now" is not a sentence; a limit that is due says so on its own.
-      const left = until === 'now' ? '(now)' : `(in ${until})`
-      return ` · resets ${resetText(limit.resetsAt, now)} ${left}`
-    }
-    // The prose did not parse, so it is repeated as it came.
-    return limit.resets === null ? '' : ` · resets ${limit.resets}`
-  }
-  const title = [
-    ...usage.limits.map((limit) => `${limit.label}: ${limit.percent}% used${resetsOf(limit)}`),
-    usage.error === undefined
-      ? `read ${new Date(usage.fetchedAt).toLocaleTimeString()}`
-      : `last read ${new Date(usage.fetchedAt).toLocaleTimeString()} — ${usage.error}`,
-  ].join('\n')
-  return (
-    <div
-      className={usage.error === undefined ? 'usage' : 'usage usage--stale'}
-      title={title}
-      aria-label="Claude usage limits"
-    >
-      {usage.limits.map((limit) => (
-        <div className="usage__row" key={limit.label}>
-          <span className="usage__label">{limit.label}</span>
-          <span className="usage__track">
-            <i
-              className={limit.percent >= 80 ? 'usage__fill usage__fill--high' : 'usage__fill'}
-              style={{ width: `${limit.percent}%` }}
-            />
-          </span>
-          <span className="usage__percent">{limit.percent}%</span>
-          <span className="usage__resets">
-            {limit.resetsAt === null ? '' : untilText(limit.resetsAt, now)}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/**
  * The top bar is where every worktree lives, grouped by the project it belongs
  * to.
  *
@@ -365,8 +235,10 @@ export const TopBar = ({
   onWake,
   onReveal,
   onSleep,
+  onRefocus,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
+  const narrow = useNarrow()
   /*
    * How much a tab may say, from how many there are.
    *
@@ -379,6 +251,32 @@ export const TopBar = ({
     0,
   )
   const tight = tabCount > 12 ? 3 : tabCount > 9 ? 2 : tabCount > 6 ? 1 : 0
+  /*
+   * A phone gets the same bar's worth of information behind one button.
+   *
+   * Branching here rather than in `App` so that `useUsage` stays mounted across
+   * the switch: it is called above this line, and swapping two sibling
+   * components would unmount it on every rotation, drop the reading it is
+   * holding, and ask again -- and a request that lands outside the server's
+   * five-minute cache runs `claude -p /usage` for a turn of the phone.
+   */
+  if (narrow) {
+    return (
+      <MobileBar
+        groups={groups}
+        sessions={sessions}
+        todos={todos}
+        usage={usage}
+        activeId={activeId}
+        onOpenProject={onOpenProject}
+        onRevealProject={onRevealProject}
+        onReveal={onReveal}
+        onWake={onWake}
+        onSleep={onSleep}
+        onRefocus={onRefocus}
+      />
+    )
+  }
   return (
   <header className="topbar">
     <button className="topbar__open" onClick={onOpenProject} title="Open another project">

@@ -26,19 +26,18 @@ import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
-import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
+import {
+  MIN_PANE_COLUMNS,
+  PANE_CHROME_WIDTH,
+  gapFor,
+  measureMonoCharWidth,
+  nearestOffset,
+  rowMetrics,
+  wholeOnScreen,
+} from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
 import { useNearViewport } from './useNearViewport.js'
-
-/**
- * Space between tiles and around the row, in px.
- *
- * It lives here rather than in the stylesheet because tile widths are computed
- * from a measured scrollport: the arithmetic and the rendered spacing have to be
- * the same number or the row does not add up to the window.
- */
-const GAP = 12
 
 /** How the add tile is identified in the layout. */
 
@@ -54,66 +53,6 @@ const EMPTY_FILES: string[] = []
 
 /** And for a project whose worktrees have not been read yet; see EMPTY_DIRS. */
 const EMPTY_MOVE: MoveTarget[] = []
-
-/**
- * Is the whole of a tile on screen already?
- *
- * A tile begins one gap into its own run of the row -- the leading inset, which
- * `scroll-padding-left` matches -- and ends at the far edge of the last unit it
- * covers: it swallows the gaps between the units it spans and leaves only the
- * trailing one outside itself, so `(at + units) * pitch` is its right edge.
- *
- * A pixel of slack at each end, because `pitch` is fractional and `scrollLeft`
- * is not: a tile flush against an edge must not read as one pixel over it.
- */
-const wholeOnScreen = (
-  tile: { at: number; units: number },
-  scrollLeft: number,
-  pitch: number,
-  width: number,
-): boolean =>
-  GAP + tile.at * pitch >= scrollLeft - 1 &&
-  (tile.at + tile.units) * pitch <= scrollLeft + width + 1
-
-/**
- * Which offset to scroll to so a tile is wholly on screen, moving as little as
- * possible.
- *
- * A tile of u units at `at` is whole on screen for every offset from
- * `at + u - capacity` -- its right edge against the right edge of the window --
- * to `at`, its left edge against the left. The nearest of those to where the
- * row already sits is the answer: going to the worktree just off the right edge
- * moves as little as it can and keeps the one you were on beside it, rather
- * than pulling the new one to the front and taking everything else off the
- * screen with it.
- *
- * `stops` is where the row is allowed to come to rest -- every pane's leading
- * edge, plus the far end -- and the answer has to be one of them or the browser
- * would snap it somewhere else the moment it arrived, mandatory snapping being
- * a rule about programmatic scrolls too. The clamped position is what the
- * nearest is measured from rather than `from` itself, so a tile off the right
- * edge is brought to the right edge and not dragged to the front.
- *
- * The range is never empty, because a tile is never wider than the window --
- * see `panesOf` -- so it always holds `at`, which is a pane's leading edge by
- * construction. The clamp is the fallback anyway, for a row with no stops at
- * all: before the first measured render there are none.
- */
-const nearestOffset = (
-  tile: { at: number; units: number },
-  from: number,
-  capacity: number,
-  stops: readonly number[],
-): number => {
-  const lo = tile.at + tile.units - capacity
-  const want = Math.min(Math.max(from, lo), tile.at)
-  let best: number | null = null
-  for (const stop of stops) {
-    if (stop < lo || stop > tile.at) continue
-    if (best === null || Math.abs(stop - want) < Math.abs(best - want)) best = stop
-  }
-  return best ?? want
-}
 
 /**
  * Every panel, in the order they sit beside Claude.
@@ -1020,6 +959,16 @@ const WHEEL_LINE = 40
 const WHEEL_IDLE_MS = 300
 
 export interface OverviewProps {
+  /**
+   * A phone, where the window is the screen.
+   *
+   * The row spends no width on gaps and no height on its own padding then --
+   * one worktree fills the glass. Handed down rather than measured here: the
+   * top bar decides it (see `useNarrow`), and the row's own box is the viewport
+   * *minus the safe-area insets*, which on a notched phone in landscape
+   * disagrees with it by up to ~88px. One threshold, one answer.
+   */
+  narrow: boolean
   /** Awake worktrees, in the order the row shows them. */
   worktrees: Worktree[]
   /** Every open project, so a tile can name the one it belongs to. */
@@ -1107,6 +1056,7 @@ export interface OverviewProps {
  * What is left is one width rule and a scroller.
  */
 export const Overview = ({
+  narrow,
   worktrees,
   projects,
   todos,
@@ -1282,25 +1232,19 @@ export const Overview = ({
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
   /*
-   * The row is a grid of units, and every tile is a whole number of them.
+   * The row is a grid of units, and every tile is a whole number of them: a
+   * tile of u units is `u * pitch - gap` wide, swallowing the gaps between the
+   * units it covers, so tiles of any width occupy exactly the run of the row
+   * the units they span do. See `rowMetrics`, which is where the arithmetic
+   * lives and where it can be tested.
    *
-   * A unit is half a pane. `pitch` is one unit plus the gap that follows it,
-   * and the floor is half of a pane's own -- so two units still clear
-   * MIN_PANE_COLUMNS, which is the promise, while a pane may now be three of
-   * them. A tile of u units is `u * pitch - GAP` wide: it swallows the gaps
-   * between the units it covers, so tiles of any width occupy exactly the same
-   * run of the row as the units they span.
-   *
-   * Two units minimum, which is one pane -- and below that it is the pitch that
-   * gives, not the row: `units` cannot go under two, so a window narrower than
-   * a pane's own floor divides into two units smaller than half of one and the
-   * pane shrinks past MIN_PANE_COLUMNS with it. The floor is a promise about
-   * how a row is divided among the windows in it, not one a window smaller than
-   * a single pane can keep.
+   * The gap is nothing on a phone -- see `gapFor`. It does not change how the
+   * row divides there: `units` is pinned at its floor of 2 everywhere below
+   * about 1017px, at either gap, so crossing the breakpoint moves `pitch` and
+   * every tile's width and nothing else.
    */
-  const unitPitch = (minPaneWidth + GAP) / 2
-  const units = Math.max(2, Math.floor((width - GAP) / unitPitch))
-  const pitch = (width - GAP) / units
+  const gap = gapFor(narrow)
+  const { units, pitch } = rowMetrics(width, gap, minPaneWidth)
 
   /*
    * `group` rather than a project id, because a leaving slot outlives the list
@@ -1357,8 +1301,17 @@ export const Overview = ({
    */
   for (const group of groups) {
     const key = projectKey(group.project.id)
+    /*
+     * A whole window on a phone, half of one everywhere else.
+     *
+     * One unit is what this pane is worth beside other windows -- it is a list
+     * and a form, not something you read code in. On a phone a unit is half the
+     * *screen*, and a half-screen cell puts a resting place on an odd unit: the
+     * row would come to rest showing half this pane beside half a worktree,
+     * which is exactly the landing `rest` exists to prevent.
+     */
     push(key, null, group, [
-      { kind: 'project', key, units: Math.min(PANE_UNITS.project, units) },
+      { kind: 'project', key, units: Math.min(narrow ? 2 : PANE_UNITS.project, units) },
     ])
     for (const worktree of group.awake) push(worktree.id, worktree, null, panesOf(worktree, units))
   }
@@ -1386,7 +1339,7 @@ export const Overview = ({
 
   const slots: Slot<Cell>[] = cells.map((cell) => ({
     key: cell.key,
-    width: Math.max(0, cell.units * pitch - GAP),
+    width: Math.max(0, cell.units * pitch - gap),
     data: cell,
   }))
   const moving = useTileMotion(width > 0 ? slots : [])
@@ -1441,7 +1394,7 @@ export const Overview = ({
      * beside it included.
      */
     const tile = { at: target.at, units: target.units }
-    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
+    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, restRef.current)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
@@ -1482,7 +1435,7 @@ export const Overview = ({
   const revealTile = (tile: { at: number; units: number }): void => {
     const grid = gridRef.current
     if (!grid || width === 0) return
-    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
+    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, rest)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
   }
@@ -1624,7 +1577,7 @@ export const Overview = ({
         )
         const seen = stops[at]
         const tile = seen ? { at: seen.at, units: seen.units } : null
-        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? at : -1
+        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap) ? at : -1
       }
       if (here === -1) {
         /*
@@ -1830,6 +1783,15 @@ export const Overview = ({
     <section className="view overview">
       <div
         className="grid"
+        /*
+         * The row's own spacing, handed to the stylesheet rather than repeated
+         * there. `.grid`'s padding and its `scroll-padding-left` used to be a
+         * hand-kept copy of this number, and they cannot be: the padding is
+         * where the first tile starts, the scroll padding is what makes a snap
+         * land on a stop rather than a gap into it, and the markers are placed
+         * from the same arithmetic. One number, travelling one way.
+         */
+        style={{ '--gap': `${gap}px` } as React.CSSProperties}
         ref={gridRef}
         onScroll={(event) => {
           const el = event.currentTarget
@@ -1851,7 +1813,7 @@ export const Overview = ({
             <i
               key={at}
               className="grid__spot"
-              style={{ left: GAP + at * pitch }}
+              style={{ left: gap + at * pitch }}
               aria-hidden="true"
             />
           ))}
@@ -1898,7 +1860,7 @@ export const Overview = ({
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a
                 // node that was just re-created. See .slot--leaving.
-                style={{ width: slot.width, marginRight: GAP }}
+                style={{ width: slot.width, marginRight: gap }}
               >
                 {/*
                  * Held at the width the tile will end at, so the terminal
@@ -1921,7 +1883,19 @@ export const Overview = ({
                           sessions={sessions}
                           todos={todos}
                           activeId={active?.id ?? null}
-                          focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
+                          /*
+                           * Never on a phone, where a caret is a keyboard.
+                           *
+                           * Arriving here puts it in the branch box, because on
+                           * a desktop naming the next worktree is what you came
+                           * for. On a phone that is the on-screen keyboard over
+                           * half the pane before you have seen it -- and you
+                           * got here by tapping the project's name in the menu,
+                           * which is a request to *look*. Tap the box and the
+                           * keyboard comes, which is the phone's own rule for
+                           * when a keyboard is wanted.
+                           */
+                          focus={!narrow && scrollTo?.id === slot.key ? scrollTo.nonce : null}
                           onWake={onWake}
                           onReveal={onReveal}
                           onSleep={onSleep}

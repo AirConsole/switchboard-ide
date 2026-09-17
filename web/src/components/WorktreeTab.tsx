@@ -13,6 +13,18 @@ export const statusClass = (status: WorktreeStatus): string =>
         : 'tab--off'
 
 /**
+ * The class for a bar that stands for *several* worktrees.
+ *
+ * Amber and green only -- the two states a row of agents is scanned for.
+ * Working and not-running say nothing, because a summary that is always lit is
+ * not a summary: the project head wears this for the sleepers it hides, and the
+ * hamburger wears it for everything at once on a phone. One rule, so the two
+ * cannot drift into meaning different things.
+ */
+export const summaryClass = (status: WorktreeStatus): string =>
+  status === 'needs-you' ? 'tab--needs' : status === 'idle' ? 'tab--idle' : ''
+
+/**
  * What a tab says: its name and its dirty count.
  *
  * A fragment of spans rather than a box of its own, because a tab's body is
