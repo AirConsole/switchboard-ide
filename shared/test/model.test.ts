@@ -17,9 +17,23 @@ describe('defaultUiState', () => {
     // is what `refresh()` spreads these under the server's stored copy for.
     const ui = defaultUiState()
     for (const [key, value] of Object.entries(ui)) {
-      if (key === 'awake') continue
+      // The two that are not per-worktree maps: `awake` is a set as a list and
+      // null until seeded, and `markdownPreview` is one switch for the whole
+      // IDE rather than a fact about any worktree.
+      if (key === 'awake' || typeof value === 'boolean') continue
       expect(value, key).toEqual({})
     }
+  })
+
+  it('opens Markdown rendered', () => {
+    /*
+     * The panel is eighty columns of a file you are looking at, and prose is
+     * what a Markdown file mostly is. The toggle is in the bar above it and
+     * the first flip is remembered, so this is a starting point rather than a
+     * policy -- but a stored state written before the switch existed arrives
+     * without the key, and it has to mean something.
+     */
+    expect(defaultUiState().markdownPreview).toBe(true)
   })
 
   it('hands out a fresh object each time, not one shared instance', () => {

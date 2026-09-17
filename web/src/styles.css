@@ -3761,6 +3761,257 @@ button {
   cursor: default;
 }
 
+/*
+ * Rendered or raw, and the bar is where that is decided.
+ *
+ * The same shape as Save beside it, lit the way an on state is lit everywhere
+ * else here: brightness, never colour. Amber means an agent is blocked on you
+ * and green means one has finished, and which form a file is being read in is
+ * neither.
+ */
+.files__preview {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.files__preview:hover {
+  color: var(--bone);
+  background: var(--level-hover);
+}
+
+.files__preview--on {
+  color: var(--bone);
+}
+
+/*
+ * A Markdown file, rendered.
+ *
+ * The one thing in this panel that is a file and yet speaks in the interface's
+ * face. That is what the toggle is for: `--font-ui` is for prose, and rendering
+ * Markdown is asking for the prose rather than the source. The mono face comes
+ * back wherever the file is quoting code, which is where `ch` meant something
+ * in the first place.
+ *
+ * Its own scroller, like the editor's and the patch's, and `min-height: 0` for
+ * the reason `.files__file`'s note gives: without it the flex item is floored
+ * at its content's height and the pane hands every wheel to whatever is behind
+ * it.
+ *
+ * `--code-plain`, not `--bone`: flipping between the source and the rendering
+ * changes the shape of the page and must not also change how bright the words
+ * are.
+ */
+.md {
+  flex: 1;
+  /* The row hands it the keyboard, and then the arrows scroll the page it is.
+     No ring of its own: the pane already draws where you are. */
+  outline: none;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 6px 10px 24px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--code-plain);
+  /* A long URL or a wide identifier breaks rather than widening the pane. */
+  overflow-wrap: break-word;
+}
+
+/* Headings are --bone and bold, exactly as the editor highlights them in the
+   source: the two views of one file agree about what a heading is. */
+.md__h {
+  margin: 18px 0 8px;
+  color: var(--bone);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* The top of the file starts at the top of the pane. */
+.md > .md__h:first-child {
+  margin-top: 0;
+}
+
+.md__h1 {
+  font-size: 18px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.md__h2 {
+  font-size: 15px;
+}
+
+.md__h3 {
+  font-size: 13.5px;
+}
+
+.md__h4,
+.md__h5,
+.md__h6 {
+  font-size: 13px;
+}
+
+.md__p {
+  margin: 0 0 10px;
+}
+
+.md__list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.md__item {
+  margin: 2px 0;
+}
+
+/* A tight list's items hold a paragraph each; it is the item that spaces them. */
+.md__item > .md__p {
+  margin: 0;
+}
+
+/* A nested list belongs to the item above it, not to the page. */
+.md__item > .md__list,
+.md__item > .md__pre,
+.md__item > .md__quote {
+  margin-bottom: 0;
+}
+
+/*
+ * A task's box stands where the bullet would, so the bullet goes.
+ *
+ * Drawn rather than a real checkbox: there is nothing here to submit and
+ * nothing to tick -- the file is where that is written -- and a native one
+ * arrives in the browser's own blue, which is a colour this interface spends
+ * on two states and neither of them is this.
+ */
+.md__item--task {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.md__check {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border: 1px solid var(--graphite);
+  border-radius: 2px;
+}
+
+.md__check--on {
+  background: var(--graphite);
+}
+
+/*
+ * Code, in the face it is written in.
+ *
+ * Unhighlighted, deliberately: the grammar is one keystroke away in the source
+ * view, and a fenced block here is usually a command or a shape rather than a
+ * program. `white-space: pre` with its own horizontal scroller, because a
+ * wrapped shell line is a different command.
+ */
+.md__pre {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  /* One step off the pane's ground, which is --terminal-bg. */
+  background: var(--level-panel);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+/* HTML the file wrote, shown as the source it is and never parsed -- see the
+   note in `Markdown.tsx`. Comment-coloured, because that is what it now is. */
+.md__pre--raw,
+.md__raw {
+  color: var(--code-comment);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* `--code-literal`, which is what the editor colours inline code in the source.
+   A step smaller because mono at the same size outweighs the prose around it. */
+.md__code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--code-literal);
+}
+
+/*
+ * A link, in the colour the source view gives one.
+ *
+ * Two elements wear this: an anchor out to the web, and a button for a link
+ * into the repository, which opens that file in this same panel. They look the
+ * same because they are the same act -- following the link the file wrote.
+ */
+.md__link {
+  padding: 0;
+  color: var(--code-name);
+  text-decoration: underline;
+  text-align: left;
+}
+
+.md__link:hover {
+  color: var(--bone);
+}
+
+/* `t.quote` in the editor is --code-comment, so it is here too, with the rule
+   the notice above the file uses to say "this belongs to that". */
+.md__quote {
+  margin: 0 0 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--rule-bright);
+  color: var(--code-comment);
+}
+
+.md__rule {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--rule);
+}
+
+/* A table is a grid of short strings, so it is read in the mono face and kept
+   to hairlines: the columns are the structure and nothing else needs to be. */
+.md__table {
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.md__table th,
+.md__table td {
+  padding: 3px 7px;
+  border: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.md__table th {
+  color: var(--bone);
+  font-weight: 600;
+}
+
+/* Scaled down to the pane and never up, the rule `.files__image` states. */
+.md__image {
+  max-width: 100%;
+  border-radius: var(--radius);
+  /* A transparent PNG would otherwise be read against the pane's ground. */
+  background: var(--level-panel);
+}
+
 /* --------------------------------------------------------------- machines -- */
 
 /*

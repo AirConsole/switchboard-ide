@@ -557,6 +557,21 @@ export const App = (): React.ReactElement => {
   )
 
   /**
+   * Whether Markdown opens rendered rather than as its source.
+   *
+   * One switch for the whole IDE, so it takes no worktree: what it records is
+   * whether the reader reads the Markdown in this repository or edits it, and
+   * that is not a fact about any one worktree. Stable between renders for the
+   * reason its neighbours are -- it is handed to every tile in the row.
+   */
+  const markdownPreview = useCallback(
+    (on: boolean): void => {
+      setUi({ markdownPreview: on })
+    },
+    [setUi],
+  )
+
+  /**
    * Open a directory and everything above it, expanding nothing else.
    *
    * What picking a directory out of the search results means: you asked for a
@@ -772,6 +787,7 @@ export const App = (): React.ReactElement => {
         openFilesByWorktree={ui.openFilesByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
+        markdownPreview={ui.markdownPreview}
         groups={groups}
         onWake={wake}
         onSleep={setSleeping}
@@ -804,6 +820,7 @@ export const App = (): React.ReactElement => {
         onToggleDir={toggleDir}
         onExpandDir={expandDir}
         onFilesMode={filesMode}
+        onMarkdownPreview={markdownPreview}
         onCloseTerminal={closeTerminal}
         onNoTerminalsLeft={terminalsGone}
       />

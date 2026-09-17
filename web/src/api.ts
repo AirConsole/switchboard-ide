@@ -235,9 +235,14 @@ export const api = {
    * the element repaints on the next poll instead of showing what the browser
    * still has.
    */
-  rawFileUrl: (worktreeId: string, path: string, rev: string) =>
+  /*
+   * `rev` is a cache key and nothing else -- the server accepts it and does not
+   * read it -- so it is optional: a Markdown preview's images have no poll of
+   * their own to key one off, and the route answers `no-store` regardless.
+   */
+  rawFileUrl: (worktreeId: string, path: string, rev?: string) =>
     `/api/worktrees/${worktreeId}/raw?path=${encodeURIComponent(path)}` +
-    `&rev=${encodeURIComponent(rev)}`,
+    (rev === undefined ? '' : `&rev=${encodeURIComponent(rev)}`),
 
   /**
    * Save a file, refused with 409 `stale-file` if it moved since it was read.

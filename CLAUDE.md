@@ -261,7 +261,10 @@ line below is a mistake made in this codebase, not a hypothetical:
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the
   interface says in its own voice. Neither names a font that may not be
-  installed — a stack of hopefuls renders differently on every machine.
+  installed — a stack of hopefuls renders differently on every machine. The one
+  thing that is a file and still speaks in the interface's face is a Markdown
+  file shown rendered: asking for the rendering is asking for the prose, and the
+  mono face comes back wherever it quotes code.
 - **Every text colour clears 4.5:1** on every ground it appears on, including
   `--slab-raised`. The three greys are a deliberate ladder: 13.4 : 7.0 : 5.2.
 - **The only motion is the terminal text**, plus 140ms for a window opening or
