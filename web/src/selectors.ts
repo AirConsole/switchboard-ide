@@ -45,6 +45,27 @@ export const mostUrgentStatus = (statuses: WorktreeStatus[]): WorktreeStatus =>
   URGENCY.find((status) => statuses.includes(status)) ?? 'off'
 
 /**
+ * What a bar standing for several worktrees says, if anything.
+ *
+ * Two states only, and no ranking between the rest: **amber if anything here
+ * needs you, else green if anything here has come to rest**, else nothing. A
+ * summary that is always lit is not a summary, so working and not-running are
+ * silent -- and silence is the common case, which is what makes the two
+ * colours worth scanning for.
+ *
+ * Deliberately not `mostUrgentStatus`, which ranks *working* above *idle* and
+ * is right for "what is the single most urgent thing here". Composed with the
+ * amber-or-green clamp it went wrong in a way nobody would predict: a project
+ * with one worktree at rest and one working reported *nothing*, because the
+ * working one won the ranking and then said nothing. A busy neighbour must not
+ * mask a finished agent.
+ */
+export const summarySignal = (
+  statuses: WorktreeStatus[],
+): 'needs-you' | 'idle' | null =>
+  statuses.includes('needs-you') ? 'needs-you' : statuses.includes('idle') ? 'idle' : null
+
+/**
  * Main worktree first, then alphabetical, within one project.
  *
  * A stable order is the point: a tile is where you last saw it, which is what

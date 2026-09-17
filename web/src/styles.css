@@ -471,6 +471,24 @@ button {
    * instead.
    */
   flex: 0 1 auto;
+  /*
+   * And never past its own contents.
+   *
+   * A flex item whose `overflow` is not `visible` has an automatic minimum size
+   * of **zero** -- and this one hides its overflow to clip the end segments to
+   * the shell's curve. So under pressure the group did not overflow the strip,
+   * it was crushed: measured at 390px, two groups at 40px and 15px with 62px
+   * tabs clipped away inside them, which is a bar that has quietly stopped
+   * saying anything rather than one that scrolls.
+   *
+   * `min-content` is the floor the comment above assumed was already there. It
+   * is not `min-width: 0`, which is the opposite edit and the one that made a
+   * project's tabs overprint the next project's -- this stops the shrinking
+   * where that let it run on. It is also what makes `scrollWidth >
+   * clientWidth` on the strip an honest answer to "has this bar run out of
+   * room", which is the signal the ladder walks down.
+   */
+  min-width: min-content;
   margin-top: 3px;
   /*
    * No padding at all: the tabs fill the group edge to edge and the shell clips
@@ -568,16 +586,31 @@ button {
   color: var(--bone);
 }
 
-.tabgroup__zz {
-  /* The head is uppercased; this is not. "zZ" is a mark rather than a word and
-     "ZZ" is a different one. */
+/*
+ * How many windows this head is standing in for, once the bar has taken their
+ * tabs -- and nothing at all until then.
+ *
+ * It sits where the `zZ` used to. That mark said "there is something behind
+ * this project you cannot see", and it is gone: how many and which is what the
+ * pane is for, and the half of it that is urgent -- a sleeper blocked on you --
+ * was never carried by the mark anyway but by the state bar beside it, in
+ * colour, which is the channel that says come here. A count is worth the width
+ * only when the tabs are gone, because that is the one state you cannot find
+ * out by looking. (`.tab__zz`, which marks a sleeping row in a project's pane,
+ * is a different mark and stays.)
+ */
+.tabgroup__count {
+  display: none;
+  /* The head is uppercased; a numeral has no case, but the letterspacing that
+     suits a word does not suit a digit. */
   text-transform: none;
   font-size: 10px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
   color: var(--graphite);
 }
 
-.tabgroup__pill--on .tabgroup__zz {
+.tabgroup__pill--on .tabgroup__count {
   color: var(--quiet-on);
 }
 
@@ -747,6 +780,11 @@ button {
 
 /* Optically centred: a 14px box against 12px text sits a hair low on the
    baseline it shares. */
+.topbar__label {
+  /* A box of its own so the label can go without the icon; see the ladder. */
+  display: inline;
+}
+
 .topbar__icon {
   flex: none;
   margin-top: -1px;
@@ -755,155 +793,6 @@ button {
 .topbar__open:hover {
   color: var(--bone);
   background: var(--level-raised);
-}
-
-/* --------------------------------------------------------- the phone's bar -- */
-
-/*
- * On a phone the bar is one button, and the strip it replaces is a sheet.
- *
- * It keeps `--bar-h`. A 38px band is the smallest comfortable touch target, so
- * shrinking it to fit one button would cost the button, and the 8px it would
- * save is a quarter of a terminal row -- where dropping the row's own padding
- * saves six times that and costs nothing you can see.
- */
-.topbar--narrow {
-  align-items: center;
-}
-
-/*
- * The hamburger, wearing the same aggregate band the project head wears.
- *
- * Along its foot rather than down its leading edge, which is where a tab puts
- * it: a tab's band says "this one", and there is no other button up here for
- * this one to be told apart from -- what it has to read as is a state of the
- * whole bar, so it underlines the bar. 3px, the weight of the strip's own rule.
- */
-.mobilebar__menu {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  align-self: stretch;
-  width: 44px;
-  color: var(--graphite);
-  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
-  background-size: 100% 3px;
-  background-position: bottom left;
-  background-repeat: no-repeat;
-}
-
-.mobilebar__menu:hover,
-.mobilebar__menu[aria-expanded='true'] {
-  color: var(--bone);
-}
-
-/*
- * What the bar was, stood on end.
- *
- * Fixed, like `.menu` and for the same reason -- every box between here and the
- * root clips -- and therefore positioned against the *viewport*, which is the
- * one place `#root`'s safe-area padding does not reach. So it carries the
- * insets itself, and takes its height from `--app-height` rather than from the
- * viewport, or the on-screen keyboard would cover its foot.
- */
-.mobilesheet {
-  position: fixed;
-  z-index: 20;
-  top: calc(var(--app-offset, 0px) + var(--safe-top) + var(--bar-h));
-  left: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  width: min(320px, 86vw);
-  padding-left: var(--safe-left);
-  padding-bottom: var(--safe-bottom);
-  border-right: 1px solid var(--rule-bright);
-  background: var(--level-raised);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
-  font-family: var(--font-ui);
-}
-
-/* Dimmed rather than blocked: the row behind is still what you are working in,
-   and the scrim is what makes a tap anywhere else mean "close". */
-.mobilesheet__scrim {
-  position: fixed;
-  z-index: 19;
-  inset: 0;
-  background: rgb(0 0 0 / 45%);
-}
-
-/* The lists take the slack; the usage bars below them do not move. */
-.mobilesheet__body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  flex: 1;
-  min-height: 0;
-  padding: 12px 10px;
-  overflow-y: auto;
-}
-
-.mobilesheet__foot {
-  flex: none;
-  border-top: 1px solid var(--rule);
-}
-
-.mobilesheet__foot .usage {
-  padding: 8px 10px;
-  border-left: 0;
-}
-
-/* Shaped like the strip's own head, because it is that: the project's name, and
-   a zZ when there is something behind it you cannot see. */
-.mobilesheet__head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  background: var(--level-object);
-  font-family: var(--font-ui);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--graphite);
-}
-
-.mobilesheet__head:hover {
-  background: var(--level-hover);
-  color: var(--bone);
-}
-
-.mobilesheet__list {
-  margin-top: 6px;
-}
-
-.mobilesheet__open {
-  display: flex;
-  align-items: center;
-  flex: none;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  background: var(--level-object);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--graphite);
-}
-
-.mobilesheet__open:hover {
-  background: var(--level-hover);
-  color: var(--bone);
-}
-
-.mobilesheet__none {
-  margin: 0;
-  padding: 0 10px;
-  font-size: 12px;
-  color: var(--graphite-dim);
 }
 
 /*
@@ -1419,6 +1308,128 @@ button {
   .grid {
     scroll-behavior: auto;
   }
+}
+
+
+/* ------------------------------------------------------------ the ladder -- */
+
+/*
+ * The bar gives things up in order, as it runs out of room.
+ *
+ * `data-stage` is written on the header by the sweep in TopBar.tsx, which
+ * starts at 0 and walks down until the strip stops overflowing. Every rung is
+ * a rule here and nothing else: the markup is the same at every stage, because
+ * the sweep measures the DOM it is about to settle on and React output that
+ * moved with the rung would have it measuring last rung's text.
+ *
+ * The rungs are cumulative, so each rule lists the stages it holds at rather
+ * than asking for "3 or more", which CSS cannot say about an attribute. That is
+ * the `data-tight` arrangement two rules up, and the same reason.
+ *
+ *   1  the usage tracks -- the 54px bars, the picture rather than the reading
+ *   2  the `Open project` label; the icon stays
+ *   3  the tabs of every project but the one you are in
+ *   4  the tabs of that one too
+ *   5  the usage readout altogether
+ */
+
+/*
+ * Rung 1: the picture goes, the reading stays.
+ *
+ * The track is 54px of the block's 189 and the least of it -- a bar with no
+ * number beside it is hard to act on, while `session 82% 4h` is the whole
+ * reading in three cells. So it is the first thing overboard and the numbers
+ * are nearly the last.
+ */
+.topbar[data-stage='1'] .usage__track,
+.topbar[data-stage='2'] .usage__track,
+.topbar[data-stage='3'] .usage__track,
+.topbar[data-stage='4'] .usage__track {
+  display: none;
+}
+
+.topbar[data-stage='1'] .usage__row,
+.topbar[data-stage='2'] .usage__row,
+.topbar[data-stage='3'] .usage__row,
+.topbar[data-stage='4'] .usage__row {
+  grid-template-columns: 42px 26px 24px;
+}
+
+/* Rung 2: the label. The icon is the part that says what the button does to
+   anyone who has seen it once, and `title` carries the words either way. */
+.topbar[data-stage='2'] .topbar__label,
+.topbar[data-stage='3'] .topbar__label,
+.topbar[data-stage='4'] .topbar__label,
+.topbar[data-stage='5'] .topbar__label {
+  display: none;
+}
+
+.topbar[data-stage='2'] .topbar__open,
+.topbar[data-stage='3'] .topbar__open,
+.topbar[data-stage='4'] .topbar__open,
+.topbar[data-stage='5'] .topbar__open {
+  /* Square around the icon rather than the label's 14px either side. */
+  padding: 0 11px;
+}
+
+/*
+ * Rungs 3 and 4: a project becomes its head.
+ *
+ * Three first, and the one you are in last, because the tabs worth keeping
+ * longest are the ones you are working among. `--current` is "holds the row or
+ * its own pane"; at rung 4 it keeps nothing but its light.
+ */
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab,
+.topbar[data-stage='4'] .tab,
+.topbar[data-stage='5'] .tab {
+  display: none;
+}
+
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__count,
+.topbar[data-stage='4'] .tabgroup__count,
+.topbar[data-stage='5'] .tabgroup__count {
+  display: inline;
+}
+
+/*
+ * Collapsed, the head speaks for every worktree it has rather than only its
+ * sleepers -- the awake ones have no tab either now. Both aggregates are on the
+ * pill at every rung and this is what chooses between them.
+ */
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--needs-shut,
+.topbar[data-stage='4'] .tab--needs-shut,
+.topbar[data-stage='5'] .tab--needs-shut {
+  --tab-state: var(--signal);
+}
+
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--idle-shut,
+.topbar[data-stage='4'] .tab--idle-shut,
+.topbar[data-stage='5'] .tab--idle-shut {
+  --tab-state: var(--done);
+}
+
+/*
+ * And it takes over saying where you are.
+ *
+ * `--on` means "you are in this project's pane". Once the tabs are gone the
+ * head is the only thing standing for the window you are in, which is what a
+ * lit tab has always meant here -- the distinction between being in the pane
+ * and being in one of its worktrees is exactly what collapsing gave up.
+ */
+.topbar[data-stage='4'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill {
+  background-color: var(--level-lit);
+  color: var(--bone);
+}
+
+.topbar[data-stage='4'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__count {
+  color: var(--quiet-on);
+}
+
+/* Rung 5: the last thing the bar has to give. */
+.topbar[data-stage='5'] .usage {
+  display: none;
 }
 
 /* --------------------------------------------------------------- the tile -- */

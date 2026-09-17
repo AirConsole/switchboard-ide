@@ -431,7 +431,8 @@ Five rules, each of which was wrong once and found by measurement:
 
 Behind a proxy this process only ever sees `127.0.0.1`, so it cannot derive the
 origin the page was served from and a deployment must say so: `--host`, which
-`scripts/deploy.sh` passes. Unset, the loopback defaults still admit a
+`swb` passes from `~/.config/switchboard/config.json`. Unset, the loopback
+defaults still admit a
 browser on this machine, so a scratch instance needs nothing — and every socket
 through Caddy is refused, which is the failure to expect if it is forgotten.
 
@@ -441,7 +442,7 @@ peer through the gateway. **Do not put a reverse proxy in front of a peer**: a
 proxy connects from loopback, so everything it forwards would look local, and a
 peer needs none because the gateway reaches it directly. And **the token is the
 whole of a peer's security**, so it wants the properties that implies: high
-entropy (`scratch.sh` generates one; a memorable one is not), and `https://` for
+entropy (`pnpm scratch start <name>` generates one; a memorable one is not), and `https://` for
 a peer across a network you do not own, since `PeerClient` sends it as a plain
 header. There is no attempt limit and no lockout -- a token is the credential
 for `POST /api/sessions`, which is arbitrary command execution on that machine.
@@ -610,7 +611,7 @@ a typo.
 
 All of it is in `config.ts`. `SWB_STATE_DIR` is the one that matters for
 testing: it moves both `state.json` and the tmux socket, which is what makes
-`scripts/scratch.sh` unable to touch a real instance. `SWB_CLAUDE_CMD` swaps the
+a scratch instance unable to touch a real one. `SWB_CLAUDE_CMD` swaps the
 agent for something cheap. `SWB_DEBUG_SIZE=1` logs every size decision with the
 attachment that owned it.
 

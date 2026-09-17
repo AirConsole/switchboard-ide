@@ -64,7 +64,7 @@ const READ_TIMEOUT_MS = 10_000
 /**
  * `user:password` out of a URL, if it carries any.
  *
- * `https://andrin:secret@box:84` is the syntax people reach for, and every
+ * `https://user:pw@box:84` is the syntax people reach for, and every
  * layer below refuses it: `new URL().origin` drops it silently, and `fetch()`
  * throws outright on a URL that carries credentials. So it is taken out here
  * and travels as an `Authorization` header instead -- which is what it would

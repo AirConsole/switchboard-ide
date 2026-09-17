@@ -77,7 +77,7 @@ describe('manifest', () => {
   })
 
   it('every icon it names exists and really is the size it claims', () => {
-    // The check that catches a stale `scripts/icons.py` run, and the one the
+    // The check that catches a stale `web/tools/icons.py` run, and the one the
     // SPA fallback would otherwise hide by answering 200 with HTML.
     for (const icon of manifest.icons) {
       const [width, height] = icon.sizes.split('x').map(Number)
