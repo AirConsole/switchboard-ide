@@ -12,6 +12,7 @@ import type {
   FileSaved,
   FileUnchanged,
 } from '@switchboard/shared'
+import { mediaTypeOf } from '@switchboard/shared'
 import { config } from './config.js'
 import { HttpError } from './http-error.js'
 import { parseStatus } from './git/changes.js'
@@ -498,49 +499,10 @@ const decodeText = (buffer: Buffer): string | null => {
 
 /* ------------------------------------------------------------------ media -- */
 
-/**
- * Types the browser draws itself, by extension.
- *
- * The rule the panel keeps is "not text, but the browser can show it" -- so
- * this is deliberately a list of renderers, not a list of file formats. A TIFF
- * or a HEIC is every bit as much an image and is not here, because Chrome would
- * show the reader a broken-image glyph, which is worse than the note saying
- * plainly that there is nothing to see.
- *
- * By extension rather than by sniffing the bytes, because the decision has to
- * be made *before* the file is read: a 20MB photograph is over `maxFileBytes`
- * and would answer `tooLarge` for a file that costs nothing to show, and
- * nothing here wants to pull a video into the server's heap to look at its
- * first four bytes. The browser is given the type we name and told not to sniff
- * -- see the `/raw` route -- so a `.png` holding something else renders as a
- * broken image and runs nothing.
- *
- * No `.svg`, on purpose, and it is not an oversight: an SVG *is* text, it
- * decodes, and it opens in the editor like any other source file. The rule is
- * about files with no text in them.
- *
- * Video and audio are not here either. They would need `Range` to be honest --
- * a 200 with the whole file plays but cannot seek -- and that is a request
- * handler of its own rather than a row in this table.
- */
-const MEDIA_TYPES = new Map<string, string>([
-  ['.png', 'image/png'],
-  ['.apng', 'image/apng'],
-  ['.jpg', 'image/jpeg'],
-  ['.jpeg', 'image/jpeg'],
-  ['.gif', 'image/gif'],
-  ['.webp', 'image/webp'],
-  ['.avif', 'image/avif'],
-  ['.bmp', 'image/bmp'],
-  ['.ico', 'image/x-icon'],
-])
-
-/** The media type to render `rel` as, or undefined for everything else. */
-export const mediaTypeOf = (rel: string): string | undefined => {
-  const dot = rel.lastIndexOf('.')
-  if (dot <= rel.lastIndexOf('/')) return undefined
-  return MEDIA_TYPES.get(rel.slice(dot).toLowerCase())
-}
+// `mediaTypeOf` and its table live in shared/, because the browser has to know
+// the same answer before the read comes back -- see media.ts there. Re-exported
+// so what this module answers for does not change shape.
+export { mediaTypeOf }
 
 /**
  * Where a media file is on disk, and what to serve it as.

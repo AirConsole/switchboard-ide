@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FileEntry, FileHit, FilesMode } from '@switchboard/shared'
+import { mediaTypeOf, type FileEntry, type FileHit, type FilesMode } from '@switchboard/shared'
 import {
   ChangesList,
   CommitsList,
@@ -925,13 +925,26 @@ export const FilesPane = ({
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [files.path])
 
+  /*
+   * A request for the tree that arrived before its row did -- the panel opening
+   * onto a picture reads the tree afresh, and the row the keyboard is meant for
+   * is not drawn yet. Kept until it is.
+   */
+  const treeFocusPending = useRef(false)
   useLayoutEffect(() => {
-    if (keyFocus > 0) selectedRef.current?.focus()
+    if (keyFocus === 0) return
+    if (selectedRef.current) selectedRef.current.focus()
+    else treeFocusPending.current = true
     // Moving in the list is putting the keyboard somewhere: any request for
     // the file still waiting is answered, and must not fire later.
-    if (keyFocus > 0) setEditorFocusDone(editorFocus)
+    setEditorFocusDone(editorFocus)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyFocus])
+  useLayoutEffect(() => {
+    if (!treeFocusPending.current || !selectedRef.current) return
+    treeFocusPending.current = false
+    selectedRef.current.focus()
+  })
 
   /*
    * Files mode searches the worktree, not the rows on screen: the tree only
@@ -1007,11 +1020,44 @@ export const FilesPane = ({
    */
   wantsEditorRef.current =
     !sideShown || (mode === 'files' && contentOpen && files.path !== '' && !searching)
+  /*
+   * Unless what is open is only to be looked at. A picture, or a Markdown file
+   * shown rendered, has nothing to type into, and handing it the keyboard took
+   * the keyboard off the one thing in the panel that does something with keys:
+   * the tree. So arriving at one lands on its row instead, where ↑ and ↓ go on
+   * to the next file -- and where the tree is not drawn, on nothing at all.
+   *
+   * Decided from the path, like the rest of this, and not from what the read
+   * answered: `mediaTypeOf` is the server's own table, in shared/, so the
+   * answer is known before the file is.
+   */
+  const viewOnly = (path: string): boolean =>
+    path !== '' && (mediaTypeOf(path) !== undefined || (markdownPreview && isMarkdown(path)))
+  const arrivalRef = useRef<'editor' | 'tree' | 'search' | 'none'>('search')
+  arrivalRef.current = !wantsEditorRef.current
+    ? 'search'
+    : !viewOnly(files.path)
+      ? 'editor'
+      : sideShown
+        ? 'tree'
+        : 'none'
   useEffect(() => {
     if (focus === null) return
     const bump = (n: number | null): number => (n ?? 0) + 1
-    if (wantsEditorRef.current) setEditorFocus(bump)
-    else setSearchFocus(bump)
+    switch (arrivalRef.current) {
+      case 'editor':
+        setEditorFocus(bump)
+        return
+      case 'search':
+        setSearchFocus(bump)
+        return
+      case 'tree':
+        setCursor(files.path)
+        setKeyFocus((n) => n + 1)
+        return
+      case 'none':
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
 
   useEffect(() => {
@@ -1036,7 +1082,9 @@ export const FilesPane = ({
   const enterFile = (row: TreeRow): void => {
     setCursor(row.path)
     if (row.path !== files.path) open(row.path)
-    setEditorFocus((n) => (n ?? 0) + 1)
+    // Nothing to go into: it opens, and the keyboard stays on its row.
+    if (viewOnly(row.path)) setKeyFocus((n) => n + 1)
+    else setEditorFocus((n) => (n ?? 0) + 1)
   }
 
   /*
