@@ -100,6 +100,7 @@ interface AppState extends AppSnapshot {
    */
   authed: boolean | null
   signedIn: () => void
+  signOut: () => Promise<void>
   /** Whether the server's stored UI state has been taken; see refresh(). */
   adopted: boolean
   error: string | null
@@ -140,6 +141,22 @@ export const useStore = create<AppState>((set, get) => ({
   signedIn: () => {
     set({ authed: true, error: null })
     void get().refresh()
+    /*
+     * Reconnected here, not left to the terminals. A mounting terminal
+     * reconnects the socket as a side effect, which is why this looked fine --
+     * but with every worktree asleep there is no terminal, the socket never
+     * came back after signing in, and the attention broadcasts that turn a
+     * window amber or green travel over it.
+     */
+    terminalSocket.connect()
+  },
+  signOut: async () => {
+    try {
+      await api.logout()
+    } finally {
+      terminalSocket.disconnect()
+      set({ authed: false })
+    }
   },
   error: null,
 

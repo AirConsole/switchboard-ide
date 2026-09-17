@@ -432,7 +432,9 @@ export const secureFor = (host: string | undefined): boolean => {
   if (host === undefined) return true
   try {
     const name = new URL(`http://${host}`).hostname
-    return !(name === 'localhost' || name === '127.0.0.1' || name === '::1')
+    // `[::1]`, brackets included: `URL.hostname` keeps them on an IPv6 host,
+    // and comparing against `::1` treated IPv6 loopback as a public name.
+    return !(name === 'localhost' || name === '127.0.0.1' || name === '[::1]')
   } catch {
     return true
   }

@@ -10,6 +10,7 @@ import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs, wsPluginOptions } from './routes/ws.js'
 import { registerGate } from './gate.js'
+import { registerSecurityHeaders } from './headers.js'
 import { registerAuth } from './routes/auth.js'
 import { hasPassword, writeLocalToken } from './auth.js'
 import { registerProxy } from './remote/proxy.js'
@@ -61,6 +62,8 @@ app.addHook('onSend', async (_request, reply, payload) => {
 })
 
 registerGate(app)
+
+registerSecurityHeaders(app)
 
 registerAuth(app)
 
