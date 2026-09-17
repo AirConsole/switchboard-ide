@@ -986,16 +986,34 @@ bare `9999...8888` arriving in a prompt.
 Everything below is something the desktop never exercises, and every number in
 it was measured on a 390×800 screen rather than reasoned about:
 
-**Below 640px the row is one window, edge to edge.** `useNarrow` asks
-`matchMedia` once, in `App`, and hands the answer to the row; `NARROW_MAX` is
-where the number lives, in TS, and CSS is told the *answer* through
-`data-narrow` on `.app` rather than being given the number to repeat, which is
-the `data-tight` arrangement the tab strip already uses. It reads the **layout**
-viewport, not `visualViewport`: the keyboard and a pinch both change the visual
-one and neither turns a phone into a desktop. And it is `useSyncExternalStore`
-rather than state written from an effect, which is one render late — late enough
-to build every terminal in the row at the wrong width and then resize every pty
-behind it.
+**Below the width where Claude loses its eightieth column, the row is one
+window, edge to edge.** `narrowBelow` computes it rather than naming it: one
+pane's floor, the tile's own edges, and the two gaps a single window pays for --
+685px at an 8px cell, and eighty px more for every pixel the cell grows.
+`useNarrow` asks `matchMedia` once, in `App`, and hands the answer to the row;
+CSS is told the *answer* through `data-narrow` on `.app` rather than being given
+the number to repeat, which is the `data-tight` arrangement the tab strip
+already uses. It reads the **layout** viewport, not `visualViewport`: the
+keyboard and a pinch both change the visual one and neither turns a phone into a
+desktop. And it is `useSyncExternalStore` rather than state written from an
+effect, which is one render late — late enough to build every terminal in the
+row at the wrong width and then resize every pty behind it.
+
+**It was a flat 640, and 640 described a top bar that no longer has a
+breakpoint.** The strip gives things up by the rung now, measured against the
+room it has, and the number it left behind was 45px low: between 640 and 685 the
+row kept paying for a 12px gap either side of a single window that could not
+afford it. Measured on a scratch instance, one pixel apart: at 685 the pane is
+658px and the pty 78 columns, at 684 it is 681px and **83** — five columns for a
+pixel of window, which is the discontinuity being put where it belongs.
+
+Those 78 are the second half of the measurement and a separate bug:
+`PANE_CHROME_WIDTH` counts the 16px inset and the border, and xterm's own
+`FitAddon` reserves about 17px more for the scrollbar it always makes room for.
+So every pane in the row is about two columns short of the 80 this layout
+promises, at every width, and the threshold inherits it -- which is an argument
+for deriving the threshold rather than naming it, since fixing the constant
+moves this with it.
 
 Deliberately not the 440px the todo panel uses. That one is about how narrow a
 column of prose can be; this one is about a row of windows. Two questions, two
