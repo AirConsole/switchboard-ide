@@ -1378,6 +1378,15 @@ control every line would make the second and third reachable only sideways. A
 line that does not have that control -- a sleeping `main` has no × -- lands on
 what it does have.
 
+**A sideways arrow is taken even where it has nowhere to go.** A key the hook
+leaves alone gets the browser's default, and for → that is to scroll the nearest
+sideways scroller -- which, for every pane, is the row. So → on a sleeping
+worktree (no × beside it), or on the last control of any line, slid the row a
+window along while the keyboard stayed where it was: measured, `.grid` went
+0 -> 397 with focus still on the sleeping `main`. The row moves on Cmd+arrow; a
+plain arrow inside a list is about the list, and at its edge it is an edge. A
+chord is never taken, for the same reason the other way round.
+
 **A menu hung over a pane keeps its own keys.** `useAnchoredMenu` draws MOVE
 TO's list `position: fixed` but *inside* the todo it belongs to, so it is inside
 the box this listens on; without that clause, down inside an open menu stepped
