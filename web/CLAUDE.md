@@ -54,6 +54,22 @@ the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
 
+**A limit says how much is left in colour**: `usageLevel` is amber from 75% and
+red from 90%, inclusive, and the class goes on the *row* so the number wears it
+as well as the bar -- the track is the first thing to go at rung 1, and a colour
+that lived only on the fill would go out exactly when the window is too small to
+show it. Measured at each boundary against a stubbed `/api/usage`: 74 grey, 75
+amber, 89 amber, 90 red, on the fill and the number alike, and read 1:1 off the
+rendered pixels (`#ffb454` and `#e5707a` across a 3px track, over `#222833`
+where the fill stops).
+
+This is the one thing in the chrome that wears amber without being an agent that
+wants you, and it replaced a step up the grey ladder at 80% where the fill went
+`--bone`. That step was the wrong instrument twice: it arrived after the number
+that matters, and one rung of grey is not visible without the other two bars
+beside it to compare against. Both colours clear the floor where they are drawn
+-- amber 11.03:1 and red 6.42 on the frame, 8.39 and 4.88 on the track.
+
 **How the rung is chosen, and why it is not React state.** `.tabstrip` is
 `flex: 1; min-width: 0`, so it takes what the other two leave, and it says it is
 out of room by `scrollWidth > clientWidth`. Each rung either hands it more room
