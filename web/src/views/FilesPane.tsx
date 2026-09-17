@@ -889,6 +889,31 @@ export const FilesPane = ({
    */
   const [editorFocus, setEditorFocus] = useState<number | null>(null)
   const [searchFocus, setSearchFocus] = useState<number | null>(null)
+  /*
+   * The last editor request that has been *delivered*, so a request is handed
+   * over once and not again.
+   *
+   * The editor and the rendered page both act on the nonce when they mount, which
+   * is deliberate -- they load lazily, and arriving at a panel can land before
+   * either exists. But the nonce stayed set after it had done its job, so every
+   * later mount acted on it again: measured, clicking `b.txt` in the tree while
+   * `README.md` was showing as a page swapped the page for an editor, and the new
+   * editor took the keyboard from the row you had just clicked. The arrows then
+   * moved a caret in the file, and the tree looked as though it had no keys at
+   * all.
+   *
+   * Delivered means the keyboard is in the file, or the person has since put it
+   * somewhere else in this panel -- which is also what covers a file that
+   * refuses focus, so its request cannot fire later on another file's mount.
+   */
+  const fileRef = useRef<HTMLDivElement | null>(null)
+  const [editorFocusDone, setEditorFocusDone] = useState<number | null>(null)
+  const editorFocusNow = editorFocus !== editorFocusDone ? editorFocus : null
+  useEffect(() => {
+    if (editorFocusNow === null) return
+    if (fileRef.current?.contains(document.activeElement)) setEditorFocusDone(editorFocusNow)
+  })
+  const settleEditorFocus = (): void => setEditorFocusDone(editorFocus)
   const { rows, open, toggleDir, expandDir } = files
   const [cursor, setCursor] = useState<string | null>(null)
   const [keyFocus, setKeyFocus] = useState(0)
@@ -902,6 +927,10 @@ export const FilesPane = ({
 
   useLayoutEffect(() => {
     if (keyFocus > 0) selectedRef.current?.focus()
+    // Moving in the list is putting the keyboard somewhere: any request for
+    // the file still waiting is answered, and must not fire later.
+    if (keyFocus > 0) setEditorFocusDone(editorFocus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyFocus])
 
   /*
@@ -995,8 +1024,38 @@ export const FilesPane = ({
 
   const pick = (row: TreeRow): void => {
     setCursor(row.path)
+    settleEditorFocus()
     if (row.kind === 'dir') toggleDir(row.path)
     else open(row.path)
+  }
+
+  /*
+   * Into the file, from the tree: open it if it is not already, and hand the
+   * keyboard to it. Escape in the file comes back (see `backToList`).
+   */
+  const enterFile = (row: TreeRow): void => {
+    setCursor(row.path)
+    if (row.path !== files.path) open(row.path)
+    setEditorFocus((n) => (n ?? 0) + 1)
+  }
+
+  /*
+   * Out of the file and onto its row in the list, which is where → or Enter
+   * came from. The tree keeps its own cursor, so in Files mode the cursor is
+   * moved rather than the focus alone -- a focus that disagreed with it would
+   * make the next arrow step from somewhere else.
+   */
+  const backToList = (): void => {
+    if (!sideShown) return
+    if (mode === 'files' && !searching) {
+      if (files.path !== '') setCursor(files.path)
+      setKeyFocus((n) => n + 1)
+      return
+    }
+    const list = treeRef.current
+    list
+      ?.querySelector<HTMLElement>('.files__row--on, .files__commit--on')
+      ?.focus()
   }
 
   /*
@@ -1032,7 +1091,10 @@ export const FilesPane = ({
       case 'ArrowRight':
         if (!row) return
         event.preventDefault()
-        if (row.kind === 'dir' && !row.open) {
+        if (row.kind === 'file') {
+          // A file has nothing to unfold, so → goes into it.
+          enterFile(row)
+        } else if (!row.open) {
           setKeyFocus((n) => n + 1)
           toggleDir(row.path)
         } else {
@@ -1158,7 +1220,15 @@ export const FilesPane = ({
                   .join(' ')}
                 style={{ paddingLeft: 6 + row.depth * INDENT }}
                 tabIndex={onCursor ? 0 : -1}
-                onClick={() => pick(row)}
+                onClick={() => {
+                  pick(row)
+                  /*
+                   * The keyboard stays on the row you clicked, so the arrows
+                   * go on from there. Said outright rather than left to the
+                   * click, because Safari does not focus a button on a click.
+                   */
+                  setKeyFocus((n) => n + 1)
+                }}
                 title={row.path}
               >
                 <span className="files__twist" aria-hidden="true">
@@ -1241,7 +1311,7 @@ export const FilesPane = ({
               path={files.file.path}
               worktreeId={files.worktreeId}
               onOpen={files.open}
-              focus={editorFocus}
+              focus={editorFocusNow}
             />
           </Suspense>
         ) : (
@@ -1255,7 +1325,7 @@ export const FilesPane = ({
             draft={files.draft}
             onChange={files.edited}
             onSave={files.save}
-            focus={editorFocus}
+            focus={editorFocusNow}
           />
         </Suspense>
       ) : (
@@ -1369,7 +1439,22 @@ export const FilesPane = ({
       )}
 
       {fileShown && (
-        <div className="files__file">
+        <div
+          className="files__file"
+          ref={fileRef}
+          onKeyDown={(event) => {
+            /*
+             * Escape leaves the file for its row in the list. Only if nothing
+             * in the file used it first -- CodeMirror spends an Escape on
+             * collapsing a selection, and says so by preventing it -- so a
+             * selection is dropped first and the second press leaves.
+             */
+            if (event.key !== 'Escape' || event.defaultPrevented) return
+            if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+            event.preventDefault()
+            backToList()
+          }}
+        >
           {files.conflict && (
             <div className="files__notice">
               <span>This file changed on disk while you were editing it.</span>

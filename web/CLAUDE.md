@@ -961,9 +961,27 @@ because a hit, a change and a commit are each one row that does one thing. They
 drew the same `.files__row` markup as the tree and carried no keys at all, which
 made three of the four look walkable and not be.
 
-Moving in the tree is not opening, unlike a click: arrowing past twenty files
-would otherwise read and render twenty of them, so Enter is the key that says
-you meant it. Opening a file expands its ancestors, which is what makes a
+Moving in the tree is not opening: arrowing past twenty files would otherwise
+read and render twenty of them, so Enter is the key that says you meant it. **A
+click opens and leaves the keyboard on the row it clicked** -- said outright,
+since Safari does not focus a clicked button -- so the arrows go on from there.
+**→ on a file goes into it** (a file has nothing to unfold), and **Escape in the
+file comes back** to its row, moving the tree's cursor with the focus so the
+next arrow steps from where you are. CodeMirror spends an Escape collapsing a
+selection and says so by preventing it, so a selection goes first and the
+second press leaves.
+
+**The editor's focus request is handed over once.** Both the editor and the
+rendered Markdown page act on the nonce when they *mount*, deliberately, since
+they load lazily and arriving can beat them. But the nonce stayed set after it
+had been delivered, so every later mount acted on it again -- and that was the
+files view being "completely broken": clicking `b.txt` while `README.md` was
+showing as a page swapped the page for an editor, the new editor took the
+keyboard from the row just clicked, and the arrows moved a caret in the file
+while the tree looked as though it had no keys at all. `editorFocusDone` marks a
+request delivered once the keyboard is in the file, or once it has been put
+anywhere else in the panel -- which also covers a file that refuses focus, so
+its request cannot fire later on some other file's mount. Opening a file expands its ancestors, which is what makes a
 restored path visible without the expansion having to be derived -- and leaves
 collapsing an ancestor working normally, which a derived set would quietly undo.
 
@@ -1404,19 +1422,28 @@ Three panes take it, and what each hands it says what a line is there:
 - **The project pane**: the column is every awake and sleeping worktree, then
   the branch box, the button beside it and `Close project`; the second control
   on a worktree's line is its ×, the same shape a tab in the top bar has.
-- **The todo panel**: the column is the todos and the line is the three things
-  you can do to one. **The prompt is deliberately not in it** -- it is a
-  textarea, where every arrow belongs to the caret, so a walk that stopped in
-  one would be a walk you could not get out of. Tab is how you reach the text,
-  and the buttons are the walk.
+- **The todo panel**: the column is every action on every todo, walked one
+  button at a time -- RUN NEXT, MOVE TO, DELETE, then the next todo's RUN NEXT
+  -- because the actions are drawn as one column, and a column is walked down.
+  ↓ past the last reaches the box you add a todo in, and ↑ with the caret at
+  the start of that box comes back. **A row's prompt is not a stop**: it is a
+  textarea, where every arrow belongs to the caret, so you go in with ← (caret
+  at the end) and come out with Cmd+Enter, which saves and puts the ring on
+  RUN NEXT -- the thing you most likely edited the prompt to do. Escape is the
+  same exit with the edit thrown away. DELETE by keyboard hands the ring to the
+  DELETE below first (above for the last row, the new-todo box after the last
+  todo), because a focus left on a removed node is a list the arrows no longer
+  walk.
 - **The files panel's three flat lists** -- search hits, Changes, Commits.
 
-**The place in the line is kept when you walk between them.** Standing on
-DELETE and pressing down stays on DELETE, and so does a × in the project pane:
-a column of like controls is a column, and a walk that dropped back to the first
-control every line would make the second and third reachable only sideways. A
-line that does not have that control -- a sleeping `main` has no × -- lands on
-what it does have.
+**The place in the line is kept when you walk between them**, where a pane has
+lines: a × in the project pane stays a × on the row below, and a line that has
+no × -- a sleeping `main` -- lands on what it does have.
+
+**Every list the arrows walk wears the same ring**: 2px of `--legend`, drawn
+inside the rows that are clipped (the files lists, the todo's segments). They
+had the browser's own 1px of `--pulse`, which is easy to lose, and in the files
+tree the ring is the only thing that moves -- moving is not opening.
 
 **A sideways arrow is taken even where it has nowhere to go.** A key the hook
 leaves alone gets the browser's default, and for → that is to scroll the nearest
@@ -1587,10 +1614,9 @@ prompts of 25px and 100px alike.
 MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
 and it hangs off the segment's own bottom-left corner.
 
-**The three segments are also the panel's keyboard.** Up and down walk the
-todos and left and right walk the segments -- see *Arrows choose, Enter does,
-Escape leaves*, where the rule and what the prompt does with the arrows are
-written down.
+**The three segments are also the panel's keyboard.** Up and down walk them,
+button by button and row to row, ← goes into the prompt and Cmd+Enter comes back
+out -- see *Arrows choose, Enter does, Escape leaves*.
 
 **Its list is this project's worktrees and no others.** A todo is work on a
 repository, and another repository's worktrees are not somewhere it could be
