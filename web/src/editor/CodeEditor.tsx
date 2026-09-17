@@ -155,6 +155,18 @@ export const CodeEditor = ({
   const shownRef = useRef<EditorFile | null>(null)
   /** The path the newest language request was for; see the reconfigure below. */
   const wantedRef = useRef('')
+  /**
+   * The view was just built, so the effect below has nothing to follow yet.
+   *
+   * Both effects run on a mount, in order, and the second one would find the
+   * same file it was built from and dispatch the disk text into it -- throwing
+   * away the draft the first one had just restored. That is only reachable
+   * because an editor can now be unmounted while it is dirty: flipping a
+   * Markdown file to Preview and back lost the edit, and the draft went with
+   * it, because the write back through `onChange` said the buffer now matched
+   * disk.
+   */
+  const freshRef = useRef(false)
   const language = useRef(new Compartment()).current
   /** The extension list, so swapping to another file can rebuild with it. */
   const extensionsRef = useRef<Extension[] | null>(null)
@@ -240,6 +252,7 @@ export const CodeEditor = ({
     viewRef.current = view
     shownRef.current = fileRef.current
     extensionsRef.current = extensions
+    freshRef.current = true
 
     return () => {
       view.destroy()
@@ -262,6 +275,11 @@ export const CodeEditor = ({
     const view = viewRef.current
     const shown = shownRef.current
     if (!view || !shown) return
+    // Built from this very file a moment ago, draft and all; see `freshRef`.
+    if (freshRef.current) {
+      freshRef.current = false
+      return
+    }
 
     if (shown.path !== file.path) {
       const extensions = extensionsRef.current ?? []

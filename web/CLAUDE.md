@@ -12,11 +12,14 @@ components/TopBar    the tab strip: project heads, tabs, usage bars
 components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
 components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
 components/useAnchoredMenu  a menu hung under its trigger, kept on screen
+components/UsageBars    Claude's limits, as bars; polled once for both bars
+components/useNarrow    is this a phone -- one threshold, asked once
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, RUN NEXT, and Move to
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/ChangesPane    what changed and what was committed; the patch renderer
 views/FilesPane      the panel: its three modes, the search box, and the editor
+views/Markdown       a `.md` file rendered, from the tree the editor highlights by
 editor/CodeEditor    one CodeMirror view over one file
 editor/theme         the syntax palette and the editor's chrome
 editor/language      filename -> grammar, fetched on demand
@@ -27,6 +30,51 @@ views/tileMotion       keeps a departing tile alive while it animates out
 ```
 
 ## The top bar is Chrome's tab strip
+
+**It gives things up in order as it runs out of room.** A 390px screen cannot
+hold `Open project` (~125px), a project head, its tabs and 189px of usage bars
+in a 38px band -- and what used to get squeezed out was the tabs, which are the
+part the bar is *for*. So `data-stage` on the header is a rung, and the bar
+walks down them: **1** drops the usage tracks, **2** the `Open project` label
+(the icon stays), **3** the tabs of every project but the one you are in, **4**
+the tabs of that one too, **5** the usage readout altogether. Past it the strip
+scrolls, which is what it has always done.
+
+Measured with two projects holding three and one awake worktrees: stage 0 from
+900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 240 -- and at
+*every* width the strip has no overflow, which is the whole claim. The ladder is
+monotone, it never collapses more than it must (at each width, forcing it one
+rung up overflows), and a sweep back up the widths reproduces the same rungs
+exactly.
+
+**The usage block goes in two bites, first and last.** The tracks are 54px of
+its 189 and the least of it -- a bar with no number beside it is hard to act on,
+where `session 34% 4h` is the whole reading -- so the picture goes at rung 1 and
+the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
+you cannot see is one you want the moment the window widens, and the server
+caches it anyway.
+
+**How the rung is chosen, and why it is not React state.** `.tabstrip` is
+`flex: 1; min-width: 0`, so it takes what the other two leave, and it says it is
+out of room by `scrollWidth > clientWidth`. Each rung either hands it more room
+or takes content out of it, so "start at 0, descend to the first that fits"
+returns the least sufficient rung and cannot oscillate. A layout effect with no
+dependency array sweeps it on every commit -- which is exactly the set of things
+that can change a width -- and a `ResizeObserver` on the **header** does the
+same on a resize. The header, not the strip: the header's width is the app's and
+never moves in answer to a rung, while the strip's grows by 189px the moment the
+usage bars go, so observing it would fire the observer on the consequence of its
+own callback.
+
+Two things follow and are load-bearing. **Nothing React renders may depend on
+the rung** -- the count, the tabs and the usage rows are always in the markup and
+CSS is what hides them -- because the sweep measures the DOM it is about to
+settle on, and markup that moved with the rung would have it measuring the last
+rung's text. And **`data-stage` is never rendered from JSX**: React diffs against
+its own previous props, so a re-render would not put back what the effect wrote,
+and the two would drift apart. It is also why the sweep is written to start from
+0 every time rather than carry a cursor: that makes StrictMode's double
+invocation a non-event.
 
 Copied on purpose, and closely: everyone already knows what a tab strip is,
 which tab they are in, and what the × on one does. Chromium's own constants are
@@ -201,15 +249,40 @@ The pieces, and why each is the way it is:
   sleep it, one mis-click apart. Closing lives in the pane now; the head is a
   button that walks you there and lights `--level-lit` while you are in it, with
   `--bone` text, because `--graphite` is 3.90:1 on that ground.
-- **The head's state bar carries only its sleepers, and only amber or green.**
-  That is the zZ tab's job, which was the one thing that could not be lost when
-  it went: sleeping does not mean stopped, so a sleeper blocked on you still has
-  to reach the top bar. An awake worktree says its own state on its own tab, so
-  the head reports what has no tab. `tab--working` and `tab--off` are never
-  applied to it — a summary that is always lit is not a summary. A quiet `zZ`
-  beside the name says there is something behind this project you cannot see;
-  it carried the count for a day and that was noise, since how many is a thing
-  you find out by looking and the pane is one click away.
+- **The head's state bar carries whatever has no tab of its own, and only amber
+  or green.** Expanded that is the sleeping worktrees — sleeping does not mean
+  stopped, so a sleeper blocked on you still has to reach the top bar, which was
+  the zZ tab's job and the one thing that could not be lost when it went.
+  Collapsed it is every worktree the project has, which is the same sentence
+  with a wider subject: the awake ones have no tab either once the ladder has
+  taken them. Both aggregates are on the pill at every rung and CSS picks
+  between them, since the rung is not something React may know.
+  `tab--working` and `tab--off` are never applied — a summary that is always lit
+  is not a summary.
+- **It reads the whole set, not the most urgent of it** (`summarySignal`). That
+  is a correction: composed with `mostUrgentStatus`, which ranks *working* above
+  *idle*, a project with one worktree at rest and one working reported **nothing
+  at all** — the busy one won the ranking and then said nothing, because only
+  amber and green are shown. Collapsing makes that the common shape rather than
+  a rare one. Said as prose the rule has no ranking in it: amber if anything
+  here needs you, else green if anything here has come to rest.
+- **The head shows a count once its tabs are gone, and never a `zZ`.** The mark
+  said "there is something behind this project you cannot see", and how many and
+  which is what the pane is for; the half of it that is urgent — a sleeper
+  blocked on you — was never carried by the mark anyway but by the state bar
+  beside it, in colour, which is the channel that says come here. A **count** is
+  worth the width only in the one state you cannot resolve by looking, which is
+  when the tabs have gone. It is rendered only when something is awake, and that
+  is not cosmetic: a project with nothing awake has no tab to give up, so a
+  count on it would make the bar *wider* as it collapsed — and every rung
+  getting narrower is what lets the sweep stop at the first one that fits.
+- **Collapsed, the head says where you are.** `--on` means "you are in this
+  project's pane"; at rungs 4 and 5 the lit head is the only thing standing for
+  the window you are in, which is what a lit tab has always meant here. The
+  distinction between being in the pane and being in one of its worktrees is
+  exactly what collapsing gives up. `.tabgroup--current` is "holds the row or is
+  its own pane", and it is also what rung 3 uses to decide which project keeps
+  its tabs.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -248,6 +321,22 @@ The pieces, and why each is the way it is:
   sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
   `min-width: 0`: it then shrinks past its own tabs and one project's tabs
   overprint the next project's.
+
+  It carries **`min-width: min-content`**, and the paragraph above was wrong
+  without it. A flex item whose `overflow` is not `visible` has an automatic
+  minimum size of *zero*, and the sleeve hides its overflow to clip the end
+  segments to the shell's curve — so under pressure it was never overflowing the
+  strip, it was being crushed and clipping its own tabs: measured at 390px, two
+  sleeves at 40px and 15px with 62px tabs hidden inside them. That is a bar that
+  has quietly stopped saying anything rather than one that scrolls, and it is
+  what the ladder's overflow signal was reading as "everything fits".
+  `min-content` is the floor that comment assumed was already there; it is the
+  opposite edit to `min-width: 0`, not a softer one.
+
+  `data-tight` and the ladder stay separate, and they compose in that order: a
+  count-driven cap shaves labels first, because "a tab may not be 200px when
+  there are thirteen of them" is true on a 2560px monitor where the ladder never
+  fires, and only then does a width-driven ladder start dropping whole regions.
 - **The strip runs Chrome's way round, and the page runs with it.** A dark
   interface usually gets darker as it goes deeper; Chrome's strip does the
   opposite, and that is what makes it legible: the frame is the darkest thing on
@@ -387,6 +476,20 @@ else, and a form saying what a button will do is not a state you scan a row of
 agents for. `--graphite-dim` to `--bone` is the 1.92:1 step that already means
 "read this one".
 
+**The room for that line is reserved, not made.** It is rendered whether or not
+there is anything in it, and `.addform__fate` is `min-height` two rows tall —
+because the answer lands a beat after you stop typing, and a line appearing then
+shoved the field you were still looking at. Two rows rather than one for the
+same reason: the longest of these messages wraps at this width, and a box that
+grows from one row to two jumps exactly as badly as one that grows from none.
+The path in it is said **relative to the project** (`.claude/worktrees/x`, and
+"the project itself" for the root), which is both what keeps it inside two rows
+and the only part worth reading — this line is shown inside that project's own
+pane, so the absolute path is mostly its root repeated back. The full path stays
+in the `title`. Measured across empty, typed-but-unanswered, a two-line answer
+and a one-line answer at 1180×620: field, path, line and button all sat at
+y=463, 503, 522 and 565 every time.
+
 **The project's name is 19px**, not a tile bar's 12. This pane is the only cell
 in the row whose bar is not a toolbar — there is nothing beside the name to keep
 small for — and it is the thing you scroll the row looking for.
@@ -398,12 +501,16 @@ form is **one field**: "Branch from" was left empty every time, since the
 remote's default (or HEAD without one) is what you want unless you are doing
 something unusual and something unusual is what a terminal is for; and "Start
 Claude here" was checked every time, because a worktree with no agent in it is a
-directory. The server still takes both parameters — this stops asking. Close
-project is shaped like a tab, which is what the pane's other controls are, and
-turns `--danger` under the pointer: the red the project's × used to turn, said
-on the thing itself.
+directory. The server still takes both parameters — this stops asking.
 
-The lists are `WorktreeRow`, the same component the strip's tabs are, keeping
+**Close project is the form's last row, not a button under it.** Both are things
+you do to the *project* rather than to one of its worktrees, so they sit under
+one heading with one rhythm and one edge; it was a stray control below a form
+that read as belonging to neither. It is shaped like a tab, which is what the
+pane's other controls are, and turns `--danger` under the pointer: the red the
+project's × used to turn, said on the thing itself.
+
+The lists are `WorktreeTab`, the same component the strip's tabs are, keeping
 every `.tab*` class — only the container differs. A worktree met in the pane and
 met in the strip has to be one object. They deliberately carry no `data-pane` of
 their own: a row claiming a worktree's pane key would teleport the walk, so they
@@ -438,10 +545,64 @@ Measured across the band, with a file open: 1400px and 1500px (four units) hide
 Claude and give the panel the window; 1687px and up (five) show both. Every one
 of them lands the editor at 82 columns.
 
-Two consequences to preserve. **Every tile starts on a unit boundary**, so
-scrolling to `unit * pitch` lands a tile flush at the left edge and no tile is
-ever shown half-cut; the snap points are one out-of-flow `.grid__spot` marker
-per unit. And **a tile wider than the window is collapsed, not squeezed**:
+**The gap is a number, not a constant** (`gapFor` in `overviewLayout.ts`): 12px
+normally, and **0 on a phone**, where the window is the screen and a gap says
+"these are separate windows in a row" to nobody. `.grid`'s padding and its
+`scroll-padding-left` used to be a hand-kept copy of it -- the stylesheet said
+so -- and now the row *hands* the number down as `--gap` on the element. It has
+to travel one way: the padding is where the first tile starts, the scroll
+padding is what makes a snap land on a stop rather than a gap into it, and the
+markers are placed from the same arithmetic, so a second copy is a copy that
+drifts.
+
+`rowMetrics`, `wholeOnScreen` and `nearestOffset` moved to `overviewLayout.ts`
+with it, which is the one layout file that has a test -- the phone's arithmetic
+was never exercised before because `units` is pinned at 2 below about 1017px and
+nothing about a narrow window reached a browser check.
+
+`EDGE_SLACK` exists because of that move. `wholeOnScreen` used to carry ±12px of
+*accidental* tolerance: a tile was a gap narrower than the scrollport at each
+end. At gap 0 the tile **is** the scrollport and the two clauses collapse to an
+equality within a pixel -- so a row resting fractionally off a stop (a
+fractional `pitch` at 393px, a smooth scroll still settling, a leaving tile
+mid-collapse) reads as "not here", and everything gated on it changes character:
+reveal, the growth reveal, and the Cmd+arrow walk's fallback, whose own comment
+records that falling through "threw the walk back to a tile you had already
+left". It is 2px, written down, and a test fails at 1.
+
+Two consequences to preserve. **The row comes to rest on a pane's leading
+edge**, so a pane is never shown cut down the middle; the snap points are one
+out-of-flow `.grid__spot` marker per pane start, listed in `rest`, plus the far
+end. They were one per *unit*, and a unit is half a pane: the row could stop
+with half of Claude beside half of a terminal, and on a phone — where a window
+is the whole screen — that was the *usual* place a swipe landed, two halves of
+two worktrees and neither of them readable. A pane is the smallest thing worth
+looking at, so it is the smallest thing worth stopping on, and it is already the
+granularity the Cmd+arrow walk uses.
+
+Three things fall out of that and are load-bearing. `nearestOffset` has to
+**return one of those stops**, because mandatory snapping governs programmatic
+scrolls too and the browser would otherwise re-snap the offset it was just
+given, somewhere that cuts the tile it was asked to reveal. **The far end is a
+stop whether or not a pane begins there**: the last reachable offset is
+`totalUnits - units`, which lands mid-pane whenever the tail does not divide
+evenly, and without it the last window could never be seen whole — it is also
+exactly the low end of `nearestOffset`'s range for the last tile, so revealing
+that tile and resting at the end are the same offset. And **a wheel notch goes
+to the next stop in the direction it is travelling** rather than a flat two
+units: two units is one pane only while every pane is one, and the files panel
+is three, so a notch used to leave the row a unit inside the next pane with the
+one after it undoing the mistake.
+
+Measured at 2400px, where the row is seven units of 341px and `fourth` holds
+Claude beside an open file (five units, at unit 3): stops at units 0, 1, 3, 5
+and 6 — 5 being the files pane's own edge inside that tile, 6 the far end.
+Wheel right stepped 341 → 1023 → 1706 → 2047 and held there; wheel left came
+back 1706 → 1023 → 341 → 0. Clicking the tabs landed on 2047, 341 and 1023,
+each on a stop and each with the named window whole on screen. On a 400×800
+phone, where every tile is one pane, the stops are units 0, 1, 3, 5, 7, 8 and
+five swipes walked 0 → 1 → 7 → 8 — a flick crossing several stops, never
+resting between two. And **a tile wider than the window is collapsed, not squeezed**:
 `panesOf` drops Claude's pane first, which is all it ever has to drop now that a
 worktree shows one panel at a time — a tile is two, four or five units, so the
 only window it cannot fit whole is one a single pane already fills. That is what
@@ -471,6 +632,33 @@ terminal tab that was actually clicked. Measured at 1100px with 713px tiles:
 clipped on the right 0 -> 363 and whole, clipped on the left 363 -> 0 and whole,
 already whole 363 -> 363, and `activeElement` the clicked terminal's own
 textarea throughout.
+
+**A window that grows means it too.** Opening a panel is a reveal already;
+opening something *inside* one was not, and it is the same action a level down
+— the files panel is one unit while it is only its tree and three once a file,
+a diff or a commit is open in it, so a click inside a pane that is fully on
+screen can take its tile from three units to five and push its own right-hand
+half off the edge. So the row remembers each cell's span between renders and
+reveals one that **grew**, through the same two functions as everything else.
+
+Three things about it are deliberate, and each is a way of not moving the row
+when nobody asked. **Growth, not size**: a tile that shrinks — you closed the
+file — has nothing hidden left to show, and scrolling then would take the window
+you were reading out from under you. **A new cell is not growth**, since waking
+a worktree and making one each scroll to it themselves and a tile arriving
+mid-row must not drag the row to wherever it landed. And **not across a
+resize**, which is the other thing that changes a span: capacity moves with the
+window, so a tile can gain a unit with nothing opened, and the row is already
+putting itself back by spot (`unitRef`) — two effects scrolling one row in one
+commit is one of them losing.
+
+Measured at 2400px, where the row is six units of 341px: with the files panel
+open on a tile at 1377–2388 (three units, whole on screen), opening README.md
+took it to 1694px wide and 665px of it past the right edge, and the row stepped
+two units, 682 -> 1365, leaving the tile at 694–2388 and whole. Closing the file
+again left the row at 1365, and re-opening it from there — where the grown tile
+still fits — also left it at 1365. Across 2400 -> 2800 -> 1500 -> 2400 the row
+kept its spot and came back to 1365 exactly, as it did before this existed.
 
 `measureMonoCharWidth` is **floored** on purpose. xterm rasterises glyphs into
 an atlas and blits per cell, so a cell is a whole number of pixels: canvas says
@@ -564,6 +752,41 @@ measured, a 1600x1200 png drawn at 652x489 and a 16px favicon at 16px -- and the
 line under it carries the real dimensions and the file size, which is the one
 thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
 table: it is text, it decodes, and editing it is the reason to open it.
+
+**A Markdown file can be read rather than edited.** `Preview` in the bar swaps
+the editor for `views/Markdown`, and the switch is `ui.markdownPreview` -- one
+boolean for the whole IDE, not one per file or per worktree, because what it
+records is a habit: whether the reader reads the Markdown in this repository or
+edits it. It opens rendered by default and the first flip is remembered.
+
+Four things about the renderer are load-bearing:
+
+- **It builds React elements, never HTML**, which is why there is no sanitiser
+  here and no need of one: nothing in the file can become markup. HTML the file
+  wrote is drawn as the source it is. This is the origin that can type into
+  every running agent, so a `<script>` or an `onerror=` in a file an agent just
+  wrote may not reach the parser.
+- **The words are the gaps between the nodes.** `@lezer/markdown` marks up the
+  delimiters and leaves the text itself as unmarked space between children, so a
+  renderer that only visited nodes draws a page of correctly nested empty tags.
+  The same parser the editor highlights the source with, through
+  `@codemirror/language-data`: two parsers would be two answers to "is this a
+  heading".
+- **A link into the repository opens that file in this panel**, resolved against
+  the file it was written in -- `server/CLAUDE.md` from the root one is the next
+  page, not an address. Only `http`, `https` and `mailto` are handed to the
+  browser; anything else is drawn as its own words.
+- **An image is drawn only if it is in the worktree**, through `/raw`. A remote
+  one becomes a link instead: fetching a URL a file names is an outbound request
+  the file chose and the reader did not, with room in it to say who opened the
+  document and when.
+
+The editor may now be unmounted while it is dirty, which is what Preview does to
+it, and `CodeEditor` had a latent bug that only that could reach: both of its
+effects run on a mount, and the second found the file the first had just built
+from and dispatched the disk text into it, throwing away the restored draft and
+then reporting the buffer as clean. `freshRef` is the guard. Flipping to Preview
+with an unsaved edit renders the edit, not what is on disk.
 
 Nothing auto-selects any more. The commit list used to choose its newest for you,
 which was free when the pane was always there and is not now: it would open the
@@ -681,7 +904,46 @@ bare `9999...8888` arriving in a prompt.
 
 ## On a phone
 
-Two things the desktop never exercises, both measured:
+Everything below is something the desktop never exercises, and every number in
+it was measured on a 390×800 screen rather than reasoned about:
+
+**Below 640px the row is one window, edge to edge.** `useNarrow` asks
+`matchMedia` once, in `App`, and hands the answer to the row; `NARROW_MAX` is
+where the number lives, in TS, and CSS is told the *answer* through
+`data-narrow` on `.app` rather than being given the number to repeat, which is
+the `data-tight` arrangement the tab strip already uses. It reads the **layout**
+viewport, not `visualViewport`: the keyboard and a pinch both change the visual
+one and neither turns a phone into a desktop. And it is `useSyncExternalStore`
+rather than state written from an effect, which is one render late — late enough
+to build every terminal in the row at the wrong width and then resize every pty
+behind it.
+
+Deliberately not the 440px the todo panel uses. That one is about how narrow a
+column of prose can be; this one is about a row of windows. Two questions, two
+numbers, each free to move. **The top bar has no breakpoint at all** — it
+measures the room it has and gives things up in order, which is the ladder in
+*The top bar is Chrome's tab strip*. A phone is where it ends up at its last
+rung; it gets there the same way a desktop window dragged narrow does.
+
+**And the window is the screen.** No grid padding, no gap between tiles, and no
+8px inset inside the pane -- 16px of a 390px window is two columns of terminal,
+and with one window on the glass there is no neighbour to hold the text away
+from. The tile's own border **stays**: its leading rail is recoloured `--signal`
+and `--done` per worktree, which is the per-window half of the only colour this
+interface spends, and it costs nothing -- the arithmetic rounds the same with or
+without it at 390 and 430. The project's own pane is two units on a phone rather
+than one, or the row would come to rest showing half of it beside half a
+worktree, which is the landing `rest` exists to prevent.
+
+Measured from the pty at 390px, which is the only honest place to read it:
+**41 × 42 before, 46 × 45 after** — five columns and three rows, a fifth more
+terminal. The `useNearViewport` margin went to `100% 110%` for it: at gap 0 the
+neighbouring tile's leading edge lands *exactly* on the edge of the expanded
+root rect, and an intersection rectangle of zero width is not an intersection,
+so the next worktree along would not mount until the scroll began. Four
+terminals are mounted at rest across six tiles, not one.
+
+Two more things, both older:
 
 **The keyboard must shrink the app, not cover it.** `height: 100%` means the
 window, and the on-screen keyboard is drawn over that, so the terminal and its
@@ -696,10 +958,47 @@ wrong place.
 **A finger dragged up or down scrolls the app.** There is no wheel and no Page
 Up key, and on the alternate screen there is no scrollback for the browser to
 move — the app owns its history. Claude scrolls on Page Up / Page Down, so a
-vertical drag on a terminal sends those, half a pane's worth of drag to the
-page; horizontal drags are left to the row. `.term-host` carries
-`touch-action: pan-x` so the browser hands over the vertical axis instead of
-claiming it for a pan that has nowhere to go.
+vertical drag on a terminal sends those; horizontal drags are left to the row.
+`.term-host` carries `touch-action: pan-x` so the browser hands over the
+vertical axis instead of claiming it for a pan that has nowhere to go.
+
+**The drag sends whichever of the two the app is listening for.** An app with a
+tracking mode on is one xterm reports the wheel to — that is how the same
+transcript is scrolled on a desktop — so a finger sends the same report,
+`ESC [ < 64` and `65` in SGR, **one notch per line of finger travel**
+(`host.clientHeight / term.rows`, floored at 8px). SGR without asking, because
+every app in this stack sets `?1006h`; the guard on `send` refuses the legacy
+form outright, so a report built wrong here cannot reach an agent. An app that
+answers no mouse report — a plain shell — keeps Page Up and Page Down at an
+eighth of the pane's height.
+
+Paging was the whole gesture, and it was too coarse in both directions at once:
+Page Up moves a *screen*, so the smallest move available was the largest move
+there is, and it cost 85px of dragging to get it. (It cost 341px before that,
+half the pane's height, which was more than a comfortable drag — a 300px pull
+sent **nothing at all** and the gesture read as broken. That number is where the
+eighth came from, and it survives as the shell's step.)
+
+Measured on a 400×800 phone, a 682px terminal at 40 rows — 17px a notch — with
+`vim -c 'set mouse=a' -c 'set ttymouse=sgr'` as the stand-in for an app that
+takes the mouse: a 300px push sent 18 notches and vim scrolled 54 lines, three
+a notch, reading 19 → 73 in one gesture; 100px sent 6; the same drag pulled back
+sent 18 the other way. On a plain shell's pane the identical 300px drag sent
+**3 Page Ups and no notches**, which is the old behaviour kept where it is the
+only one available.
+
+A burst is capped at twenty reports per move event, and the remainder dropped
+rather than carried: the step is small enough now that a finger that *jumps* —
+a touch reordered, a pane resized mid-drag — would otherwise spend the distance
+as a flood of reports at an agent, and paying it out later would scroll for a
+gesture that had already finished.
+
+Measure it by counting what goes down the socket, not by looking: the payload
+is JSON, so an escape is the six characters `\u001b[5~` and a regex for a raw
+ESC byte matches nothing. Wrap `WebSocket.prototype.send`, then drive the drag
+with CDP `Input.dispatchTouchEvent` — `Input.synthesizeScrollGesture` moved
+neither the row nor the terminal in headless Chromium, and a `page.mouse.wheel`
+over a terminal is eaten by xterm's own handler before the row sees it.
 
 This is not the wheel rule in reverse. Turning the wheel into keystrokes was
 wrong because the wheel is how you scroll what is under the pointer; a finger
@@ -710,9 +1009,9 @@ screen has nothing of its own to scroll, so a downward wheel over most of a
 window would otherwise do nothing, and the row was offered the gesture instead.
 That loses to what it costs -- reading down a diff and running off its end threw
 the row sideways, and so did a stray graze over a terminal. Only a *sideways*
-gesture moves the row, stepped by the spot because `scroll-snap-type: x
-mandatory` drags anything shorter back (measured: a 120px nudge snapped to where
-it started, a 600px flick landed a spot along). Anything with sideways scrolling
+gesture moves the row, a pane at a time because `scroll-snap-type: x mandatory`
+drags anything shorter back (measured: a 120px nudge snapped to where it
+started, a 600px flick landed a spot along). Anything with sideways scrolling
 of its own keeps first claim through `inner()` -- measured on a tile's terminal
 tab strip, which took 8px of the gesture and left the row at 0, then handed the
 next one on once it was at its end.
@@ -828,10 +1127,23 @@ the row — so `App`'s `refocus()` reveals that pane again, which also brings a
 window that had scrolled off the side back with the keyboard.
 
 A removal has no pane to go back to, so it moves you on: the worktree after the
-one that went, or the one before it when it was the last in the row -- where the
-eye already is, and where a Cmd+arrow step from the gap would have taken you.
-Read off the row as it still stands, before the refresh drops the worktree,
-which is why it can be answered at all.
+one that went, or the one before it when it was the last -- where the eye
+already is, and where a Cmd+arrow step from the gap would have taken you. Read
+off the row as it still stands, before the refresh drops the worktree, which is
+why it can be answered at all.
+
+**Within its own project.** The row is every project's windows in a line, so
+"the next one" across the whole row is the first window of the *next project*
+whenever you remove a project's last worktree — somebody else's work, and
+nowhere you asked to be. With nothing awake left beside it, that project's own
+pane takes the keyboard instead: it is the head of the run and it is there
+whether or not anything else is, which makes it the one landing spot a removal
+can always promise, and it is where you go to make the next worktree, which is
+often why the last one went. The close-project path already lands this way — it
+moves to the pane of the project left standing — so the two now agree. The rule
+is `removalLanding` in `selectors.ts` rather than a closure in `App`, which is
+what lets a test hold it: two of its four cases are the flat row's answers
+written down as the wrong ones.
 
 ## The todo panel holds no state of its own
 
@@ -895,6 +1207,36 @@ answers you would never pick, and made it need a heading per project to tell two
 the todo is already in, so there is nothing for a label to disambiguate. `App`
 builds the targets per project id and a tile takes its own; a project with one
 worktree leaves the list empty and MOVE TO does not draw.
+
+**Narrow, the slab turns on its side and goes under the prompt.** It is 118px
+wide whatever the pane is worth, which on a phone is a third of the row: at
+441px, the last window width that keeps it beside the prompt, the row is 398px
+and the prompt gets 252 of it. One pixel narrower it sits underneath, and the
+prompt gets the whole 377 — 125px more prose for 2px of row height. On the
+phones people actually hold: 367px of prompt at a 430px window, 330 at 393.
+
+It stays one slab. The segments keep the shell and its clipped corners, and the
+2px `--sleeve` seam moves from the top edge to the leading one — the same seam
+said along the other axis. What does change is the alignment: the labels centre
+in shares of the row, because "read down one edge" is an argument about a
+column, and a row of three is scanned across. `min-width: 118px` goes with it
+for the same reason — it exists to give a *column* one width. The shares are
+grown from the labels rather than from nothing, so the longest is never the one
+that clips: 120/131/106 at a 420px window, 87/98/73 at 320, all three on one
+line and inside the row at both.
+
+The breakpoint is on the **viewport**, and it has to be. A container query is
+what this wants, and `container-type` brings `contain: layout` with it, which
+makes the element a containing block for fixed-position descendants — and
+`.menu` is `position: fixed` *inside* the row, precisely so no ancestor's
+overflow can clip it. Any container above it takes that back and re-creates the
+bug the fixed positioning fixed. The viewport answers anyway, because this panel
+is always two units and two units are only small when the window is: the pane
+measured 377px inside a 420px window and 576px inside a 600px one. 440px is
+where the prompt would fall under about 300px. Verified in the narrow layout
+that MOVE TO still opens at its own button's bottom edge (x 152, y 179 under a
+button at x 152 ending at 179), fully on screen, with `elementFromPoint` at the
+menu's centre landing inside it.
 
 **A moved todo is not a sent one.** From this pane a queued todo leaving looks
 identical whether the server typed it into Claude or you moved it elsewhere, and

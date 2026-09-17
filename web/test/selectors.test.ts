@@ -7,8 +7,10 @@ import {
   orderWorktrees,
   queuedTodoCount,
   removalAsks,
+  removalLanding,
   removalQuestions,
   removalWarnings,
+  summarySignal,
   stateLabel,
   terminalSessions,
   worktreeStatus,
@@ -334,5 +336,75 @@ describe('removalAsks', () => {
     const working = [session({ id: 's', worktreeId: 'a', kind: 'claude', attention: 'working' })]
     expect(removalAsks(clean, working, [])).toBe(true)
     expect(removalAsks(clean, [], [todo({ id: 't', worktreeId: 'a' })])).toBe(true)
+  })
+})
+
+/*
+ * Where removal leaves the keyboard.
+ *
+ * The row is every project's windows in a line, and this used to step along it
+ * flat -- so removing the last worktree of one project handed the keyboard to
+ * the first window of the *next* project. Each case below is that line read the
+ * wrong way round, which is why the two runs are deliberately adjacent.
+ */
+describe('removalLanding', () => {
+  const runs = [
+    { project: { id: 'p1' }, awake: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] },
+    { project: { id: 'p2' }, awake: [{ id: 'd' }] },
+  ]
+
+  it('takes the one after it', () => {
+    expect(removalLanding(runs, 'b')).toEqual({ kind: 'worktree', id: 'c' })
+  })
+
+  it('takes the one before it when it was the last of its project', () => {
+    // Flat across the row this is 'd', which belongs to the next project.
+    expect(removalLanding(runs, 'c')).toEqual({ kind: 'worktree', id: 'b' })
+  })
+
+  it('takes the project pane when nothing of that project is left awake', () => {
+    // Flat across the row this is 'c', in the project before it.
+    expect(removalLanding(runs, 'd')).toEqual({ kind: 'project', id: 'p2' })
+  })
+
+  it('says nothing about a worktree no run holds', () => {
+    expect(removalLanding(runs, 'gone')).toBeNull()
+  })
+})
+
+/*
+ * What a head's bar says for the worktrees it stands in for.
+ *
+ * The case that matters is the third: composed with `mostUrgentStatus`, which
+ * ranks working above idle, a project with one worktree at rest and one working
+ * reported *nothing at all* -- the busy one won the ranking and then said
+ * nothing, because a summary shows only amber and green. Collapsing the bar
+ * makes that the common shape rather than a rare one, since every collapsed
+ * head then has awake worktrees in its set.
+ */
+describe('summarySignal', () => {
+  it('says amber when anything here needs you', () => {
+    expect(summarySignal(['needs-you'])).toBe('needs-you')
+    expect(summarySignal(['working', 'needs-you', 'idle'])).toBe('needs-you')
+    // Amber outranks green, which is the one ranking this rule does have.
+    expect(summarySignal(['idle', 'needs-you'])).toBe('needs-you')
+  })
+
+  it('says green when something has come to rest and nothing needs you', () => {
+    expect(summarySignal(['idle'])).toBe('idle')
+    expect(summarySignal(['off', 'idle'])).toBe('idle')
+  })
+
+  it('is not masked by a busy neighbour', () => {
+    // The regression: `mostUrgentStatus` answers 'working' here, which clamps
+    // to nothing, and the worktree that had finished stopped being reported.
+    expect(summarySignal(['working', 'idle'])).toBe('idle')
+    expect(summarySignal(['working', 'working', 'idle'])).toBe('idle')
+  })
+
+  it('says nothing when nothing here is worth saying', () => {
+    expect(summarySignal([])).toBeNull()
+    expect(summarySignal(['working'])).toBeNull()
+    expect(summarySignal(['off', 'working', 'off'])).toBeNull()
   })
 })

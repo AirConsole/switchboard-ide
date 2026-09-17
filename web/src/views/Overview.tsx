@@ -26,19 +26,18 @@ import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
-import { MIN_PANE_COLUMNS, PANE_CHROME_WIDTH, measureMonoCharWidth } from './overviewLayout.js'
+import {
+  MIN_PANE_COLUMNS,
+  PANE_CHROME_WIDTH,
+  gapFor,
+  measureMonoCharWidth,
+  nearestOffset,
+  rowMetrics,
+  wholeOnScreen,
+} from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
 import { useNearViewport } from './useNearViewport.js'
-
-/**
- * Space between tiles and around the row, in px.
- *
- * It lives here rather than in the stylesheet because tile widths are computed
- * from a measured scrollport: the arithmetic and the rendered spacing have to be
- * the same number or the row does not add up to the window.
- */
-const GAP = 12
 
 /** How the add tile is identified in the layout. */
 
@@ -54,48 +53,6 @@ const EMPTY_FILES: string[] = []
 
 /** And for a project whose worktrees have not been read yet; see EMPTY_DIRS. */
 const EMPTY_MOVE: MoveTarget[] = []
-
-/**
- * Is the whole of a tile on screen already?
- *
- * A tile begins one gap into its own run of the row -- the leading inset, which
- * `scroll-padding-left` matches -- and ends at the far edge of the last unit it
- * covers: it swallows the gaps between the units it spans and leaves only the
- * trailing one outside itself, so `(at + units) * pitch` is its right edge.
- *
- * A pixel of slack at each end, because `pitch` is fractional and `scrollLeft`
- * is not: a tile flush against an edge must not read as one pixel over it.
- */
-const wholeOnScreen = (
-  tile: { at: number; units: number },
-  scrollLeft: number,
-  pitch: number,
-  width: number,
-): boolean =>
-  GAP + tile.at * pitch >= scrollLeft - 1 &&
-  (tile.at + tile.units) * pitch <= scrollLeft + width + 1
-
-/**
- * Which unit to scroll to so a tile is wholly on screen, moving as little as
- * possible.
- *
- * A tile of u units at `at` is whole on screen for every offset from
- * `at + u - capacity` -- its right edge against the right edge of the window --
- * to `at`, its left edge against the left. The nearest of those to where the
- * row already sits is the answer: going to the worktree just off the right edge
- * moves as little as it can and keeps the one you were on beside it, rather
- * than pulling the new one to the front and taking everything else off the
- * screen with it.
- *
- * The range is never empty, because a tile is never wider than the window --
- * see `panesOf` -- so it always holds `at` itself. Offsets are unit indices,
- * which is what the row is allowed to come to rest on.
- */
-const nearestOffset = (
-  tile: { at: number; units: number },
-  from: number,
-  capacity: number,
-): number => Math.min(Math.max(from, tile.at + tile.units - capacity), tile.at)
 
 /**
  * Every panel, in the order they sit beside Claude.
@@ -547,6 +504,14 @@ interface WorktreeTileProps {
   /** Which face its files panel is showing. */
   filesMode: FilesMode
   /**
+   * Whether Markdown opens rendered rather than as its source.
+   *
+   * Not a fact about this worktree, unlike everything around it: it is one
+   * switch for the whole IDE, because what it records is whether the reader
+   * reads the Markdown here or edits it.
+   */
+  markdownPreview: boolean
+  /**
    * Cmd is down, so the panel toggles may show the letter that opens them.
    *
    * "May", because only the window you are in does: the shortcut acts on one
@@ -588,6 +553,7 @@ interface WorktreeTileProps {
   /** Open a directory and its ancestors: a search hit that is a place. */
   onExpandDir: (dir: string) => void
   onFilesMode: (mode: FilesMode) => void
+  onMarkdownPreview: (on: boolean) => void
 }
 
 /**
@@ -616,6 +582,7 @@ const WorktreeTile = ({
   openFiles,
   expandedDirs,
   filesMode,
+  markdownPreview,
   keysLit,
   step,
   commit,
@@ -634,6 +601,7 @@ const WorktreeTile = ({
   onToggleDir,
   onExpandDir,
   onFilesMode,
+  onMarkdownPreview,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
   // frozen terminal -- but with what it printed on its way out, which is often
@@ -873,10 +841,12 @@ const WorktreeTile = ({
                 files={files}
                 changes={changes}
                 openFiles={openFiles}
+                markdownPreview={markdownPreview}
                 onCloseFile={onCloseFile}
                 onCollapse={() =>
                   filesMode === 'commits' ? onSelectCommit(null) : onOpenPath('')
                 }
+                onMarkdownPreview={onMarkdownPreview}
               />
             )}
             {index === controlsIndex && controls}
@@ -945,6 +915,7 @@ const WorktreeTile = ({
                 files={files}
                 changes={changes}
                 openFiles={openFiles}
+                markdownPreview={markdownPreview}
                 branch={worktree.branch}
                 near={near}
                 focus={focusPane === 'files' ? focus : null}
@@ -1002,6 +973,16 @@ const WHEEL_LINE = 40
 const WHEEL_IDLE_MS = 300
 
 export interface OverviewProps {
+  /**
+   * A phone, where the window is the screen.
+   *
+   * The row spends no width on gaps and no height on its own padding then --
+   * one worktree fills the glass. Handed down rather than measured here: the
+   * top bar decides it (see `useNarrow`), and the row's own box is the viewport
+   * *minus the safe-area insets*, which on a notched phone in landscape
+   * disagrees with it by up to ~88px. One threshold, one answer.
+   */
+  narrow: boolean
   /** Awake worktrees, in the order the row shows them. */
   worktrees: Worktree[]
   /** Every open project, so a tile can name the one it belongs to. */
@@ -1026,6 +1007,13 @@ export interface OverviewProps {
   openFilesByWorktree: Record<string, string[]>
   /** Which face each worktree's files panel is showing. */
   filesModeByWorktree: Record<string, FilesMode>
+  /**
+   * Whether Markdown opens rendered rather than as its source.
+   *
+   * Not keyed by worktree, unlike the four above it: it is the reader's habit,
+   * and the same in every window.
+   */
+  markdownPreview: boolean
   /**
    * The project a new worktree would go to, when there is only one open.
    *
@@ -1074,6 +1062,7 @@ export interface OverviewProps {
   onToggleDir: (worktreeId: string, dir: string) => void
   onExpandDir: (worktreeId: string, dir: string) => void
   onFilesMode: (worktreeId: string, mode: FilesMode) => void
+  onMarkdownPreview: (on: boolean) => void
 }
 
 /**
@@ -1089,6 +1078,7 @@ export interface OverviewProps {
  * What is left is one width rule and a scroller.
  */
 export const Overview = ({
+  narrow,
   worktrees,
   projects,
   todos,
@@ -1100,6 +1090,7 @@ export const Overview = ({
   openFilesByWorktree,
   expandedByWorktree,
   filesModeByWorktree,
+  markdownPreview,
   scrollTo,
   active,
   onActivate,
@@ -1121,6 +1112,7 @@ export const Overview = ({
   onToggleDir,
   onExpandDir,
   onFilesMode,
+  onMarkdownPreview,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -1264,25 +1256,19 @@ export const Overview = ({
   const charWidth = measureMonoCharWidth(TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY)
   const minPaneWidth = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
   /*
-   * The row is a grid of units, and every tile is a whole number of them.
+   * The row is a grid of units, and every tile is a whole number of them: a
+   * tile of u units is `u * pitch - gap` wide, swallowing the gaps between the
+   * units it covers, so tiles of any width occupy exactly the run of the row
+   * the units they span do. See `rowMetrics`, which is where the arithmetic
+   * lives and where it can be tested.
    *
-   * A unit is half a pane. `pitch` is one unit plus the gap that follows it,
-   * and the floor is half of a pane's own -- so two units still clear
-   * MIN_PANE_COLUMNS, which is the promise, while a pane may now be three of
-   * them. A tile of u units is `u * pitch - GAP` wide: it swallows the gaps
-   * between the units it covers, so tiles of any width occupy exactly the same
-   * run of the row as the units they span.
-   *
-   * Two units minimum, which is one pane -- and below that it is the pitch that
-   * gives, not the row: `units` cannot go under two, so a window narrower than
-   * a pane's own floor divides into two units smaller than half of one and the
-   * pane shrinks past MIN_PANE_COLUMNS with it. The floor is a promise about
-   * how a row is divided among the windows in it, not one a window smaller than
-   * a single pane can keep.
+   * The gap is nothing on a phone -- see `gapFor`. It does not change how the
+   * row divides there: `units` is pinned at its floor of 2 everywhere below
+   * about 1017px, at either gap, so crossing the breakpoint moves `pitch` and
+   * every tile's width and nothing else.
    */
-  const unitPitch = (minPaneWidth + GAP) / 2
-  const units = Math.max(2, Math.floor((width - GAP) / unitPitch))
-  const pitch = (width - GAP) / units
+  const gap = gapFor(narrow)
+  const { units, pitch } = rowMetrics(width, gap, minPaneWidth)
 
   /*
    * `group` rather than a project id, because a leaving slot outlives the list
@@ -1300,6 +1286,19 @@ export const Overview = ({
     units: number
   }
   const cells: Cell[] = []
+  /*
+   * Where the row may come to rest: every pane's leading edge, in units.
+   *
+   * Not every unit. A unit is half a pane, so a marker on each one let the row
+   * stop with a pane cut down the middle -- half of Claude beside half of a
+   * terminal -- and on a phone, where a window is the screen, that is the
+   * *usual* place a swipe landed: two halves of two worktrees and neither of
+   * them readable. A pane is the smallest thing worth looking at, so it is the
+   * smallest thing worth stopping on, and it is already the granularity the
+   * Cmd+arrow walk uses -- `stops` below is the same list said in panes rather
+   * than in units.
+   */
+  const rests: number[] = []
   let next = 0
   const push = (
     key: string,
@@ -1307,7 +1306,11 @@ export const Overview = ({
     group: ProjectGroup | null,
     panes: Pane[],
   ): void => {
-    const span = panes.reduce((n, pane) => n + pane.units, 0)
+    let span = 0
+    for (const pane of panes) {
+      rests.push(next + span)
+      span += pane.units
+    }
     cells.push({ key, worktree, group, panes, at: next, units: span })
     next += span
   }
@@ -1322,16 +1325,45 @@ export const Overview = ({
    */
   for (const group of groups) {
     const key = projectKey(group.project.id)
+    /*
+     * A whole window on a phone, half of one everywhere else.
+     *
+     * One unit is what this pane is worth beside other windows -- it is a list
+     * and a form, not something you read code in. On a phone a unit is half the
+     * *screen*, and a half-screen cell puts a resting place on an odd unit: the
+     * row would come to rest showing half this pane beside half a worktree,
+     * which is exactly the landing `rest` exists to prevent.
+     */
     push(key, null, group, [
-      { kind: 'project', key, units: Math.min(PANE_UNITS.project, units) },
+      { kind: 'project', key, units: Math.min(narrow ? 2 : PANE_UNITS.project, units) },
     ])
     for (const worktree of group.awake) push(worktree.id, worktree, null, panesOf(worktree, units))
   }
   const totalUnits = next
+  /*
+   * The far end is a resting place whether or not a pane begins there.
+   *
+   * The last offset the row can reach is `totalUnits - units`, and that lands
+   * mid-pane whenever the tail of the row does not divide evenly -- so without
+   * it the nearest stop before the end is where mandatory snapping would hold
+   * the row, and the last window could never be seen whole. It is also exactly
+   * the low end of `nearestOffset`'s range for the last tile, which is what
+   * makes revealing that tile and resting at the end the same offset.
+   */
+  const lastOffset = Math.max(0, totalUnits - units)
+  const rest = [...new Set([...rests.filter((at) => at < lastOffset), lastOffset])].sort(
+    (a, b) => a - b,
+  )
+  /*
+   * The wheel handler subscribes once and would otherwise close over the first
+   * render's list. Written during render, read only from the listener.
+   */
+  const restRef = useRef(rest)
+  restRef.current = rest
 
   const slots: Slot<Cell>[] = cells.map((cell) => ({
     key: cell.key,
-    width: Math.max(0, cell.units * pitch - GAP),
+    width: Math.max(0, cell.units * pitch - gap),
     data: cell,
   }))
   const moving = useTileMotion(width > 0 ? slots : [])
@@ -1386,8 +1418,8 @@ export const Overview = ({
      * beside it included.
      */
     const tile = { at: target.at, units: target.units }
-    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), units)
+    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
+    const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, restRef.current)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
@@ -1427,10 +1459,56 @@ export const Overview = ({
   const revealTile = (tile: { at: number; units: number }): void => {
     const grid = gridRef.current
     if (!grid || width === 0) return
-    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width)) return
-    const offset = nearestOffset(tile, Math.round(grid.scrollLeft / pitch), units)
+    if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
+    const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, rest)
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
   }
+
+  /*
+   * A window that grows brings the rest of itself over.
+   *
+   * Opening a file, a diff or a commit is what does this: the files panel is
+   * one unit while it is only its tree and three once something is open in it,
+   * so a tile goes three units to five on a click inside a pane that is already
+   * on screen. The half that appears is on the *right*, which is the edge it
+   * runs off -- and the pane you just opened something in is the one that goes
+   * under, since the panel sits to the right of Claude. Opening a panel is a
+   * reveal already; opening something *inside* one was not, and that is the
+   * same action one level down.
+   *
+   * It is the same least-movement rule as every other navigation here, so a
+   * tile that still fits where it is does not move, and one that does not
+   * shifts by the fewest units that bring the whole of it over.
+   *
+   * Growth is the trigger, not size: a tile that shrinks (you closed the file)
+   * has nothing hidden to show, and moving the row then would take a window you
+   * *were* reading out from under you for nothing.
+   *
+   * Spans are remembered rather than derived, because what a tile was is not
+   * something the render has -- and a *new* tile counts as no growth at all:
+   * waking one and making one each scroll to it themselves, and a tile arriving
+   * mid-row must not drag the row to wherever it landed.
+   *
+   * Not across a resize, which is the one other thing that changes a span. The
+   * capacity of the row changes with the window, so a tile can gain a unit
+   * without anything being opened, and the row is already putting itself back
+   * where it was by spot -- see `unitRef`. Two effects scrolling the same row in
+   * one commit is one of them losing.
+   */
+  const spans = useRef(new Map<string, number>())
+  const capacity = useRef(units)
+  useEffect(() => {
+    if (width === 0) return
+    const was = spans.current
+    const resized = capacity.current !== units
+    spans.current = new Map(cells.map((cell) => [cell.key, cell.units]))
+    capacity.current = units
+    if (resized) return
+    const grown = cells.find((cell) => cell.units > (was.get(cell.key) ?? cell.units))
+    if (grown !== undefined) revealTile(grown)
+    // `cells` is rebuilt every render, so there is no dependency to name: the
+    // remembered spans are what say whether anything actually happened.
+  })
 
   /*
    * Cmd+Left and Cmd+Right step through the worktrees.
@@ -1523,7 +1601,7 @@ export const Overview = ({
         )
         const seen = stops[at]
         const tile = seen ? { at: seen.at, units: seen.units } : null
-        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width) ? at : -1
+        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap) ? at : -1
       }
       if (here === -1) {
         /*
@@ -1694,21 +1772,27 @@ export const Overview = ({
         aim = null
       }, WHEEL_IDLE_MS)
 
-      const from = aim ?? Math.round(grid.scrollLeft / pitch)
+      const from = aim ?? grid.scrollLeft / pitch
       /*
-       * A notch still travels one pane, which is two units now that a unit is
-       * half of one. Stepping a single unit would have halved how far a flick
-       * carries you along a row that has not got any shorter.
+       * A notch travels to the next place the row may rest, in the direction it
+       * is going -- one pane, whatever that pane is worth in units. It was two
+       * units flat, which is one pane only while every pane is one: the files
+       * panel is three, so a notch left it a unit inside the next pane and the
+       * one after that had to undo it.
+       *
+       * The ends are where they are rather than clamped arithmetic: `rest`
+       * holds nothing past the last offset the row can reach, which is not the
+       * last unit that exists -- clamping at `totalUnits - 1` once let `aim`
+       * climb past the end and made the first notch back read as dead.
+       *
+       * A hair of tolerance, because `from` is a fraction of a pitch and a row
+       * resting exactly on a stop must step off it rather than at it.
        */
-      const step = (pixels > 0 ? 1 : -1) * 2
-      /*
-       * The last offset the row can rest at, not the last unit that exists.
-       * Content is `totalUnits * pitch` wide and the window shows `units` of
-       * them, so clamping at `totalUnits - 1` let `aim` climb past the end and
-       * the first notch back read as a dead one.
-       */
-      const last = Math.max(0, totalUnits - units)
-      const to = Math.min(Math.max(from + step, 0), last)
+      const stops = restRef.current
+      const to =
+        pixels > 0
+          ? (stops.find((at) => at > from + 0.01) ?? stops[stops.length - 1] ?? 0)
+          : ([...stops].reverse().find((at) => at < from - 0.01) ?? stops[0] ?? 0)
       aim = to
       grid.scrollTo({ left: to * pitch })
     }
@@ -1723,6 +1807,15 @@ export const Overview = ({
     <section className="view overview">
       <div
         className="grid"
+        /*
+         * The row's own spacing, handed to the stylesheet rather than repeated
+         * there. `.grid`'s padding and its `scroll-padding-left` used to be a
+         * hand-kept copy of this number, and they cannot be: the padding is
+         * where the first tile starts, the scroll padding is what makes a snap
+         * land on a stop rather than a gap into it, and the markers are placed
+         * from the same arithmetic. One number, travelling one way.
+         */
+        style={{ '--gap': `${gap}px` } as React.CSSProperties}
         ref={gridRef}
         onScroll={(event) => {
           const el = event.currentTarget
@@ -1730,23 +1823,21 @@ export const Overview = ({
         }}
       >
         {/*
-          * One marker per unit, so a scroll comes to rest on a unit boundary
-          * rather than part-way through one. Every tile begins on one, so no
-          * tile is ever shown half-cut.
+          * One marker per place the row may rest -- see `rest`: each pane's
+          * leading edge, and the far end. A scroll therefore comes to rest with
+          * a pane against the left edge and never part-way through one.
           *
-          * Markers rather than the tiles themselves: a tile wider than the
-          * window has to be scrollable *within*, to reach the units it covers,
-          * and snapping to tile starts alone would refuse to stop there. They
-          * are out of flow and take no space, and the panes cannot be used for
-          * this -- a pane is a share of its tile's width, which is half a gap
-          * out from the unit grid.
+          * Markers rather than the panes themselves, which are what you would
+          * reach for: a pane is a share of its tile's width and sits half a gap
+          * out from the unit grid, so snapping to one would leave the row a few
+          * pixels off every time. These are out of flow and take no space.
           */}
         {width > 0 &&
-          Array.from({ length: totalUnits }, (_, index) => (
+          rest.map((at) => (
             <i
-              key={index}
+              key={at}
               className="grid__spot"
-              style={{ left: GAP + index * pitch }}
+              style={{ left: gap + at * pitch }}
               aria-hidden="true"
             />
           ))}
@@ -1793,7 +1884,7 @@ export const Overview = ({
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a
                 // node that was just re-created. See .slot--leaving.
-                style={{ width: slot.width, marginRight: GAP }}
+                style={{ width: slot.width, marginRight: gap }}
               >
                 {/*
                  * Held at the width the tile will end at, so the terminal
@@ -1816,7 +1907,19 @@ export const Overview = ({
                           sessions={sessions}
                           todos={todos}
                           activeId={active?.id ?? null}
-                          focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
+                          /*
+                           * Never on a phone, where a caret is a keyboard.
+                           *
+                           * Arriving here puts it in the branch box, because on
+                           * a desktop naming the next worktree is what you came
+                           * for. On a phone that is the on-screen keyboard over
+                           * half the pane before you have seen it -- and you
+                           * got here by tapping the project's name in the menu,
+                           * which is a request to *look*. Tap the box and the
+                           * keyboard comes, which is the phone's own rule for
+                           * when a keyboard is wanted.
+                           */
+                          focus={!narrow && scrollTo?.id === slot.key ? scrollTo.nonce : null}
                           onWake={onWake}
                           onReveal={onReveal}
                           onSleep={onSleep}
@@ -1847,6 +1950,7 @@ export const Overview = ({
                       openFiles={openFilesByWorktree[worktree.id] ?? EMPTY_FILES}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
                       filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
+                      markdownPreview={markdownPreview}
                       keysLit={keysLit}
                       /*
                        * Left wins when a worktree is both, which cannot happen
@@ -1876,6 +1980,7 @@ export const Overview = ({
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                       onExpandDir={(dir) => onExpandDir(worktree.id, dir)}
                       onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
+                      onMarkdownPreview={onMarkdownPreview}
                     />
                   )}
                 </div>

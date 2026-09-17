@@ -444,6 +444,24 @@ button {
    * instead.
    */
   flex: 0 1 auto;
+  /*
+   * And never past its own contents.
+   *
+   * A flex item whose `overflow` is not `visible` has an automatic minimum size
+   * of **zero** -- and this one hides its overflow to clip the end segments to
+   * the shell's curve. So under pressure the group did not overflow the strip,
+   * it was crushed: measured at 390px, two groups at 40px and 15px with 62px
+   * tabs clipped away inside them, which is a bar that has quietly stopped
+   * saying anything rather than one that scrolls.
+   *
+   * `min-content` is the floor the comment above assumed was already there. It
+   * is not `min-width: 0`, which is the opposite edit and the one that made a
+   * project's tabs overprint the next project's -- this stops the shrinking
+   * where that let it run on. It is also what makes `scrollWidth >
+   * clientWidth` on the strip an honest answer to "has this bar run out of
+   * room", which is the signal the ladder walks down.
+   */
+  min-width: min-content;
   margin-top: 3px;
   /*
    * No padding at all: the tabs fill the group edge to edge and the shell clips
@@ -541,16 +559,31 @@ button {
   color: var(--bone);
 }
 
-.tabgroup__zz {
-  /* The head is uppercased; this is not. "zZ" is a mark rather than a word and
-     "ZZ" is a different one. */
+/*
+ * How many windows this head is standing in for, once the bar has taken their
+ * tabs -- and nothing at all until then.
+ *
+ * It sits where the `zZ` used to. That mark said "there is something behind
+ * this project you cannot see", and it is gone: how many and which is what the
+ * pane is for, and the half of it that is urgent -- a sleeper blocked on you --
+ * was never carried by the mark anyway but by the state bar beside it, in
+ * colour, which is the channel that says come here. A count is worth the width
+ * only when the tabs are gone, because that is the one state you cannot find
+ * out by looking. (`.tab__zz`, which marks a sleeping row in a project's pane,
+ * is a different mark and stays.)
+ */
+.tabgroup__count {
+  display: none;
+  /* The head is uppercased; a numeral has no case, but the letterspacing that
+     suits a word does not suit a digit. */
   text-transform: none;
   font-size: 10px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
   color: var(--graphite);
 }
 
-.tabgroup__pill--on .tabgroup__zz {
+.tabgroup__pill--on .tabgroup__count {
   color: var(--quiet-on);
 }
 
@@ -720,6 +753,11 @@ button {
 
 /* Optically centred: a 14px box against 12px text sits a hair low on the
    baseline it shares. */
+.topbar__label {
+  /* A box of its own so the label can go without the icon; see the ladder. */
+  display: inline;
+}
+
 .topbar__icon {
   flex: none;
   margin-top: -1px;
@@ -728,6 +766,21 @@ button {
 .topbar__open:hover {
   color: var(--bone);
   background: var(--level-raised);
+}
+
+/*
+ * A phone's window is the screen, so the pane stops insetting its text.
+ *
+ * 8px either side is 16px of a 390px window -- two columns of terminal out of
+ * forty-eight -- and it buys nothing here: with one window on the glass there
+ * is no neighbour for the inset to hold the text away from. The tile's own
+ * border stays, and that is deliberate -- its leading rail is recoloured
+ * `--signal` and `--done` per worktree, which is the per-window half of the
+ * only colour this interface spends, and at 390 and 430 it costs no columns at
+ * all because the arithmetic rounds the same either way.
+ */
+.app[data-narrow] .tile__pane {
+  padding: 0;
 }
 
 /*
@@ -1106,12 +1159,18 @@ button {
   /* Rest on a spot boundary, never part-way through one; see .grid__spot. */
   scroll-snap-type: x mandatory;
   /* The leading inset once, matched by scroll-padding so a snap lands on the
-     spot rather than 12px into it. Each tile carries its own trailing margin,
+     spot rather than a gap into it. Each tile carries its own trailing margin,
      so a tile collapsing to nothing takes its gap with it. Relative, because
-     the spot markers are positioned against it. */
+     the spot markers are positioned against it.
+
+     `--gap` is written on this element by Overview.tsx, which is the only thing
+     that may know the number: it places the markers and sets every tile's
+     width, and a second copy here is a copy that drifts. It is 0 on a phone,
+     where the window is the screen -- the vertical inset goes with it, which is
+     another terminal row and a half. */
   position: relative;
-  padding: 12px 0 12px 12px;
-  scroll-padding-left: 12px;
+  padding: var(--gap, 12px) 0 var(--gap, 12px) var(--gap, 12px);
+  scroll-padding-left: var(--gap, 12px);
 }
 
 .grid::-webkit-scrollbar {
@@ -1222,6 +1281,128 @@ button {
   .grid {
     scroll-behavior: auto;
   }
+}
+
+
+/* ------------------------------------------------------------ the ladder -- */
+
+/*
+ * The bar gives things up in order, as it runs out of room.
+ *
+ * `data-stage` is written on the header by the sweep in TopBar.tsx, which
+ * starts at 0 and walks down until the strip stops overflowing. Every rung is
+ * a rule here and nothing else: the markup is the same at every stage, because
+ * the sweep measures the DOM it is about to settle on and React output that
+ * moved with the rung would have it measuring last rung's text.
+ *
+ * The rungs are cumulative, so each rule lists the stages it holds at rather
+ * than asking for "3 or more", which CSS cannot say about an attribute. That is
+ * the `data-tight` arrangement two rules up, and the same reason.
+ *
+ *   1  the usage tracks -- the 54px bars, the picture rather than the reading
+ *   2  the `Open project` label; the icon stays
+ *   3  the tabs of every project but the one you are in
+ *   4  the tabs of that one too
+ *   5  the usage readout altogether
+ */
+
+/*
+ * Rung 1: the picture goes, the reading stays.
+ *
+ * The track is 54px of the block's 189 and the least of it -- a bar with no
+ * number beside it is hard to act on, while `session 82% 4h` is the whole
+ * reading in three cells. So it is the first thing overboard and the numbers
+ * are nearly the last.
+ */
+.topbar[data-stage='1'] .usage__track,
+.topbar[data-stage='2'] .usage__track,
+.topbar[data-stage='3'] .usage__track,
+.topbar[data-stage='4'] .usage__track {
+  display: none;
+}
+
+.topbar[data-stage='1'] .usage__row,
+.topbar[data-stage='2'] .usage__row,
+.topbar[data-stage='3'] .usage__row,
+.topbar[data-stage='4'] .usage__row {
+  grid-template-columns: 42px 26px 24px;
+}
+
+/* Rung 2: the label. The icon is the part that says what the button does to
+   anyone who has seen it once, and `title` carries the words either way. */
+.topbar[data-stage='2'] .topbar__label,
+.topbar[data-stage='3'] .topbar__label,
+.topbar[data-stage='4'] .topbar__label,
+.topbar[data-stage='5'] .topbar__label {
+  display: none;
+}
+
+.topbar[data-stage='2'] .topbar__open,
+.topbar[data-stage='3'] .topbar__open,
+.topbar[data-stage='4'] .topbar__open,
+.topbar[data-stage='5'] .topbar__open {
+  /* Square around the icon rather than the label's 14px either side. */
+  padding: 0 11px;
+}
+
+/*
+ * Rungs 3 and 4: a project becomes its head.
+ *
+ * Three first, and the one you are in last, because the tabs worth keeping
+ * longest are the ones you are working among. `--current` is "holds the row or
+ * its own pane"; at rung 4 it keeps nothing but its light.
+ */
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab,
+.topbar[data-stage='4'] .tab,
+.topbar[data-stage='5'] .tab {
+  display: none;
+}
+
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__count,
+.topbar[data-stage='4'] .tabgroup__count,
+.topbar[data-stage='5'] .tabgroup__count {
+  display: inline;
+}
+
+/*
+ * Collapsed, the head speaks for every worktree it has rather than only its
+ * sleepers -- the awake ones have no tab either now. Both aggregates are on the
+ * pill at every rung and this is what chooses between them.
+ */
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--needs-shut,
+.topbar[data-stage='4'] .tab--needs-shut,
+.topbar[data-stage='5'] .tab--needs-shut {
+  --tab-state: var(--signal);
+}
+
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--idle-shut,
+.topbar[data-stage='4'] .tab--idle-shut,
+.topbar[data-stage='5'] .tab--idle-shut {
+  --tab-state: var(--done);
+}
+
+/*
+ * And it takes over saying where you are.
+ *
+ * `--on` means "you are in this project's pane". Once the tabs are gone the
+ * head is the only thing standing for the window you are in, which is what a
+ * lit tab has always meant here -- the distinction between being in the pane
+ * and being in one of its worktrees is exactly what collapsing gave up.
+ */
+.topbar[data-stage='4'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill {
+  background-color: var(--level-lit);
+  color: var(--bone);
+}
+
+.topbar[data-stage='4'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__count {
+  color: var(--quiet-on);
+}
+
+/* Rung 5: the last thing the bar has to give. */
+.topbar[data-stage='5'] .usage {
+  display: none;
 }
 
 /* --------------------------------------------------------------- the tile -- */
@@ -1771,13 +1952,29 @@ button {
   min-height: 30px;
 }
 
+/*
+ * One block: the heading, the field, what the name will do, and the way out.
+ *
+ * These were a form with a stray button under it. Both are things you do to the
+ * *project* rather than to one of its worktrees, so they share a heading, one
+ * rhythm and one edge, and Close project is the form's last row rather than its
+ * neighbour.
+ */
 .projpane__foot {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   flex: none;
   padding: 12px;
   border-top: 1px solid var(--rule);
+}
+
+.projpane__footlabel {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
 }
 
 /*
@@ -1798,6 +1995,11 @@ button {
   color: var(--graphite);
 }
 
+/* The last row of the block above it, not a thing below it. */
+.projpane__foot .projpane__close {
+  margin-top: 2px;
+}
+
 .projpane__close:hover {
   background: var(--level-hover);
   /* The red the project's × turned under the pointer, said on the thing itself
@@ -1811,14 +2013,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.addform__label {
-  font-family: var(--font-ui);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--graphite);
 }
 
 .addform__row {
@@ -1845,6 +2039,17 @@ button {
 .addform__fate {
   font-size: 11.5px;
   line-height: 1.45;
+  /*
+   * Two rows of room whether or not there is anything to say.
+   *
+   * The answer arrives a beat after you stop typing, and a line that appears
+   * then shoves the field you are still looking at -- so the space is reserved
+   * rather than made. Two rather than one because the longest of these ("... is
+   * already checked out at .claude/worktrees/some-name") wraps at this width,
+   * and a box that grows from one row to two jumps exactly as badly as one that
+   * grows from none.
+   */
+  min-height: calc(11.5px * 1.45 * 2);
   color: var(--graphite-dim);
 }
 
@@ -2784,6 +2989,64 @@ button {
  * amber means Claude is blocked on you and green that it has come to rest, and
  * a queued todo is neither.
  */
+
+/*
+ * Narrow: the slab turns on its side, under the prompt.
+ *
+ * It is 118px of a row that is 377px wide in a 420px window -- measured -- so
+ * beside the prompt it takes a third of it and leaves prose wrapping every few
+ * words. Under the prompt it costs a line of height, which a scrolling list
+ * has, and the prompt gets the whole width.
+ *
+ * Still one slab: the segments keep the shell and its clipped corners, and the
+ * seam moves from the top edge to the leading one, which is the same 2px of
+ * `--sleeve` said along the other axis. What does change is the alignment --
+ * the labels centre in equal thirds, because "read down one edge" is an
+ * argument about a column, and a row of three is scanned across. `min-width`
+ * goes with it for the same reason: it exists to give a *column* one width, and
+ * a row's segments take a share of the row instead.
+ *
+ * **The viewport is the wrong thing to ask and the only thing we may.** A
+ * container query is what this wants, and it cannot be used: `container-type`
+ * brings `contain: layout` with it, which makes the element a containing block
+ * for fixed-position descendants -- and `.menu`, which MOVE TO opens, is
+ * `position: fixed` *inside* this row precisely so an ancestor's overflow
+ * cannot clip it. Any container above it takes that back and the menu is drawn
+ * somewhere else, which is the bug the fixed positioning was the fix for.
+ *
+ * The viewport answers anyway, because this panel is always two units and two
+ * units are only small when the window is: a pane measured 377px inside a 420px
+ * window and 576px inside a 600px one. 440px is where the prompt would fall
+ * under about 300px, which is where prose starts reading as a column of
+ * fragments.
+ */
+@media (max-width: 440px) {
+  .todo__row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .todo__controls {
+    flex-direction: row;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .todo__act {
+    /* A share of the row each, and grown from their own labels rather than from
+       nothing, so the longest is never the one that gets clipped. */
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
+  }
+
+  .todo__act + .todo__act {
+    border-top: 0;
+    border-left: 2px solid var(--sleeve);
+  }
+}
+
 .todo__next--on {
   color: var(--ink);
   background: var(--bone);
@@ -3507,6 +3770,257 @@ button {
 .files__save:disabled {
   color: var(--graphite-dim);
   cursor: default;
+}
+
+/*
+ * Rendered or raw, and the bar is where that is decided.
+ *
+ * The same shape as Save beside it, lit the way an on state is lit everywhere
+ * else here: brightness, never colour. Amber means an agent is blocked on you
+ * and green means one has finished, and which form a file is being read in is
+ * neither.
+ */
+.files__preview {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  white-space: nowrap;
+}
+
+.files__preview:hover {
+  color: var(--bone);
+  background: var(--level-hover);
+}
+
+.files__preview--on {
+  color: var(--bone);
+}
+
+/*
+ * A Markdown file, rendered.
+ *
+ * The one thing in this panel that is a file and yet speaks in the interface's
+ * face. That is what the toggle is for: `--font-ui` is for prose, and rendering
+ * Markdown is asking for the prose rather than the source. The mono face comes
+ * back wherever the file is quoting code, which is where `ch` meant something
+ * in the first place.
+ *
+ * Its own scroller, like the editor's and the patch's, and `min-height: 0` for
+ * the reason `.files__file`'s note gives: without it the flex item is floored
+ * at its content's height and the pane hands every wheel to whatever is behind
+ * it.
+ *
+ * `--code-plain`, not `--bone`: flipping between the source and the rendering
+ * changes the shape of the page and must not also change how bright the words
+ * are.
+ */
+.md {
+  flex: 1;
+  /* The row hands it the keyboard, and then the arrows scroll the page it is.
+     No ring of its own: the pane already draws where you are. */
+  outline: none;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 6px 10px 24px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--code-plain);
+  /* A long URL or a wide identifier breaks rather than widening the pane. */
+  overflow-wrap: break-word;
+}
+
+/* Headings are --bone and bold, exactly as the editor highlights them in the
+   source: the two views of one file agree about what a heading is. */
+.md__h {
+  margin: 18px 0 8px;
+  color: var(--bone);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* The top of the file starts at the top of the pane. */
+.md > .md__h:first-child {
+  margin-top: 0;
+}
+
+.md__h1 {
+  font-size: 18px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.md__h2 {
+  font-size: 15px;
+}
+
+.md__h3 {
+  font-size: 13.5px;
+}
+
+.md__h4,
+.md__h5,
+.md__h6 {
+  font-size: 13px;
+}
+
+.md__p {
+  margin: 0 0 10px;
+}
+
+.md__list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.md__item {
+  margin: 2px 0;
+}
+
+/* A tight list's items hold a paragraph each; it is the item that spaces them. */
+.md__item > .md__p {
+  margin: 0;
+}
+
+/* A nested list belongs to the item above it, not to the page. */
+.md__item > .md__list,
+.md__item > .md__pre,
+.md__item > .md__quote {
+  margin-bottom: 0;
+}
+
+/*
+ * A task's box stands where the bullet would, so the bullet goes.
+ *
+ * Drawn rather than a real checkbox: there is nothing here to submit and
+ * nothing to tick -- the file is where that is written -- and a native one
+ * arrives in the browser's own blue, which is a colour this interface spends
+ * on two states and neither of them is this.
+ */
+.md__item--task {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.md__check {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border: 1px solid var(--graphite);
+  border-radius: 2px;
+}
+
+.md__check--on {
+  background: var(--graphite);
+}
+
+/*
+ * Code, in the face it is written in.
+ *
+ * Unhighlighted, deliberately: the grammar is one keystroke away in the source
+ * view, and a fenced block here is usually a command or a shape rather than a
+ * program. `white-space: pre` with its own horizontal scroller, because a
+ * wrapped shell line is a different command.
+ */
+.md__pre {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  /* One step off the pane's ground, which is --terminal-bg. */
+  background: var(--level-panel);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+/* HTML the file wrote, shown as the source it is and never parsed -- see the
+   note in `Markdown.tsx`. Comment-coloured, because that is what it now is. */
+.md__pre--raw,
+.md__raw {
+  color: var(--code-comment);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* `--code-literal`, which is what the editor colours inline code in the source.
+   A step smaller because mono at the same size outweighs the prose around it. */
+.md__code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--code-literal);
+}
+
+/*
+ * A link, in the colour the source view gives one.
+ *
+ * Two elements wear this: an anchor out to the web, and a button for a link
+ * into the repository, which opens that file in this same panel. They look the
+ * same because they are the same act -- following the link the file wrote.
+ */
+.md__link {
+  padding: 0;
+  color: var(--code-name);
+  text-decoration: underline;
+  text-align: left;
+}
+
+.md__link:hover {
+  color: var(--bone);
+}
+
+/* `t.quote` in the editor is --code-comment, so it is here too, with the rule
+   the notice above the file uses to say "this belongs to that". */
+.md__quote {
+  margin: 0 0 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--rule-bright);
+  color: var(--code-comment);
+}
+
+.md__rule {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--rule);
+}
+
+/* A table is a grid of short strings, so it is read in the mono face and kept
+   to hairlines: the columns are the structure and nothing else needs to be. */
+.md__table {
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.md__table th,
+.md__table td {
+  padding: 3px 7px;
+  border: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.md__table th {
+  color: var(--bone);
+  font-weight: 600;
+}
+
+/* Scaled down to the pane and never up, the rule `.files__image` states. */
+.md__image {
+  max-width: 100%;
+  border-radius: var(--radius);
+  /* A transparent PNG would otherwise be read against the pane's ground. */
+  background: var(--level-panel);
 }
 
 /* --------------------------------------------------------------- machines -- */

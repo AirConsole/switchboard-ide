@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { measureMonoCharWidth } from '../src/views/overviewLayout.js'
+import {
+  EDGE_SLACK,
+  GAP,
+  MIN_PANE_COLUMNS,
+  PANE_CHROME_WIDTH,
+  gapFor,
+  measureMonoCharWidth,
+  nearestOffset,
+  rowMetrics,
+  wholeOnScreen,
+} from '../src/views/overviewLayout.js'
 
 /**
  * jsdom's canvas has no 2d context unless the `canvas` package is installed, so
@@ -59,5 +69,123 @@ describe('measureMonoCharWidth', () => {
     expect(measureMonoCharWidth(14, 'cache-A')).toBe(8)
     // A different key has to go back to the canvas.
     expect(measureMonoCharWidth(14, 'cache-B')).toBe(20)
+  })
+})
+
+/*
+ * The row's own arithmetic, at the widths that decide things.
+ *
+ * It lived in `Overview` as a closure and could only be checked in a browser,
+ * which is why the phone was wrong for a year: `units` is pinned at 2 below
+ * about 1017px, so nothing about a narrow window was ever exercised. These are
+ * the numbers measured off a rendered row at 14px Menlo, where a cell is 8px.
+ */
+describe('rowMetrics', () => {
+  // 80 columns of 8px, plus the 18px of pane that is not terminal.
+  const minPane = MIN_PANE_COLUMNS * 8 + PANE_CHROME_WIDTH
+
+  it('gives a phone one window, with no gap and none without', () => {
+    for (const width of [390, 430, 640]) {
+      expect(rowMetrics(width, 0, minPane).units).toBe(2)
+      expect(rowMetrics(width, GAP, minPane).units).toBe(2)
+    }
+  })
+
+  it('makes a tile the whole screen once the gap is gone', () => {
+    // A tile of u units is `u * pitch - gap`, so at gap 0 two units is the
+    // window itself -- which is the point of the change.
+    for (const width of [390, 430, 640]) {
+      const { pitch } = rowMetrics(width, 0, minPane)
+      expect(2 * pitch - 0).toBeCloseTo(width, 6)
+    }
+  })
+
+  it('leaves the desktop where it was', () => {
+    expect(rowMetrics(641, GAP, minPane).units).toBe(2)
+    expect(rowMetrics(768, GAP, minPane).units).toBe(2)
+    // The first width that buys a third unit, and the band this layout was
+    // designed around.
+    expect(rowMetrics(1024, GAP, minPane).units).toBe(3)
+    expect(rowMetrics(1920, GAP, minPane).units).toBe(5)
+    expect(rowMetrics(2400, GAP, minPane).units).toBe(7)
+  })
+
+  it('never divides the row below one pane', () => {
+    // A phone narrower than half a pane still gets two units; it is the pitch
+    // that gives, not the row.
+    expect(rowMetrics(200, 0, minPane).units).toBe(2)
+    expect(rowMetrics(1, 0, minPane).units).toBe(2)
+  })
+})
+
+describe('gapFor', () => {
+  it('is nothing on a phone and the gap everywhere else', () => {
+    expect(gapFor(true)).toBe(0)
+    expect(gapFor(false)).toBe(GAP)
+  })
+})
+
+/*
+ * The two functions the row navigates by, at both gaps.
+ *
+ * The property that matters is that they agree: whatever `nearestOffset`
+ * answers must be somewhere `wholeOnScreen` calls arrived, or a reveal scrolls
+ * and then reports that it has not arrived -- and with mandatory snapping the
+ * browser would move it again anyway.
+ */
+describe('nearestOffset and wholeOnScreen', () => {
+  // A phone's row: a project pane and three worktrees, two units each.
+  const cells = [
+    { at: 0, units: 2 },
+    { at: 2, units: 2 },
+    { at: 4, units: 2 },
+    { at: 6, units: 2 },
+  ]
+  const stops = [0, 2, 4, 6]
+
+  it('answers with a stop, from wherever the row is', () => {
+    for (const cell of cells) {
+      for (const from of [0, 1, 1.5, 3, 5.5, 7, 99, -4]) {
+        expect(stops).toContain(nearestOffset(cell, from, 2, stops))
+      }
+    }
+  })
+
+  it('answers with an offset that is actually arrived', () => {
+    const width = 390
+    const { units, pitch } = rowMetrics(width, 0, MIN_PANE_COLUMNS * 8 + PANE_CHROME_WIDTH)
+    for (const cell of cells) {
+      const offset = nearestOffset(cell, 0, units, stops)
+      expect(wholeOnScreen(cell, offset * pitch, pitch, width, 0)).toBe(true)
+    }
+  })
+
+  /*
+   * The slack is the whole reason `EDGE_SLACK` is written down. At gap 12 a
+   * tile was 24px narrower than the scrollport, so this test passed on
+   * tolerance nobody had asked for; at gap 0 the tile *is* the scrollport and
+   * the only tolerance left is the one in the code. A row resting a pixel and a
+   * half off -- a fractional pitch, a smooth scroll still settling -- is still
+   * there.
+   */
+  it('still counts as arrived a pixel and a half off the stop', () => {
+    const width = 393
+    const { pitch } = rowMetrics(width, 0, MIN_PANE_COLUMNS * 8 + PANE_CHROME_WIDTH)
+    const cell = { at: 2, units: 2 }
+    expect(wholeOnScreen(cell, cell.at * pitch + 1.5, pitch, width, 0)).toBe(true)
+    expect(wholeOnScreen(cell, cell.at * pitch - 1.5, pitch, width, 0)).toBe(true)
+    // And not somewhere it plainly is not: half a screen off is not arrived.
+    expect(wholeOnScreen(cell, (cell.at + 1) * pitch, pitch, width, 0)).toBe(false)
+    expect(EDGE_SLACK).toBeGreaterThan(1)
+  })
+
+  it('brings a tile to the right edge rather than the front', () => {
+    // From the left, the least movement that shows the last tile whole is to
+    // put its right edge against the window's -- which at one tile per screen
+    // is its own start.
+    expect(nearestOffset({ at: 6, units: 2 }, 0, 2, stops)).toBe(6)
+    // With room for more, the row moves as little as it can.
+    const wide = [0, 2, 4, 6]
+    expect(nearestOffset({ at: 6, units: 2 }, 0, 4, wide)).toBe(4)
   })
 })

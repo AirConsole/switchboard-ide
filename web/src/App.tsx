@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
+import { useNarrow } from './components/useNarrow.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
@@ -12,6 +13,7 @@ import {
   claudeSession,
   orderWorktrees,
   queuedTodoCount,
+  removalLanding,
   removalAsks,
   removalQuestions,
   terminalSessions,
@@ -74,6 +76,13 @@ export const App = (): React.ReactElement => {
    * what the next stop is.
    */
   const [active, setActive] = useState<{ id: string; pane: PaneKind } | null>(null)
+  /*
+   * A phone. Asked once here and handed to both halves of the interface -- the
+   * bar, which becomes a hamburger, and the row, which drops its gaps -- so the
+   * two cannot disagree about what a phone is. CSS is told the answer through
+   * `data-narrow` on `.app` rather than being given the number again.
+   */
+  const narrow = useNarrow()
   /**
    * Focus moved; remember where, unless it is where we already were.
    *
@@ -277,21 +286,18 @@ export const App = (): React.ReactElement => {
     delete panels[worktreeId]
     setUi({ awake: [...awake].filter((id) => id !== worktreeId), panels })
     /*
-     * If you were in the one that went, move into its neighbour.
-     *
-     * The one after it in the row, or the one before it when it was the last --
-     * where the eye already is, and where a Cmd+arrow step from the gap would
-     * have taken you. Read off the row as it stands, which still holds the
-     * worktree being removed: the refresh below is what drops it, and by then
-     * this has already said where to go. Leaving `active` null instead is what
-     * used to happen, and it left the keyboard on the document with every
-     * window still full of terminals.
+     * If you were in the one that went, move into its neighbour -- see
+     * `removalLanding`, which is where the rule and its reasons live. Read off
+     * the row as it stands, which still holds the worktree being removed: the
+     * refresh below is what drops it, and by then this has already said where
+     * to go. Leaving `active` null instead is what used to happen, and it left
+     * the keyboard on the document with every window still full of terminals.
      */
     if (active?.id === worktreeId) {
-      const at = rowWorktrees.findIndex((w) => w.id === worktreeId)
-      const next = rowWorktrees[at + 1] ?? (at > 0 ? rowWorktrees[at - 1] : undefined)
-      if (next === undefined) setActive(null)
-      else reveal(next.id)
+      const landing = removalLanding(groups, worktreeId)
+      if (landing === null) setActive(null)
+      else if (landing.kind === 'worktree') reveal(landing.id)
+      else reveal(projectKey(landing.id), 'project')
     }
     void refresh()
   }
@@ -551,6 +557,21 @@ export const App = (): React.ReactElement => {
   )
 
   /**
+   * Whether Markdown opens rendered rather than as its source.
+   *
+   * One switch for the whole IDE, so it takes no worktree: what it records is
+   * whether the reader reads the Markdown in this repository or edits it, and
+   * that is not a fact about any one worktree. Stable between renders for the
+   * reason its neighbours are -- it is handed to every tile in the row.
+   */
+  const markdownPreview = useCallback(
+    (on: boolean): void => {
+      setUi({ markdownPreview: on })
+    },
+    [setUi],
+  )
+
+  /**
    * Open a directory and everything above it, expanding nothing else.
    *
    * What picking a directory out of the search results means: you asked for a
@@ -722,7 +743,7 @@ export const App = (): React.ReactElement => {
 
   if (projects.length === 0) {
     return (
-      <div className="app">
+      <div className="app" data-narrow={narrow ? '' : undefined}>
         {topBar}
         <div className="empty">
           <h1 className="empty__title">No project open</h1>
@@ -740,7 +761,7 @@ export const App = (): React.ReactElement => {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-narrow={narrow ? '' : undefined}>
       {topBar}
 
       {error && (
@@ -753,6 +774,7 @@ export const App = (): React.ReactElement => {
       )}
 
       <Overview
+        narrow={narrow}
         worktrees={rowWorktrees}
         projects={projects}
         todos={todos}
@@ -764,6 +786,7 @@ export const App = (): React.ReactElement => {
         openFilesByWorktree={ui.openFilesByWorktree}
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
+        markdownPreview={ui.markdownPreview}
         groups={groups}
         onWake={wake}
         onSleep={setSleeping}
@@ -796,6 +819,7 @@ export const App = (): React.ReactElement => {
         onToggleDir={toggleDir}
         onExpandDir={expandDir}
         onFilesMode={filesMode}
+        onMarkdownPreview={markdownPreview}
         onCloseTerminal={closeTerminal}
         onNoTerminalsLeft={terminalsGone}
       />

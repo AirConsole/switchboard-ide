@@ -1,16 +1,36 @@
-import { useEffect, useState } from 'react'
-import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboard/shared'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
-import { api } from '../api.js'
-import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
+import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
+import { UsageBars, useUsage } from './UsageBars.js'
 import { projectKey } from '../views/Overview.js'
 import {
-  claudeSession,
-  mostUrgentStatus,
   queuedTodoCount,
-  stateLabel,
   worktreeStatus,
+  type WorktreeStatus,
 } from '../selectors.js'
+
+/**
+ * The last rung of the ladder -- see the sweep in `TopBar`.
+ *
+ * 0 the bar as it is, 1 without the usage tracks, 2 without the `Open project`
+ * label, 3 with every project but the current one collapsed to its head, 4 with
+ * all of them collapsed, 5 without the usage readout at all. Past it the strip
+ * scrolls, which is what it has always done and the honest end of the ladder.
+ */
+const LAST_STAGE = 5
+
+/**
+ * Is this the project you are in?
+ *
+ * Either one of its worktrees has the row, or its own pane does -- `activeId`
+ * carries both, and a project whose *pane* you are looking at is as much where
+ * you are as one whose terminal you are typing in. It decides which project
+ * keeps its tabs at rung 3, and which head lights up once the tabs are gone.
+ */
+const isCurrent = (group: ProjectGroup, activeId: string | null): boolean =>
+  activeId !== null &&
+  (activeId === projectKey(group.project.id) || group.awake.some((w) => w.id === activeId))
 
 export interface TopBarProps {
   /** Every open project, in the order they were opened. */
@@ -75,6 +95,7 @@ const Group = ({
   sessions,
   todos,
   activeId,
+  current,
   onRevealProject,
   onWake,
   onReveal,
@@ -83,6 +104,8 @@ const Group = ({
   group: ProjectGroup
   sessions: Session[]
   todos: WorktreeTodo[]
+  /** Holds the row or its own pane -- see `isCurrent`. */
+  current: boolean
 } & Pick<
   TopBarProps,
   'activeId' | 'onRevealProject' | 'onWake' | 'onReveal' | 'onSleep'
@@ -91,14 +114,19 @@ const Group = ({
   /*
    * What the head's state bar says, and only two states can say anything.
    *
-   * It stands for the worktrees with no tab of their own -- the sleeping ones.
-   * Sleeping does not mean stopped, Claude can be left running, so one of them
-   * being blocked on you still has to reach the top bar; that was the zZ tab's
-   * job and this is what took it over. Amber and green only: the two states a
-   * row of agents is scanned for. Working and not-running say nothing here,
-   * because a summary that is always lit is not a summary.
+   * It stands for the worktrees with no tab of their own. Expanded that is the
+   * sleeping ones -- sleeping does not mean stopped, Claude can be left
+   * running, so one of them being blocked on you still has to reach the top
+   * bar. Collapsed it is all of them, which is the same sentence with a wider
+   * subject: the awake ones have no tab either once the bar has taken them.
+   *
+   * Both are computed every render and both are on the pill, because which one
+   * is showing is a CSS question -- the rung is written on the header, and
+   * nothing React renders may depend on it.
    */
-  const asleepStatus = mostUrgentStatus(asleep.map((w) => worktreeStatus(sessions, w.id)))
+  const statusOf = (w: Worktree): WorktreeStatus => worktreeStatus(sessions, w.id)
+  const shutSignal = summaryClass([...asleep, ...awake].map(statusOf))
+  const openSignal = summaryClass(asleep.map(statusOf))
 
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
     const queued = queuedTodoCount(todos, worktree.id)
@@ -122,15 +150,9 @@ const Group = ({
       />
     )
   }
-  const asleepSignal =
-    asleepStatus === 'needs-you'
-      ? 'tab--needs'
-      : asleepStatus === 'idle'
-        ? 'tab--idle'
-        : ''
 
   return (
-    <div className="tabgroup">
+    <div className={current ? 'tabgroup tabgroup--current' : 'tabgroup'}>
       {/*
         * The project's name is its pane's tab.
         *
@@ -150,14 +172,19 @@ const Group = ({
         className={[
           'tabgroup__pill',
           activeId === projectKey(project.id) ? 'tabgroup__pill--on' : '',
-          asleepSignal,
+          openSignal,
+          shutSignal === '' ? '' : `${shutSignal}-shut`,
         ]
           .filter(Boolean)
           .join(' ')}
         onClick={() => onRevealProject(project)}
+        /* True at every rung, because the tabs that used to say it are the
+           first thing the bar gives up -- and a title that described only the
+           expanded bar would be a lie exactly when it was the only thing left
+           to read. */
         title={`${project.host.kind === 'remote' ? `on ${hostLabel(project.host)}\n` : ''}${project.root}\n${
-          asleep.length === 0 ? 'Nothing asleep' : `${asleep.length} asleep`
-        }\nClick for this project's worktrees, a new one, and closing it`}
+          awake.length === 0 ? 'Nothing awake' : `${awake.length} awake: ${awake.map((w) => w.name).join(', ')}`
+        }${asleep.length === 0 ? '' : `, ${asleep.length} asleep`}\nClick for this project's worktrees, a new one, and closing it`}
       >
         {/*
           * Which machine, and only when it is not this one.
@@ -178,150 +205,22 @@ const Group = ({
           <span className="tabgroup__host">{hostLabel(project.host)}</span>
         )}
         <span className="tabgroup__name">{project.name}</span>
-        {/* That there is something behind this project you cannot see. The
-            count sat here for a day and was noise: how many is a thing you find
-            out by looking, and the pane is one click away. */}
-        {asleep.length > 0 && <span className="tabgroup__zz">zZ</span>}
+        {/*
+          * How many windows this head is standing in for, once the bar has
+          * taken their tabs. Always rendered and hidden by CSS until then,
+          * because the sweep that picks the rung measures the markup it is
+          * about to show.
+          *
+          * Only when there is something awake, and that is not cosmetic: a
+          * project with nothing awake has no tab to give up, so a count on it
+          * would make the bar *wider* as it collapsed -- and every rung getting
+          * narrower is the whole reason the sweep can stop at the first one
+          * that fits.
+          */}
+        {awake.length > 0 && <span className="tabgroup__count">{awake.length}</span>}
       </button>
 
       {awake.map((worktree) => tab(worktree, false))}
-    </div>
-  )
-}
-
-/**
- * How often the browser asks for Claude's usage limits.
- *
- * The same five minutes the server caches for, so a poll that lands inside the
- * window is answered from the last reading rather than starting another
- * `claude -p /usage`. The client is what decides when a reading is taken and
- * the cache is what stops several tabs taking several -- which is also why a
- * hidden page does not ask at all, and asks once when it comes back rather
- * than on a timer nobody is watching.
- */
-const USAGE_POLL_MS = 5 * 60 * 1000
-
-const useUsage = (): Usage | null => {
-  const [usage, setUsage] = useState<Usage | null>(null)
-  useEffect(() => {
-    let live = true
-    const read = (): void => {
-      if (document.hidden) return
-      void api
-        .usage()
-        .then((next) => {
-          if (live) setUsage(next)
-        })
-        // A failed read leaves the last numbers on screen; the server says so
-        // itself when its own read failed, and this is only the transport.
-        .catch(() => {})
-    }
-    read()
-    const timer = window.setInterval(read, USAGE_POLL_MS)
-    document.addEventListener('visibilitychange', read)
-    return () => {
-      live = false
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', read)
-    }
-  }, [])
-  return usage
-}
-
-/**
- * Claude's usage limits, as bars.
- *
- * One row per limit `/usage` reported, in its order: the session, the week, and
- * the week for whichever model has its own allowance. Greyscale, because these
- * are not attention -- amber and green mean an agent wants you -- but the fill
- * brightens once a limit is most of the way gone, which is the point at which
- * it starts to matter what you spend it on.
- *
- * Every row says when it comes back, because that is the second half of the
- * question the first half raises: 90% spent matters very differently at four
- * minutes to the hour than at four days. It is a countdown and not a clock
- * time -- `5h`, `4d` -- for width, which is the reason it used to be tooltip
- * only: one short cell costs 24px where `Sep 15, 8:59am` would cost the bar
- * more room than the bars themselves. The exact moment stays in the tooltip,
- * in the reader's own zone rather than the report's.
- */
-/**
- * How long until a limit comes back, in one cell.
- *
- * One unit, rounded, because this is a glance and not a stopwatch: hours until
- * a day is left, then days. Under a minute is `now` rather than `0m` -- the
- * reading is up to five minutes old, so a countdown that has just run out is
- * telling you it has already happened.
- */
-const untilText = (at: number, now: number): string => {
-  const ms = at - now
-  if (ms < 60_000) return 'now'
-  const minutes = ms / 60_000
-  if (minutes < 60) return `${Math.floor(minutes)}m`
-  const hours = minutes / 60
-  if (hours < 24) return `${Math.round(hours)}h`
-  return `${Math.round(hours / 24)}d`
-}
-
-/** The exact moment, in the reader's zone: `Tue 08:59`, or `17:29` for today. */
-const resetText = (at: number, now: number): string => {
-  const when = new Date(at)
-  const sameDay = when.toDateString() === new Date(now).toDateString()
-  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return sameDay ? time : `${when.toLocaleDateString([], { weekday: 'short' })} ${time}`
-}
-
-const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | null => {
-  /*
-   * A countdown that does not count is a small lie, and the reading itself is
-   * only taken every five minutes -- so `12m` would sit there for five of them
-   * and then jump to `6m`. One tick a minute is what the smallest unit shown
-   * needs; nothing here is per-second. Before the early return, because a hook
-   * cannot be conditional.
-   */
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-  if (usage.limits.length === 0) return null
-  const resetsOf = (limit: Usage['limits'][number]): string => {
-    if (limit.resetsAt !== null) {
-      const until = untilText(limit.resetsAt, now)
-      // "in now" is not a sentence; a limit that is due says so on its own.
-      const left = until === 'now' ? '(now)' : `(in ${until})`
-      return ` · resets ${resetText(limit.resetsAt, now)} ${left}`
-    }
-    // The prose did not parse, so it is repeated as it came.
-    return limit.resets === null ? '' : ` · resets ${limit.resets}`
-  }
-  const title = [
-    ...usage.limits.map((limit) => `${limit.label}: ${limit.percent}% used${resetsOf(limit)}`),
-    usage.error === undefined
-      ? `read ${new Date(usage.fetchedAt).toLocaleTimeString()}`
-      : `last read ${new Date(usage.fetchedAt).toLocaleTimeString()} — ${usage.error}`,
-  ].join('\n')
-  return (
-    <div
-      className={usage.error === undefined ? 'usage' : 'usage usage--stale'}
-      title={title}
-      aria-label="Claude usage limits"
-    >
-      {usage.limits.map((limit) => (
-        <div className="usage__row" key={limit.label}>
-          <span className="usage__label">{limit.label}</span>
-          <span className="usage__track">
-            <i
-              className={limit.percent >= 80 ? 'usage__fill usage__fill--high' : 'usage__fill'}
-              style={{ width: `${limit.percent}%` }}
-            />
-          </span>
-          <span className="usage__percent">{limit.percent}%</span>
-          <span className="usage__resets">
-            {limit.resetsAt === null ? '' : untilText(limit.resetsAt, now)}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }
@@ -367,25 +266,112 @@ export const TopBar = ({
   onSleep,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
+  const bar = useRef<HTMLElement | null>(null)
+  const strip = useRef<HTMLElement | null>(null)
   /*
    * How much a tab may say, from how many there are.
    *
    * Chrome shrinks its tabs and drops what stops fitting; the widths here come
    * from the names, so what a tab can afford to say comes from the count. Four
    * steps, and the last one still keeps the name, the bullet and the ×.
+   *
+   * Count-driven and deliberately *not* part of the ladder below: "a tab may
+   * not be 200px when there are thirteen of them" is true on a 2560px monitor
+   * where the ladder never fires, and it has to shave labels before the ladder
+   * starts dropping whole regions.
    */
   const tabCount = groups.reduce(
     (total, group) => total + group.awake.length + (group.asleep.length > 0 ? 1 : 0),
     0,
   )
   const tight = tabCount > 12 ? 3 : tabCount > 9 ? 2 : tabCount > 6 ? 1 : 0
+
+  /*
+   * The bar gives things up in order, as it runs out of room.
+   *
+   * `data-stage` on the header is the rung, and every rung is a CSS
+   * consequence of it: 1 drops the usage tracks, 2 the `Open project` label, 3
+   * the tabs of every project but the one you are in, 4 the rest of them, 5 the
+   * usage readout altogether. The strip is what runs out -- it is `flex: 1;
+   * min-width: 0`, so it takes whatever the other two leave -- and it says so
+   * by `scrollWidth > clientWidth`.
+   *
+   * **Why a sweep and not state.** Each rung either hands the strip more room
+   * or takes content out of it, so `fits` is monotone in the rung and "start at
+   * 0, descend to the first that fits" returns the least sufficient one. Held
+   * in React state it would need a signature of every width-affecting thing --
+   * names, counts, the dirty mark, which project is current, whether usage has
+   * landed -- and one missed term is a bar that stays collapsed after it has
+   * room again. Worse, it would unmount and remount every hidden tab on each
+   * pass: no paint happens between them, but a node that leaves the DOM between
+   * mousedown and mouseup produces no click, and a focused one hands focus to
+   * the document.
+   *
+   * So the rung is written on the DOM, once, inside one synchronous block --
+   * and **nothing React renders may depend on it**. The count, the tabs and the
+   * usage rows are always in the markup; CSS is what hides them. Otherwise a
+   * pass would measure rung n against the text of rung n-1.
+   *
+   * No dependency array, so it runs after every commit -- which is exactly the
+   * set of things that can change a width. A layout effect, so the answer is
+   * settled before the browser paints and no one sees the full bar flash.
+   * Idempotent, because it starts from 0 every time, which is what makes
+   * StrictMode's double invocation a non-event.
+   */
+  /*
+   * Walk down the rungs until the strip fits, from the top every time.
+   *
+   * The header is measured too, not only the strip: squeezed hard enough --
+   * `Open project` and the usage bars are 314px between them -- the strip is
+   * given a clientWidth of 0 and stops being able to report an overflow at all,
+   * while the header's own flex line is the thing that has overrun.
+   */
+  const settle = (): void => {
+    const header = bar.current
+    const nav = strip.current
+    if (!header || !nav) return
+    const over = (): boolean =>
+      nav.scrollWidth > nav.clientWidth + 1 || header.scrollWidth > header.clientWidth + 1
+    let stage = 0
+    header.dataset.stage = '0'
+    while (stage < LAST_STAGE && over()) header.dataset.stage = String(++stage)
+  }
+
+  // Every commit, because a commit is the only way a width in here changes:
+  // a name, a count, the dirty mark, which project is current, usage landing.
+  useLayoutEffect(settle)
+
+  /*
+   * And every resize -- of the header, not the strip.
+   *
+   * The header's width is the app's, since `.app` is a two-row grid of one
+   * column, so it never moves in answer to a rung. The strip's does: dropping
+   * the usage bars widens it by 189px, so an observer on it would fire on the
+   * consequence of its own callback and earn a "ResizeObserver loop completed
+   * with undelivered notifications", which drops the rest of that frame's
+   * notifications on the floor.
+   */
+  useLayoutEffect(() => {
+    const header = bar.current
+    if (!header) return
+    const observer = new ResizeObserver(settle)
+    observer.observe(header)
+    return () => observer.disconnect()
+    // `settle` reads refs and writes the DOM; it closes over nothing that
+    // changes, so re-subscribing on every render would only churn the observer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
-  <header className="topbar">
+  /* `data-stage` is written by the sweep above and never from here: React diffs
+     against its own last props, so a render with an unchanged prop would not
+     put back what the effect wrote, and the two would drift apart. */
+  <header className="topbar" ref={bar}>
     <button className="topbar__open" onClick={onOpenProject} title="Open another project">
       <OpenProjectIcon />
-      Open project
+      <span className="topbar__label">Open project</span>
     </button>
-    <nav className="tabstrip" data-tight={tight}>
+    <nav className="tabstrip" data-tight={tight} ref={strip}>
       {groups.map((group) => (
         <Group
           key={group.project.id}
@@ -393,6 +379,7 @@ export const TopBar = ({
           sessions={sessions}
           todos={todos}
           activeId={activeId}
+          current={isCurrent(group, activeId)}
           onRevealProject={onRevealProject}
           onWake={onWake}
           onReveal={onReveal}

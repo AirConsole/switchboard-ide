@@ -1,6 +1,6 @@
 import type { Session, Worktree } from '@switchboard/shared'
 import { ForkIcon } from './ForkIcon.js'
-import { claudeSession, stateLabel, type WorktreeStatus } from '../selectors.js'
+import { claudeSession, stateLabel, summarySignal, type WorktreeStatus } from '../selectors.js'
 
 /** The tab class for a status: what colour its leading bar is, if any. */
 export const statusClass = (status: WorktreeStatus): string =>
@@ -11,6 +11,28 @@ export const statusClass = (status: WorktreeStatus): string =>
       : status === 'idle'
         ? 'tab--idle'
         : 'tab--off'
+
+/**
+ * The class for a bar that stands for *several* worktrees.
+ *
+ * Amber and green only -- the two states a row of agents is scanned for.
+ * Working and not-running say nothing, because a summary that is always lit is
+ * not a summary. The project head wears this twice: for the sleepers it hides
+ * while its tabs are showing, and for every worktree it has once the bar has
+ * taken them.
+ *
+ * It reads the whole set rather than the most urgent of it, and that is a
+ * correction rather than a shortcut. `mostUrgentStatus` ranks *working* above
+ * *idle*, so a project with one sleeper at rest and one agent working reported
+ * nothing at all -- a busy neighbour masked the very thing this is for. Said as
+ * prose the rule has no ranking in it: **amber if anything here needs you, else
+ * green if anything here has come to rest.** That is what this is now, and see
+ * `summarySignal`, which is the same sentence where it can be tested.
+ */
+export const summaryClass = (statuses: WorktreeStatus[]): string => {
+  const signal = summarySignal(statuses)
+  return signal === 'needs-you' ? 'tab--needs' : signal === 'idle' ? 'tab--idle' : ''
+}
 
 /**
  * What a tab says: its name and its dirty count.

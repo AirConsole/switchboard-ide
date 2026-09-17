@@ -20,6 +20,13 @@ import type { EditorFile } from '../editor/CodeEditor.js'
  */
 const CodeEditor = lazy(() => import('../editor/CodeEditor.js'))
 
+/*
+ * And so is the Markdown renderer, for the same reason and with the same
+ * fallback: the parser is only wanted by a panel that is actually showing a
+ * rendered `.md`, which most sessions never do.
+ */
+const Markdown = lazy(() => import('./Markdown.js'))
+
 /**
  * How often an open panel re-reads the directories it is showing.
  *
@@ -619,17 +626,22 @@ export const FilesBar = ({
   files,
   changes,
   openFiles,
+  markdownPreview,
   onCloseFile,
   onCollapse,
+  onMarkdownPreview,
 }: {
   mode: FilesMode
   files: FilesState
   changes: ChangesState
   /** The tabs, in the order they were opened. Files mode only. */
   openFiles: string[]
+  /** Whether Markdown opens rendered. One switch for the whole IDE. */
+  markdownPreview: boolean
   onCloseFile: (path: string) => void
   /** Put the content pane away in Changes and Commits, where there are no tabs. */
   onCollapse: () => void
+  onMarkdownPreview: (on: boolean) => void
 }): React.ReactElement => {
   const open = files.path === '' ? null : files.path
   const base = changes.changes?.base ?? null
@@ -685,6 +697,30 @@ export const FilesBar = ({
           Save
         </button>
       )}
+      {/*
+       * Rendered or raw, and it is the reader's habit rather than this file's
+       * state: the flip is remembered for every Markdown file in every
+       * worktree. Decided from `files.path` and not from `files.file`, which
+       * is the answer to a fetch -- keying it on that would pop the button
+       * into the bar a beat after the tab it belongs to.
+       *
+       * After Save in the render order, which is what the bar clips by: with a
+       * window too narrow for both, the one that can lose work stays.
+       */}
+      {mode === 'files' && open !== null && isMarkdown(open) && (
+        <button
+          className={markdownPreview ? 'files__preview files__preview--on' : 'files__preview'}
+          onClick={() => onMarkdownPreview(!markdownPreview)}
+          aria-pressed={markdownPreview}
+          title={
+            markdownPreview
+              ? 'Show the Markdown source (remembered for every file)'
+              : 'Show the Markdown rendered (remembered for every file)'
+          }
+        >
+          Preview
+        </button>
+      )}
       {mode !== 'files' && (
         <button className="files__reload" onClick={changes.reload} title="Re-read git">
           Refresh
@@ -721,6 +757,16 @@ export const fileTabLabels = (paths: string[]): string[] => {
   )
 }
 
+/**
+ * Whether a file is Markdown, and therefore has a rendered form to show.
+ *
+ * The extension and nothing else. The editor decides its grammar the same way
+ * -- `LanguageDescription.matchFilename` -- so the two cannot disagree about
+ * what a file is, and a file with no extension is not guessed at by either.
+ */
+export const isMarkdown = (path: string): boolean =>
+  /\.(md|markdown)$/i.test(path.slice(path.lastIndexOf('/') + 1))
+
 /** The switch, and what each face is called. Sentence case: see the CSS. */
 const MODES: readonly { mode: FilesMode; label: string }[] = [
   { mode: 'files', label: 'Files' },
@@ -740,6 +786,8 @@ export interface FilesPaneProps {
   changes: ChangesState
   /** The open files, which in Files mode are what the content pane is for. */
   openFiles: string[]
+  /** Whether a Markdown file shows rendered rather than as its source. */
+  markdownPreview: boolean
   /** Named in the commits heading, so it says what the commits are on. */
   branch: string | null
   /** Whether the tile is close enough to the scrollport to build an editor. */
@@ -760,6 +808,7 @@ export const FilesPane = ({
   files,
   changes,
   openFiles,
+  markdownPreview,
   branch,
   near,
   focus = null,
@@ -1085,6 +1134,31 @@ export const FilesPane = ({
       if (files.media !== null) return near ? <MediaView media={files.media} /> : <></>
       if (files.refusal !== null) return <p className="files__note">{files.refusal}</p>
       if (files.file === null) return <></>
+      if (markdownPreview && isMarkdown(files.file.path)) {
+        /*
+         * The buffer, when there is one, and the file otherwise.
+         *
+         * Reading the draft here does not make this a controlled editor -- the
+         * editor is not mounted -- and it is the honest answer to flipping to
+         * Preview with an edit in hand: what is rendered is what you wrote.
+         * `dirty` is state, so this re-renders when a draft appears or goes,
+         * and nothing can be typed into a rendered page in between.
+         */
+        const text = (files.dirty ? files.draft() : null) ?? files.file.text
+        return mountEditor ? (
+          <Suspense fallback={null}>
+            <Markdown
+              text={text}
+              path={files.file.path}
+              worktreeId={files.worktreeId}
+              onOpen={files.open}
+              focus={editorFocus}
+            />
+          </Suspense>
+        ) : (
+          <></>
+        )
+      }
       return mountEditor ? (
         <Suspense fallback={null}>
           <CodeEditor
