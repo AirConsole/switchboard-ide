@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -6,6 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
+import { BAR_KEYS, ctrlByte } from './keyBar.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
 
@@ -114,6 +115,24 @@ export const TerminalView = ({
 }: TerminalViewProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
+  /*
+   * The row of keys a soft keyboard leaves out, and whether this terminal is
+   * the one to draw it: it belongs to whichever terminal has the keyboard, and
+   * only where the keyboard is a soft one.
+   */
+  const [holdsKeyboard, setHoldsKeyboard] = useState(false)
+  /*
+   * Ctrl is latched rather than held -- there is nothing to hold it with. Armed
+   * here and read in the key handler below, which is where the *next* letter
+   * arrives; a ref because that handler is installed once and must see the
+   * value as it is now, not as it was at mount.
+   */
+  const ctrlArmed = useRef(false)
+  const [ctrlShown, setCtrlShown] = useState(false)
+  const armCtrl = (on: boolean): void => {
+    ctrlArmed.current = on
+    setCtrlShown(on)
+  }
 
   useEffect(() => {
     const host = hostRef.current
@@ -220,6 +239,24 @@ export const TerminalView = ({
      */
     term.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true
+      /*
+       * A latched Ctrl catches the next letter and sends the control byte
+       * itself. The letter comes from the on-screen keyboard, which has no Ctrl
+       * to hold, so this is the only way to reach Ctrl+C on a phone. Anything
+       * that is not a letter disarms it rather than being swallowed: a latch
+       * that outlived one keystroke would turn the next word into control
+       * codes.
+       */
+      if (ctrlArmed.current) {
+        const byte = ctrlByte(event.key)
+        armCtrl(false)
+        if (byte !== null) {
+          terminalSocket.input(session.id, byte)
+          event.preventDefault()
+          event.stopPropagation()
+          return false
+        }
+      }
       if (event.key === 'Enter' && !event.altKey && !event.metaKey) {
         if (event.shiftKey || event.ctrlKey) {
           const modifier = 1 + (event.shiftKey ? 1 : 0) + (event.ctrlKey ? 4 : 0)
@@ -567,29 +604,112 @@ export const TerminalView = ({
     termRef.current?.focus()
   }, [focus])
 
+  /**
+   * Send what a bar key stands for, in the form the app asked for.
+   *
+   * Through the socket rather than through xterm: `term.input` would take the
+   * same path a keystroke does, and there is no keystroke here -- and the
+   * arrows' encoding is read off the terminal's own mode (see `arrowBytes`).
+   */
+  const tap = (bytes: (applicationCursorKeys: boolean) => string): void => {
+    const term = termRef.current
+    if (!term) return
+    terminalSocket.input(session.id, bytes(term.modes.applicationCursorKeysMode))
+  }
+
   return (
-    <div
-      // The host must fill its parent. Without an explicit size it collapses to
-      // its content height, and the fit addon then measures that instead of the
-      // pane -- which silently pins the terminal to whatever size it happened to
-      // start at and leaves the rest of the pane empty.
-      className={className ? `term-host ${className}` : 'term-host'}
-      ref={hostRef}
-      /*
-       * Whoever has the keyboard has the input authority, however they came by
-       * it. Claiming it on focus rather than only on pointer-down means a
-       * terminal handed the keyboard by navigating is as usable as one clicked
-       * into -- and React's onFocus follows focusin, so it hears the focus that
-       * lands on xterm's own hidden textarea.
-       */
-      onFocus={() => {
-        terminalSocket.focus(session.id)
-        onFocusCapture?.()
-      }}
-      onPointerDown={() => {
-        terminalSocket.focus(session.id)
-        onFocusCapture?.()
-      }}
-    />
+    <div className="term-wrap">
+      <div
+        // The host must fill its parent. Without an explicit size it collapses to
+        // its content height, and the fit addon then measures that instead of the
+        // pane -- which silently pins the terminal to whatever size it happened to
+        // start at and leaves the rest of the pane empty.
+        className={className ? `term-host ${className}` : 'term-host'}
+        ref={hostRef}
+        /*
+         * Whoever has the keyboard has the input authority, however they came by
+         * it. Claiming it on focus rather than only on pointer-down means a
+         * terminal handed the keyboard by navigating is as usable as one clicked
+         * into -- and React's onFocus follows focusin, so it hears the focus that
+         * lands on xterm's own hidden textarea.
+         */
+        onFocus={() => {
+          terminalSocket.focus(session.id)
+          setHoldsKeyboard(true)
+          onFocusCapture?.()
+        }}
+        onBlur={() => {
+          setHoldsKeyboard(false)
+          armCtrl(false)
+        }}
+        onPointerDown={() => {
+          terminalSocket.focus(session.id)
+          onFocusCapture?.()
+        }}
+      />
+      {/*
+        * The keys the keyboard in front of you does not have.
+        *
+        * Only on a touch screen -- a real keyboard has all of these -- and only
+        * while this terminal holds the keyboard, which is also when the soft
+        * keyboard is up, since that is what tapping into a terminal does. It
+        * stays when the keyboard is dismissed, which is deliberate: the arrows
+        * are worth having with the keyboard down too, and the bar going away as
+        * the keyboard slides off would take the control you were reaching for
+        * with it.
+        *
+        * In the flow, not over the terminal: it takes 44px and the pty is
+        * resized to what is left. Drawn over the bottom rows it would hide the
+        * prompt, which is the one line you are typing at.
+        */}
+      {holdsKeyboard && touchKeyboard() && (
+        <div className="keybar">
+          {BAR_KEYS.map((key) => (
+            <button
+              key={key.name}
+              className="keybar__key"
+              aria-label={key.name}
+              title={key.name}
+              /*
+               * On pointer-down, and the default prevented: a press that moved
+               * focus would blur xterm's textarea, and on a phone that closes
+               * the keyboard -- so the row would take the keyboard away every
+               * time it was used. `onClick` is too late for that; the focus has
+               * already gone by then.
+               */
+              onPointerDown={(event) => {
+                event.preventDefault()
+                tap(key.bytes)
+              }}
+            >
+              {key.label}
+            </button>
+          ))}
+          <button
+            className={ctrlShown ? 'keybar__key keybar__key--on' : 'keybar__key'}
+            aria-label="Control"
+            aria-pressed={ctrlShown}
+            title="Control: the next letter is held with it"
+            onPointerDown={(event) => {
+              event.preventDefault()
+              armCtrl(!ctrlArmed.current)
+            }}
+          >
+            ctrl
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
+
+/**
+ * Is the keyboard in front of the reader a soft one?
+ *
+ * A coarse pointer is the honest test available: there is no way to ask whether
+ * a physical keyboard is attached, and `(pointer: coarse)` is true of exactly
+ * the devices whose keyboard is drawn on the glass. A tablet with a keyboard
+ * case gets the bar it does not need, which costs 44px; a phone without the bar
+ * cannot answer an agent at all.
+ */
+const touchKeyboard = (): boolean => window.matchMedia('(pointer: coarse)').matches

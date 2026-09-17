@@ -1149,6 +1149,44 @@ is not decoration: iOS scrolls the layout viewport to keep the caret in view
 rather than resizing anything, and without it the app is the right height in the
 wrong place.
 
+**The keys the keyboard has not got are drawn under the terminal.** A soft
+keyboard has letters, digits and Enter: no arrows, no Tab, no Ctrl -- and those
+are not conveniences here. Claude's menus are walked with the arrows and its
+dialogs answered with Escape, a shell completes with Tab, and everything is
+interrupted with Ctrl+C; without them a phone can watch an agent and not answer
+it. So a terminal that holds the keyboard draws `.keybar` under itself on a
+coarse pointer: `esc ⇥ ← ↑ ↓ → ctrl`, 44px each in equal shares.
+
+Four things about it are load-bearing:
+
+- **The arrows have two encodings and the app picks.** DECCKM (`CSI ? 1 h`)
+  swaps `CSI A` for `SS3 A`, every full-screen app here turns it on, and one
+  that asked for the application form does not recognise the other. `arrowBytes`
+  takes the mode from the terminal's own `applicationCursorKeysMode`; measured
+  against a stand-in that sets `?1h`, the pty received `ESC O D/A/B/C`.
+- **Ctrl latches**, because there is nothing to hold it with. The next letter is
+  caught in `attachCustomKeyEventHandler` -- where the *soft keyboard's* letter
+  arrives -- and sent as `ctrlByte`; measured, ctrl then `c` put `0x03` on the
+  wire and cleared the latch, and the `x` after it arrived as `x`. Anything that
+  is not a letter disarms it rather than being swallowed, or a latch left
+  standing would turn the next word into control codes.
+- **A press must not move the focus.** `onPointerDown` with the default
+  prevented, since blurring xterm's textarea closes the keyboard -- the row
+  would take away the keyboard every time it was used, and `onClick` is too late
+  to prevent it.
+- **It is in the flow, not over the terminal.** The pty is resized to what is
+  left: measured, the focused session went 46x43 to 46x40, three rows for the
+  bar. Drawn over the bottom rows it would hide the prompt, which is the one
+  line you are typing at.
+
+It stays while the keyboard is dismissed, deliberately -- the arrows are worth
+having then too, and a row that slid away with the keyboard would take the
+control you were reaching for. `(pointer: coarse)` is the test: there is no way
+to ask whether a physical keyboard is attached, so a tablet with a keyboard case
+gets 44px it does not need, and a phone gets the only thing that lets it answer
+an agent. Desktop is untouched -- no bar, and the host still fills its pane
+(measured 763x782 for both).
+
 **A finger dragged up or down scrolls the app.** There is no wheel and no Page
 Up key, and on the alternate screen there is no scrollback for the browser to
 move — the app owns its history. Claude scrolls on Page Up / Page Down, so a

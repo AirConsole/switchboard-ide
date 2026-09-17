@@ -2930,9 +2930,79 @@ button {
 
 /* The element we hand to xterm.open() must fill its parent, or the fit addon
    measures a content-sized box and the terminal never grows into the pane. */
-.term-host {
+/*
+ * A terminal and, on a phone, the row of keys under it.
+ *
+ * A column rather than the host alone, because the row is in the flow: it takes
+ * its height and the terminal is measured on what is left, so the pty is
+ * resized and nothing is hidden behind it.
+ */
+.term-wrap {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+  min-height: 0;
+}
+
+/*
+ * The keys a soft keyboard does not have: Escape, Tab, the four arrows and a
+ * latching Ctrl.
+ *
+ * Drawn as the tab strip's object, stood on end again -- square segments in one
+ * shell, seamed in `--sleeve` -- because it is the same kind of thing: a set of
+ * controls that belong together, on a surface. 44px, the touch target both
+ * platforms name, and equal shares of the row so the arrows are where they were
+ * the last time you reached for them.
+ */
+.keybar {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px 0 0;
+  background: var(--sleeve);
+  /* The row is the app's, not the terminal's: it sits on the panel's ground so
+     it does not read as output. */
+  border-top: 1px solid var(--rule);
+}
+
+.keybar__key {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Mono, because every one of these is a key on a keyboard rather than a word
+     the interface is saying. */
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--bone);
+  background: var(--level-object);
+  /* A tap is a key press, never a double-tap zoom or a text selection. */
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.keybar__key:active {
+  background: var(--level-hover);
+}
+
+/*
+ * Ctrl is latched, and says so the way a queued todo does: filled in reverse,
+ * which is the loudest thing available without colour -- amber and green are
+ * states of an agent and this is a key being held.
+ */
+.keybar__key--on {
+  background: var(--bone);
+  color: var(--ink);
+}
+
+.term-host {
+  width: 100%;
+  /* Takes what the key bar leaves, which on a desktop is everything. */
+  flex: 1 1 auto;
+  min-height: 0;
   /*
    * The browser may pan this sideways -- that is the row of windows moving --
    * and the up-and-down axis belongs to the pane. Without this the browser
