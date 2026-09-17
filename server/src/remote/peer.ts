@@ -229,7 +229,57 @@ const peerError = (status: number, text: string): HttpError => {
   } catch {
     /* not JSON; the body is the message */
   }
+  /*
+   * A peer refusing *our* credential is not the browser's session failing, and
+   * must not look like it. Forwarded as a 401 it would reach the page as
+   * "unauthorised" on a request the page was fully authorised to make here.
+   * The login's own refusal keeps its code, because that one is a wrong
+   * password typed by a person.
+   */
+  if (status === 401 && code !== 'bad-password') {
+    return new HttpError(
+      502,
+      'that machine no longer accepts this one -- link it again with its password',
+      'link-refused',
+    )
+  }
   return new HttpError(status, message, code, details)
+}
+
+/**
+ * Whether a password may be sent to this address over plain HTTP.
+ *
+ * One password now unlocks a whole machine, so a typo in an address is no
+ * longer a leaked peer token -- it is the password that opens a shell, sent in
+ * clear to wherever the typo points. Plain HTTP is accepted only for addresses
+ * that are on a network you are likely to own: loopback, the private and
+ * shared ranges, link-local, and names that do not resolve on the public
+ * internet. Anything else has to be https.
+ */
+export const plainHttpAllowed = (url: URL): boolean => {
+  if (url.protocol === 'https:') return true
+  if (url.protocol !== 'http:') return false
+  const host = url.hostname.toLowerCase()
+  if (host === 'localhost' || host === '[::1]') return true
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host)
+  if (v4 !== null) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    return (
+      a === 127 ||
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) || // CGNAT, which is where tailnets live
+      (a === 169 && b === 254)
+    )
+  }
+  if (host.startsWith('[')) {
+    // Unique-local fc00::/7 and link-local fe80::/10.
+    return /^\[(f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):/.test(host)
+  }
+  // A bare name resolves only on the local network; so do these suffixes.
+  if (!host.includes('.')) return true
+  return ['.local', '.lan', '.internal', '.home.arpa', '.ts.net'].some((suffix) => host.endsWith(suffix))
 }
 
 export class PeerClient {
@@ -401,6 +451,37 @@ export class PeerClient {
    * The version is checked by `checkProtocol` on this reply like any other; the
    * body is read for the name, and for a peer old enough to send no header.
    */
+  /**
+   * Whether anything answers here, before a password is sent to it.
+   *
+   * `/api/health` needs no credential, so an address that is off, wrong, or
+   * not a Switchboard is told apart from a wrong password -- and the password
+   * never leaves this machine for an address that was going to fail anyway.
+   */
+  async health(): Promise<void> {
+    await this.request<unknown>('GET', '/api/health', undefined, 5_000)
+  }
+
+  /**
+   * Exchange the machine's password for a link token, once.
+   *
+   * The password is not kept: it is an argument here and goes out of scope when
+   * this returns. What is stored is the token, which the machine can revoke by
+   * changing its password.
+   */
+  async login(password: string): Promise<string> {
+    const reply = await this.request<{ token?: unknown }>(
+      'POST',
+      '/api/login',
+      { password, machine: true },
+      15_000,
+    )
+    if (typeof reply?.token !== 'string') {
+      throw new HttpError(502, 'that machine did not hand back a link token', 'bad-peer')
+    }
+    return reply.token
+  }
+
   async identify(): Promise<PeerIdentity> {
     const identity = await this.request<PeerIdentity>('GET', '/api/server', undefined, 5_000)
     if (identity.protocolVersion !== PROTOCOL_VERSION) {

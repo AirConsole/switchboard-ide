@@ -261,6 +261,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       key: hostKeyFor(server.baseUrl),
       baseUrl: server.baseUrl,
       name: server.name,
+      /** Whether that machine still accepts this one. Never the credential. */
+      refused: workspace.linkRefused(server.baseUrl),
     })),
   )
 
@@ -269,18 +271,18 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       .object({
         baseUrl: z.string().min(1),
         /*
-         * Required, not optional. A machine with no `SWB_TOKEN` answers `/api`
-         * only to loopback and its own published names -- which a gateway
-         * addressing it by hostname or LAN IP is not -- so a token-less peer
-         * cannot be read at all. Accepting one here offered a configuration
-         * that cannot work and then blamed the token, which is the one thing
-         * that was not the problem.
+         * That machine's password, typed once and exchanged for a link token
+         * there. It reaches this server and goes no further than the one login
+         * request; it is never stored.
          */
-        token: z.string().min(1, 'that machine needs its SWB_TOKEN'),
+        password: z.string().min(1).optional(),
+        /** A static `SWB_TOKEN`, still accepted for a machine set up that way. */
+        token: z.string().min(1).optional(),
       })
-      // Defaulted before parsing, so a *missing* token gets the sentence below
-      // rather than zod's "expected string, received undefined".
-      .parse({ token: '', ...(request.body as Record<string, unknown>) })
+      .refine((b) => b.password !== undefined || b.token !== undefined, {
+        message: 'that machine’s password',
+      })
+      .parse(request.body)
     const server = await workspace.addServer(body)
     // Other tabs, and this tab's own relay, have to learn there is a machine.
     broadcastInvalidate()

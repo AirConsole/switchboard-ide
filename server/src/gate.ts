@@ -8,6 +8,7 @@ import {
   cookieValues,
   hasPassword,
   mintSession,
+  verifyLink,
   verifySession,
   type Session,
 } from './auth.js'
@@ -70,20 +71,33 @@ const tokenOf = (request: FastifyRequest): string | undefined => {
 export const hasPeerToken = (request: FastifyRequest): boolean => {
   const given = tokenOf(request)
   if (given === undefined) return false
-  if (verifySession(given) !== null) return true
+  /*
+   * A link token, never a session token. This header skips the origin and name
+   * checks, which is right for a gateway and wrong for a browser -- and a
+   * session token is exactly what sits in a browser's cookie. Accepting one
+   * here would turn any leaked cookie value into a credential that no longer
+   * has to come from our own page. They are signed under different domains, so
+   * neither verifies as the other.
+   */
+  if (verifyLink(given)) return true
   const expected = config.token
   return expected !== undefined && secretEquals(given, expected)
 }
 
-/** Our own page's session, from whichever cookie name this deployment uses. */
-export const cookieSession = (request: FastifyRequest): Session | null => {
+/** The cookie value that verifies, if any -- what a socket ticket is issued to. */
+export const cookieToken = (request: FastifyRequest): string | null => {
   for (const name of COOKIE_NAMES) {
     for (const value of cookieValues(request.headers.cookie, name)) {
-      const session = verifySession(value)
-      if (session !== null) return session
+      if (verifySession(value) !== null) return value
     }
   }
   return null
+}
+
+/** Our own page's session, from whichever cookie name this deployment uses. */
+export const cookieSession = (request: FastifyRequest): Session | null => {
+  const token = cookieToken(request)
+  return token === null ? null : verifySession(token)
 }
 
 /** Whether a cookie was presented at all, valid or not. See the hook. */

@@ -443,8 +443,12 @@ the only thing worth anything. The stale stream number is dropped with it.
 
 The other component that knows is `OpenProjectDialog`, because somebody has to
 pick the machine: a `host` key goes to `browse`, `recents` and `openProject`,
-and the server decides what it means. Adding a machine takes its token, which
-goes to our own server and no further -- the browser never talks to a peer.
+and the server decides what it means. Adding a machine takes *its* password,
+which goes to our own server and no further: the server signs in with it once
+and keeps the link token, and the browser never talks to a peer. The form owns
+its Enter (`data-own-enter`), because the dialog's own Enter would otherwise
+press "Open project" on the listed folder -- measured, it offered to make the
+home directory a repository instead of linking anything.
 
 ## The row is a grid of units
 

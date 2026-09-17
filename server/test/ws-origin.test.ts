@@ -15,7 +15,9 @@ withPassword()
 const Fastify = (await import('fastify')).default
 const fastifyWebsocket = (await import('@fastify/websocket')).default
 const { registerWs, wsPluginOptions } = await import('../src/routes/ws.js')
-const { newTicket } = await import('../src/auth.js')
+const { mintSession, newTicket: issue } = await import('../src/auth.js')
+/** A ticket issued to a real session, as `/api/ws-ticket` does. */
+const newTicket = (): string => issue(mintSession() as string)
 
 type Engine = Parameters<typeof registerWs>[1]
 

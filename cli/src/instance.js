@@ -190,10 +190,9 @@ export const portCandidates = (hash) => {
  * @param {NodeJS.ProcessEnv} parent
  * @param {Scratch} instance
  * @param {number} port
- * @param {string} [token]
  * @returns {NodeJS.ProcessEnv}
  */
-export const scratchEnv = (parent, instance, port, token) => {
+export const scratchEnv = (parent, instance, port) => {
   /** @type {NodeJS.ProcessEnv} */
   const env = {}
   for (const [key, value] of Object.entries(parent)) {
@@ -206,10 +205,11 @@ export const scratchEnv = (parent, instance, port, token) => {
   // The stand-in for the agent. `vim` is the useful one for anything about
   // attention or resizing: silent at rest, full redraw on SIGWINCH.
   env.SWB_CLAUDE_CMD = parent.CLAUDE_CMD ?? 'bash'
-  if (token !== undefined) {
-    env.SWB_TOKEN = token
-    env.SWB_SERVER_NAME = instance.name
-  }
+  // A named instance is the machine another one links to, and two instances on
+  // one host would otherwise both call themselves by the hostname. There is no
+  // SWB_TOKEN any more: a gateway links it with the password it prints, which is
+  // the production path.
+  if (instance.name !== '') env.SWB_SERVER_NAME = instance.name
   return env
 }
 
