@@ -3,7 +3,7 @@
 
 Run by hand after editing one of the SVGs:
 
-    python3 scripts/icons.py
+    python3 web/tools/icons.py
 
 The PNGs it writes are committed, and that is the point. `pnpm build` must not
 need Python: cairosvg is not a dependency of this project and never will be, and
@@ -22,7 +22,7 @@ from pathlib import Path
 import cairosvg
 from PIL import Image
 
-ICONS = Path(__file__).resolve().parent.parent / "web" / "public" / "icons"
+ICONS = Path(__file__).resolve().parent.parent / "public" / "icons"
 INK = (0x10, 0x14, 0x1A)
 
 

@@ -14,6 +14,18 @@ export default defineConfig({
     projects: [
       {
         test: {
+          /*
+           * Plain JavaScript, because this package has no build step -- it is
+           * what `postinstall` and `start` run, so it cannot require one.
+           */
+          name: 'cli',
+          root: 'cli',
+          environment: 'node',
+          include: ['test/**/*.test.js'],
+        },
+      },
+      {
+        test: {
           name: 'shared',
           root: 'shared',
           environment: 'node',
@@ -39,10 +51,11 @@ export default defineConfig({
     ],
     coverage: {
       provider: 'v8',
-      include: ['*/src/**/*.ts'],
+      include: ['*/src/**/*.{ts,js}'],
       // The layers this suite deliberately does not reach: React components,
       // the pty/tmux engine, and the wiring that only exists to bolt them
-      // together. They are driven in a browser against scripts/scratch.sh.
+      // together. They are driven in a browser against a scratch instance
+      // (`pnpm swb scratch start`).
       exclude: ['web/src/**/*.tsx', 'server/src/session/{engine,tmux,mirror}.ts'],
     },
   },

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const env = process.env
 
@@ -55,7 +56,7 @@ const flag = (name: string): string[] => {
  *
  * Behind a reverse proxy the browser's origin is the proxy's, which this
  * process has no way to derive, so a deployment must name it: `--host`, which
- * `deploy.sh` passes.
+ * `swb` passes from its config file.
  *
  * **A bare name means both schemes.** `--host ide.example:84` allows
  * `https://ide.example:84` and `http://ide.example:84`, because which one the
@@ -193,11 +194,21 @@ export const config = {
    * pointed at the new place, because a unix socket is bound to its inode and
    * `mv` within a filesystem keeps it -- which is how the rename from the old
    * name moved this directory with all six sessions still running. `sun_path`
-   * is 108 bytes, so keep it short.
+   * is 108 bytes on Linux and **104 on macOS**, so keep it short -- the default
+   * here is 43 for a six-character user name, but a deep `SWB_STATE_DIR` is one
+   * of the few ways to get an opaque tmux bind failure long after startup.
    */
   stateDir: env.SWB_STATE_DIR ?? join(homedir(), '.config', 'switchboard'),
 
-  tmuxConf: env.SWB_TMUX_CONF ?? new URL('../tmux.conf', import.meta.url).pathname,
+  /*
+   * `fileURLToPath`, never `.pathname`: a file URL percent-encodes, so a
+   * checkout under a directory with a space in it -- ordinary on macOS --
+   * produced `/home/a%20b/ide/server/tmux.conf`, a path that does not exist.
+   * tmux then silently loads none of this file, and `server/tmux.conf` is
+   * load-bearing rather than cosmetic: Shift+Enter arrives as zero bytes and
+   * truecolor degrades to 256.
+   */
+  tmuxConf: env.SWB_TMUX_CONF ?? fileURLToPath(new URL('../tmux.conf', import.meta.url)),
 
   /** Command used for `claude` sessions. */
   claudeCommand: env.SWB_CLAUDE_CMD ?? 'claude',
@@ -224,8 +235,14 @@ export const config = {
    */
   maxFileBytes: int(env.SWB_MAX_FILE_BYTES, 2 * 1024 * 1024),
 
-  /** Static web build, served in production. */
-  webDist: env.SWB_WEB_DIST ?? new URL('../../web/dist', import.meta.url).pathname,
+  /**
+   * Static web build, served in production.
+   *
+   * `fileURLToPath` for the same reason as `tmuxConf` above: percent-encoding
+   * makes `existsSync(webDist)` false, and the server then serves no UI at all
+   * and says so only in a log line.
+   */
+  webDist: env.SWB_WEB_DIST ?? fileURLToPath(new URL('../../web/dist', import.meta.url)),
 
   isDev,
 } as const

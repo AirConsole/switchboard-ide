@@ -9,13 +9,17 @@
     "dev:server": "pnpm --filter @switchboard/server dev",
     "dev:web": "pnpm --filter @switchboard/web dev",
     "build": "pnpm --filter @switchboard/shared build && pnpm --filter @switchboard/web build && pnpm --filter @switchboard/server build",
-    "start": "pnpm --filter @switchboard/server start",
+    "swb": "node cli/bin/swb.js",
+    "start": "node cli/bin/swb.js start",
+    "stop": "node cli/bin/swb.js stop",
+    "restart": "node cli/bin/swb.js restart",
+    "status": "node cli/bin/swb.js status",
     "typecheck": "pnpm --filter @switchboard/shared build && pnpm -r typecheck",
     "test": "pnpm --filter @switchboard/shared build && vitest run",
     "test:watch": "pnpm --filter @switchboard/shared build && vitest",
     "coverage": "pnpm --filter @switchboard/shared build && vitest run --coverage",
-    "postinstall": "node scripts/ensure-node-pty.mjs",
-    "ensure-native": "node scripts/ensure-node-pty.mjs"
+    "postinstall": "node cli/bin/swb.js ensure-native",
+    "ensure-native": "node cli/bin/swb.js ensure-native"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^5.0.0",

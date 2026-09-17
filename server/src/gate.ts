@@ -271,7 +271,7 @@ export const registerGate = (app: FastifyInstance): void => {
     }
     /*
      * `/api/health` says `{ok:true}` and nothing else, and it is what
-     * `deploy.sh` and `scratch.sh` poll with curl -- neither a browser nor a
+     * `swb` polls after starting one -- neither a browser nor a
      * gateway. An exact match, not a prefix: `startsWith` also exempted
      * `/api/healthz` and anything else someone might later add under that stem.
      */

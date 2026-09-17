@@ -49,14 +49,29 @@ half-cut.
 pnpm install     # also compiles node-pty from source for this platform
 pnpm build       # shared -> web -> server, in that order
 pnpm typecheck   # a gate; builds shared first because the others import it
-pnpm test        # the other gate: vitest over all three packages
-pnpm start       # serves web/dist from the server on :8084
+pnpm test        # the other gate: vitest over all four packages
 pnpm dev         # vite on :5240 proxying the server on :8084
+
+pnpm start       # bring the machine's instance up, detached, on :8084
+pnpm stop        # stop it; the tmux sessions and their agents keep running
+pnpm restart     # build, then stop and start -- this is the deploy
+pnpm status      # what it is, and whether its public name is right
 
 pnpm test:watch  # the same, staying open
 pnpm coverage    # with a per-file table
 pnpm ensure-native   # rebuild node-pty if a Node upgrade left it ABI-stale
 ```
+
+**`restart` builds and `start` does not.** Restart is how you ship a change;
+start is how you bring something up. A failed build restarts nothing, so what is
+running stays running and it is the last thing that built.
+
+All of it is one command, `cli/bin/swb.js`, and `pnpm swb` reaches the parts
+without an alias (`pnpm swb --help`). It is plain JavaScript with no build step,
+because `postinstall` runs it before anything has been built and because a
+`start` that must be compiled before it can start anything is circular. It is
+still typechecked: `cli/tsconfig.json` turns on `checkJs`, so the repository's
+one gate sees it.
 
 **There is no linter.** `pnpm lint` does not exist and fails with "Command not
 found" — do not report it as passing. `pnpm typecheck`, `pnpm test` and
@@ -81,7 +96,7 @@ output -- a hand-written fixture is only what we *think* git prints, and the
 
 What is not covered is the part you have to look at: React components, the pty
 and tmux engine, the routes and the socket. Those are driven in a browser
-against `scripts/scratch.sh`, and the traps in "Verifying changes" below are
+against a scratch instance, and the traps in "Verifying changes" below are
 still the rules there.
 
 **A test here records a bug that actually happened.** Most of them cite the
@@ -102,12 +117,13 @@ have checked. Consequences:
   needs the server process restarted, which briefly drops every browser socket.
   The tmux sessions survive it — that is the whole point of the design — but
   ask before restarting unless they asked for the change.
-- **`scripts/deploy.sh` is the restart**, run from the main checkout after a
-  merge lands: it builds, and only if that succeeds stops the port and starts it
-  again detached. It is never automatic and never run from a worktree. It also
-  passes `--host` from `scripts/deploy.env` when there is one; without it every
-  socket arriving through a proxy is refused and the row never paints, which is
-  why the script checks afterwards rather than trusting the value.
+- **`pnpm restart` is the restart**, run from the main checkout after a merge
+  lands: it builds, and only if that succeeds stops the port and starts it again
+  detached. It is never automatic, and it **refuses to run from a worktree**.
+  It passes `--host` from `~/.config/switchboard/config.json` when there is one;
+  without it every socket arriving through a proxy is refused and the row never
+  paints, which is why it checks afterwards rather than trusting the value —
+  automatically, at the end of every start and restart.
 - **Never touch somebody's project or its sessions.** Their worktrees have live
   agents in them. Scope anything destructive by project id, and do not run
   `tmux kill-server` on the state directory's socket.
@@ -116,20 +132,28 @@ have checked. Consequences:
   Use a scratch instance:
 
 ```sh
-scripts/scratch.sh up      # this checkout's own instance; prints its URL
-scripts/scratch.sh url     # that URL again, if you lost it
-scripts/scratch.sh down    # removes every trace
-scripts/scratch.sh list    # every scratch instance on the machine
-CLAUDE_CMD=vim scripts/scratch.sh up   # vim as the stand-in agent
+pnpm swb scratch start    # this checkout's own instance; prints its URL
+pnpm swb scratch          # that URL again, and anything else on the machine
+pnpm swb scratch stop     # removes every trace
+CLAUDE_CMD=vim pnpm swb scratch start   # vim as the stand-in agent
 ```
 
 Each checkout gets its own instance — its own state dir, tmux socket, scratch
 repositories and port, all derived from the checkout's path — so several
 worktrees can run one at once without reaching each other. **The port differs
-per worktree**, so read it from `up` or ask `url`; do not assume one. `vim` is
-the useful stand-in for anything about attention or resizing: silent at rest,
-full redraw on SIGWINCH. Close any browser tab you opened when you finish, and
-`down` before you go.
+per worktree**, so read it from `start` or ask `pnpm swb scratch`; do not assume
+one. `vim` is the useful stand-in for anything about attention or resizing:
+silent at rest, full redraw on SIGWINCH. Close any browser tab you opened when
+you finish, and `stop` before you go.
+
+**`pnpm start` is the machine's one instance; `pnpm swb scratch start` is the
+throwaway one.** A worktree uses the second and never the first — which is why
+`start`, `stop` and `restart` refuse to run from one, and why it is safe for the
+two to share verb names. The refusal is not only the deploy rule: a worktree has
+no settings of its own, so starting there would point at the machine's state
+directory and tmux socket, and `engine.start()` adopts every live session on that
+socket *before* `app.listen()` ever notices the port is taken. By then every one
+of somebody's agents has a second tmux client.
 
 ## If you are working in a worktree
 
@@ -163,7 +187,7 @@ one, read a session id off the broadcast and type into a running agent. And
 **what name a request was addressed to**: a DNS-rebound page is same-origin with
 us afterwards, so `Host` is the only thing about it that is not the attacker's
 to choose. Both need `--host` behind a proxy -- the public name a browser types,
-which `deploy.sh` passes.
+which `swb` passes from its config file and checks after every restart.
 
 Without `SWB_TOKEN` this instance serves **this machine only** -- there is no
 credential, so the connection's own address is the whole of the boundary.
@@ -225,7 +249,7 @@ before a reload can be lost.
 ## Verifying changes
 
 Typecheck and build. Then, for anything you can see, drive it in the browser
-against `scripts/scratch.sh` and **measure the thing you are claiming**. Every
+against a scratch instance and **measure the thing you are claiming**. Every
 line below is a mistake made in this codebase, not a hypothetical:
 
 - **Presence in the DOM is not visibility.** A dropdown was "verified" twice
@@ -350,15 +374,19 @@ Everything else follows from those two sentences:
 Testing needs two instances:
 
 ```sh
-scripts/scratch.sh up          # the gateway
-scripts/scratch.sh up peer     # the machine to link; prints its token
-scripts/scratch.sh down peer   # each one goes down by name
+pnpm swb scratch start         # the gateway
+pnpm swb scratch start peer    # the machine to link; prints its token
+pnpm swb scratch stop peer     # each one goes down by name
 ```
 
 ## Not built yet
 
-- Installing and updating: there is no way to install this on a fresh box, so a
-  peer is a checkout someone built by hand.
+- Installing and updating: a peer is still a checkout someone built by hand.
+  `pnpm start` and `pnpm restart` now run one wherever it is, but nothing puts
+  it on a fresh box, and nothing brings it back after a reboot — `swb` owns the
+  process directly rather than registering a systemd unit or a launchd agent,
+  which is what keeps it inheriting the shell's `PATH` and therefore able to
+  find `claude`.
 - Telling you *why* a machine is quiet: an unreachable peer's project keeps its
   tab and shows the worktrees it last had, but nothing yet says which of those
   it is.

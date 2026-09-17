@@ -45,21 +45,30 @@ source, so a C toolchain too.
 pnpm install
 pnpm build
 pnpm start          # serves on http://127.0.0.1:8084
+
+pnpm stop
+pnpm restart        # builds first; this is the deploy
+pnpm status
 ```
+
+`start` runs it detached from your shell, so closing the terminal does not take
+it down. `stop` leaves the tmux sessions and their agents running — that is the
+whole point of the design. Nothing registers it to start at boot.
 
 Open it, add a project — any directory inside a git repository works — and its
 worktrees appear as windows.
 
 Behind a proxy, tell the server the name a browser will type, or every socket
-arriving through the proxy is refused:
+arriving through the proxy is refused. Settings live in
+`~/.config/switchboard/config.json` (mode 0600, because of the token):
 
-```sh
-node server/dist/index.js --host ide.example.com:84
+```json
+{ "port": 8084, "host": "ide.example.com:84", "token": "..." }
 ```
 
-`scripts/deploy.sh` does that and checks it afterwards, because a wrong value
-does not fail loudly: the page loads, every REST call works, and only the row
-never paints.
+`start` and `restart` check that name afterwards rather than trusting it,
+because a wrong value does not fail loudly: the page loads, every REST call
+works, and only the row never paints.
 
 ## Linking another machine
 
@@ -68,14 +77,14 @@ here — its projects, worktrees, sessions and queued prompts join the row. Ther
 is no per-project subscription: an agent blocked on you is blocked on you
 wherever it is.
 
-The machine being linked sets `SWB_TOKEN`, which is what lets a gateway read it
+The machine being linked sets a `token`, which is what lets a gateway read it
 and what makes binding an address other than loopback safe. Your browser never
 talks to it; the server you have open forwards everything, so there is no CORS,
 no cookie and no second login.
 
 ```sh
-# on the machine to link
-SWB_TOKEN=$(head -c 32 /dev/urandom | base64) node server/dist/index.js --bind 0.0.0.0
+# on the machine to link, in ~/.config/switchboard/config.json
+{ "token": "...", "bind": "0.0.0.0" }
 ```
 
 Then add it in the open dialog, with its address and that token.
@@ -92,9 +101,9 @@ There is no linter; the compiler does that work. Two throwaway instances for
 trying things, each with its own state directory, tmux socket and port:
 
 ```sh
-scripts/scratch.sh up
-scripts/scratch.sh up peer      # a second one, to link
-scripts/scratch.sh down         # removes every trace
+pnpm swb scratch start
+pnpm swb scratch start peer     # a second one, to link
+pnpm swb scratch stop           # removes every trace
 ```
 
 ## The comments are the documentation
