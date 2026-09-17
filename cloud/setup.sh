@@ -33,7 +33,12 @@ PORT_LO=8000
 PORT_HI=8099
 # Written by cloud-init from what `provision.sh` was told. A machine pinned to
 # a branch is how this file gets tested before it is the one everybody boots.
-[ -f /etc/switchboard/env ] && . /etc/switchboard/env
+#
+# The file is absent on a machine somebody set up by hand, and that is fine:
+# the defaults below are the public repository's own master.
+if [ -f /etc/switchboard/env ]; then
+  . /etc/switchboard/env
+fi
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
 

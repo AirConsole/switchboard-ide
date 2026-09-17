@@ -30,6 +30,7 @@ write_files:
     content: |
       SWB_REPO_URL=PLACEHOLDER_REPO_URL
       SWB_REPO_REF=PLACEHOLDER_REPO_REF
+      SWB_NO_SUDO=PLACEHOLDER_NO_SUDO
   - path: /etc/switchboard/setup.sh
     permissions: '0755'
     encoding: b64

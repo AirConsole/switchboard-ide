@@ -205,7 +205,8 @@ render_user_data() {
   b64=$(base64 -w0 < "$DIR/setup.sh" 2>/dev/null || base64 < "$DIR/setup.sh" | tr -d '\n')
   sed -e "s|PLACEHOLDER_SETUP_B64|$b64|" \
       -e "s|PLACEHOLDER_REPO_URL|$REPO_URL|" \
-      -e "s|PLACEHOLDER_REPO_REF|$REPO_REF|" "$DIR/cloud-config.yaml"
+      -e "s|PLACEHOLDER_REPO_REF|$REPO_REF|" \
+      -e "s|PLACEHOLDER_NO_SUDO|$NO_SUDO|" "$DIR/cloud-config.yaml"
 }
 
 ensure_vm() {
@@ -224,7 +225,7 @@ ensure_vm() {
     --no-service-account --no-scopes \
     --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
     --metadata-from-file="user-data=$tmp" \
-    --metadata=enable-oslogin=TRUE${NO_SUDO:+,swb-no-sudo=$NO_SUDO} \
+    --metadata=enable-oslogin=TRUE \
     --labels=switchboard="$NAME" --quiet >/dev/null
   rm -f "$tmp"
 }

@@ -51,6 +51,18 @@ describe('the scripts parse', () => {
     // wandered into a folded block would make invalid YAML on every machine.
     expect(/^ +content: PLACEHOLDER_SETUP_B64$/m.test(yaml)).toBe(true)
   })
+
+  it('fills in every placeholder it declares', () => {
+    // A placeholder nothing substitutes reaches the machine literally, and a
+    // flag nothing carries does nothing -- measured: --no-sudo was passed as
+    // instance metadata that the setup script never read, so it was a flag
+    // that silently granted sudo.
+    const yaml = readFileSync(join(CLOUD, 'cloud-config.yaml'), 'utf8')
+    const provision = readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
+    for (const [placeholder] of yaml.matchAll(/PLACEHOLDER_[A-Z0-9_]+/g)) {
+      expect(provision).toContain(`s|${placeholder}|`)
+    }
+  })
 })
 
 describe('the Caddy config decides what the internet can reach', () => {
