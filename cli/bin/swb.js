@@ -123,6 +123,23 @@ const main = async () => {
     return
   }
 
+  /*
+   * `pnpm restart` is npm's *compound* lifecycle, not a plain script: it runs
+   * the `stop` script, then `restart`, then `start`. Measured -- and it inverts
+   * the one guarantee this tool makes, because that outer `stop` happens before
+   * our `restart` has had a chance to build. A failed build would then leave the
+   * server down, when the whole rule is that what is running stays running and
+   * is the last thing that built.
+   *
+   * Our `restart` already stops and starts, in that protected order, so the
+   * bracketing two stand down. `npm_command` is `restart` for all three of them
+   * and `run-script` for a `pnpm stop` somebody actually typed, which is what
+   * makes them tellable apart.
+   */
+  const inRestartLifecycle =
+    process.env.npm_command === 'restart' && process.env.npm_lifecycle_event !== 'restart'
+  if (inRestartLifecycle && (first === 'start' || first === 'stop')) return
+
   const service = await import('../src/service.js')
   if (first === 'status') return service.status()
   if (first === 'start' || first === 'stop' || first === 'restart') return service[first](opts)
