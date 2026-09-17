@@ -1449,11 +1449,13 @@ button {
   text-align: left;
   min-width: 0;
   /*
-   * The containing block for the step hint, and it has to be said: with nothing
-   * positioned between the hint and the scroller, the hint hung off the row
-   * itself and landed a screen and a half from the window it was about --
-   * measured, with the right-hand window's arrow at x=-1181 while the window
-   * stood at 1203. These two and `.grid__spot` are the only absolutely
+   * The containing block for the step hint on a project's pane, whose tile has
+   * no .tile__pane inside it -- the tile is the pane there. A worktree's hint
+   * hangs off the pane it names; see .tile__hint. It has to be said somewhere:
+   * with nothing positioned between the hint and the scroller, the hint hung
+   * off the row itself and landed a screen and a half from the window it was
+   * about -- measured, with the right-hand window's arrow at x=-1181 while the
+   * window stood at 1203. These and `.grid__spot` are the only absolutely
    * positioned things in the interface, so nothing else changes ancestor.
    */
   position: relative;
@@ -1640,26 +1642,58 @@ button {
   bottom: 2px;
   z-index: 5;
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-items: baseline;
+  gap: 5px;
   padding: 2px 5px;
   border-radius: var(--radius);
   background: var(--terminal-bg);
   font-family: var(--font-ui);
   font-size: 11px;
-  line-height: 1;
+  line-height: 1.3;
   color: var(--legend);
   pointer-events: none;
+  /*
+   * The sentence is as wide as the words are, and never wider than the pane it
+   * is in: the files tree alone is one unit, where "to switch to these files"
+   * would otherwise run out past the divider.
+   */
+  max-width: calc(100% - 20px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /*
- * Each one at the edge of the *window* nearest you, so the pair flank where you
- * are: the window on your left wears it on its right. The window's edge and not
- * Claude's own pane, which is what this was first hung on -- with a panel open,
- * the left-hand window's Claude is the part of it that has scrolled past, and
- * the hint went with it. Measured at x=-40 on a 1600px screen: a legend nobody
- * can see. At the near edge it is over Claude in every window you meet going
- * right, and over whichever pane is there going left.
+ * The keys, and what pressing them does.
+ *
+ * The keys keep --legend and the sentence steps down to --graphite, 1.33:1
+ * below it -- the words are read once and the glyphs are what you look for
+ * afterwards, which is the same relation a title has to its metadata
+ * everywhere else here. On the terminal's own ground they measure 10.28 and
+ * 7.72.
+ */
+.tile__hint-keys {
+  flex: none;
+}
+
+.tile__hint-says {
+  color: var(--graphite);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * Each one against the side you are coming from, so the pair flank where you
+ * are: the window on your left wears its hint on its right.
+ *
+ * In the pane the step actually lands in, which is the part that took two goes
+ * to get right. Always Claude put the left-hand window's hint at x=-40 on a
+ * 1600px screen, because with a panel open it is Claude that has scrolled past;
+ * the window's near edge fixed that and broke the case where the step lands
+ * inside the window you are in, where the arrow then sat under the Claude you
+ * had not left. The landing pane is both: it is the neighbour's near edge when
+ * the step crosses a window, and it is the panel when it does not.
  */
 .tile__hint--left {
   right: 10px;
@@ -1761,6 +1795,8 @@ button {
   overflow: hidden;
   background: var(--terminal-bg);
   padding: 8px;
+  /* The containing block for the step hint that lands in this pane. */
+  position: relative;
 }
 
 .tile__pane + .tile__pane {

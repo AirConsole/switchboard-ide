@@ -78,7 +78,15 @@ one gate sees it.
 **There is no linter.** `pnpm lint` does not exist and fails with "Command not
 found" — do not report it as passing. `pnpm typecheck`, `pnpm test` and
 `pnpm build` are the only automated gates, so the compiler is doing all the work
-a linter would.
+a linter would. All three run on every pull request as the `gates` check, which
+`master` requires — so a gate you skipped locally is a gate that blocks the
+merge instead. Run them before you push; CI is slower at telling you the same
+thing.
+
+CI runs on a machine with **no global git config**, which is worth knowing
+because it is also the state of every new user's machine: a test that shells out
+to `git commit` and passes here may be borrowing your identity rather than
+setting its own.
 
 ## Tests
 
@@ -120,8 +128,9 @@ have checked. Consequences:
   The tmux sessions survive it — that is the whole point of the design — but
   ask before restarting unless they asked for the change.
 - **`pnpm restart` is the restart**, run from the main checkout after a merge
-  lands: it builds, and only if that succeeds stops the port and starts it again
-  detached. It is never automatic, and it **refuses to run from a worktree**.
+  lands *and has been pulled*: it builds, and only if that succeeds stops the
+  port and starts it again detached. It is never automatic, and it **refuses to
+  run from a worktree**.
   It passes `--host` from `~/.config/switchboard/config.json` when there is one;
   without it every socket arriving through a proxy is refused and the row never
   paints, which is why it checks afterwards rather than trusting the value —
@@ -167,7 +176,24 @@ running a scratch instance here cannot reach the running IDE. Nothing you do in
 a worktree deploys — the live instance serves `server/dist` and `web/dist` from
 the master checkout alone. So do not build, start, or restart anything in
 the main checkout itself, and do not restart the live port; finish on your branch
-and let the merge into master be what ships it.
+and let the merge be what ships it.
+
+**Nothing reaches master except through a pull request.** `master` is protected
+on GitHub: direct pushes are refused for everybody, the `gates` check must pass,
+and the branch must be up to date first. So "merge into master" is now four
+steps, and the third is the one that is easy to forget:
+
+```sh
+git push -u origin <branch>       # from the worktree
+gh pr create --fill               # or open it in the browser
+gh pr merge --squash --delete-branch
+git -C <main checkout> pull       # master is only local-current after this
+pnpm restart                      # from the main checkout, which now deploys
+```
+
+Merging locally into master still works and still builds — but it cannot be
+pushed, so a local-only master silently diverges from the one everyone else
+sees. Deploy from a master you have *pulled*, not one you have merged into.
 
 A fresh worktree needs its own `pnpm install` before it can build, and `node-pty`
 compiles from source there, so the first one takes a while.

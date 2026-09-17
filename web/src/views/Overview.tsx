@@ -26,7 +26,7 @@ import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
-import { LEGEND_LEARNED, MOD_LABEL, isModHeld, showsHint } from './keyLegend.js'
+import { LEGEND_LEARNED, isModHeld, landingHint, modArrow, showsHint } from './keyLegend.js'
 import {
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
@@ -166,31 +166,51 @@ const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => 
   )
 }
 
+/** What a step lands in, in the words the interface uses for it elsewhere. */
+const LANDS_IN: Record<PaneKind, string> = {
+  claude: 'this Claude',
+  terminals: 'these terminals',
+  todo: 'these todos',
+  files: 'these files',
+  project: 'this project',
+}
+
 /**
- * Where a step would land, said in the window it would land in.
+ * Where a step would land, drawn at the bottom of the pane it lands in.
  *
- * At the bottom of the window, over whatever pane is at its near edge -- which
- * is Claude unless a panel is open there -- and not in the bar. The bar was
- * where it started and it was the wrong place twice over: it had room for the
- * arrow alone, so it annotated half a gesture -- an arrow means nothing to
- * somebody who does not know a key is held with it -- and a window scrolled so
- * that only its far edge shows is a window whose bar you are not reading. Down
- * here the pair of them flank the window you are in, each one at that window's
- * near edge, so the hint is beside the thing it is about -- see .tile__hint for
- * why it is the window's edge and not Claude's own pane.
+ * The pane, not the window, and not the bar. The bar was where it started and
+ * it was wrong twice over: it had room for the arrow alone, so it annotated
+ * half a gesture -- an arrow means nothing to somebody who does not know a key
+ * is held with it -- and a window scrolled so that only its far edge shows is a
+ * window whose bar you are not reading. The window's edge was the next try, and
+ * it is right for the two windows beside you and wrong for the one you are in:
+ * with a panel open, a step right lands in that panel, and the arrow was drawn
+ * at the tile's leading edge, under the Claude you had not left.
+ *
+ * On the side you are coming from, so the two of them flank where you are and
+ * each sits against the thing it is about.
+ *
+ * **While it is still teaching, it is a sentence.** The keys alone are a
+ * reminder, and a reminder only works on somebody with something to be reminded
+ * of: for the first ten steps the hint says what the key does and what it lands
+ * in, and after that it shrinks to the keys, which is all a legend you asked
+ * for has to be.
  *
  * The glyphs are the keys: the modifier as it is printed on the key, and the
  * arrow you are about to press -- not a triangle that means "play".
  *
  * `aria-hidden` because it is a legend for a key, not content.
  */
-const stepHintFor = (hint: 'left' | 'right' | null): React.ReactNode =>
-  hint === null ? null : (
-    <span className={`tile__hint tile__hint--${hint}`} aria-hidden="true">
-      {MOD_LABEL}
-      {hint === 'left' ? '\u2190' : '\u2192'}
-    </span>
-  )
+const stepHintFor = (
+  dir: 'left' | 'right',
+  pane: PaneKind,
+  teaching: boolean,
+): React.ReactNode => (
+  <span className={`tile__hint tile__hint--${dir}`} aria-hidden="true">
+    <span className="tile__hint-keys">{modArrow(dir)}</span>
+    {teaching && <span className="tile__hint-says">to switch to {LANDS_IN[pane]}</span>}
+  </span>
+)
 
 /** What a panel is called in prose, for the toggle's tooltip. */
 /** The key that opens each panel, for a title that has to stand in for a word. */
@@ -602,7 +622,7 @@ interface WorktreeTileProps {
    * arrive in going left cannot also be the one you would arrive in going
    * right unless you are already inside it, and then only one side of it is.
    */
-  hint: 'left' | 'right' | null
+  hint: { dir: 'left' | 'right'; pane: PaneKind; teaching: boolean } | null
   /** The commit whose patch is showing, in Commits mode. Null for none. */
   commit: string | null
   /** The scroller, so the tile can tell whether it is worth mounting. */
@@ -801,7 +821,6 @@ const WorktreeTile = ({
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
   const revealHint = `Click to bring ${worktree.name}'s window into view`
 
-  const stepHint = stepHintFor(hint)
 
   const identity = (
     <span className="tile__label">
@@ -1053,11 +1072,11 @@ const WorktreeTile = ({
                 focus={focusPane === 'files' ? focus : null}
               />
             )}
+            {/* Last in the pane, so it paints over whatever the pane shows. */}
+            {hint?.pane === pane.kind && stepHintFor(hint.dir, hint.pane, hint.teaching)}
           </div>
         ))}
       </div>
-      {/* Last in the tile, so it paints over whatever the panes are showing. */}
-      {stepHint}
     </div>
   )
 }
@@ -1913,24 +1932,29 @@ export const Overview = ({
   const at = hinting
     ? stops.findIndex((stop) => stop.id === active?.id && stop.kind === active?.pane)
     : -1
-  const landing = {
-    left: at > 0 ? stops[at - 1]?.id : undefined,
-    right: at === -1 ? undefined : stops[at + 1]?.id,
-  }
-  /**
-   * Which arrow a cell wears, by the id the walk knows it as.
+  /*
+   * Whether the hint is still teaching rather than answering.
    *
-   * By id rather than by worktree, because a project's own pane is a stop too
-   * and the walk runs through it. It used to be asked of worktrees alone, and
-   * the row then went silent for a step at a time: land next to a project pane
-   * and neither arrow was drawn, which reads as the walk having ended.
-   *
-   * Left wins when a cell is both, which cannot happen -- a step goes to the
-   * pane next door and one cell's panes are contiguous -- but leaves the rule
-   * written down rather than depending on the layout to keep it true.
+   * The same count the row stops writing at, read here as the difference
+   * between a sentence and a pair of glyphs: below it the hint is unasked, so
+   * it has to say what the key does; at it and above, it only ever appears
+   * because you reached for the key, and the keys are the whole answer.
    */
-  const hintFor = (id: string): 'left' | 'right' | null =>
-    landing.left === id ? 'left' : landing.right === id ? 'right' : null
+  const teaching = stepsTaken < LEGEND_LEARNED
+  /**
+   * Which arrow a cell wears, and over which of its panes. See `landingHint`.
+   *
+   * Asked by cell id rather than by worktree, because a project's own pane is a
+   * stop too and the walk runs through it. It was asked of worktrees alone
+   * once, and the row went silent for a step at a time: land next to a project
+   * pane and neither arrow was drawn, which reads as the walk having ended.
+   */
+  const hintFor = (
+    id: string,
+  ): { dir: 'left' | 'right'; pane: PaneKind; teaching: boolean } | null => {
+    const landing = landingHint(stops, at, id)
+    return landing === null ? null : { ...landing, teaching }
+  }
 
   useEffect(() => {
     const open = (event: KeyboardEvent): void => {
@@ -2156,8 +2180,12 @@ export const Overview = ({
                       onFocus={() => onActivate(slot.key, 'project')}
                     >
                       {/* A project's pane is a window the walk lands in like
-                          any other, so it says so like any other. */}
-                      {stepHintFor(hintFor(slot.key))}
+                          any other, so it says so like any other. Its whole
+                          tile is the one pane, so there is nothing to match. */}
+                      {((h) =>
+                        h === null ? null : stepHintFor(h.dir, h.pane, h.teaching))(
+                        hintFor(slot.key),
+                      )}
                       {slot.data.group === null ? null : (
                         <ProjectPane
                           project={slot.data.group.project}
