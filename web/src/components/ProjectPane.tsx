@@ -56,7 +56,16 @@ export const ProjectPane = ({
   onCloseProject,
 }: ProjectPaneProps): React.ReactElement => {
   const box = useRef<HTMLDivElement | null>(null)
-  useListKeys(box)
+  /*
+   * The column is every worktree, then the form and the way out; the second
+   * control on a worktree's line is its ×, which is the shape a tab in the top
+   * bar has.
+   */
+  useListKeys(box, {
+    rows: '.projpane__list .tab__body, .projpane__foot .field__input, .projpane__foot .btn, .projpane__close',
+    cells: '.tab__body, .tab__close',
+    line: '.tab',
+  })
   return (
   <div className="projpane" ref={box}>
     <div className="projpane__bar">

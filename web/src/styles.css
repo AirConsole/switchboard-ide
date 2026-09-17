@@ -2656,10 +2656,6 @@ button {
 
 /*
  * The ring is the browser's own, kept rather than reset: it is what a keyboard
- * user's eye already looks for, and this row is now walked with the arrows.
- */
-/*
- * The ring is the browser's own, kept rather than reset: it is what a keyboard
  * user's eye already looks for, and these rows are now walked with the arrows.
  */
 .dialog__foot .btn:focus-visible,
@@ -3288,6 +3284,12 @@ button {
 .todo__act:hover {
   background: var(--level-hover);
   color: var(--bone);
+}
+
+/* Drawn inside: the slab clips its segments to the shell's curve, so a ring on
+   the outer edge of one would come out as three sides of a ring. */
+.todo__act:focus-visible {
+  outline-offset: -1px;
 }
 
 /*

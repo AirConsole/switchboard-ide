@@ -3,6 +3,7 @@ import type { Worktree } from '@switchboard/shared'
 import { api } from '../api.js'
 import { WorktreeTab } from '../components/WorktreeTab.js'
 import { useAnchoredMenu } from '../components/useAnchoredMenu.js'
+import { useListKeys } from '../components/useListKeys.js'
 import type { TodoView, WorktreeStatus } from '../selectors.js'
 import { COMMIT_LABEL } from './keyLegend.js'
 
@@ -441,8 +442,28 @@ export const TodoPane = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedIds, onQueueDrained])
 
+  /*
+   * The panel is a list, so it answers to the arrows like the project pane:
+   * up and down walk the todos, left and right walk the three things you can
+   * do to the one you are on, and walking down while standing on DELETE stays
+   * on DELETE -- the slab is a column of like controls, and a walk that
+   * dropped back to RUN NEXT every row would make the other two reachable only
+   * sideways.
+   *
+   * The prompt is deliberately not in the column. It is a textarea, where every
+   * arrow belongs to the caret, and a walk that stopped in one would be a walk
+   * you could not get out of; the hook leaves a field's keys alone, so the
+   * three buttons are the walk and Tab is how you reach the text.
+   */
+  const box = useRef<HTMLDivElement | null>(null)
+  useListKeys(box, {
+    rows: '.todo__controls .todo__act:first-child',
+    cells: '.todo__act',
+    line: '.todo__row',
+  })
+
   return (
-    <div className="todo">
+    <div className="todo" ref={box}>
       {/*
        * The list first and the form under it, the way anything you add to a
        * running list is written: what is already queued reads top to bottom in
