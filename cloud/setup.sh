@@ -132,14 +132,24 @@ render_caddyfile() {
   cat <<EOF
 {
   default_sni $IP
+  # Declared once, globally, and not per site. Every site here is the same
+  # hostname -- the machine's IP, on 101 ports -- and a tls block in each of
+  # them is 101 automation policies for one name, which Caddy refuses outright:
+  # "hostname appears in more than one automation policy". Measured: the
+  # machine came up with no web server at all.
+  #
+  # The profile is not a preference: Let's Encrypt issues certificates for an
+  # IP address under shortlived and under no other. They last six days, which
+  # is why nothing here has a renewal cron -- Caddy does it.
+  #
+  # (No backticks anywhere in this heredoc. It is unquoted, so $IP expands --
+  #  and so would a backtick, as a command, while rendering the config.)
+  cert_issuer acme {
+    profile shortlived
+  }
 }
 
 https://$IP {
-  tls {
-    issuer acme {
-      profile shortlived
-    }
-  }
   # While /home is locked the IDE is not running, so the unlock page answers
   # instead. It is a fallback rather than a route, so that unlocking needs no
   # separate URL to remember.
@@ -162,16 +172,11 @@ EOF
 
 https://$IP:$port {
   bind $INTERNAL_IP
-  tls {
-    issuer acme {
-      profile shortlived
-    }
-  }
   reverse_proxy 127.0.0.1:$port
 }
 EOF
   done
-}
+} # end render_caddyfile
 
 render_caddyfile > /etc/caddy/Caddyfile.new
 if ! cmp -s /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile; then

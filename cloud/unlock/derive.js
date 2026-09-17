@@ -39,6 +39,11 @@ export const writeSalt = () => {
  * `--key-file=-` reads to the first newline and a key cut short is a volume
  * that opens with fewer bits than anyone intended.
  */
+/**
+ * @param {string} password
+ * @param {Buffer} salt
+ * @returns {Promise<string>}
+ */
 export const deriveKey = (password, salt) =>
   new Promise((resolve, reject) => {
     scrypt(password, salt, PARAMS.keylen, PARAMS, (err, key) =>

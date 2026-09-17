@@ -104,6 +104,66 @@ arriving through it is refused. Settings live in
 because a wrong value does not fail loudly: the page loads, every REST call
 works, and only the row never paints.
 
+## Run it in the cloud
+
+One command builds a machine on Google Cloud that runs this IDE, and prints a
+URL you can open from anywhere:
+
+```sh
+git clone https://github.com/AirConsole/switchboard-ide.git
+cd switchboard-ide
+./cloud/provision.sh create mybox --project my-project
+```
+
+It shows what it will create and roughly what it costs, then asks. Ten minutes
+later you get `https://<ip>`, a password and a recovery passphrase, each shown
+once.
+
+**There is no domain and no DNS.** Let's Encrypt issues certificates for bare
+IP addresses, so the machine's address is its name. They are six-day
+certificates and Caddy renews them.
+
+**Your data is encrypted, and the password is the key.** `/home` — the repos,
+your Claude and `gh` logins, the IDE's own state — is a LUKS volume whose key is
+derived from the IDE password and is never stored anywhere. After a reboot the
+machine shows an unlock page instead of the IDE; the same password opens it.
+
+What that does and does not protect, plainly:
+
+- A snapshot, a disk clone, a stopped machine, or the disk attached to another
+  instance are **unreadable**, including a snapshot taken while it is running.
+- Anyone with **root on the running machine** reads everything — the kernel
+  holds the key while the volume is open. On a cloud project, that means
+  anyone who can administer Compute Engine there, without your password: they
+  can reset the machine into a startup script of their own. So `create`
+  **refuses a project that belongs to an organisation**, names the people who
+  could do it, and takes `--in-org` if you want it anyway. A project created
+  under a personal account belongs to no organisation.
+- `create` also sets up an email alert for when anyone else touches the
+  machine, and `provision.sh status <name>` reads the same audit log — which
+  cannot be switched off or deleted — from your own machine.
+
+**Showing a service you are building.** Listen on `127.0.0.1` on any port from
+**8000 to 8099**, and it is at `https://<ip>:<port>` over TLS, **public to
+anyone with the link and with no password**. Nothing else to run. Anything an
+agent starts on one of those ports is on the internet from the moment it
+starts.
+
+```sh
+./cloud/provision.sh status   mybox --project my-project   # and who touched it
+./cloud/provision.sh recreate mybox --project my-project   # new VM, same data
+./cloud/provision.sh destroy  mybox --project my-project   # everything it made
+```
+
+`recreate` replaces the machine and keeps the data disk, which is how an OS
+upgrade and a rescue both work; `--from-snapshot` restores a backup. The boot
+disk is disposable, so packages installed on the machine are recorded on the
+data disk and reinstalled after a rebuild.
+
+The machine is `cloud/cloud-config.yaml` — cloud-init, the format GCP, Hetzner,
+DigitalOcean, AWS and a local VM all take — so another provider needs its own
+`create` and not a second definition of the machine.
+
 ## Linking another machine
 
 Link a second machine running this same IDE and everything open there is open
