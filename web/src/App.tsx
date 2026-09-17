@@ -669,7 +669,6 @@ export const App = (): React.ReactElement => {
       onRevealProject={(project) => reveal(projectKey(project.id), 'project')}
       onWake={wake}
       onReveal={revealClaude}
-      onSleep={setSleeping}
       activeId={active?.id ?? null}
     />
   )

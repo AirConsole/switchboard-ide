@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import { api } from '../api.js'
 import { removalQuestions, removalWarnings } from '../selectors.js'
 import { useEscape } from './useEscape.js'
+import { useDialogKeys } from './useDialogKeys.js'
 
 export interface RemoveWorktreeDialogProps {
   worktree: Worktree
@@ -47,6 +48,8 @@ export const RemoveWorktreeDialog = ({
   onRemoved,
 }: RemoveWorktreeDialogProps): React.ReactElement => {
   useEscape(onClose)
+  const box = useRef<HTMLDivElement | null>(null)
+  useDialogKeys(box)
   const asks = removalQuestions(worktree)
   const warnings = removalWarnings(worktree, sessions, todos)
   const [force, setForce] = useState(false)
@@ -76,7 +79,7 @@ export const RemoveWorktreeDialog = ({
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
         <div className="dialog__head">
           <h2 className="dialog__title">Remove worktree {worktree.name}?</h2>
         </div>

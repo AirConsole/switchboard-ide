@@ -725,10 +725,36 @@ button {
   background: var(--graphite);
 }
 
-/* Louder once most of it is gone: the same greyscale ladder, one step up. No
-   colour -- amber and green are what say an agent wants you. */
-.usage__fill--high {
-  background: var(--bone);
+/*
+ * Running out, and nearly gone. See `usageLevel` for the two numbers and for
+ * why this is the one reading in the chrome allowed to wear amber.
+ *
+ * The number takes the colour as well as the bar, and that is not decoration:
+ * the track is the first thing the top bar gives up as it runs out of room
+ * (rung 1, below), so a colour that lived only on the fill would go out exactly
+ * when the window is too small to show it. Both clear the floor on the ground
+ * each sits on -- amber 11.03:1 and red 6.42 on the frame the readout is drawn
+ * against, 8.39 and 4.88 on the track behind the fill.
+ *
+ * This replaced a step up the grey ladder at 80%, where the fill went --bone.
+ * One rung of grey is not visible without the other two bars beside it to
+ * compare against, which is a poor way to say "the session you are about to
+ * start may end early".
+ */
+.usage__row--low .usage__fill {
+  background: var(--signal);
+}
+
+.usage__row--low .usage__percent {
+  color: var(--signal);
+}
+
+.usage__row--spent .usage__fill {
+  background: var(--danger);
+}
+
+.usage__row--spent .usage__percent {
+  color: var(--danger);
 }
 
 .usage__percent {
@@ -1664,12 +1690,18 @@ button {
 }
 
 /*
- * Where you are, while the key is held: a line under the pane that has the
- * keyboard.
+ * Where you are: a line under the pane that has the keyboard, always.
  *
- * What it is for: the two arrows say where a step goes, and this is what they
- * go *from*. Held down, the row is briefly a map, and a map with no "you are
- * here" is a list of directions.
+ * What it is for: four windows of terminal look alike, and every other thing
+ * the row does is read against which one your typing reaches -- which window a
+ * panel toggle opens, which pane a step counts from. The top bar says which
+ * *worktree* by lighting its tab; this says which pane, at the place you are
+ * looking rather than 800px above it.
+ *
+ * It is not part of the legend, and it spent a version being one: drawn only
+ * while the modifier was held, it made a permanent fact answer a passing
+ * question. It is still what the two arrows are arrows *from*, so with the key
+ * down the three of them read as one sentence.
  *
  * A pseudo-element, and absolutely positioned like the hint, for the same
  * reason: a pane's contents are a terminal, and anything in the flow here would
@@ -1678,6 +1710,12 @@ button {
  * `--rail` thick, which is the width the tile's own leading edge uses for the
  * one other thing drawn as a line -- the worktree's state. Two lines of one
  * weight, on two edges, saying two things that are both about this window.
+ *
+ * It is the one permanent thing in --legend, and it stays inside the colour
+ * rule for the same reason the rest of the legend does: there is exactly one of
+ * it in the row, on the window you are already in, so nothing about scanning a
+ * row of agents for amber or green changes. On a phone it is not drawn at all
+ * -- see `showsHere`.
  */
 .tile__pane--here::after {
   content: '';
@@ -2301,6 +2339,37 @@ button {
   padding: 0 10px;
 }
 
+/*
+ * Put this worktree away, at the end of its own bar.
+ *
+ * A toggle's shape, because it sits in their row and a second shape there would
+ * read as a second kind of thing -- but it is not one of them: it opens a
+ * dialog rather than showing a panel, so it never wears the lit underline, and
+ * it keeps its × at every width where the toggles give up their words. A glyph
+ * is what this always was.
+ *
+ * The red is on hover only, the way DELETE in the todo panel is: the one door
+ * in this bar that leads somewhere irreversible says so under the pointer, and
+ * says nothing while you are reading the bar for anything else.
+ */
+.tile__away {
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 0;
+  padding: 0 12px;
+}
+
+.tile__away:hover {
+  color: var(--danger);
+}
+
+/* It is the × at every width: the words the others give up are labels, and this
+   has none to give. */
+.tile__controls[data-compact] .tile__away .tile__word,
+.tile__controls[data-compact] .tile__away {
+  display: flex;
+}
+
 .tile__toggle--on {
   /* 11.59:1 on a quiet bar and 7.48 on the lit one, against the 1.25 and 1.24
      of the --rule-bright it replaces. */
@@ -2535,6 +2604,67 @@ button {
   justify-content: flex-end;
   padding: 12px 16px;
   border-top: 1px solid var(--rule);
+}
+
+/*
+ * `⏎` on the answer Enter would take.
+ *
+ * A dialog's foot is a toolbar -- left and right choose, Enter does, Escape
+ * leaves (`useDialogKeys`) -- and a keyboard nobody can see is a keyboard
+ * nobody uses. The mark says which of the two or three answers the key is
+ * currently aimed at, which is also where the focus ring is: one selection,
+ * said twice, because the ring says *there* and the mark says *what happens*.
+ *
+ * Drawn at every width and merely hidden, so stepping along the row does not
+ * move the row -- the same rule the panel toggles' legend keeps, for the same
+ * reason. `::after` rather than a span, because the four dialogs write their
+ * buttons themselves and none of them should have to know about this.
+ */
+/*
+ * The project pane's foot wears it for the same reason: it is a column walked
+ * with the arrows (`useListKeys`) rather than a row, and the question -- what
+ * does Enter do from here -- is the same one.
+ */
+.dialog__foot .btn::after,
+.projpane__foot .btn::after,
+.projpane__close::after {
+  content: ' \21b5';
+  margin-left: 2px;
+  visibility: hidden;
+}
+
+.dialog__foot .btn:focus::after,
+.projpane__foot .btn:focus::after,
+.projpane__close:focus::after {
+  visibility: visible;
+}
+
+/*
+ * Not on a phone, where there is no key to press.
+ *
+ * The mark is an answer to "what does Enter do", and on a touch screen nobody
+ * asked: a finger is already on the button. It is `content: none` rather than
+ * hidden, so the space it reserves goes too -- the reason to keep that space is
+ * that stepping along the row with the arrows must not move the row, and there
+ * are no arrows here either.
+ */
+.app[data-narrow] .dialog__foot .btn::after,
+.app[data-narrow] .projpane__foot .btn::after,
+.app[data-narrow] .projpane__close::after {
+  content: none;
+}
+
+/*
+ * The ring is the browser's own, kept rather than reset: it is what a keyboard
+ * user's eye already looks for, and these rows are now walked with the arrows.
+ */
+.dialog__foot .btn:focus-visible,
+.projpane__list .tab__body:focus-visible,
+.projpane__list .tab__close:focus-visible,
+.projpane__foot .btn:focus-visible,
+.projpane__close:focus-visible {
+  outline: 2px solid var(--legend);
+  outline-offset: 1px;
 }
 
 /*
@@ -3154,6 +3284,12 @@ button {
 .todo__act:hover {
   background: var(--level-hover);
   color: var(--bone);
+}
+
+/* Drawn inside: the slab clips its segments to the shell's curve, so a ring on
+   the outer edge of one would come out as three sides of a ring. */
+.todo__act:focus-visible {
+  outline-offset: -1px;
 }
 
 /*

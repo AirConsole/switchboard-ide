@@ -41,8 +41,8 @@ two, three, four or five units. A unit is as wide as it needs to be for as many
 as fit to fill the screen, and two of them never fall below 80 columns; the
 tree by itself is the one thing allowed to have less, because it is names and
 not code. Navigation always lands on a pane's leading edge, so no pane is ever
-shown cut down the middle. On a phone the row is one window per screen with no
-chrome between them, and the top bar gives things up in order as it runs out of
+shown cut down the middle. Below the width where Claude would lose its eightieth column -- computed, not
+chosen -- the row is one window per screen with no chrome between them, and the top bar gives things up in order as it runs out of
 room rather than switching layouts -- see `web/CLAUDE.md`.
 
 ## Commands
@@ -311,10 +311,9 @@ line below is a mistake made in this codebase, not a hypothetical:
   green (`--done`). Nothing running is not done, and stays grey. The two are
   matched in luminance so neither outshouts the other. The keyboard legend is
   the one thing in the chrome that is coloured and is not a state: `--legend`, a
-  blue, lights the letter that opens each panel of the window you are in, draws
-  `⌘←` and `⌘→` at the bottom of the two panes a step would land in, and once
-  those have stopped teaching, underlines the pane you are in while the key is
-  held -- where a step goes, and where from. It
+  blue, underlines the pane that has the keyboard, lights the letter that opens
+  each panel of the window you are in, and draws `⌘←` and `⌘→` at the bottom of
+  the two panes a step would land in -- where you are, and where a step goes. It
   is allowed because it can never be read as a state — it sits *below* both in
   luminance, it is blue where they are amber and green, and it is drawn only in
   the window you are already in and the two beside it, never across a row you
@@ -327,6 +326,11 @@ line below is a mistake made in this codebase, not a hypothetical:
   can be any colour a file is. The rule still governs the interface around them, and the two the
   interface itself draws — the patch and the syntax — may not reach for amber or green: the files pane's palette is the terminal's own, minus its green, so that a
   string constant cannot catch the eye that is scanning a row of agents.
+  The one reading that wears a state colour without being an agent is the usage
+  bar: amber from 75% and red (`--danger`) from 90%, because a limit about to
+  run out is the same verb — something that needs you to act — about the account
+  rather than about one worktree. It is three 3px tracks in the corner of the
+  top bar, nowhere near the row the rule is written to protect.
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the
   interface says in its own voice. Neither names a font that may not be

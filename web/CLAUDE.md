@@ -12,6 +12,8 @@ components/TopBar    the tab strip: project heads, tabs, usage bars
 components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
 components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
 components/useAnchoredMenu  a menu hung under its trigger, kept on screen
+components/useDialogKeys    a dialog's foot, walked with the arrows
+components/useListKeys      a pane that is a list, walked with the arrows
 components/UsageBars    Claude's limits, as bars; polled once for both bars
 components/useNarrow    is this a phone -- one threshold, asked once
 views/Overview       the row: spot arithmetic, scrolling, what fits
@@ -53,6 +55,22 @@ where `session 34% 4h` is the whole reading -- so the picture goes at rung 1 and
 the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
+
+**A limit says how much is left in colour**: `usageLevel` is amber from 75% and
+red from 90%, inclusive, and the class goes on the *row* so the number wears it
+as well as the bar -- the track is the first thing to go at rung 1, and a colour
+that lived only on the fill would go out exactly when the window is too small to
+show it. Measured at each boundary against a stubbed `/api/usage`: 74 grey, 75
+amber, 89 amber, 90 red, on the fill and the number alike, and read 1:1 off the
+rendered pixels (`#ffb454` and `#e5707a` across a 3px track, over `#222833`
+where the fill stops).
+
+This is the one thing in the chrome that wears amber without being an agent that
+wants you, and it replaced a step up the grey ladder at 80% where the fill went
+`--bone`. That step was the wrong instrument twice: it arrived after the number
+that matters, and one rung of grey is not visible without the other two bars
+beside it to compare against. Both colours clear the floor where they are drawn
+-- amber 11.03:1 and red 6.42 on the frame, 8.39 and 4.88 on the track.
 
 **How the rung is chosen, and why it is not React state.** `.tabstrip` is
 `flex: 1; min-width: 0`, so it takes what the other two leave, and it says it is
@@ -291,11 +309,15 @@ The pieces, and why each is the way it is:
   pane that did not exist — and the Cmd+arrow walk counts from `active`. The
   walk itself is deliberately *not* routed through this: its stops are panes, and
   a panel that shut as you stepped into it would be a stop you could never reach.
-- **The × opens the sleep dialog**, which is also where deleting lives — so a
-  worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
-  asked here, on the tab, and asking them twice in two places only made the
-  window's bar longer. A tab is therefore a `<span>` wrapper with two buttons
-  inside it: a `<button>` inside a `<button>` is not HTML.
+- **A tab has no ×; putting a worktree away is on the worktree.** The control
+  is the last thing in the window's own bar, past the panel toggles, and it
+  still opens the sleep dialog — which is also where deleting lives, so it is
+  one door for both questions rather than the trashcan *and* the zZ this bar
+  used to carry. That pair is exactly why the × went up to the tab in the first
+  place; the bar has since given both of them up, so there was one control to
+  put back rather than two. What it costs up here is the risk it was: a tab is
+  an index entry, and the only irreversible door in the row sat on a 62px target
+  beside the name you were aiming for.
 - **A tab says whether work is left in the worktree**, in one slot: the dirty
   count when there is one, otherwise a fork glyph — GitHub's `repo-forked` way
   up, two heads over a shared trunk — when the branch has commits the default
@@ -916,6 +938,12 @@ Six things in it are load-bearing:
   it. Measured: the cursor jumped from line 3 to line 1. So the line being read
   is remembered by its text and looked for again near its old number.
 
+**All four lists walk with the arrows**, and only the tree walks with its own
+keys: the other three -- search hits, Changes, Commits -- take `useListKeys`,
+because a hit, a change and a commit are each one row that does one thing. They
+drew the same `.files__row` markup as the tree and carried no keys at all, which
+made three of the four look walkable and not be.
+
 Moving in the tree is not opening, unlike a click: arrowing past twenty files
 would otherwise read and render twenty of them, so Enter is the key that says
 you meant it. Opening a file expands its ancestors, which is what makes a
@@ -966,16 +994,34 @@ bare `9999...8888` arriving in a prompt.
 Everything below is something the desktop never exercises, and every number in
 it was measured on a 390×800 screen rather than reasoned about:
 
-**Below 640px the row is one window, edge to edge.** `useNarrow` asks
-`matchMedia` once, in `App`, and hands the answer to the row; `NARROW_MAX` is
-where the number lives, in TS, and CSS is told the *answer* through
-`data-narrow` on `.app` rather than being given the number to repeat, which is
-the `data-tight` arrangement the tab strip already uses. It reads the **layout**
-viewport, not `visualViewport`: the keyboard and a pinch both change the visual
-one and neither turns a phone into a desktop. And it is `useSyncExternalStore`
-rather than state written from an effect, which is one render late — late enough
-to build every terminal in the row at the wrong width and then resize every pty
-behind it.
+**Below the width where Claude loses its eightieth column, the row is one
+window, edge to edge.** `narrowBelow` computes it rather than naming it: one
+pane's floor, the tile's own edges, and the two gaps a single window pays for --
+685px at an 8px cell, and eighty px more for every pixel the cell grows.
+`useNarrow` asks `matchMedia` once, in `App`, and hands the answer to the row;
+CSS is told the *answer* through `data-narrow` on `.app` rather than being given
+the number to repeat, which is the `data-tight` arrangement the tab strip
+already uses. It reads the **layout** viewport, not `visualViewport`: the
+keyboard and a pinch both change the visual one and neither turns a phone into a
+desktop. And it is `useSyncExternalStore` rather than state written from an
+effect, which is one render late — late enough to build every terminal in the
+row at the wrong width and then resize every pty behind it.
+
+**It was a flat 640, and 640 described a top bar that no longer has a
+breakpoint.** The strip gives things up by the rung now, measured against the
+room it has, and the number it left behind was 45px low: between 640 and 685 the
+row kept paying for a 12px gap either side of a single window that could not
+afford it. Measured on a scratch instance, one pixel apart: at 685 the pane is
+658px and the pty 78 columns, at 684 it is 681px and **83** — five columns for a
+pixel of window, which is the discontinuity being put where it belongs.
+
+Those 78 are the second half of the measurement and a separate bug:
+`PANE_CHROME_WIDTH` counts the 16px inset and the border, and xterm's own
+`FitAddon` reserves about 17px more for the scrollbar it always makes room for.
+So every pane in the row is about two columns short of the 80 this layout
+promises, at every width, and the threshold inherits it -- which is an argument
+for deriving the threshold rather than naming it, since fixing the constant
+moves this with it.
 
 Deliberately not the 440px the todo panel uses. That one is about how narrow a
 column of prose can be; this one is about a row of windows. Two questions, two
@@ -1092,13 +1138,21 @@ target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
 
-## Cmd+I, Cmd+O and Cmd+F are the three panel toggles
+## I, O, F and X are the window's own bar, on the keyboard
 
 The keyboard version of the buttons in a window's own bar, acting on the
 worktree that has the keyboard, and toggling the same way: pressed on the panel
 already showing, the shortcut closes it and gives the width back to Claude.
 Mnemonics rather than positions -- each key is a letter inside the word its
 toggle already shows.
+
+**X is the fourth, and it is not a panel.** It opens the dialog that asks
+whether to sleep or delete, which is the × at the end of the same row of
+controls -- so it is the same handler, because what all four share is that they
+act on the window the keyboard is in, and finding that window is the whole body
+of it. X because it *is* the ×, which is the only name that control has. It is
+deliberately not in `PANEL_KEYS`: a map of panels with a non-panel in it would
+be wrong everywhere else it is read, and it is read to build the legend.
 
 **Terminals are on their third letter.** T is what the word wants, and the
 browser will not give up Cmd+T. E was next, and was wrong for a reason no
@@ -1159,7 +1213,13 @@ The shortcuts are only worth having if you can find them, and a printed list of
 five is a list nobody reads. So the modifier being held is treated as the
 question "what can I do from here", and the answer is written on the controls
 themselves: each panel toggle **of the window you are in** lights its letter --
-TERM**I**NAL, T**O**DO, **F**ILES. The letters are one window's because the
+TERM**I**NAL, T**O**DO, **F**ILES -- and the × at the end of that bar lights
+whole, since Cmd+X (`AWAY_KEY`) is a shortcut like the other three and the
+legend's promise is that what lights up is what the held key reaches. It takes
+`tile__key` over the glyph, which is the same case as a label with no letter to
+light. The pointer's own `--danger` red steps aside for as long as the key is
+held -- while the legend is up the bar is answering "what does this key do", and
+the red comes back the moment you let go. The letters are one window's because the
 shortcut is: it opens a panel on the worktree that has the keyboard, and the
 same three letters lit across the row would promise something the key does not
 do. Nothing is armed by it; the keys work whether the legend is on screen or
@@ -1212,24 +1272,28 @@ glyphs are never read against Claude's output. **Absolute is load-bearing**:
 anything in the pane's flow takes a row off the character grid, and every pty in
 the row would be resized by a legend appearing.
 
-**Once the teaching is over, the key also says where you are**: `showsHere` puts
-a `--rail`-thick `--legend` line under the pane that has the keyboard, for as
-long as the modifier is down. The two arrows say where a step *goes*, and that
-was the one part of the sentence the row did not say -- held down it is briefly
-a map, and a map with no "you are here" is a list of directions. It is drawn as
-`.tile__pane--here::after`, absolutely positioned for the same reason the hint
-is: anything in a pane's flow takes a row off the character grid. Measured off
-the rendered pixels rather than the stylesheet, since a 2px line is exactly what
-a resampled screenshot loses: the bottom two rows of the pane are `#9dc0ff`
-across it, on `#0e1116` above.
+**Where you are is drawn permanently, and is not part of the legend.**
+`showsHere` puts a `--rail`-thick `--legend` line under the pane that has the
+keyboard, always -- `.tile__pane--here::after`, absolutely positioned for the
+same reason the hint is: anything in a pane's flow takes a row off the character
+grid. Four windows of terminal look alike, and everything else the row does is
+read against which one your typing reaches; the top bar says which *worktree* by
+lighting its tab, and this says which pane, at the place you are looking rather
+than 800px above it. It spent a version gated on the modifier being held and the
+teaching being over, which made a permanent fact answer a passing question --
+you had to press a key to find out where you already were. With the key down it
+is still what the two arrows are arrows *from*, so the three read as one
+sentence: here, and the two steps out of here.
 
-**Not while the hints are still teaching**, which is the whole of why
-`showsHere` is a second predicate and not `keysLit`. The unasked hints are on
-screen then, one per neighbour and each with a sentence beside it; a third mark
-added to that is one more thing to read rather than one more thing understood.
-The line answers a question -- which of these is *here* -- that only comes up
-once the sentences have gone, so it starts exactly where the teaching stops. It
-also says nothing about a phone, unlike the arrows: it points at no neighbour.
+Measured off the rendered pixels rather than the stylesheet, since a 2px line is
+exactly what a resampled screenshot loses: the bottom two rows of the pane are
+`#9dc0ff` across it, on `#0e1116` above.
+
+**The one place it says nothing is a phone**, where the row is one window per
+screen with no gap and no padding. The window is the glass, there is nothing
+beside it to be picked out from, and the only pane on screen does not need
+underlining to be found. That is the whole of `showsHere`, and it is why it asks
+about `narrow` and nothing else.
 
 **It is coloured, and that is the one exception to the greyscale rule.**
 `--legend` (#9dc0ff) is the third colour in the chrome and the only one that is
@@ -1264,6 +1328,102 @@ the row -- which is what makes the legend follow you as you walk.
 "TERMINAL" into three text nodes made three flex items and put two of those gaps
 inside the word -- the button grew from 86.98px to 95 the moment Cmd went down.
 Wrapped, it is 86.98 to 87.00. Weight is not used either, for the same reason.
+
+## Arrows choose, Enter does, Escape leaves
+
+`useDialogKeys` gives every dialog's foot a toolbar's keyboard, because that is
+what it is: one question with two or three answers in a row. **All four arrows**
+move between them -- the answers are drawn in a row, but a hand reaching for an
+arrow has not looked at which way they run, and the project pane's column takes
+the same four keys from the other side, Enter takes the one you are on, and `⏎` is drawn on it -- a
+keyboard nobody can see is a keyboard nobody uses. The mark is reserved at every
+width and merely hidden, so stepping along the row does not move the row, which
+is the rule the panel toggles' legend keeps for the same reason. **Not on a
+phone**: there the mark answers a question nobody asked, and `content: none`
+takes its reserved space with it, since there are no arrows to step with either.
+
+**Focus is the selection**, with a roving `tabIndex` rather than an index beside
+it: the browser's own Enter, its focus ring and a screen reader then all agree
+with the mark without being told.
+
+**Where Enter starts is a rule about damage.** The last answer is the one you
+came for -- `Sleep`, `Close project` -- so that is where it begins, unless that
+answer is `--danger`, when the way out takes the focus instead and reaching the
+red one is a deliberate arrow press. Measured: `Sleep feature-x?` starts on
+`Sleep`, `Remove worktree feature-x?` starts on `Keep it`.
+
+**Every pane that is a list is the same interface stood on end**
+(`useListKeys`): up and down walk the column, left and right reach the other
+controls on a line, and Enter is the browser's own on whatever button you are
+standing on. No wrapping -- a list has a top and a bottom, and running off
+either end of one should feel like an end rather than a loop, unlike a dialog's
+two or three answers, which are a ring you feel your way around.
+
+Three panes take it, and what each hands it says what a line is there:
+
+- **The project pane**: the column is every awake and sleeping worktree, then
+  the branch box, the button beside it and `Close project`; the second control
+  on a worktree's line is its ×, the same shape a tab in the top bar has.
+- **The todo panel**: the column is the todos and the line is the three things
+  you can do to one. **The prompt is deliberately not in it** -- it is a
+  textarea, where every arrow belongs to the caret, so a walk that stopped in
+  one would be a walk you could not get out of. Tab is how you reach the text,
+  and the buttons are the walk.
+- **The files panel's three flat lists** -- search hits, Changes, Commits.
+
+**The place in the line is kept when you walk between them.** Standing on
+DELETE and pressing down stays on DELETE, and so does a × in the project pane:
+a column of like controls is a column, and a walk that dropped back to the first
+control every line would make the second and third reachable only sideways. A
+line that does not have that control -- a sleeping `main` has no × -- lands on
+what it does have.
+
+**A menu hung over a pane keeps its own keys.** `useAnchoredMenu` draws MOVE
+TO's list `position: fixed` but *inside* the todo it belongs to, so it is inside
+the box this listens on; without that clause, down inside an open menu stepped
+the list underneath and left the menu hanging there.
+
+**The files tree is the one list that does not use it**, and the difference is
+folding: left and right there open and close a directory and step out to its
+parent, and moving the cursor is not opening, so its walk runs through state
+that a flat list has no equivalent of. A hit, a change and a commit are each one
+row that does one thing, so focus is the whole of the selection. Three of the
+panel's four containers looked walkable and were not -- they draw the same
+`.files__row` markup as the tree, and only the tree carried keys.
+
+**The hook re-attaches on every commit**, which is why it has no dependency
+array: the files panel draws its list into a *different* element per mode, so an
+effect that only re-ran when its options changed would go on listening to a
+detached div the moment you switched from Changes to Commits.
+
+It exists because **Tab could not do this job here**. The lists come *before*
+the form in the markup, and arriving puts the caret in the form, which is the
+right place to arrive -- so tabbing forward reached `Close project` and then
+left the pane entirely (measured: the next stop was the following window's
+TERMINAL), and everything the pane is *for* was behind Shift+Tab, which is not
+where anybody looks. The hook listens on the pane's own box rather than the
+window, because unlike a dialog it is one pane among several and means nothing
+while the keyboard is elsewhere.
+
+The `⏎` goes on the foot's buttons and on nothing a pane's list draws: Enter on
+a row you are standing on obviously takes it, and the focus ring already says
+which. That is also what keeps the mark worth reading -- a dialog has two or
+three answers, and a mark reserved beside every control of every row of a list
+is not a mark. A disabled button is not in the walk at all, which is why
+`Create` is skipped until the branch box has something in it.
+
+The ring inside the todo's slab is drawn `outline-offset: -1px`, the way
+`.files__row`'s is: the shell clips its segments to its own curve, so a ring on
+the outer edge of one comes out as three sides of a ring.
+
+**On the window, in capture, like `useEscape`** -- and that is the half that
+makes "the dialog listens to Enter" true rather than "its focused button does".
+A dialog is modal, so its keys are the page's keys while it is up; the
+open-project dialog never takes the caret at all, so focus sits where it was,
+which measured as the terminal behind the scrim. Listening on the dialog's own
+box would have sent that Enter to an agent. A field *inside* the dialog still
+keeps its own keys -- a textarea's Enter is a newline -- and one behind the
+scrim keeps nothing.
 
 ## Every dialog cancels on Escape, and gives the keyboard back
 
@@ -1354,6 +1514,11 @@ prompts of 25px and 100px alike.
 
 MOVE TO's list is `useAnchoredMenu` and `WorktreeTab`, exactly the zZ dropdown,
 and it hangs off the segment's own bottom-left corner.
+
+**The three segments are also the panel's keyboard.** Up and down walk the
+todos and left and right walk the segments -- see *Arrows choose, Enter does,
+Escape leaves*, where the rule and what the prompt does with the arrows are
+written down.
 
 **Its list is this project's worktrees and no others.** A todo is work on a
 repository, and another repository's worktrees are not somewhere it could be

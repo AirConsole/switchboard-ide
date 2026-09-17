@@ -4,9 +4,11 @@ import {
   GAP,
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
+  TILE_CHROME,
   gapFor,
   measureMonoCharWidth,
   monoAdvance,
+  narrowBelow,
   nearestOffset,
   rowMetrics,
   wholeOnScreen,
@@ -85,6 +87,41 @@ describe('measureMonoCharWidth', () => {
  * about 1017px, so nothing about a narrow window was ever exercised. These are
  * the numbers measured off a rendered row at 14px Menlo, where a cell is 8px.
  */
+describe('narrowBelow', () => {
+  /*
+   * The threshold is the width at which Claude loses its eightieth column, so
+   * the test is that claim and not the number: at the threshold a single
+   * window, paying both gaps and the tile's own edges, still measures 80
+   * columns, and a pixel under it measures 79.
+   *
+   * It was a flat 640 while the top bar had a breakpoint of its own to justify
+   * it. The bar gives things up by the rung now, and 640 was 45px low -- a
+   * window in between kept its gaps and wrapped the agent at 76 columns to pay
+   * for them.
+   */
+  const columnsAt = (width: number, charWidth: number): number => {
+    const minPane = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
+    const { pitch } = rowMetrics(width, GAP, minPane)
+    // A tile of two units, less the tile's own edges and the pane's inset.
+    const pane = 2 * pitch - GAP - TILE_CHROME
+    return Math.floor((pane - PANE_CHROME_WIDTH) / charWidth)
+  }
+
+  it('is the width where the eightieth column goes', () => {
+    for (const charWidth of [7, 8, 9]) {
+      const at = narrowBelow(charWidth)
+      expect(columnsAt(at, charWidth)).toBe(MIN_PANE_COLUMNS)
+      expect(columnsAt(at - 1, charWidth)).toBe(MIN_PANE_COLUMNS - 1)
+    }
+  })
+
+  it('moves with the font, which is the point of computing it', () => {
+    // 658 + 3 + 24 at an 8px cell, and eighty px more for every px of cell.
+    expect(narrowBelow(8)).toBe(685)
+    expect(narrowBelow(9) - narrowBelow(8)).toBe(MIN_PANE_COLUMNS)
+  })
+})
+
 describe('rowMetrics', () => {
   // 80 columns of 8px, plus the 18px of pane that is not terminal.
   const minPane = MIN_PANE_COLUMNS * 8 + PANE_CHROME_WIDTH
