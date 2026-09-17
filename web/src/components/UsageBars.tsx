@@ -45,10 +45,8 @@ export const useUsage = (): Usage | null => {
  * Claude's usage limits, as bars.
  *
  * One row per limit `/usage` reported, in its order: the session, the week, and
- * the week for whichever model has its own allowance. Greyscale, because these
- * are not attention -- amber and green mean an agent wants you -- but the fill
- * brightens once a limit is most of the way gone, which is the point at which
- * it starts to matter what you spend it on.
+ * the week for whichever model has its own allowance. Grey while there is
+ * plenty, and then it says so in colour: see `usageLevel`.
  *
  * Every row says when it comes back, because that is the second half of the
  * question the first half raises: 90% spent matters very differently at four
@@ -83,6 +81,35 @@ const resetText = (at: number, now: number): string => {
   const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return sameDay ? time : `${when.toLocaleDateString([], { weekday: 'short' })} ${time}`
 }
+
+/**
+ * Plenty, running out, nearly gone.
+ *
+ * **From 75% it is amber and from 90% it is red**, which are the two numbers a
+ * reader of this bar actually acts on: three quarters spent is when it starts
+ * to matter what the rest goes on, and nine tenths is when the next long
+ * session is the one that ends early.
+ *
+ * This is the one thing in the chrome that wears amber without being an agent
+ * that wants you, and it is a considered exception rather than a lapse. What
+ * amber means here is the same verb -- something needs you to act -- about the
+ * account rather than about one worktree, and the reading it sits in is three
+ * 54px tracks in the corner of the top bar, nowhere near the row of windows the
+ * colour rule is written to protect. Red is new to the chrome as a state, and
+ * is `--danger`, which already means "this one is different, look before you
+ * act".
+ *
+ * Inclusive: 75 is amber and 90 is red. The threshold is the number you say out
+ * loud -- "I am at seventy-five per cent" -- and a bar that waited for 76 would
+ * be a bar that disagreed with the number printed beside it.
+ *
+ * It replaces a step up the grey ladder at 80% -- the fill went `--bone` -- and
+ * that step was the wrong instrument twice over. It arrived after the number
+ * that matters, and "slightly brighter grey" is not a thing you can see without
+ * the other two bars beside it to compare against.
+ */
+export const usageLevel = (percent: number): 'plenty' | 'low' | 'spent' =>
+  percent >= 90 ? 'spent' : percent >= 75 ? 'low' : 'plenty'
 
 export const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | null => {
   /*
@@ -121,13 +148,16 @@ export const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | nul
       aria-label="Claude usage limits"
     >
       {usage.limits.map((limit) => (
-        <div className="usage__row" key={limit.label}>
+        /*
+         * The level goes on the row rather than on the fill, because the number
+         * wears it too: the bar itself is the first thing the top bar gives up
+         * as it runs out of room (rung 1), and a colour that lived only on the
+         * track would go out exactly when the window is too small to show it.
+         */
+        <div className={`usage__row usage__row--${usageLevel(limit.percent)}`} key={limit.label}>
           <span className="usage__label">{limit.label}</span>
           <span className="usage__track">
-            <i
-              className={limit.percent >= 80 ? 'usage__fill usage__fill--high' : 'usage__fill'}
-              style={{ width: `${limit.percent}%` }}
-            />
+            <i className="usage__fill" style={{ width: `${limit.percent}%` }} />
           </span>
           <span className="usage__percent">{limit.percent}%</span>
           <span className="usage__resets">

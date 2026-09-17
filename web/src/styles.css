@@ -725,10 +725,36 @@ button {
   background: var(--graphite);
 }
 
-/* Louder once most of it is gone: the same greyscale ladder, one step up. No
-   colour -- amber and green are what say an agent wants you. */
-.usage__fill--high {
-  background: var(--bone);
+/*
+ * Running out, and nearly gone. See `usageLevel` for the two numbers and for
+ * why this is the one reading in the chrome allowed to wear amber.
+ *
+ * The number takes the colour as well as the bar, and that is not decoration:
+ * the track is the first thing the top bar gives up as it runs out of room
+ * (rung 1, below), so a colour that lived only on the fill would go out exactly
+ * when the window is too small to show it. Both clear the floor on the ground
+ * each sits on -- amber 11.03:1 and red 6.42 on the frame the readout is drawn
+ * against, 8.39 and 4.88 on the track behind the fill.
+ *
+ * This replaced a step up the grey ladder at 80%, where the fill went --bone.
+ * One rung of grey is not visible without the other two bars beside it to
+ * compare against, which is a poor way to say "the session you are about to
+ * start may end early".
+ */
+.usage__row--low .usage__fill {
+  background: var(--signal);
+}
+
+.usage__row--low .usage__percent {
+  color: var(--signal);
+}
+
+.usage__row--spent .usage__fill {
+  background: var(--danger);
+}
+
+.usage__row--spent .usage__percent {
+  color: var(--danger);
 }
 
 .usage__percent {
