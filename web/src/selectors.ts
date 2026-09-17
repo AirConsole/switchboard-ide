@@ -323,6 +323,26 @@ export const drainTakesKeyboard = (
 ): boolean => active?.id === worktreeId && active.pane === 'todo'
 
 /**
+ * The worktree to wake when a project is opened with nothing of it awake.
+ *
+ * A project that arrives with every worktree asleep has no window in the row,
+ * so opening it looked like it had done nothing -- a new folder especially,
+ * which has nothing running to seed from. Its main worktree is the one that
+ * always exists. A project that already has something awake -- opened again
+ * with its agents left running -- is left exactly as it was.
+ */
+export const worktreeToWakeOnOpen = (
+  projectId: string,
+  worktrees: readonly Worktree[],
+  sessions: readonly Session[],
+): string | null => {
+  const mine = worktrees.filter((w) => w.projectId === projectId)
+  const isAwake = (w: Worktree): boolean => w.awake ?? sessions.some((s) => s.worktreeId === w.id)
+  if (mine.some(isAwake)) return null
+  return (mine.find((w) => w.isMain) ?? mine[0])?.id ?? null
+}
+
+/**
  * Whether a machine just linked already brings something into the row.
  *
  * Linking is how its projects arrive -- everything open there is open here --

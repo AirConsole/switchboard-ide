@@ -155,6 +155,38 @@ describe('loading', () => {
     expect(store.todos[0]?.prompt).toBe('')
   })
 
+  /*
+   * Null is not empty. Empty means every worktree was put to sleep; null means
+   * nothing was ever recorded, and a worktree with sessions counts as awake --
+   * which is what lets the IDE be dropped on a repository with twenty
+   * worktrees and start with all twenty asleep.
+   */
+  it('starts with awake unrecorded, not empty', async () => {
+    const store = await loadedFrom(JSON.stringify({ version: 1, projects: [], todos: [], recents: [], ui: {} }))
+    expect(store.awake).toBeNull()
+  })
+
+  /*
+   * Awake lived in the viewer's `ui` until it moved to the worktree's machine.
+   * Not carrying it over would put every worktree to sleep on the first start
+   * after the upgrade. Another machine's ids -- scoped with a `~` -- stay
+   * behind: that machine records its own now.
+   */
+  it('takes awake over from where the layout used to keep it', async () => {
+    const store = await loadedFrom(
+      JSON.stringify({ version: 1, projects: [], todos: [], recents: [], ui: { awake: ['wt-1', 'hk1~wt-9'] } }),
+    )
+    expect(store.awake).toEqual(['wt-1'])
+    expect('awake' in store.ui).toBe(false)
+  })
+
+  it('prefers its own awake list to the old one', async () => {
+    const store = await loadedFrom(
+      JSON.stringify({ version: 1, projects: [], todos: [], recents: [], awake: [], ui: { awake: ['wt-1'] } }),
+    )
+    expect(store.awake).toEqual([])
+  })
+
   it('drops a retired ui key and fills in one the stored file predates', async () => {
     const store = await loadedFrom(
       JSON.stringify({
@@ -162,10 +194,10 @@ describe('loading', () => {
         projects: [],
         todos: [],
         recents: [],
-        ui: { awake: ['wt-1'], stepsTaken: 7, retiredThing: 'x' },
+        ui: { panels: { 'wt-1': ['todo'] }, stepsTaken: 7, retiredThing: 'x' },
       }),
     )
-    expect(store.ui.awake).toEqual(['wt-1'])
+    expect(store.ui.panels).toEqual({ 'wt-1': ['todo'] })
     expect(store.ui.openFilesByWorktree).toEqual({})
     expect('retiredThing' in store.ui).toBe(false)
     /*
@@ -268,13 +300,15 @@ describe('saving', () => {
     const store = await newStore()
     store.addProject(project({ id: 'p-1', root: '/repo' }))
     store.addTodo(todo({ id: 't-1', queuedAt: 5 }))
-    store.patchUi({ awake: ['wt-1'] })
+    store.patchUi({ panels: { 'wt-1': ['todo'] } })
+    store.setAwake(['wt-1'])
     await store.flush()
 
     const reloaded = await newStore()
     expect(reloaded.projects.map((p) => p.id)).toEqual(['p-1'])
     expect(reloaded.todos).toEqual(store.todos)
-    expect(reloaded.ui.awake).toEqual(['wt-1'])
+    expect(reloaded.ui.panels).toEqual({ 'wt-1': ['todo'] })
+    expect(reloaded.awake).toEqual(['wt-1'])
   })
 
   it('leaves no temp file behind, because the write is a rename', async () => {

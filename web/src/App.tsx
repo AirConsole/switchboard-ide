@@ -11,6 +11,7 @@ import { Overview, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
+  worktreeToWakeOnOpen,
   claudeSession,
   drainTakesKeyboard,
   orderWorktrees,
@@ -149,20 +150,36 @@ export const App = (): React.ReactElement => {
   activeRef.current = active
 
   /**
-   * Which worktrees are awake.
+   * A wake or sleep that has been clicked and not yet read back.
    *
-   * Null in stored state means a first run, not "none awake", so it seeds from
-   * what is actually running: a worktree with live sessions is awake. That makes
-   * the arrival of sleep invisible on a machine already mid-work, and means the
-   * IDE dropped on a repository with twenty worktrees and nothing running starts
-   * with all twenty asleep.
+   * The machine the worktree lives on is the one that decides (see
+   * `Worktree.awake`), so the click is a request -- and a poll landing before
+   * it is answered would carry the old value and flick the window back for a
+   * beat. What was clicked wins until the refresh after the request replaces
+   * it.
    */
-  const awake = useMemo(() => {
-    if (ui.awake !== null) return new Set(ui.awake)
-    return new Set(
-      worktrees.filter((w) => sessions.some((s) => s.worktreeId === w.id)).map((w) => w.id),
-    )
-  }, [ui.awake, worktrees, sessions])
+  const [pendingAwake, setPendingAwake] = useState<ReadonlyMap<string, boolean>>(new Map())
+  const pendingAwakeRef = useRef(pendingAwake)
+  pendingAwakeRef.current = pendingAwake
+
+  /**
+   * Which worktrees are awake: what each one's machine says.
+   *
+   * A machine too old to say is read the way a first run used to be -- awake if
+   * anything is running in it.
+   */
+  const awake = useMemo(
+    () =>
+      new Set(
+        worktrees
+          .filter(
+            (w) =>
+              pendingAwake.get(w.id) ?? w.awake ?? sessions.some((s) => s.worktreeId === w.id),
+          )
+          .map((w) => w.id),
+      ),
+    [pendingAwake, worktrees, sessions],
+  )
 
   /**
    * Projects in the order they were opened, each split into awake and asleep.
@@ -250,7 +267,30 @@ export const App = (): React.ReactElement => {
     [groups, sessions, todos],
   )
 
-  const setAwake = (ids: Iterable<string>): void => setUi({ awake: [...ids] })
+  /**
+   * Say which way these are going, then ask their machines to make it so.
+   *
+   * The pending mark is dropped once the refresh after the request has landed,
+   * whichever way it went: on success the snapshot now says the same thing, and
+   * on failure it says what is actually true.
+   */
+  const changeAwake = (ids: string[], value: boolean, request: Promise<unknown>): void => {
+    setPendingAwake((current) => {
+      const next = new Map(current)
+      for (const id of ids) next.set(id, value)
+      return next
+    })
+    void request
+      .catch(fail)
+      .then(refresh)
+      .finally(() =>
+        setPendingAwake((current) => {
+          const next = new Map(current)
+          for (const id of ids) if (next.get(id) === value) next.delete(id)
+          return next
+        }),
+      )
+  }
 
   /*
    * On arrival, the first worktree is the active one and its Claude has the
@@ -279,9 +319,8 @@ export const App = (): React.ReactElement => {
    * with several worktrees awake it may well arrive off the side of the row.
    */
   const wake = (worktreeId: string): void => {
-    setAwake([...awake, worktreeId])
+    changeAwake([worktreeId], true, api.wakeWorktree(worktreeId))
     reveal(worktreeId)
-    void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
   }
 
   /**
@@ -295,7 +334,8 @@ export const App = (): React.ReactElement => {
   const forgetWorktree = (worktreeId: string): void => {
     const panels = { ...ui.panels }
     delete panels[worktreeId]
-    setUi({ awake: [...awake].filter((id) => id !== worktreeId), panels })
+    // Its awake mark went with it, on its own machine.
+    setUi({ panels })
     /*
      * If you were in the one that went, move into its neighbour -- see
      * `removalLanding`, which is where the rule and its reasons live. Read off
@@ -319,8 +359,7 @@ export const App = (): React.ReactElement => {
    */
   const sleep = (worktreeId: string, keep: SleepOptions): void => {
     setSleeping(null)
-    setAwake([...awake].filter((id) => id !== worktreeId))
-    void api.sleepWorktree(worktreeId, keep).then(refresh).catch(fail)
+    changeAwake([worktreeId], false, api.sleepWorktree(worktreeId, keep))
   }
 
   const startClaude = (worktreeId: string): void => {
@@ -449,7 +488,8 @@ export const App = (): React.ReactElement => {
   const terminalsGone = useCallback(
     (worktreeId: string): void => {
       const ui = uiRef.current
-      if (ui.awake !== null && !ui.awake.includes(worktreeId)) return
+      if (pendingAwakeRef.current.get(worktreeId) === false) return
+      if (useStore.getState().worktrees.find((w) => w.id === worktreeId)?.awake === false) return
       setUi({
         panels: {
           ...ui.panels,
@@ -697,9 +737,14 @@ export const App = (): React.ReactElement => {
             setShowOpenProject(false)
             refocus()
           }}
-          onOpened={() => {
+          onOpened={(project) => {
             setShowOpenProject(false)
-            void refresh()
+            void refresh().then(() => {
+              if (project === undefined) return
+              const { worktrees, sessions } = useStore.getState()
+              const first = worktreeToWakeOnOpen(project.id, worktrees, sessions)
+              if (first !== null) wake(first)
+            })
           }}
         />
       )}
@@ -713,18 +758,6 @@ export const App = (): React.ReactElement => {
             refocus()
           }}
           onClose={(sleep) => {
-            /*
-             * Stopping everything means its worktrees are no longer awake, so
-             * re-opening the project starts them asleep rather than claiming
-             * agents that were killed. Leaving them running keeps the awake
-             * set, which is what makes re-opening pick them up mid-flight.
-             */
-            if (sleep) {
-              const mine = new Set(
-                worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
-              )
-              setAwake([...awake].filter((id) => !mine.has(id)))
-            }
             /*
              * If you were standing in something that project owned, move into
              * whatever is left. Closing is a button *inside* that project's own
@@ -742,7 +775,14 @@ export const App = (): React.ReactElement => {
               else reveal(projectKey(left.project.id), 'project')
             }
             setClosingProject(null)
-            void api.closeProject(closingProject, { sleep }).then(refresh).catch(fail)
+            /*
+             * Stopping everything also puts its worktrees to sleep, which the
+             * project's machine records as part of closing it -- so re-opening
+             * starts them asleep rather than claiming agents that were killed.
+             */
+            const request = api.closeProject(closingProject, { sleep })
+            if (sleep) changeAwake([...mine], false, request)
+            else void request.then(refresh).catch(fail)
           }}
         />
       )}
@@ -862,9 +902,9 @@ export const App = (): React.ReactElement => {
         onTogglePanel={togglePanel}
         onQueueDrained={queueDrained}
         onCreated={(worktreeId) => {
-          // A worktree you just made is one you want to work in, so it starts
-          // awake -- and it is scrolled to, since the row may be long.
-          setAwake([...awake, worktreeId])
+          // A worktree you just made is one you want to work in, so its machine
+          // records it awake as it creates it -- and it is scrolled to, since
+          // the row may be long.
           reveal(worktreeId)
           void refresh()
         }}

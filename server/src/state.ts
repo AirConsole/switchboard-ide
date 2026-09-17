@@ -52,6 +52,21 @@ export interface PersistedState {
   servers: RemoteServer[]
   /** See `RemoteCache`: what each machine last said, so its absence is not a deletion. */
   remoteCache: RemoteCache[]
+  /**
+   * This machine's worktrees that are awake, by id; see `Worktree.awake`.
+   *
+   * Null until seeded, which is not the same as empty. Empty means every
+   * worktree was put to sleep; null means nobody has woken or slept anything
+   * yet, and a worktree counts as awake if it has sessions. That way the IDE
+   * can be dropped on a repository with twenty worktrees and start with all
+   * twenty asleep and nothing running.
+   *
+   * A set, not an order: a window's place in the row comes from its project
+   * and its name. Kept here and not in `ui` because it is not one viewer's
+   * layout -- every viewer, here or on a machine linking this one, reads the
+   * same answer.
+   */
+  awake: string[] | null
   ui: UiState
 }
 
@@ -65,8 +80,28 @@ const emptyState = (): PersistedState => ({
   recents: [],
   servers: [],
   remoteCache: [],
+  awake: null,
   ui: defaultUiState(),
 })
+
+/**
+ * The stored awake list, or the one this viewer's layout used to hold.
+ *
+ * Awake lived in `ui.awake` until it moved here, so a state file from before
+ * that has it there -- and dropping it would put every worktree to sleep on the
+ * first start after an upgrade. Ids with a `~` are another machine's, scoped by
+ * the gateway; they were only ever in that list because it was this viewer's,
+ * and that machine keeps its own now.
+ */
+const reviveAwake = (stored: unknown, legacyUi: unknown): string[] | null => {
+  const from = Array.isArray(stored)
+    ? stored
+    : typeof legacyUi === 'object' && legacyUi !== null && Array.isArray((legacyUi as { awake?: unknown }).awake)
+      ? ((legacyUi as { awake: unknown[] }).awake)
+      : null
+  if (from === null) return null
+  return from.filter((id): id is string => typeof id === 'string' && !id.includes('~'))
+}
 
 /**
  * A stored project, or nothing.
@@ -221,6 +256,7 @@ export class StateStore {
           remoteCache: (Array.isArray(candidate.remoteCache) ? candidate.remoteCache : [])
             .map(reviveRemoteCache)
             .filter((entry): entry is RemoteCache => entry !== null),
+          awake: reviveAwake(candidate.awake, candidate.ui),
           ui: pickKnownUiKeys(candidate.ui),
         }
       }
@@ -328,6 +364,15 @@ export class StateStore {
     const before = this.state.recents.length
     this.state.recents = this.state.recents.filter((r) => r.root !== root)
     if (this.state.recents.length !== before) this.scheduleSave()
+  }
+
+  get awake(): string[] | null {
+    return this.state.awake
+  }
+
+  setAwake(ids: string[]): void {
+    this.state.awake = [...new Set(ids)]
+    this.scheduleSave()
   }
 
   patchUi(patch: Partial<UiState>): UiState {

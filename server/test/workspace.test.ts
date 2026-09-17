@@ -37,6 +37,7 @@ const fakeEngine = (): FakeEngine => {
     sessions,
     engine: {
       list: () => sessions,
+      listForWorktree: (id: string) => sessions.filter((s) => s.worktreeId === id),
       killForWorktree: async (id: string) => {
         killedWorktrees.push(id)
       },
@@ -229,6 +230,18 @@ describe('closeProject', () => {
     expect(engine.killedProjects).toEqual([project.id])
   })
 
+  it('puts its worktrees to sleep when it stops them, and only then', async () => {
+    // Otherwise opening it again would claim agents that were killed.
+    const project = await workspace.openProject(repo.path)
+    const [main] = await workspace.worktrees()
+    await workspace.setAwake([main!.id], true)
+    await workspace.closeProject(project.id)
+    expect(store.awake).toEqual([main!.id])
+    await workspace.openProject(repo.path)
+    await workspace.closeProject(project.id, { sleep: true })
+    expect(store.awake).toEqual([])
+  })
+
   it('takes only its own worktrees’ todos', async () => {
     /*
      * Collected before the project goes, because afterwards its worktrees are
@@ -409,6 +422,13 @@ describe('removeWorktree', () => {
     await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })
     expect(engine.killedWorktrees).toEqual([worktreeId])
     expect((await workspace.worktrees()).map((w) => w.id)).not.toContain(worktreeId)
+  })
+
+  it('forgets that it was awake, or one made again at that path comes back awake', async () => {
+    // Same path, same id -- ids are hashed from the path.
+    await workspace.setAwake([worktreeId], true)
+    await workspace.removeWorktree({ worktreeId, force: false, alsoDeleteBranch: false, alsoDeleteRemoteBranch: false })
+    expect(store.awake).not.toContain(worktreeId)
   })
 
   it('refuses to remove the main worktree in its own words', async () => {
@@ -813,5 +833,51 @@ describe('browse', () => {
     // absolute. Do not "fix" it to use that.
     const { homedir } = await import('node:os')
     expect((await workspace.browse('~')).path).toBe(homedir())
+  })
+})
+
+/*
+ * Awake is the worktree's own machine's answer, not one viewer's layout. It was
+ * a list in each browser's `ui`, and a Mac linking this machine came up with
+ * every worktree asleep -- agents mid-turn included -- while this machine's own
+ * page showed them awake.
+ */
+describe('awake', () => {
+  const awakeIn = async (): Promise<Record<string, boolean | undefined>> =>
+    Object.fromEntries((await workspace.snapshot()).worktrees.map((w) => [w.name, w.awake]))
+
+  it('is said on every worktree in the snapshot', async () => {
+    await workspace.openProject(repo.path)
+    const [main] = await workspace.worktrees()
+    await workspace.setAwake([main!.id], true)
+    expect(Object.values(await awakeIn())).toEqual([true])
+    await workspace.setAwake([main!.id], false)
+    expect(Object.values(await awakeIn())).toEqual([false])
+  })
+
+  it('counts a worktree with sessions as awake until anything is recorded', async () => {
+    await workspace.openProject(repo.path)
+    const [main] = await workspace.worktrees()
+    expect(store.awake).toBeNull()
+    expect(Object.values(await awakeIn())).toEqual([false])
+    engine.sessions.push({ id: 's1', worktreeId: main!.id } as Session)
+    expect(Object.values(await awakeIn())).toEqual([true])
+  })
+
+  it('seeds from that answer the first time, so touching one does not sleep the rest', async () => {
+    await workspace.openProject(repo.path)
+    const [main] = await workspace.worktrees()
+    engine.sessions.push({ id: 's1', worktreeId: main!.id } as Session)
+    await workspace.setAwake(['wt-other'], true)
+    expect(store.awake?.sort()).toEqual([main!.id, 'wt-other'].sort())
+  })
+
+  it('is answered after the worktree cache, so a wake shows at once', async () => {
+    await workspace.openProject(repo.path)
+    const [main] = await workspace.worktrees()
+    await workspace.snapshot()
+    await workspace.setAwake([main!.id], true)
+    // Well inside the two seconds the worktree list is cached for.
+    expect(Object.values(await awakeIn())).toEqual([true])
   })
 })

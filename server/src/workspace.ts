@@ -233,6 +233,29 @@ export class Workspace {
     return all
   }
 
+  /** See `Worktree.awake`, and `PersistedState.awake` for the null case. */
+  private isAwake(worktreeId: string): boolean {
+    const awake = this.store.awake
+    if (awake === null) return this.engine.listForWorktree(worktreeId).length > 0
+    return awake.includes(worktreeId)
+  }
+
+  /**
+   * Wake or sleep worktrees of this machine.
+   *
+   * The first call seeds the list from what `isAwake` has been answering, so a
+   * machine that never recorded anything does not put every running worktree
+   * to sleep the moment one of them is touched.
+   */
+  async setAwake(worktreeIds: string[], awake: boolean): Promise<void> {
+    const current =
+      this.store.awake ?? (await this.worktrees()).filter((w) => this.isAwake(w.id)).map((w) => w.id)
+    const next = awake
+      ? [...current, ...worktreeIds]
+      : current.filter((id) => !worktreeIds.includes(id))
+    this.store.setAwake(next)
+  }
+
   async resolve(worktreeId: string): Promise<{ worktree: Worktree; project: Project }> {
     const worktree = (await this.worktrees()).find((w) => w.id === worktreeId)
     if (!worktree) throw new HttpError(404, 'no such worktree')
@@ -260,7 +283,12 @@ export class Workspace {
   async snapshot(opts: { localOnly?: boolean } = {}): Promise<AppSnapshot> {
     const local: AppSnapshot = {
       projects: await this.describeProjects(),
-      worktrees: await this.worktrees(),
+      // Stamped after the cache, which lives two seconds: a wake read through
+      // it would show the window a beat after the click that asked for it.
+      worktrees: (await this.worktrees()).map((worktree) => ({
+        ...worktree,
+        awake: this.isAwake(worktree.id),
+      })),
       sessions: this.engine.list(),
       todos: this.store.todos,
       ui: this.store.ui,
@@ -609,7 +637,13 @@ export class Workspace {
     // no longer listed and there is nothing left to match todos against.
     const mine = (await this.worktrees()).filter((w) => w.projectId === id).map((w) => w.id)
     const project = this.store.project(id)
-    if (opts.sleep === true) await this.engine.killForProject(id)
+    if (opts.sleep === true) {
+      // Stopping everything means nothing of it is awake, so opening it again
+      // does not claim agents that were killed. Without `sleep` the set stays,
+      // which is what lets reopening pick them up mid-flight.
+      await this.setAwake(mine, false)
+      await this.engine.killForProject(id)
+    }
     // Remembered before it is removed: a recent is a path handed back to
     // `openProject`, which is how one is opened.
     if (project) this.store.rememberRecent(project)
@@ -786,6 +820,9 @@ export class Workspace {
     }
     await pruneWorktrees(project.root).catch(() => {})
     this.store.removeTodosFor([worktree.id])
+    // A removed worktree's id would otherwise sit in the list forever, and a
+    // worktree made again at the same path -- same id -- would come back awake.
+    if (this.store.awake !== null) this.store.setAwake(this.store.awake.filter((id) => id !== worktree.id))
     this.invalidate()
   }
 
