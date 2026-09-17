@@ -395,6 +395,31 @@ button {
   overflow: hidden;
 }
 
+/*
+ * While the soft keys are up, the window is all there is room for.
+ *
+ * A phone with the keyboard open has about 380px of height left, and the key row
+ * takes 47 of it. The top bar is the one thing in that space you are not using:
+ * it is the index of *other* worktrees, and you are typing into this one. So it
+ * goes, and the row takes its 38px back -- a net 9px lost to the keys rather
+ * than 47.
+ *
+ * Said with `:has()` rather than a flag handed down from the row: what has to be
+ * true is exactly "a key row exists", and that is one condition in one place
+ * instead of the three that decide it (a coarse pointer, a terminal holding the
+ * keyboard, the keyboard actually up) travelling up to `App` and back down.
+ * The ladder's sweep is unharmed -- it runs on the commit that mounts the key
+ * row and on the one that unmounts it, and a hidden header reports no overflow,
+ * so the bar comes back at the rung its width actually needs.
+ */
+.app:has(.keybar) .topbar {
+  display: none;
+}
+
+.app:has(.keybar) {
+  grid-template-rows: 1fr;
+}
+
 /* ---------------------------------------------------------------- top bar -- */
 
 /*
@@ -2967,6 +2992,9 @@ button {
 }
 
 .keybar__key {
+  /* A span, so that a tap cannot move the focus -- see TerminalView. Everything
+     a button gave it is said here instead. */
+  cursor: pointer;
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
@@ -2976,12 +3004,24 @@ button {
   /* Mono, because every one of these is a key on a keyboard rather than a word
      the interface is saying. */
   font-family: var(--font-mono);
-  font-size: 15px;
+  /*
+   * 22px, which is the glyph and not the label: an arrow drawn at label size is
+   * a mark you aim at rather than a key you can see, and these are the whole
+   * keyboard for the hand using them. `esc` and `ctrl` are words and step back
+   * down -- a word at 22px in a 54px key does not fit.
+   */
+  font-size: 22px;
+  line-height: 1;
   color: var(--bone);
   background: var(--level-object);
   /* A tap is a key press, never a double-tap zoom or a text selection. */
   touch-action: manipulation;
   user-select: none;
+}
+
+.keybar__key--word {
+  font-size: 13px;
+  letter-spacing: 0.04em;
 }
 
 .keybar__key:active {

@@ -6,7 +6,8 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
-import { BAR_KEYS, ctrlByte } from './keyBar.js'
+import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
+import { useSoftKeyboard } from './softKeyboard.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
 
@@ -121,6 +122,7 @@ export const TerminalView = ({
    * only where the keyboard is a soft one.
    */
   const [holdsKeyboard, setHoldsKeyboard] = useState(false)
+  const keyboardUp = useSoftKeyboard()
   /*
    * Ctrl is latched rather than held -- there is nothing to hold it with. Armed
    * here and read in the key handler below, which is where the *next* letter
@@ -605,16 +607,33 @@ export const TerminalView = ({
   }, [focus])
 
   /**
-   * Send what a bar key stands for, in the form the app asked for.
+   * Send what a bar key stands for, in the form the app asked for, with the
+   * latch if it is on.
    *
    * Through the socket rather than through xterm: `term.input` would take the
    * same path a keystroke does, and there is no keystroke here -- and the
    * arrows' encoding is read off the terminal's own mode (see `arrowBytes`).
    */
-  const tap = (bytes: (applicationCursorKeys: boolean) => string): void => {
+  const tap = (bytes: BarKey['bytes']): void => {
     const term = termRef.current
     if (!term) return
-    terminalSocket.input(session.id, bytes(term.modes.applicationCursorKeysMode))
+    const ctrl = ctrlArmed.current
+    terminalSocket.input(
+      session.id,
+      bytes({ applicationCursorKeys: term.modes.applicationCursorKeysMode, ctrl }),
+    )
+    // One key, like the letters: the latch is spent by whatever it modified.
+    if (ctrl) armCtrl(false)
+    /*
+     * And the keyboard stays. Typing stopped working after a tap on the row --
+     * reported on a real phone, and not reproducible with a synthetic tap,
+     * which is the signature of focus: a real tap on a focusable control moves
+     * it, and focus leaving xterm's textarea is what closes an on-screen
+     * keyboard. The keys are spans now so there is nothing to move focus to
+     * (see below), and this puts it back regardless, since a keyboard that has
+     * gone is a terminal you cannot type into at all.
+     */
+    term.focus()
   }
 
   return (
@@ -650,32 +669,33 @@ export const TerminalView = ({
       {/*
         * The keys the keyboard in front of you does not have.
         *
-        * Only on a touch screen -- a real keyboard has all of these -- and only
-        * while this terminal holds the keyboard, which is also when the soft
-        * keyboard is up, since that is what tapping into a terminal does. It
-        * stays when the keyboard is dismissed, which is deliberate: the arrows
-        * are worth having with the keyboard down too, and the bar going away as
-        * the keyboard slides off would take the control you were reaching for
-        * with it.
+        * Three things have to hold: a touch screen (a real keyboard has all of
+        * these keys), this terminal holding the keyboard, and the on-screen
+        * keyboard actually being up -- `useSoftKeyboard`, which reads it off
+        * the height, since nothing reports it. With the keyboard down the
+        * screen is the row of windows again and 44px of keys on top of a
+        * terminal is chrome in the way of what you are watching.
         *
         * In the flow, not over the terminal: it takes 44px and the pty is
         * resized to what is left. Drawn over the bottom rows it would hide the
         * prompt, which is the one line you are typing at.
         */}
-      {holdsKeyboard && touchKeyboard() && (
+      {holdsKeyboard && keyboardUp && touchKeyboard() && (
         <div className="keybar">
           {BAR_KEYS.map((key) => (
-            <button
+            <span
               key={key.name}
-              className="keybar__key"
+              className={key.label.length > 1 ? 'keybar__key keybar__key--word' : 'keybar__key'}
+              role="button"
               aria-label={key.name}
               title={key.name}
               /*
-               * On pointer-down, and the default prevented: a press that moved
-               * focus would blur xterm's textarea, and on a phone that closes
-               * the keyboard -- so the row would take the keyboard away every
-               * time it was used. `onClick` is too late for that; the focus has
-               * already gone by then.
+               * A span, not a button, and the press taken on pointer-down with
+               * the default prevented. Both halves are about the same thing:
+               * focus must not leave xterm's textarea, because on a phone that
+               * is what closes the keyboard -- and a control that cannot take
+               * focus cannot take it away. `onClick` would be too late anyway;
+               * by then the focus has moved.
                */
               onPointerDown={(event) => {
                 event.preventDefault()
@@ -683,20 +703,22 @@ export const TerminalView = ({
               }}
             >
               {key.label}
-            </button>
+            </span>
           ))}
-          <button
-            className={ctrlShown ? 'keybar__key keybar__key--on' : 'keybar__key'}
+          <span
+            className={`keybar__key keybar__key--word${ctrlShown ? ' keybar__key--on' : ''}`}
+            role="button"
             aria-label="Control"
             aria-pressed={ctrlShown}
-            title="Control: the next letter is held with it"
+            title="Control: the next key is held with it"
             onPointerDown={(event) => {
               event.preventDefault()
               armCtrl(!ctrlArmed.current)
+              termRef.current?.focus()
             }}
           >
             ctrl
-          </button>
+          </span>
         </div>
       )}
     </div>
