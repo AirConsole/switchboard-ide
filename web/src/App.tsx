@@ -11,6 +11,7 @@ import { Overview, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
+  worktreeToWakeOnOpen,
   claudeSession,
   drainTakesKeyboard,
   orderWorktrees,
@@ -736,9 +737,14 @@ export const App = (): React.ReactElement => {
             setShowOpenProject(false)
             refocus()
           }}
-          onOpened={() => {
+          onOpened={(project) => {
             setShowOpenProject(false)
-            void refresh()
+            void refresh().then(() => {
+              if (project === undefined) return
+              const { worktrees, sessions } = useStore.getState()
+              const first = worktreeToWakeOnOpen(project.id, worktrees, sessions)
+              if (first !== null) wake(first)
+            })
           }}
         />
       )}

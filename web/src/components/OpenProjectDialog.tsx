@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { RecentProject } from '@switchboard/shared'
+import type { Project, RecentProject } from '@switchboard/shared'
 import { ApiError, api, type BrowseResult, type ServerRow } from '../api.js'
 import { useEscape } from './useEscape.js'
 import { useDialogKeys } from './useDialogKeys.js'
@@ -7,7 +7,8 @@ import { useStore } from '../store.js'
 
 export interface OpenProjectDialogProps {
   onClose: () => void
-  onOpened: () => void
+  /** With the project when one was opened, so the row can wake something of it. */
+  onOpened: (project?: Project) => void
 }
 
 /**
@@ -303,7 +304,7 @@ export const OpenProjectDialog = ({
       ...(server === undefined ? {} : { host: server.key }),
     })
     void request
-      .then(() => onOpened())
+      .then((project) => onOpened(project))
       .catch((err: unknown) => {
         setBusy(false)
         if (err instanceof ApiError && err.code === 'path-missing') {
