@@ -395,6 +395,31 @@ button {
   overflow: hidden;
 }
 
+/*
+ * While the soft keys are up, the window is all there is room for.
+ *
+ * A phone with the keyboard open has about 380px of height left, and the key row
+ * takes 47 of it. The top bar is the one thing in that space you are not using:
+ * it is the index of *other* worktrees, and you are typing into this one. So it
+ * goes, and the row takes its 38px back -- a net 9px lost to the keys rather
+ * than 47.
+ *
+ * Said with `:has()` rather than a flag handed down from the row: what has to be
+ * true is exactly "a key row exists", and that is one condition in one place
+ * instead of the three that decide it (a coarse pointer, a terminal holding the
+ * keyboard, the keyboard actually up) travelling up to `App` and back down.
+ * The ladder's sweep is unharmed -- it runs on the commit that mounts the key
+ * row and on the one that unmounts it, and a hidden header reports no overflow,
+ * so the bar comes back at the rung its width actually needs.
+ */
+.app:has(.keybar) .topbar {
+  display: none;
+}
+
+.app:has(.keybar) {
+  grid-template-rows: 1fr;
+}
+
 /* ---------------------------------------------------------------- top bar -- */
 
 /*

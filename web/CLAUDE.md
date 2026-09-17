@@ -1210,6 +1210,22 @@ Four things about it are load-bearing:
   bar. Drawn over the bottom rows it would hide the prompt, which is the one
   line you are typing at.
 
+**And the top bar goes while it is up.** A phone with the keyboard open has
+about 380px of height left and the key row takes 47 of it; the top bar is the
+one thing in that space you are not using -- it is the index of *other*
+worktrees, and you are typing into this one. So `.app:has(.keybar) .topbar` is
+`display: none` and the grid collapses to one row, which gives the window the
+bar's 38px back: a net 9px lost to the keys rather than 47. Measured at 390px
+with the keyboard up, the row starts at y=0 and fills the 420px of visible
+height, and the terminal's host is 333px with the 47px row under it.
+
+Said with `:has()` rather than a flag handed down: the condition is exactly "a
+key row exists", which is one thing in one place instead of the three that
+decide it travelling up to `App` and back. The ladder's sweep is unharmed -- it
+runs on the commit that mounts the row and the one that unmounts it, and a
+hidden header reports no overflow, so the bar comes back at the rung its width
+needs (measured, rung 4 again at 390px).
+
 It goes when the keyboard goes: with the keyboard down the screen is the row of
 windows again, and 44px of keys over a terminal is chrome in the way of what you
 are watching. `(pointer: coarse)` is the other test: there is no way
