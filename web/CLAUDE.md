@@ -964,6 +964,10 @@ next one on once it was at its end.
 
 ## Cmd+Left and Cmd+Right walk panes, not only worktrees
 
+**Alt+Left and Alt+Right off the Mac** -- see "The modifier is Cmd on a Mac and
+Alt everywhere else" below, which is one module, `keyLegend.ts`, and one
+predicate, `isModHeld`.
+
 They step through the worktrees from wherever the caret is — a terminal, a
 todo's prompt, the editor in the files panel. The only thing that keeps the key
 is a dialog, which is modal: stepping the windows behind a scrim would act on
@@ -989,6 +993,8 @@ amount of `preventDefault` reaches: Claude's own browser extension takes Cmd+E
 before the page sees it. A key another tool holds is a key that does nothing
 here, so the terminals moved to the next free letter in TERMINAL.
 
+**The letters are the same on every platform**; only the modifier changes.
+
 **Cmd, never Ctrl**, and Cmd+I is the sharpest case for it: Ctrl+I *is* Tab,
 the same byte 0x09, so binding it would have taken completion away from every
 shell and every prompt in the row. Ctrl+E is end-of-line and Ctrl+F
@@ -1011,34 +1017,84 @@ with a terminal focused arrived with `defaultPrevented`, never reached a
 bubble-phase listener, and put no character into the shell's prompt
 (`capture-pane`); in a dialog the same key is not prevented at all.
 
-## Holding Cmd draws the legend
+## The modifier is Cmd on a Mac and Alt everywhere else
+
+`keyLegend.ts` is the whole of it: `IS_MAC`, `MOD_LABEL` -- the glyph on a Mac,
+the word "Alt" elsewhere, because ⎇ is printed on almost no keyboard -- and
+`isModHeld`, which both row handlers ask instead of reading `metaKey` inline.
+
+**Ctrl is out on every platform**, for the reason the section above gives. So
+the question off the Mac is which modifier the terminal does not already own,
+and Alt is the only one left standing. **Super** is the same `metaKey` and would
+have cost nothing, but the window manager takes it first: Super+Left tiles the
+window on GNOME and snaps it on Windows, and the page never sees it.
+**Ctrl+Shift** is what terminal emulators themselves use and is genuinely free
+of the shell, but Ctrl+Shift+I is Chrome's DevTools, which no `preventDefault`
+reaches -- the terminals panel would need a different letter off the Mac, and a
+legend that says two different things on two platforms is worse than either.
+**Alt** costs the terminal Alt+F, readline's forward-word, and nothing else:
+Alt+Left and Alt+Right have no binding in a shell, and the browser's back and
+forward on them is a page default, cancelled the way Cmd+Left already is.
+
+`altKey` is deliberately **not** accepted on a Mac. Option there is a typing
+modifier -- Option+I is a dead key for a circumflex -- so a Mac holding it is
+composing a character, not asking for the row.
+
+## The legend teaches itself, then gets out of the way
 
 The shortcuts are only worth having if you can find them, and a printed list of
-five is a list nobody reads. So holding Cmd is treated as the question "what can
-I do from here", and the answer is written on the controls themselves: each
-panel toggle **of the window you are in** lights its letter -- TERM**I**NAL,
-T**O**DO, **F**ILES -- and the two windows a Cmd+arrow step would land in show
-that arrow in front of their name. The letters are one window's because the
+five is a list nobody reads. So the modifier being held is treated as the
+question "what can I do from here", and the answer is written on the controls
+themselves: each panel toggle **of the window you are in** lights its letter --
+TERM**I**NAL, T**O**DO, **F**ILES. The letters are one window's because the
 shortcut is: it opens a panel on the worktree that has the keyboard, and the
 same three letters lit across the row would promise something the key does not
-do. The arrows are the opposite case -- they are about arriving somewhere else,
-so they are drawn where you would arrive. Nothing is armed by it; the keys work whether the legend is on screen or
+do. Nothing is armed by it; the keys work whether the legend is on screen or
 not.
 
-It is greyscale, and that is the colour rule rather than an accident: amber and
-green are the two states you scan a row of agents for, and where a key would
-take you is not one of them. The letter is `--bone` and the word around it steps
-down to `--graphite` while Cmd is held -- the 1.92:1 step the interface already
-puts between a title and its metadata. **The word is dimmed rather than the
-letter merely brightened** because of the toggle whose panel is open: its label
-is already `--bone`, so a `--bone` letter in it would be no letter at all.
-Dimming is one rule that works open, hovered and plain, and the toggle keeps its
-underline throughout, which is what says which panel is on screen.
+**The arrows do not wait to be asked.** A legend answers a question you put to
+it by reaching for a key, and that question cannot occur to somebody who does
+not know the key does anything. So the two windows a step would land in show
+`⌘←` and `⌘→` -- the modifier's own name beside the arrow, the whole gesture
+rather than half of it -- with nothing held, until the walk has been used
+`LEGEND_LEARNED` (10) times. After that they appear only while the key is held,
+like the letters. The count is `ui.stepsTaken`, and the row stops incrementing
+it at the threshold, so this is one bounded counter and not a stream of writes.
+A phone never shows it: there is no modifier key there, and its row is one
+window per screen, so the windows the arrows point at are not on it.
 
-`useMetaHeld` reads released from any key event reporting no Cmd, plus the
-window's `blur` -- Cmd+Tab away delivers its keyup to the application you
-switched to, which would otherwise leave the legend lit over a page nobody is
-typing into.
+**At the bottom of the window, over Claude, not in the bar.** The bar was where
+this started and it was wrong twice: it had room for the arrow alone, so it
+annotated half a gesture, and a window scrolled so that only its far edge shows
+is a window whose bar you are not reading. Each of the two sits at the edge
+nearest you -- the window on your left wears it on its right -- so the pair
+flank where you are. `.tile__hint` is absolutely positioned, `pointer-events:
+none`, 2px up so it lies mostly in the pane's own 8px padding, and carries
+`--terminal-bg` so the glyphs are never read against Claude's output. **Absolute
+is load-bearing**: anything in the pane's flow takes a row off the character
+grid, and every pty in the row would be resized by a legend appearing.
+
+**It is coloured, and that is the one exception to the greyscale rule.**
+`--legend` (#9dc0ff) is the third colour in the chrome and the only one that is
+not a state, so what it has to clear is not being mistaken for one: it is under
+both in luminance (0.52 against amber's and green's 0.55), it is blue where they
+are amber and green, and it is drawn only in the window you are in and the two a
+step reaches -- never across a row you are scanning. It replaced `--bone` on the
+letter with `--graphite` on the word around it, which failed on its own terms:
+`--bone` is what the row's titles are written in, so the legend competed with
+the text rather than standing out of it, and the dimmed word measured **3.90:1**
+on the current window's bar and **3.04** on a hovered toggle -- both under the
+floor, while the comment claimed 4.54 against a ground that had since moved.
+Hue tells the letter from the word now, so the word never dims: it keeps
+`--bone` (7.48) and the letter reads 5.19 beside it, 10.28 over the terminal.
+The one ground it does not clear is `--level-lift`, at 4.05, so `.tile--keys`
+stands that hover down for as long as the key is held.
+
+`useModHeld` reads released from any key event reporting the modifier up, plus
+the window's `blur` -- Cmd+Tab away delivers its keyup to the application you
+switched to, and Alt off the Mac opens the browser's own menu and takes the
+keyup with it, either of which would otherwise leave the legend lit over a page
+nobody is typing into.
 
 The landing panes come from `active`, not from the DOM, which is the opposite of
 what the stepper does and right for the opposite reason: the stepper answers
@@ -1046,10 +1102,7 @@ between two renders, where React's record can be a press behind, while this is
 rendered, and `active` is also the only one of the two whose change re-renders
 the row -- which is what makes the legend follow you as you walk.
 
-**A legend must not move what it annotates.** Two things were measured here.
-The arrow is absolutely positioned in the title's own 10px left padding, so no
-name shifts when Cmd goes down (`getBoundingClientRect` identical to 0.01px with
-and without). And the lit letter is wrapped so the label stays **one element**:
+**A legend must not move what it annotates.** The lit letter is wrapped so the label stays **one element**:
 `.tile__toggle` is a flex row with a 4px gap for the fork glyph, so splitting
 "TERMINAL" into three text nodes made three flex items and put two of those gaps
 inside the word -- the button grew from 86.98px to 95 the moment Cmd went down.

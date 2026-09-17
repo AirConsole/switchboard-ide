@@ -572,6 +572,18 @@ export const App = (): React.ReactElement => {
   )
 
   /**
+   * A step was taken with the keyboard, while the count still means something.
+   *
+   * Through `uiRef` for the reason its neighbours are: one identity across
+   * renders, so the row's key handler is not torn down and rebound every time
+   * anything else in `ui` moves. The row stops calling this at the threshold,
+   * so this cannot run away.
+   */
+  const stepTaken = useCallback((): void => {
+    setUi({ stepsTaken: uiRef.current.stepsTaken + 1 })
+  }, [setUi])
+
+  /**
    * Open a directory and everything above it, expanding nothing else.
    *
    * What picking a directory out of the search results means: you asked for a
@@ -788,6 +800,7 @@ export const App = (): React.ReactElement => {
         expandedByWorktree={ui.expandedByWorktree}
         filesModeByWorktree={ui.filesModeByWorktree}
         markdownPreview={ui.markdownPreview}
+        stepsTaken={ui.stepsTaken}
         groups={groups}
         onWake={wake}
         onSleep={setSleeping}
@@ -821,6 +834,7 @@ export const App = (): React.ReactElement => {
         onExpandDir={expandDir}
         onFilesMode={filesMode}
         onMarkdownPreview={markdownPreview}
+        onStepTaken={stepTaken}
         onCloseTerminal={closeTerminal}
         onNoTerminalsLeft={terminalsGone}
       />

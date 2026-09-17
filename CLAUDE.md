@@ -248,11 +248,16 @@ line below is a mistake made in this codebase, not a hypothetical:
   you is amber (`--signal`), and done — Claude running and come to rest — is
   green (`--done`). Nothing running is not done, and stays grey. The two are
   matched in luminance so neither outshouts the other. The keyboard legend is
-  what the rule looks like when it is kept: holding Cmd lights the letter that
-  opens each panel of the window you are in, and draws an arrow in the two
-  windows a Cmd+arrow step would land in, and all of it is the grey ladder -- --bone on a word stepped down to
-  --graphite -- because where a key would take you is not a state you scan a row
-  of agents for. The exceptions are all content rather than chrome, and are read the
+  the one thing in the chrome that is coloured and is not a state: `--legend`, a
+  blue, lights the letter that opens each panel of the window you are in, and
+  draws `⌘←` and `⌘→` at the bottom of the two windows a step would land in. It
+  is allowed because it can never be read as a state — it sits *below* both in
+  luminance, it is blue where they are amber and green, and it is drawn only in
+  the window you are already in and the two beside it, never across a row you
+  are scanning. It was the grey ladder once and that failed on its own terms:
+  `--bone` is what the row's own titles are written in, so the legend competed
+  with the text rather than standing out of it, and a shortcut nobody can find
+  is a shortcut nobody uses. The exceptions are all content rather than chrome, and are read the
   way terminal output is: a diff's own green and red, a source file's syntax
   colour, and an image the files pane is showing, which is the file itself and
   can be any colour a file is. The rule still governs the interface around them, and the two the

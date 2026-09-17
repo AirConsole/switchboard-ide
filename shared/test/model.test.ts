@@ -17,10 +17,11 @@ describe('defaultUiState', () => {
     // is what `refresh()` spreads these under the server's stored copy for.
     const ui = defaultUiState()
     for (const [key, value] of Object.entries(ui)) {
-      // The two that are not per-worktree maps: `awake` is a set as a list and
-      // null until seeded, and `markdownPreview` is one switch for the whole
-      // IDE rather than a fact about any worktree.
-      if (key === 'awake' || typeof value === 'boolean') continue
+      // The three that are not per-worktree maps, named rather than detected by
+      // their type: `awake` is a set as a list and null until seeded, and
+      // `markdownPreview` and `stepsTaken` are both about the reader rather
+      // than about any worktree. A fourth has to be added here on purpose.
+      if (key === 'awake' || key === 'markdownPreview' || key === 'stepsTaken') continue
       expect(value, key).toEqual({})
     }
   })

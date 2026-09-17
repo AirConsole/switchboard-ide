@@ -26,6 +26,7 @@ import { TerminalsScreen, TerminalsTabs } from './TerminalsPane.js'
 import { useChangesState } from './ChangesPane.js'
 import { FilesBar, FilesPane, useFilesState } from './FilesPane.js'
 import { ForkIcon } from '../components/ForkIcon.js'
+import { LEGEND_LEARNED, MOD_LABEL, isModHeld, showsHint } from './keyLegend.js'
 import {
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
@@ -92,6 +93,10 @@ const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
  * list: Ctrl+I *is* Tab -- the same byte, 0x09 -- so binding it would have
  * taken completion away from every shell and every prompt in the row. Ctrl+E is
  * end-of-line and Ctrl+F forward-character for the same reason.
+ *
+ * The letters are the same off the Mac; only the modifier changes, to Alt --
+ * see `isModHeld`, which is where the argument for it is written down. Alt+F is
+ * readline's forward-word and is the one thing that binding costs.
  */
 const PANEL_KEYS: Record<PanelName, string> = { terminals: 'i', todo: 'o', files: 'f' }
 
@@ -110,21 +115,24 @@ const PANEL_FOR_KEY = new Map<string, PanelName>(
  * you are in and nowhere else: "from here" is one worktree, and the key does
  * nothing to the other three.
  *
- * Greyscale, and it has to be: the two colours in this interface are states you
- * scan a row of agents for, and a legend is not a state. So the letter is
- * --bone and the word it sits in steps down to --graphite while Cmd is held --
- * the same rung the label already uses, and the same 1.92:1 step the interface
- * puts between a title and its metadata.
+ * The letter is --legend and the word around it does not move: hue tells them
+ * apart, so there is no tone step to make and nothing to dim. That is the whole
+ * reason the legend stopped being greyscale. It was --bone on a word stepped
+ * down to --graphite, which had two faults -- the brightest rung of the ladder
+ * is also what the row's own titles are written in, so the legend competed with
+ * the text rather than standing out of it; and the dimmed word measured
+ * **3.90:1** on the current window's bar and **3.04** on a hovered toggle, both
+ * under the 4.5 floor. The word now keeps --bone (7.48) and the letter reads
+ * 5.19 beside it.
  *
- * The word is dimmed rather than the letter merely brightened because of the
- * toggle whose panel is open: its label is already --bone, so a --bone letter
- * in it would be no letter at all. Dimming makes one rule that works in every
- * state -- open, hovered, plain -- and the underline still says which panel is
- * on screen.
+ * A legend is still not a state, which is the rule that keeps this honest:
+ * --legend sits *below* both --signal and --done in luminance (0.52 to 0.55),
+ * it is blue where the two states are amber and green, and it is drawn only in
+ * the window you are already in. Nothing about a row you are scanning changes.
  *
  * One label has no letter to light: a queue reads "3 QUEUED", with no O in it,
- * and that is the moment the todos matter most. The whole label goes green
- * there rather than nothing at all.
+ * and that is the moment the todos matter most. The whole label lights there
+ * rather than nothing at all.
  */
 const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => {
   const at = lit ? text.toLowerCase().indexOf(PANEL_KEYS[panel]) : -1
@@ -137,7 +145,7 @@ const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => 
    * the button has the one child it had before and nothing in the bar moves.
    */
   return (
-    <span className={lit ? (at === -1 ? 'tile__key' : 'tile__marked') : undefined}>
+    <span className={lit && at === -1 ? 'tile__key' : undefined}>
       {at === -1 ? (
         text
       ) : (
@@ -150,6 +158,32 @@ const mark = (text: string, panel: PanelName, lit: boolean): React.ReactNode => 
     </span>
   )
 }
+
+/**
+ * Where a step would land, said in the window it would land in.
+ *
+ * At the bottom of the window, over whatever pane is at its near edge -- which
+ * is Claude unless a panel is open there -- and not in the bar. The bar was
+ * where it started and it was the wrong place twice over: it had room for the
+ * arrow alone, so it annotated half a gesture -- an arrow means nothing to
+ * somebody who does not know a key is held with it -- and a window scrolled so
+ * that only its far edge shows is a window whose bar you are not reading. Down
+ * here the pair of them flank the window you are in, each one at that window's
+ * near edge, so the hint is beside the thing it is about -- see .tile__hint for
+ * why it is the window's edge and not Claude's own pane.
+ *
+ * The glyphs are the keys: the modifier as it is printed on the key, and the
+ * arrow you are about to press -- not a triangle that means "play".
+ *
+ * `aria-hidden` because it is a legend for a key, not content.
+ */
+const stepHintFor = (hint: 'left' | 'right' | null): React.ReactNode =>
+  hint === null ? null : (
+    <span className={`tile__hint tile__hint--${hint}`} aria-hidden="true">
+      {MOD_LABEL}
+      {hint === 'left' ? '\u2190' : '\u2192'}
+    </span>
+  )
 
 /** What a panel is called in prose, for the toggle's tooltip. */
 const PANEL_NOUN: Record<PanelName, string> = {
@@ -299,23 +333,25 @@ export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktr
 export const projectKey = (projectId: string): string => `project:${projectId}`
 
 /**
- * Whether Cmd is down right now.
+ * Whether the modifier is down right now -- Cmd on a Mac, Alt elsewhere.
  *
  * What it is for: while it is held, every shortcut the row has says where it
- * goes -- the three toggles light their letter, and the two windows a Cmd+arrow
- * step would land in show the arrow that lands there. Nothing is armed by this;
- * it is a legend, and the keys work whether it is on screen or not.
+ * goes -- the three toggles light their letter, and the two windows a step
+ * would land in show the arrow that lands there. Nothing is armed by this; it
+ * is a legend, and the keys work whether it is on screen or not.
  *
  * Released is the state that must never be wrong, so it is read from three
- * things rather than from Meta's own keyup: any key event that reports no Cmd
- * clears it, and so does the window losing focus -- Cmd+Tab away is exactly the
- * gesture that would otherwise leave the legend lit over a page nobody is
- * typing into, because the keyup lands in the application you switched to.
+ * things rather than from the modifier's own keyup: any key event that reports
+ * it up clears it, and so does the window losing focus. Cmd+Tab away is exactly
+ * the gesture that would otherwise leave the legend lit over a page nobody is
+ * typing into, because the keyup lands in the application you switched to --
+ * and off the Mac the same thing happens to Alt, which opens the browser's own
+ * menu on Windows and Linux and takes the keyup with it.
  */
-const useMetaHeld = (): boolean => {
+const useModHeld = (): boolean => {
   const [held, setHeld] = useState(false)
   useEffect(() => {
-    const read = (event: KeyboardEvent): void => setHeld(event.metaKey)
+    const read = (event: KeyboardEvent): void => setHeld(isModHeld(event))
     const clear = (): void => setHeld(false)
     // Capture, so a pane that stops a key from propagating -- the panel
     // shortcuts above do exactly that -- cannot also stop the legend from
@@ -522,15 +558,16 @@ interface WorktreeTileProps {
    */
   keysLit: boolean
   /**
-   * The Cmd+arrow step that lands in this worktree, drawn in front of its name
-   * while Cmd is held. Null for the windows neither step reaches.
+   * The step that lands in this worktree, drawn at the bottom of it. Null for
+   * the windows neither step reaches, and for all of them once the hint has
+   * stopped showing -- the row decides that, not the tile.
    *
    * At most one of the two, always: a step goes to the pane next door, and the
    * panes of one worktree are contiguous in the row -- so the window you would
    * arrive in going left cannot also be the one you would arrive in going
    * right unless you are already inside it, and then only one side of it is.
    */
-  step: 'left' | 'right' | null
+  hint: 'left' | 'right' | null
   /** The commit whose patch is showing, in Commits mode. Null for none. */
   commit: string | null
   /** The scroller, so the tile can tell whether it is worth mounting. */
@@ -584,7 +621,7 @@ const WorktreeTile = ({
   filesMode,
   markdownPreview,
   keysLit,
-  step,
+  hint,
   commit,
   scroller,
   onStart,
@@ -699,28 +736,10 @@ const WorktreeTile = ({
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
   const revealHint = `Click to bring ${worktree.name}'s window into view`
 
-  /*
-   * Where a Cmd+arrow step would land, said in the window it would land in.
-   *
-   * In front of the name because that is the window's own title -- the step is
-   * about arriving in this worktree, not about any one of its panes -- and
-   * because a legend that appears while you hold a key must not move the thing
-   * it annotates: it is laid over the label's left padding rather than pushed
-   * into the line, so no title shifts when Cmd goes down.
-   *
-   * The glyphs are the keys: the arrow you are about to press, not a triangle
-   * that means "play".
-   */
-  const stepHint =
-    step === null ? null : (
-      <span className="tile__step" aria-hidden="true">
-        {step === 'left' ? '\u2190' : '\u2192'}
-      </span>
-    )
+  const stepHint = stepHintFor(hint)
 
   const identity = (
     <span className="tile__label">
-      {stepHint}
       {/* Dropped when the worktree already carries the project's name, since
           saying it twice tells you nothing the once did not. */}
       {project && project.name !== worktree.name && (
@@ -792,7 +811,19 @@ const WorktreeTile = ({
   )
 
   return (
-    <div className={`tile tile--${state}${current ? ' tile--current' : ''}`} ref={tileRef}>
+    <div
+      /*
+       * `tile--keys` is the legend being on screen, and the one thing that
+       * depends on it is a hover: a toggle on this bar lifts a rung when the
+       * pointer is over it, and --legend on that lift measures 4.05:1. The lift
+       * stands down while the legend is up; the label going blue says the
+       * pointer is there just as well.
+       */
+      className={`tile tile--${state}${current ? ' tile--current' : ''}${
+        keysLit && current ? ' tile--keys' : ''
+      }`}
+      ref={tileRef}
+    >
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
@@ -924,6 +955,8 @@ const WorktreeTile = ({
           </div>
         ))}
       </div>
+      {/* Last in the tile, so it paints over whatever the panes are showing. */}
+      {stepHint}
     </div>
   )
 }
@@ -1015,6 +1048,11 @@ export interface OverviewProps {
    */
   markdownPreview: boolean
   /**
+   * How many times the walk has been used, so the row knows whether the hint
+   * still has anything to teach. See `showsHint`.
+   */
+  stepsTaken: number
+  /**
    * The project a new worktree would go to, when there is only one open.
    *
    * Null with several open, because the add tile would have to guess which one
@@ -1063,6 +1101,13 @@ export interface OverviewProps {
   onExpandDir: (worktreeId: string, dir: string) => void
   onFilesMode: (worktreeId: string, mode: FilesMode) => void
   onMarkdownPreview: (on: boolean) => void
+  /**
+   * A step was just taken with the keyboard.
+   *
+   * Only while it still counts -- the row stops calling this once the walk has
+   * been learned, so the count is bounded and so is the traffic it causes.
+   */
+  onStepTaken: () => void
 }
 
 /**
@@ -1091,6 +1136,7 @@ export const Overview = ({
   expandedByWorktree,
   filesModeByWorktree,
   markdownPreview,
+  stepsTaken,
   scrollTo,
   active,
   onActivate,
@@ -1113,6 +1159,7 @@ export const Overview = ({
   onExpandDir,
   onFilesMode,
   onMarkdownPreview,
+  onStepTaken,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -1511,16 +1558,21 @@ export const Overview = ({
   })
 
   /*
-   * Cmd+Left and Cmd+Right step through the worktrees.
+   * Cmd+Left and Cmd+Right step through the worktrees -- Alt+Left and Alt+Right
+   * off the Mac; `isModHeld` is where the choice of the second one is argued.
    *
    * The terminals have no claim on it: xterm produces nothing at all for a
    * Cmd-modified arrow -- its keyboard handler bails out on `metaKey` before
    * building a sequence -- so no bytes reach tmux, the shell or Claude. And it
    * is the binding a terminal emulator would use anyway: Cmd+arrow means
-   * "switch tab" in iTerm and Terminal.
+   * "switch tab" in iTerm and Terminal. An Alt-modified arrow does reach the
+   * pty as CSI 1;3D, but nothing in a shell is bound to it -- readline's word
+   * movement is on Alt+B and Alt+F -- and this cancels the key before xterm
+   * sees it either way.
    *
-   * The browser does claim it on macOS, where it is history back and forward,
-   * which is why the event is cancelled rather than merely acted on.
+   * The browser claims it on both: history back and forward on macOS, and the
+   * same pair on Alt elsewhere. Which is why the event is cancelled rather than
+   * merely acted on.
    *
    * "Where you are" is the worktree that has the keyboard, so this is the
    * keyboard version of clicking the tab beside the one you are on.
@@ -1552,7 +1604,7 @@ export const Overview = ({
   )
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
-      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (!isModHeld(event)) return
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       /*
        * A dialog is the only thing that keeps this key.
@@ -1617,6 +1669,9 @@ export const Overview = ({
             : stops.findIndex((stop) => stop.id === owner.id)
       }
       const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
+      // Counted only while the count is still read, so a walk taken every day
+      // for a year is one write in total rather than one per press.
+      if (to && stepsTaken < LEGEND_LEARNED) onStepTaken()
       /*
        * Taken outright, and this handler listens in the capture phase so that
        * it can be. A text field's own handling runs at the target, before a
@@ -1632,7 +1687,7 @@ export const Overview = ({
     }
     document.addEventListener('keydown', step, true)
     return () => document.removeEventListener('keydown', step, true)
-  }, [stops, active, pitch, width, onReveal])
+  }, [stops, active, pitch, width, onReveal, stepsTaken, onStepTaken])
 
   /*
    * Cmd+I, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
@@ -1667,18 +1722,43 @@ export const Overview = ({
    * committed -- and it is the only one of the two that re-renders the row when
    * it changes, which is what makes the hint follow you as you walk.
    */
-  const keysLit = useMetaHeld()
-  const at = keysLit
+  const keysLit = useModHeld()
+  /*
+   * The arrows are on screen with nothing held, until the walk is learned.
+   *
+   * That is the part of this that is not a legend at all. A legend answers a
+   * question you asked by reaching for a key, and the question cannot occur to
+   * somebody who does not know the key does anything -- so for the first ten
+   * steps the answer is given unasked, with the key's own name beside the
+   * arrow so the whole gesture is on screen rather than half of it. After that
+   * it goes back to being a legend. See `showsHint`.
+   */
+  const hinting = showsHint({ steps: stepsTaken, held: keysLit, narrow })
+  const at = hinting
     ? stops.findIndex((stop) => stop.id === active?.id && stop.kind === active?.pane)
     : -1
   const landing = {
     left: at > 0 ? stops[at - 1]?.id : undefined,
     right: at === -1 ? undefined : stops[at + 1]?.id,
   }
+  /**
+   * Which arrow a cell wears, by the id the walk knows it as.
+   *
+   * By id rather than by worktree, because a project's own pane is a stop too
+   * and the walk runs through it. It used to be asked of worktrees alone, and
+   * the row then went silent for a step at a time: land next to a project pane
+   * and neither arrow was drawn, which reads as the walk having ended.
+   *
+   * Left wins when a cell is both, which cannot happen -- a step goes to the
+   * pane next door and one cell's panes are contiguous -- but leaves the rule
+   * written down rather than depending on the layout to keep it true.
+   */
+  const hintFor = (id: string): 'left' | 'right' | null =>
+    landing.left === id ? 'left' : landing.right === id ? 'right' : null
 
   useEffect(() => {
     const open = (event: KeyboardEvent): void => {
-      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (!isModHeld(event)) return
       const panel = PANEL_FOR_KEY.get(event.key)
       if (panel === undefined) return
       // A dialog keeps its keys for the same reason it keeps Cmd+arrow: it is
@@ -1899,6 +1979,9 @@ export const Overview = ({
                       data-pane={paneKey(slot.key, 'project')}
                       onFocus={() => onActivate(slot.key, 'project')}
                     >
+                      {/* A project's pane is a window the walk lands in like
+                          any other, so it says so like any other. */}
+                      {stepHintFor(hintFor(slot.key))}
                       {slot.data.group === null ? null : (
                         <ProjectPane
                           project={slot.data.group.project}
@@ -1952,18 +2035,7 @@ export const Overview = ({
                       filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
                       markdownPreview={markdownPreview}
                       keysLit={keysLit}
-                      /*
-                       * Left wins when a worktree is both, which cannot happen
-                       * -- see the prop -- but leaves the rule written down
-                       * rather than depending on the layout to keep it true.
-                       */
-                      step={
-                        landing.left === worktree.id
-                          ? 'left'
-                          : landing.right === worktree.id
-                            ? 'right'
-                            : null
-                      }
+                      hint={hintFor(worktree.id)}
                       commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}

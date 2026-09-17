@@ -9,6 +9,13 @@
  * which is amber. Nothing else in the chrome is ever allowed to be saturated,
  * so a single blocked agent pulls your eye across the room.
  *
+ * The one thing in the chrome that is coloured and is not a state is the
+ * keyboard legend, --legend, and it is allowed because it never appears in a
+ * row you are scanning: it is drawn in the window you are already in and in the
+ * two next to it, it is below both states in luminance, and it is blue where
+ * they are amber and green. It is what makes a shortcut findable by somebody
+ * who does not know it is there, which is the dispatcher's job too.
+ *
  * The only motion is the terminal text itself. No spinners, no pulsing borders:
  * in an app where every tile is genuinely live, added animation is noise.
  */
@@ -149,6 +156,26 @@
   --done: #4ade80;
   /* Used at low opacity for selection and focus only, never as decoration. */
   --pulse: #4b9fd6;
+  /*
+   * The keyboard, said out loud: the letter that opens a panel, and the arrow
+   * that steps to the window next door.
+   *
+   * The third colour in the chrome and the only one that is not a state, so the
+   * bar it has to clear is that it must not be mistaken for one. It is under
+   * both in luminance -- 0.52 against --signal's 0.55 and --done's 0.55 -- so
+   * it cannot outshout them; it is blue, which is the family --pulse already
+   * uses for focus, so "the keyboard is here" is a thing this interface already
+   * says in blue; and it is drawn only in the window you are in and the two a
+   * step reaches, never across the row.
+   *
+   * Measured on every ground it lands on: 5.19:1 on --level-lit (the current
+   * window's bar, where the letters are), 8.04 on --level-object, and 10.28
+   * over --terminal-bg, where the step hint sits. It is 4.05 on --level-lift,
+   * which is why .tile--keys stands that hover down rather than the colour
+   * being lightened until it is white again -- the whole point is that it is
+   * not --bone.
+   */
+  --legend: #9dc0ff;
 
   /*
    * Colour outside amber, and none of it chrome.
@@ -1410,6 +1437,15 @@ button {
   overflow: hidden;
   text-align: left;
   min-width: 0;
+  /*
+   * The containing block for the step hint, and it has to be said: with nothing
+   * positioned between the hint and the scroller, the hint hung off the row
+   * itself and landed a screen and a half from the window it was about --
+   * measured, with the right-hand window's arrow at x=-1181 while the window
+   * stood at 1203. These two and `.grid__spot` are the only absolutely
+   * positioned things in the interface, so nothing else changes ancestor.
+   */
+  position: relative;
 }
 
 /*
@@ -1520,6 +1556,16 @@ button {
   background: var(--level-lift);
 }
 
+/*
+ * ...and cannot afford while the legend is up either: --legend on --level-lift
+ * measures 4.05:1, under the floor. The lift stands down for as long as the
+ * modifier is held, which costs nothing -- a letter going blue under the
+ * pointer says the pointer is there at least as loudly as a rung of grey.
+ */
+.tile--keys.tile--current .tile__toggle:hover {
+  background: var(--level-lit);
+}
+
 .tile--current .tile__project,
 .tile--current .tile__slash,
 .tile--current .tile__branch,
@@ -1559,58 +1605,87 @@ button {
   /* Lines up with the terminal text below, which the pane insets by 8px. */
   padding: 0 10px;
   min-width: 0;
-  /* For the step hint, which is laid over this padding; see .tile__step. */
-  position: relative;
 }
 
 /*
- * Where Cmd+Left and Cmd+Right would land, shown while Cmd is held.
+ * Where a step would land, at the bottom of the window it would land in.
  *
- * Absolute, in the label's own left padding, so the legend appearing does not
- * move the title it annotates -- a name that jumps 14px every time you reach
- * for Cmd is motion in an interface whose only motion is the terminal. The
- * padding is 10px and the glyph is drawn at 11px, which fits it with a pixel
- * either side; it is `aria-hidden` because it is a legend for a key, not
- * content.
+ * Absolute, and that is load-bearing twice over. A pane's contents are a
+ * terminal: anything in the flow here would take a row off the character grid,
+ * and every pty in the row would be resized by a legend appearing. And the tile
+ * must not move when the key goes down -- the only motion in this interface is
+ * the terminal text.
  *
- * --bone, not a colour: amber and green are states you scan a row of agents
- * for, and where a key would take you is not one. It is the brightest rung the
- * palette has and reads 8.71:1 at its worst, on a hovered current tile.
+ * It sits 2px up, so most of it is inside the pane's own 8px padding rather
+ * than over the last row of output, and it carries the terminal's ground so the
+ * glyphs are never read against whatever Claude happens to be printing.
+ * `pointer-events: none` because it is a label on a key, not a button: the
+ * click underneath it belongs to the pane.
+ *
+ * The z-index is over xterm's own layers, which stack their canvases up to 4.
  */
-.tile__step {
+.tile__hint {
   position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 2px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  border-radius: var(--radius);
+  background: var(--terminal-bg);
+  font-family: var(--font-ui);
   font-size: 11px;
   line-height: 1;
-  color: var(--bone);
+  color: var(--legend);
+  pointer-events: none;
 }
 
 /*
- * The letter that opens a panel, lit in its toggle while Cmd is held.
+ * Each one at the edge of the *window* nearest you, so the pair flank where you
+ * are: the window on your left wears it on its right. The window's edge and not
+ * Claude's own pane, which is what this was first hung on -- with a panel open,
+ * the left-hand window's Claude is the part of it that has scrolled past, and
+ * the hint went with it. Measured at x=-40 on a 1600px screen: a legend nobody
+ * can see. At the near edge it is over Claude in every window you meet going
+ * right, and over whichever pane is there going left.
+ */
+.tile__hint--left {
+  right: 10px;
+}
+
+.tile__hint--right {
+  left: 10px;
+}
+
+/*
+ * The letter that opens a panel, lit in its toggle while the modifier is held.
  *
- * Tone only: the label keeps its box, so nothing in the bar moves when the
+ * Colour only: the label keeps its box, so nothing in the bar moves when the
  * legend comes and goes. Weight was tried and dropped -- a bolder letter is a
  * wider letter, and "T E RMINAL" fell into three pieces at 11px with 0.08em of
  * letter-spacing already between them.
  *
- * Two rungs of the one ladder rather than a colour. The word steps down to
- * --graphite (4.54:1 at its worst, on a hovered current tile) and the letter
- * stays --bone, which is the 1.92:1 step this interface already uses between a
- * title and its metadata. Dimming the word is what makes the letter visible on
- * the toggle whose panel is open, whose label is --bone to begin with; that
- * toggle keeps its underline throughout, which is what says it is open.
+ * It was two rungs of the grey ladder for a while -- the letter --bone, the
+ * word around it stepped down to --graphite -- and that failed on its own
+ * terms. --bone is what the row's titles are written in, so the legend was
+ * competing with the text rather than standing out of it; and the dimmed word
+ * measured 3.90:1 on the current window's bar, under the 4.5 floor, and 3.04
+ * on a hovered toggle. The comment here said 4.54, measured against a ground
+ * that had since moved.
+ *
+ * One colour fixes both. Hue tells the letter from the word, so the word never
+ * dims -- it keeps --bone at 7.48 -- and the letter reads 5.19 beside it. It
+ * also makes the letter visible on the toggle whose panel is open, whose label
+ * is --bone to begin with; that toggle keeps its underline throughout, which is
+ * what says it is open.
  *
  * A label with no letter to light -- "3 QUEUED", which has no O in it -- wears
- * .tile__key alone, so the whole of it is the bright rung.
+ * .tile__key over the whole of itself, which is the one case where the colour
+ * is the label rather than a letter in it.
  */
-.tile__marked {
-  color: var(--graphite);
-}
-
 .tile__key {
-  color: var(--bone);
+  color: var(--legend);
 }
 
 /*

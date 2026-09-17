@@ -344,6 +344,21 @@ export interface UiState {
    * bar above it, and the first flip is remembered.
    */
   markdownPreview: boolean
+  /**
+   * How many times the Cmd+arrow walk has been used, counted until it stops
+   * mattering.
+   *
+   * What it is for: the two windows a step would land in draw the shortcut at
+   * the bottom of the window, unasked, until you have used it ten times -- and
+   * after that only while the key is held. So this is not analytics, it is the
+   * one fact the hint needs: has this person learned the gesture yet.
+   *
+   * Global rather than per-worktree, and about the reader rather than about a
+   * worktree, exactly like `markdownPreview` above. It stops being written the
+   * moment it passes the threshold, so the count is bounded and so is the
+   * traffic: no PATCH per arrow key for the life of the install.
+   */
+  stepsTaken: number
 }
 
 export const defaultUiState = (): UiState => ({
@@ -355,6 +370,7 @@ export const defaultUiState = (): UiState => ({
   filesModeByWorktree: {},
   openFilesByWorktree: {},
   markdownPreview: true,
+  stepsTaken: 0,
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
