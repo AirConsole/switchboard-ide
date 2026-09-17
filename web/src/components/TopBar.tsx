@@ -3,6 +3,7 @@ import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shar
 import type { ProjectGroup } from '../App.js'
 import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
 import { UsageBars, useUsage } from './UsageBars.js'
+import { LinkIcon } from './LinkIcon.js'
 import { projectKey } from '../views/Overview.js'
 import {
   queuedTodoCount,
@@ -223,13 +224,12 @@ const Group = ({
           * path, in the one part of the interface you are meant to be able to
           * scan.
           *
-          * Ahead of the name and dimmer, the way a path segment sits before
-          * what it qualifies: the project is still the thing you are looking
-          * for, and the machine is where it happens to be.
+          * A link glyph rather than the machine's name: "not this machine" is
+          * what has to be scannable, and it says that in 12px where the name
+          * took up to 96. Which machine is in the title above and in the
+          * glyph's accessible name. See `LinkIcon`.
           */}
-        {project.host.kind === 'remote' && (
-          <span className="tabgroup__host">{hostLabel(project.host)}</span>
-        )}
+        {project.host.kind === 'remote' && <LinkIcon machine={hostLabel(project.host)} />}
         <span className="tabgroup__name">{project.name}</span>
         {/*
           * How many windows this head is standing in for, once the bar has
