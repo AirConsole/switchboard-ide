@@ -2000,10 +2000,10 @@ export const Overview = ({
    */
   const teaching = stepsTaken < LEGEND_LEARNED
   /*
-   * Where you are, marked while the key is held and the teaching is over.
-   * One pane in the whole row wears it; see `showsHere`.
+   * Where you are. One pane in the whole row wears it, always -- it is a fact
+   * about the row rather than part of the legend; see `showsHere`.
    */
-  const here = showsHere({ steps: stepsTaken, held: keysLit }) ? (active ?? null) : null
+  const here = showsHere({ narrow }) ? (active ?? null) : null
   /**
    * Which arrow a cell wears, and over which of its panes. See `landingHint`.
    *
