@@ -1009,19 +1009,21 @@ row at the wrong width and then resize every pty behind it.
 
 **It was a flat 640, and 640 described a top bar that no longer has a
 breakpoint.** The strip gives things up by the rung now, measured against the
-room it has, and the number it left behind was 45px low: between 640 and 685 the
-row kept paying for a 12px gap either side of a single window that could not
-afford it. Measured on a scratch instance, one pixel apart: at 685 the pane is
-658px and the pty 78 columns, at 684 it is 681px and **83** — five columns for a
-pixel of window, which is the discontinuity being put where it belongs.
+room it has, and the number it left behind was low by 59px: between 640 and 699
+the row kept paying for a 12px gap either side of a single window that could not
+afford it. Measured on a scratch instance, one pixel apart: at 699 the pane is
+672px and the pty **80 columns**, at 698 it is 695px and **85** — five columns
+for a pixel of window, which is the discontinuity being put where it belongs.
 
-Those 78 are the second half of the measurement and a separate bug:
-`PANE_CHROME_WIDTH` counts the 16px inset and the border, and xterm's own
-`FitAddon` reserves about 17px more for the scrollbar it always makes room for.
-So every pane in the row is about two columns short of the 80 this layout
-promises, at every width, and the threshold inherits it -- which is an argument
-for deriving the threshold rather than naming it, since fixing the constant
-moves this with it.
+That 80 is the second half of the story, and it read **78** when the threshold
+first moved. `PANE_CHROME_WIDTH` counts what the *stylesheet* spends — the 16px
+inset and the border — and xterm keeps back 14px more before it divides a pane
+into cells: `FitAddon`'s `options.overviewRuler?.width || 14`, a flat number on
+every platform for every terminal that has scrollback, which every terminal here
+does. So every pane in the row was two columns short of the 80 this layout
+promises, at every width. `PANE_CHROME` is both halves now (18 + 14 = 32), which
+moves a pane's floor from 658 to 672 and the threshold with it — the threshold
+being derived is what made that a one-line change.
 
 Deliberately not the 440px the todo panel uses. That one is about how narrow a
 column of prose can be; this one is about a row of windows. Two questions, two

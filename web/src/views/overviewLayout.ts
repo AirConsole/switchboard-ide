@@ -33,6 +33,42 @@ export const MIN_PANE_COLUMNS = 80
 export const PANE_CHROME_WIDTH = 18
 
 /**
+ * What xterm keeps back before it divides a pane into cells, in px.
+ *
+ * Not ours and not a scrollbar: `FitAddon.proposeDimensions` reads
+ *
+ *     const t = this._terminal.options.scrollback === 0
+ *       ? 0
+ *       : this._terminal.options.overviewRuler?.width || 14
+ *
+ * and subtracts it from the width it divides. It is a flat 14 for every
+ * terminal that has scrollback, which every terminal here does, on every
+ * platform -- so it is a constant rather than a measurement, and there is
+ * nothing to probe: the row decides how wide to make a pane before a terminal
+ * exists to ask.
+ *
+ * It is why this layout's eighty columns were seventy-eight. `PANE_CHROME_WIDTH`
+ * counts what the *stylesheet* spends and stops there, so a pane sitting exactly
+ * on the floor handed xterm 640px of room and xterm laid out 78 cells in it.
+ * Measured at the old floor: a 658px pane, 642 inside its inset, 628 after this,
+ * 78 columns. At the new one: 672, 656, 642, **80**.
+ *
+ * Re-measure it when xterm is upgraded, which is a three-line check: the pane's
+ * width, `.xterm-screen`'s width, and the pane's padding. What is left over is
+ * this, and `options.overviewRuler` is the one thing that would change it.
+ */
+export const XTERM_RULER_WIDTH = 14
+
+/**
+ * Everything a pane spends before a character of terminal, in px.
+ *
+ * The stylesheet's inset and border, plus what xterm keeps back. This is the
+ * number the 80-column floor has to be built on -- `PANE_CHROME_WIDTH` alone
+ * was the same arithmetic with a quarter of the chrome left out of it.
+ */
+export const PANE_CHROME = PANE_CHROME_WIDTH + XTERM_RULER_WIDTH
+
+/**
  * What the files pane spends before a character of code, in px.
  *
  * Both are the stylesheet's, and must move with it: `--files-tree-min` is the
@@ -180,7 +216,7 @@ export const gapFor = (narrow: boolean): number => (narrow ? 0 : GAP)
  * font the terminal actually resolves to.
  */
 export const narrowBelow = (charWidth: number): number =>
-  MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH + TILE_CHROME + 2 * GAP
+  MIN_PANE_COLUMNS * charWidth + PANE_CHROME + TILE_CHROME + 2 * GAP
 
 /**
  * How the row divides, given a measured scrollport.
