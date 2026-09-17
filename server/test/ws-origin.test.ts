@@ -123,6 +123,21 @@ describe('/ws origin', () => {
     expect(clients()).toBe(0)
   })
 
+  /*
+   * The two refusals say different things, and `swb` relies on the difference
+   * to check `--host` without a session: a ticket that was never issued is
+   * "not signed in" from a page we serve and "origin not allowed" from one we
+   * do not. Before this, the probe could not tell a right name from a wrong one
+   * once sockets needed a ticket, and reported the first deploy behind the
+   * password as misconfigured.
+   */
+  it('tells a page we serve from one we do not, even with a bogus ticket', async () => {
+    expect((await connect('https://ide.example:84', 'never-issued')).code).toBe(4401)
+    expect((await connect('https://evil.example', 'never-issued')).code).toBe(1008)
+    // A real ticket from a foreign origin is still refused as a foreign origin.
+    expect((await connect('https://evil.example', newTicket())).code).toBe(1008)
+  })
+
   /* One use. A replayed ticket is a ticket somebody else may be holding. */
   it('spends a ticket exactly once', async () => {
     const ticket = newTicket()

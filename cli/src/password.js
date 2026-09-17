@@ -46,6 +46,13 @@ const MAXMEM = 192 * 1024 * 1024
  */
 export const MIN_LENGTH = 12
 
+/** Counted in characters, not bytes or UTF-16 units, the way a person counts. */
+export const tooShort = (/** @type {string} */ text) => Array.from(text).length < MIN_LENGTH
+
+const SHORT =
+  `at least ${MIN_LENGTH} characters -- this is the whole boundary in front of a program that runs shells, and there is no second factor.\n` +
+  '  three or four unrelated words beats eight complicated characters.'
+
 /** @param {string} dir */
 export const passwordFileFor = (dir) => join(dir, 'auth.json')
 
@@ -124,8 +131,19 @@ export const askSecret = (prompt) =>
       } catch {
         // already closed
       }
-      input.pause()
       input.removeAllListeners('data')
+      /*
+       * Destroyed, not paused. A paused tty stream still holds its handle, and
+       * that handle alone keeps the event loop alive -- so the password was
+       * written and the command then sat there forever, which reads exactly
+       * like a hang in the middle of setting it. Measured through a
+       * pseudo-terminal: the record was on disk, and the process was still
+       * running four seconds later.
+       *
+       * Destroying the stream closes the libuv handle; node never closes the
+       * underlying stdio descriptors, so a second prompt can open fd 0 again.
+       */
+      input.destroy()
       if (fd !== 0) closeSync(fd)
       process.off('exit', restore)
     }
@@ -304,20 +322,27 @@ export const password = async (opts = {}) => {
         fail('that is not the current password (use --reset if you have lost it)')
       }
     }
-    const first = await askSecret('New password: ')
+    /*
+     * The length is checked before "Again", not after. Checking after meant
+     * typing a password twice to learn it was never acceptable -- and when
+     * changing one, rerunning also meant typing the current password again. A
+     * short one is refused where it is typed and asked for once more.
+     */
+    let first = await askSecret('New password: ')
+    for (let tries = 1; first !== null && tooShort(first) && tries < 3; tries++) {
+      console.error(SHORT)
+      first = await askSecret('New password: ')
+    }
     if (first === null) fail('cancelled; nothing was changed')
+    if (tooShort(first)) fail(SHORT)
     const again = await askSecret('Again: ')
     if (again === null) fail('cancelled; nothing was changed')
     if (first !== again) fail('those did not match; nothing was changed')
     next = first
   }
 
-  if (Array.from(next).length < MIN_LENGTH) {
-    fail(
-      `at least ${MIN_LENGTH} characters -- this is the whole boundary in front of a program that runs shells, and there is no second factor.\n` +
-        '  three or four unrelated words beats eight complicated characters.',
-    )
-  }
+  // Still here for `--stdin`, which never passes through the prompt above.
+  if (tooShort(next)) fail(SHORT)
 
   // The generation carries over: changing the password already invalidates
   // every token, because the signing key is derived from the hash.

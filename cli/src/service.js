@@ -235,7 +235,15 @@ export const verifyHost = async (port, host) => {
       protocol: null,
       body: undefined,
     }))
-    if (status !== 200) {
+    /*
+     * 401, not 200, is the good answer now. This probe carries no credential on
+     * purpose -- a token short-circuits the gate before it looks at the name,
+     * so it would pass whatever `--host` says -- and without one the gate
+     * answers 401 for a name it serves and 404 for one it does not. Expecting
+     * 200 here reported the first deploy behind the password as a wrong host,
+     * after the server had come up correctly.
+     */
+    if (status !== 401 && status !== 200) {
       problems.push(`--host looks wrong: /api answered ${status} for Host: ${bare}`)
       continue
     }
@@ -278,7 +286,13 @@ const probeSocket = async (port, origin) => {
     return 'skip'
   }
   return new Promise((resolve) => {
-    const socket = new WebSocketImpl(`ws://127.0.0.1:${port}/ws`, { origin })
+    /*
+     * With a ticket that was never issued. The server spends a ticket only for
+     * an origin it serves, so it answers 4401 ("not signed in") for a page it
+     * would admit and 1008 ("origin not allowed") for one it would not -- which
+     * is the question being asked, without needing a real session.
+     */
+    const socket = new WebSocketImpl(`ws://127.0.0.1:${port}/ws`, ['verify-host-probe'], { origin })
     let done = false
     /** @param {'ok' | 'refused'} verdict */
     const say = (verdict) => {
@@ -299,6 +313,7 @@ const probeSocket = async (port, origin) => {
      */
     // 1008 is "policy violation" -- the gate saying no, rather than a network fault.
     socket.on('close', (/** @type {number} */ code) => say(code === 1008 ? 'refused' : 'ok'))
+    // 4401 arrives as a close, above, and means the origin was accepted.
     socket.on('error', () => say('refused'))
     setTimeout(() => say(socket.readyState === 1 ? 'ok' : 'refused'), 700)
   })

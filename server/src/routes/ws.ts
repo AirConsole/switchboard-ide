@@ -216,7 +216,10 @@ export const registerWs = (
        * retrying because the row will paint as soon as somebody fixes it.
        * Keyed on a code rather than a reason string, which is brittle.
        */
-      if (ticket !== undefined) socket.close(4401, 'not signed in')
+      // The origin first: a page we do not serve is told so whatever it
+      // brought, which is also what lets `swb` check `--host` with a ticket
+      // that was never issued.
+      if (ticket !== undefined && originOk) socket.close(4401, 'not signed in')
       // 1008 is "policy violation", said out loud rather than dropped silently.
       else socket.close(1008, 'origin not allowed')
       return
