@@ -584,6 +584,19 @@ export const restart = async (opts = {}) => {
     build()
     nodePtyGate()
   }
+  /*
+   * Everything that could make the new process refuse to start is checked
+   * *before* the old one is stopped.
+   *
+   * `start` runs these too, but it runs them after `stop` has already happened
+   * -- so a missing password took a running IDE down and then declined to
+   * bring it back. Caught before it shipped: the live machine had no password
+   * set, and `pnpm restart` would have left it dark. It is the same rule the
+   * build above already follows: what is running stays running unless the thing
+   * replacing it is known to be able to start.
+   */
+  if (!existsSync(serverScript)) fail('server/dist is missing -- run `pnpm build` first')
+  preflight()
   const before = readRun()?.instanceId
   await stop({ ...opts, quiet: true })
   // force: the worktree guard above has already run, and running it again here
