@@ -1353,6 +1353,27 @@ is the rule the panel toggles' legend keeps for the same reason. **Not on a
 phone**: there the mark answers a question nobody asked, and `content: none`
 takes its reserved space with it, since there are no arrows to step with either.
 
+**On a phone the answers stand in a column**, full-width and 44px each. In a
+row they had nowhere to go: the foot is `justify-content: flex-end`, so a row
+wider than the dialog overflows to the *left*, where nothing scrolls to it --
+measured at 320px, "Delete worktree…" started at x=-4 and "Cancel" at x=-31,
+and every label that did fit had wrapped inside a 58px button. The column keeps
+the markup's order, so the answer you came for lands at the bottom under the
+thumb, where the right-hand corner is on a desktop, and a split footer's
+irreversible door goes to the top with a gap under it. The arrows already walk
+up and down as well as across, so nothing is lost to a keyboard.
+
+Three more things a phone needed, all in the shared styles so every dialog has
+them. **The scrim is the app's box**, not `inset: 0`: a fixed element is placed
+against the layout viewport whatever its parent is, and that is the one the
+keyboard is drawn over, so it copies `#root`'s `--app-offset`/`--app-height`
+and safe-area insets rather than inheriting them. **The dialog is `max-height:
+100%`** of that, not `80vh` -- `vh` is the large viewport, taller than what is
+on screen whenever the browser's chrome or the keyboard is showing. Measured
+with `--app-height` forced to 400px, the open-project dialog came to 376px with
+its body scrolling. And **a field is 16px**, because Safari zooms the page on
+focus for anything smaller and does not zoom back out.
+
 **Focus is the selection**, with a roving `tabIndex` rather than an index beside
 it: the browser's own Enter, its focus ring and a screen reader then all agree
 with the mark without being told.

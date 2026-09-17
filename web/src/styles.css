@@ -2586,19 +2586,42 @@ button {
 
 /* ----------------------------------------------------------------- dialog -- */
 
+/*
+ * The box the app itself is: the visible viewport, less the device's insets.
+ *
+ * It was `inset: 0`, which is the *layout* viewport -- and on a phone that is
+ * the one the keyboard is drawn over. `#root` already follows the visual one
+ * (see `trackViewport()`), and a fixed element is placed against the viewport
+ * whatever its parent is, so the scrim has to say the same four things `#root`
+ * says rather than inherit them. Without it a dialog with a field in it -- open
+ * project -- was centred in a box the keyboard covered half of.
+ */
 .scrim {
   position: fixed;
-  inset: 0;
+  top: var(--app-offset, 0);
+  left: 0;
+  right: 0;
+  height: var(--app-height, 100%);
   background: rgb(6 8 11 / 72%);
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: calc(24px + var(--safe-top)) calc(24px + var(--safe-right))
+    calc(24px + var(--safe-bottom)) calc(24px + var(--safe-left));
   z-index: 10;
 }
 
+/*
+ * As tall as the scrim lets it be, not `80vh`.
+ *
+ * `vh` is the *large* viewport on a phone -- the height with the browser's
+ * chrome retracted and no keyboard -- so 80% of it was taller than the space
+ * actually on screen whenever either was showing. The scrim is already the
+ * visible box less its padding, so 100% of it is the honest ceiling, and the
+ * body is what scrolls when a dialog is taller than that.
+ */
 .dialog {
   width: min(560px, 100%);
-  max-height: 80vh;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--level-panel);
@@ -2713,6 +2736,49 @@ button {
   margin-right: auto;
 }
 
+/*
+ * On a phone the answers stand in a column, one full-width row each.
+ *
+ * In a row they did not fit and had nowhere to go: the foot is
+ * `justify-content: flex-end`, so a row wider than the dialog overflows to the
+ * *left*, where nothing can scroll to it. Measured at 320px: the sleep dialog's
+ * "Delete worktree…" started at x=-4 and the close-project dialog's "Cancel" at
+ * x=-31, half off the glass, and every label that did fit had wrapped onto two
+ * or three lines inside a 58px button. At 390 they fitted only by wrapping.
+ *
+ * A column is the shape a phone already uses for this, and the order is the
+ * markup's: the answer you came for is last, so it lands at the bottom, nearest
+ * the thumb -- the same place the right-hand corner is on a desktop -- and a
+ * split footer's irreversible door is first, so it goes to the top, as far from
+ * the thumb as the dialog allows, with a gap under it standing in for the free
+ * space that separates it on a desktop. The arrows already walk the answers up
+ * and down as well as across (`useDialogKeys`), so a keyboard on a tablet
+ * loses nothing.
+ *
+ * 44px, the touch target both platforms' guidelines name: the buttons were
+ * 30px wherever their labels had not wrapped.
+ */
+.app[data-narrow] .dialog__foot {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.app[data-narrow] .dialog__foot .btn {
+  justify-content: center;
+  min-height: 44px;
+}
+
+.app[data-narrow] .dialog__foot--split .btn--danger {
+  margin-right: 0;
+  margin-bottom: 12px;
+}
+
+/* Less of a margin round the dialog, when the screen is the dialog. */
+.app[data-narrow] .scrim {
+  padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right))
+    calc(12px + var(--safe-bottom)) calc(12px + var(--safe-left));
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -2739,6 +2805,16 @@ button {
 .field__input:focus {
   outline: none;
   border-color: var(--pulse);
+}
+
+/*
+ * 16px on a phone, and that number is iOS's rather than ours: Safari zooms the
+ * page in on focus for any text field set smaller, and does not zoom back out
+ * when it loses it -- which on this app is the whole row of windows left
+ * magnified behind a dialog that has already closed.
+ */
+.app[data-narrow] .field__input {
+  font-size: 16px;
 }
 
 .field__hint {
