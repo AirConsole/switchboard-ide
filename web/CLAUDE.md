@@ -291,11 +291,15 @@ The pieces, and why each is the way it is:
   pane that did not exist — and the Cmd+arrow walk counts from `active`. The
   walk itself is deliberately *not* routed through this: its stops are panes, and
   a panel that shut as you stepped into it would be a stop you could never reach.
-- **The × opens the sleep dialog**, which is also where deleting lives — so a
-  worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
-  asked here, on the tab, and asking them twice in two places only made the
-  window's bar longer. A tab is therefore a `<span>` wrapper with two buttons
-  inside it: a `<button>` inside a `<button>` is not HTML.
+- **A tab has no ×; putting a worktree away is on the worktree.** The control
+  is the last thing in the window's own bar, past the panel toggles, and it
+  still opens the sleep dialog — which is also where deleting lives, so it is
+  one door for both questions rather than the trashcan *and* the zZ this bar
+  used to carry. That pair is exactly why the × went up to the tab in the first
+  place; the bar has since given both of them up, so there was one control to
+  put back rather than two. What it costs up here is the risk it was: a tab is
+  an index entry, and the only irreversible door in the row sat on a 62px target
+  beside the name you were aiming for.
 - **A tab says whether work is left in the worktree**, in one slot: the dirty
   count when there is one, otherwise a fork glyph — GitHub's `repo-forked` way
   up, two heads over a shared trunk — when the branch has commits the default
@@ -1092,13 +1096,21 @@ target, before a listener on the document would see it, so without capturing you
 get both: the caret jumps to the start of the line *and* the row steps. Cmd+Left
 as "start of line" is the price; Home still does it.
 
-## Cmd+I, Cmd+O and Cmd+F are the three panel toggles
+## I, O, F and X are the window's own bar, on the keyboard
 
 The keyboard version of the buttons in a window's own bar, acting on the
 worktree that has the keyboard, and toggling the same way: pressed on the panel
 already showing, the shortcut closes it and gives the width back to Claude.
 Mnemonics rather than positions -- each key is a letter inside the word its
 toggle already shows.
+
+**X is the fourth, and it is not a panel.** It opens the dialog that asks
+whether to sleep or delete, which is the × at the end of the same row of
+controls -- so it is the same handler, because what all four share is that they
+act on the window the keyboard is in, and finding that window is the whole body
+of it. X because it *is* the ×, which is the only name that control has. It is
+deliberately not in `PANEL_KEYS`: a map of panels with a non-panel in it would
+be wrong everywhere else it is read, and it is read to build the legend.
 
 **Terminals are on their third letter.** T is what the word wants, and the
 browser will not give up Cmd+T. E was next, and was wrong for a reason no
@@ -1245,6 +1257,36 @@ the row -- which is what makes the legend follow you as you walk.
 "TERMINAL" into three text nodes made three flex items and put two of those gaps
 inside the word -- the button grew from 86.98px to 95 the moment Cmd went down.
 Wrapped, it is 86.98 to 87.00. Weight is not used either, for the same reason.
+
+## A dialog answers to the keyboard: arrows choose, Enter does, Escape leaves
+
+`useDialogKeys` gives every dialog's foot a toolbar's keyboard, because that is
+what it is: one question with two or three answers in a row. Left and right move
+between them, Enter takes the one you are on, and `⏎` is drawn on it -- a
+keyboard nobody can see is a keyboard nobody uses. The mark is reserved at every
+width and merely hidden, so stepping along the row does not move the row, which
+is the rule the panel toggles' legend keeps for the same reason. **Not on a
+phone**: there the mark answers a question nobody asked, and `content: none`
+takes its reserved space with it, since there are no arrows to step with either.
+
+**Focus is the selection**, with a roving `tabIndex` rather than an index beside
+it: the browser's own Enter, its focus ring and a screen reader then all agree
+with the mark without being told.
+
+**Where Enter starts is a rule about damage.** The last answer is the one you
+came for -- `Sleep`, `Close project` -- so that is where it begins, unless that
+answer is `--danger`, when the way out takes the focus instead and reaching the
+red one is a deliberate arrow press. Measured: `Sleep feature-x?` starts on
+`Sleep`, `Remove worktree feature-x?` starts on `Keep it`.
+
+**On the window, in capture, like `useEscape`** -- and that is the half that
+makes "the dialog listens to Enter" true rather than "its focused button does".
+A dialog is modal, so its keys are the page's keys while it is up; the
+open-project dialog never takes the caret at all, so focus sits where it was,
+which measured as the terminal behind the scrim. Listening on the dialog's own
+box would have sent that Enter to an agent. A field *inside* the dialog still
+keeps its own keys -- a textarea's Enter is a newline -- and one behind the
+scrim keeps nothing.
 
 ## Every dialog cancels on Escape, and gives the keyboard back
 

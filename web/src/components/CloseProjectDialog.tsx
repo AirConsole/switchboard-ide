@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import type { Project, Session, Worktree } from '@switchboard/shared'
 import { useEscape } from './useEscape.js'
+import { useDialogKeys } from './useDialogKeys.js'
 
 export interface CloseProjectDialogProps {
   project: Project
@@ -38,6 +40,8 @@ export const CloseProjectDialog = ({
   onClose,
 }: CloseProjectDialogProps): React.ReactElement => {
   useEscape(onCancel)
+  const box = useRef<HTMLDivElement | null>(null)
+  useDialogKeys(box)
   const mine = new Set(worktrees.map((w) => w.id))
   const running = sessions.filter((s) => mine.has(s.worktreeId) && s.liveness !== 'dead')
   const claudes = running.filter((s) => s.kind === 'claude').length
@@ -46,7 +50,7 @@ export const CloseProjectDialog = ({
 
   return (
     <div className="scrim" onClick={onCancel}>
-      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
         <div className="dialog__head">
           <h2 className="dialog__title">Close {project.name}?</h2>
         </div>

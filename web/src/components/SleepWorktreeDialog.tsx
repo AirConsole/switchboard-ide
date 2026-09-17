@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import { claudeSession, removalAsks, terminalSessions } from '../selectors.js'
 import { useEscape } from './useEscape.js'
+import { useDialogKeys } from './useDialogKeys.js'
 
 /** What to leave running when a worktree goes to sleep. */
 export interface SleepOptions {
@@ -51,6 +52,8 @@ export const SleepWorktreeDialog = ({
   onDelete,
 }: SleepWorktreeDialogProps): React.ReactElement => {
   useEscape(onClose)
+  const box = useRef<HTMLDivElement | null>(null)
+  useDialogKeys(box)
   const [keepClaude, setKeepClaude] = useState(false)
   const [keepTerminals, setKeepTerminals] = useState(false)
 
@@ -59,7 +62,7 @@ export const SleepWorktreeDialog = ({
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
         <div className="dialog__head">
           <h2 className="dialog__title">Sleep {worktree.name}?</h2>
         </div>

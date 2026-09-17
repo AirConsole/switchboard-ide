@@ -48,7 +48,6 @@ export interface TopBarProps {
    * Put a worktree away: the tab's × asks this, and the dialog behind it is
    * where sleeping and deleting are told apart.
    */
-  onSleep: (worktreeId: string) => void
   /**
    * The worktree you are in: the one the row last brought into view, and whose
    * Claude has the keyboard. Null before anything has been navigated to.
@@ -99,7 +98,6 @@ const Group = ({
   onRevealProject,
   onWake,
   onReveal,
-  onSleep,
 }: {
   group: ProjectGroup
   sessions: Session[]
@@ -108,7 +106,7 @@ const Group = ({
   current: boolean
 } & Pick<
   TopBarProps,
-  'activeId' | 'onRevealProject' | 'onWake' | 'onReveal' | 'onSleep'
+  'activeId' | 'onRevealProject' | 'onWake' | 'onReveal'
 >): React.ReactElement => {
   const { project, awake, asleep } = group
   /*
@@ -142,11 +140,18 @@ const Group = ({
         active={!sleeping && worktree.id === activeId}
         title={worktreeTitle(worktree, sessions, queued, sleeping)}
         onPick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
-        /* Already asleep, so there is nothing to put away and no × to do it
-           with. Waking it is what its body is for. */
-        onClose={
-          sleeping ? undefined : { title: `Put ${worktree.name} away`, run: () => onSleep(worktree.id) }
-        }
+        /*
+         * No × up here any more: it is in the window's own bar, at the end of
+         * the panel toggles.
+         *
+         * A tab in the strip is an index entry -- it says which worktree, and
+         * what its agent is doing -- and putting the one destructive door in
+         * the row onto a 62px target beside the name you are aiming for was a
+         * mis-click waiting to happen. The same reasoning put sleeping on the
+         * tab in the first place, when the alternative was a trashcan *and* a
+         * zZ in the window's bar; the bar has since given both of those up, so
+         * there is one control to put back rather than two.
+         */
       />
     )
   }
@@ -263,7 +268,6 @@ export const TopBar = ({
   onRevealProject,
   onWake,
   onReveal,
-  onSleep,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
   const bar = useRef<HTMLElement | null>(null)
@@ -383,7 +387,6 @@ export const TopBar = ({
           onRevealProject={onRevealProject}
           onWake={onWake}
           onReveal={onReveal}
-          onSleep={onSleep}
         />
       ))}
     </nav>
