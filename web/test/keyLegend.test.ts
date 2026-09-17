@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEGEND_LEARNED, isModHeld, showsHint } from '../src/views/keyLegend.js'
+import { LEGEND_LEARNED, isModHeld, landingHint, showsHint } from '../src/views/keyLegend.js'
 
 /** A keydown as the two row handlers read it. */
 const key = (over: Partial<KeyboardEvent> = {}): Pick<
@@ -64,5 +64,52 @@ describe('showsHint', () => {
   it('never shows on a phone, held or not', () => {
     expect(showsHint({ steps: 0, held: false, narrow: true })).toBe(false)
     expect(showsHint({ steps: 0, held: true, narrow: true })).toBe(false)
+  })
+})
+
+describe('landingHint', () => {
+  /** A row of stops: two worktrees, the first with a panel open beside Claude. */
+  const stops = [
+    { id: 'wt-1', kind: 'claude' as const },
+    { id: 'wt-1', kind: 'todo' as const },
+    { id: 'wt-2', kind: 'claude' as const },
+  ]
+
+  /*
+   * The bug this records: the hint used to name only the window a step lands
+   * in, and the window drew it at its own near edge. One of the two steps out
+   * of a window with a panel open lands in that same window -- so the arrow
+   * appeared at the tile's leading edge, under the Claude you had not left,
+   * pointing at a pane on the other side of it.
+   */
+  it('names the pane a step lands in, not only its window', () => {
+    expect(landingHint(stops, 0, 'wt-1')).toEqual({ dir: 'right', pane: 'todo' })
+  })
+
+  it('reaches the next window from the last pane of this one', () => {
+    expect(landingHint(stops, 1, 'wt-2')).toEqual({ dir: 'right', pane: 'claude' })
+    // ...and back into the pane you came from, which is Claude's own.
+    expect(landingHint(stops, 1, 'wt-1')).toEqual({ dir: 'left', pane: 'claude' })
+  })
+
+  /*
+   * Going left out of a window lands in the *last* pane of the one before it,
+   * which is the pane against the edge you are coming from -- and, with a panel
+   * open there, is not Claude. Drawn over Claude regardless, it sat at x=-40 on
+   * a 1600px screen: the part of that window that has scrolled past.
+   */
+  it('lands in the last pane of the window on the left', () => {
+    expect(landingHint(stops, 2, 'wt-1')).toEqual({ dir: 'left', pane: 'todo' })
+  })
+
+  it('draws nothing for a window neither step reaches, or from nowhere', () => {
+    // Two windows away, so no step gets there and nothing is promised.
+    expect(landingHint(stops, 0, 'wt-2')).toBeNull()
+    /*
+     * -1 is "the walk does not know where you are" -- no pane holds the
+     * keyboard and nothing has been scrolled to. The row draws no arrows at
+     * all then, rather than guessing at an end to count from.
+     */
+    expect(landingHint(stops, -1, 'wt-1')).toBeNull()
   })
 })

@@ -4,6 +4,7 @@ import { api } from '../api.js'
 import { WorktreeTab } from '../components/WorktreeTab.js'
 import { useAnchoredMenu } from '../components/useAnchoredMenu.js'
 import type { TodoView, WorktreeStatus } from '../selectors.js'
+import { COMMIT_LABEL } from './keyLegend.js'
 
 /** A worktree a todo can be moved to, with everything its tab needs to say. */
 export interface MoveTarget {
@@ -363,7 +364,9 @@ const NewTodo = ({
         }}
       />
       <div className="todo__newfoot">
-        <span className="todo__hint">Enter for a new line, Cmd+Enter to add</span>
+        {/* Cmd on a Mac and Ctrl elsewhere: the handler above takes either, and
+            the label is no use to somebody whose keyboard has the other one. */}
+        <span className="todo__hint">Enter for a new line, {COMMIT_LABEL}+Enter to add</span>
         {/* The form's own action, so it wears the solid button: the quiet one
             is for dismissing things, and here it read as disabled even when it
             was not. */}
