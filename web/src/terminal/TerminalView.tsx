@@ -6,6 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
+import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
 
 /**
@@ -34,6 +35,7 @@ const MIRROR_SCROLLBACK = 5000
  * on whatever this resolves to, machine to machine.
  */
 export const TERMINAL_FONT_FAMILY = 'Menlo, monospace'
+
 
 /**
  * Type size for every terminal.
@@ -231,37 +233,6 @@ export const TerminalView = ({
     })
 
     /*
-     * Hovering is not input. Nothing in a row of windows reports it.
-     *
-     * A row of windows breaks the assumption every terminal emulator makes,
-     * that the pointer is over the terminal you are typing into: here it
-     * crosses two or three agents on its way anywhere, and rests on one while
-     * you read. Claude asks for `1003` -- report any mouse event -- so xterm
-     * reported every movement, and nothing in Claude's interface needs to know
-     * where the pointer is. It was also the traffic that made this stack's
-     * mouse bugs visible: one sweep across a pane put 17 reports into the agent
-     * behind it.
-     *
-     * `buttons === 0` is the rule -- a bare move. A drag still reports, which
-     * keeps xterm's selection and an app's own drag working, and so does a
-     * click: `pointerdown` claims the keyboard before `mousedown` is
-     * dispatched, so by the time xterm reports the press the pane is already
-     * yours. Stopped in the capture phase, before xterm's listener on its own
-     * element ever sees it.
-     *
-     * Only where an app is actually reporting, though. With no tracking mode
-     * xterm's own mousemove is what underlines a link under the pointer and
-     * shapes the cursor, and a pane that reports nothing was never the problem
-     * -- a plain shell keeps both.
-     */
-    const hover = (event: MouseEvent): void => {
-      if (event.buttons === 0 && term.modes.mouseTrackingMode !== 'none') {
-        event.stopPropagation()
-      }
-    }
-    host.addEventListener('mousemove', hover, true)
-
-    /*
      * The wheel must never become keystrokes.
      *
      * On the alternate screen -- where Claude's TUI and vim live -- xterm.js
@@ -286,6 +257,29 @@ export const TerminalView = ({
     )
 
     /*
+     * Hovering is not input: a bare move is never reported to the app.
+     *
+     * A row of windows breaks the assumption every terminal emulator makes,
+     * that the pointer is over the terminal you are typing into: here it
+     * crosses two or three agents on its way anywhere, and rests on one while
+     * you read. Claude asks for `1003` -- report any mouse event -- and nothing
+     * in its interface needs to know where the pointer is; one sweep across a
+     * pane used to put 17 reports into the agent behind it, and that traffic is
+     * what made this stack's mouse bugs visible.
+     *
+     * **Dropped here, on the way out, and not by hiding the move from xterm.**
+     * It was a capture-phase listener that stopped every button-free
+     * `mousemove` before xterm saw it, and that cost the links: xterm finds a
+     * link under the pointer from that same event (`Linkifier._handleMouseMove`)
+     * and on mouse-up follows only a link it had already found, so in every
+     * pane that reports the mouse -- every Claude -- no link could be clicked.
+     * xterm now sees every move and draws its link hover and cursor, and only
+     * the report it would have sent is thrown away.
+     *
+     * A drag still reports (it carries a button), and so do a click and the
+     * wheel. See `isHoverReport` for the bits.
+     */
+    /*
      * A legacy mouse report never goes on the wire.
      *
      * `ESC [ M` plus three bytes is xterm's default encoding, and in this stack
@@ -304,6 +298,7 @@ export const TerminalView = ({
      */
     const send = (data: string): void => {
       if (data.startsWith('\x1b[M')) return
+      if (isHoverReport(data)) return
       terminalSocket.input(session.id, data)
     }
     term.onData(send)
@@ -536,12 +531,9 @@ export const TerminalView = ({
       // which would then measure and resize a terminal that has been disposed.
       cancelAnimationFrame(frame)
       // The host outlives the terminal -- it is the persistent ref -- so a
-      // listener left on it would still be here after this term is disposed,
-      // stopping events for a terminal that no longer exists.
-      host.removeEventListener('mousemove', hover, true)
-      // Same reason, and the same host: left behind, these keep answering
-      // drags for a disposed terminal and send its page keys to the session
-      // this view used to be showing.
+      // listener left on it would still be here after this term is disposed:
+      // these would keep answering drags for a disposed terminal and send its
+      // page keys to the session this view used to be showing.
       host.removeEventListener('touchstart', onTouchStart)
       host.removeEventListener('touchmove', onTouchMove)
       host.removeEventListener('touchend', onTouchEnd)

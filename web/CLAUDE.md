@@ -1024,11 +1024,29 @@ A repaint with no resize behind it — a socket drop, which is what a deploy is 
 is the window where this bit; a resize hid it, because the app redraws and
 re-declares its own modes.
 
-**Hovering is not input.** `buttons === 0` is stopped in the capture phase
-before xterm sees it. Nothing in an agent's interface needs the pointer's
-position, and in a row of windows the pointer crosses several agents on the way
-anywhere. Clicks and drags still report — `pointerdown` claims the keyboard
-before `mousedown`, so the pane is yours by the time the press is reported.
+**Hovering is not input — but xterm still sees it.** A button-free move is
+never *reported* to the app: `isHoverReport` (`terminal/mouseReports.ts`) drops
+the SGR report on its way to the socket. Nothing in an agent's interface needs
+the pointer's position, and in a row of windows the pointer crosses several
+agents on the way anywhere. Clicks, drags and the wheel still report —
+`pointerdown` claims the keyboard before `mousedown`, so the pane is yours by the
+time the press is reported.
+
+It used to be the *move* that was stopped, in the capture phase before xterm saw
+it, and that cost every link in a Claude pane. xterm finds the link under the
+pointer from that same `mousemove` (`Linkifier._handleMouseMove`) and on mouse-up
+follows only a link it had already found, so where the app reports the mouse no
+link could be clicked. Dropping the report instead keeps both: measured against a
+stand-in that sets `?1003h ?1006h` like Claude, two sweeps across the pane sent
+0 bytes, hovering a URL turned the cursor to a pointer, clicking it opened the
+URL *and* sent the click (`ESC[<0;21;3M`/`m`), and a drag still went out as
+`ESC[<32;…M`. The phantom typing this rule was written against came from the
+*encoding*, not from hover as such -- see the paragraph above -- and a legacy
+report is still refused outright.
+
+Only plain-text URLs are clickable in a Claude pane, and that is tmux, not this:
+3.3a drops OSC 8 hyperlinks (`hyperlinks` is a 3.4 terminal feature, see
+`server/tmux.conf`), so the link never reaches the browser, only its text.
 
 **The wheel never becomes keystrokes.** On the alternate screen with no tracking
 mode, xterm.js translates a notch into an Up or Down arrow and sends it as
