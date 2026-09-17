@@ -1849,7 +1849,8 @@ button {
  * The inset matters more than it looks. Without it the character grid butts
  * straight into the tile's edge and the terminal reads as pasted onto the box
  * rather than sitting in it -- and the first column of text ends up a pixel
- * from a border. It is counted in PANE_CHROME_WIDTH, so the 80-column floor
+ * from a border. It is counted in PANE_CHROME_WIDTH, one of the two halves of
+ * PANE_CHROME -- the other is xterm's own 14px -- so the 80-column floor
  * still holds; changing it here means changing that too.
  */
 .tile__pane {
