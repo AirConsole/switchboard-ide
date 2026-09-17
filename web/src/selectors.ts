@@ -298,3 +298,26 @@ export const removalLanding = (runs: Run[], worktreeId: string): RemovalLanding 
     ? { kind: 'project', id: mine.project.id }
     : { kind: 'worktree', id: next.id }
 }
+
+/**
+ * Whether a drained queue takes the keyboard with it.
+ *
+ * RUN NEXT types a worktree's todos into its Claude and the panel closes when
+ * the last one goes. Only the window whose **todo pane you were in** hands the
+ * keyboard on -- to its own Claude, which is where the prompt just went and
+ * where you were already looking.
+ *
+ * Anywhere else it must not move: a queue drains on the server whether or not a
+ * browser is open, so this fires in windows you are not in, minutes after you
+ * queued anything, while you are reading a diff or typing in another agent. It
+ * used to move regardless, which scrolled the row to a worktree you had not
+ * asked about and took the caret out of whatever you were writing.
+ *
+ * The case it keeps is the one that has to be kept: the pane you are in is
+ * being unmounted, and focus left alone falls to the body, which is where the
+ * row's own keys stop working.
+ */
+export const drainTakesKeyboard = (
+  active: { id: string; pane: string } | null,
+  worktreeId: string,
+): boolean => active?.id === worktreeId && active.pane === 'todo'

@@ -1461,6 +1461,29 @@ is `removalLanding` in `selectors.ts` rather than a closure in `App`, which is
 what lets a test hold it: two of its four cases are the flat row's answers
 written down as the wrong ones.
 
+## A drained queue closes its panel, and only sometimes takes the keyboard
+
+The panel is opened to line work up; once the last queued todo has gone to
+Claude it is a list nobody asked to see, holding a spot in the row -- so it
+closes. That part is unconditional, and it goes through `queueDrained` in `App`
+rather than the toggle, because the toggle also scrolls to the worktree.
+
+**The keyboard is the conditional half**, and `drainTakesKeyboard` is the whole
+of the rule: it moves only when the pane you are in is the one being unmounted,
+which is that worktree's own todo pane. A queue drains on the *server*, with no
+browser open if need be, so this fires in windows nobody is in, minutes after
+anything was queued. It used to move regardless: the row scrolled to a worktree
+you had not asked about and the caret left whatever you were writing.
+
+The case it keeps is the one that must be kept -- focus left on an unmounting
+node falls to the body, where the row's own keys stop working -- and it lands on
+that worktree's Claude, which is exactly who the prompt just went to.
+
+Both `setActive` and `setScrollTo` are stable, and `active` is read through a
+ref, because the drain effect in `TodoPane` depends on `onQueueDrained` keeping
+one identity; reading `active` directly would rebuild it every time focus moved
+anywhere in the row.
+
 ## The todo panel holds no state of its own
 
 `TodoPane` fetches nothing and caches nothing: todos ride `AppSnapshot`, and
