@@ -971,8 +971,8 @@ Moving in the tree is not opening: arrowing past twenty files would otherwise
 read and render twenty of them, so Enter is the key that says you meant it. **A
 click opens and leaves the keyboard on the row it clicked** -- said outright,
 since Safari does not focus a clicked button -- so the arrows go on from there.
-**→ on a file goes into it** (a file has nothing to unfold), and **Escape in the
-file comes back** to its row, moving the tree's cursor with the focus so the
+**Enter on the file that is already open goes into it** (the first Enter opens
+it), and **Escape in the file comes back** to its row, moving the tree's cursor with the focus so the
 next arrow steps from where you are. CodeMirror spends an Escape collapsing a
 selection and says so by preventing it, so a selection goes first and the
 second press leaves.
@@ -980,7 +980,7 @@ second press leaves.
 **Something only to be looked at does not take the keyboard.** A picture, or a
 Markdown file shown rendered, has nothing to type into, and handing it focus
 took the keyboard off the one thing in the panel that does something with keys.
-So arriving at one -- opening the panel onto it, or → on its row -- leaves the
+So arriving at one -- opening the panel onto it, or Enter on its open row -- leaves the
 keyboard on that row, where ↑ and ↓ go on to the next file; where the tree is
 not drawn (a phone), on nothing. It is decided from the path, before the read
 answers, which is why `mediaTypeOf` and its table moved from `server/files.ts`
@@ -988,6 +988,22 @@ to `shared/media.ts`: the server decides from it how to read a file and what
 `/raw` serves it as, and the panel decides from it where the keyboard goes, and
 two tables would be two answers. A click into the rendered page still focuses
 it, so the arrows can scroll it; Escape comes back to the row as from the editor.
+
+**← and → step between Files, Changes and Commits.** In Changes, Commits and
+the search hits they have nothing else to do, so they are the tab row's; in the
+tree they still fold and unfold, and → on a *file* -- which has nothing to
+unfold -- goes on to Changes. The keyboard goes with you into the new mode's
+list, onto its selected row or its first, which is one motion with the shared
+selection: → from `c.txt` in the tree lands on `c.txt` in Changes. That list is
+often not there yet (Changes and Commits are read when their mode opens), so the
+active tab holds the keyboard until it is, and hands it over only if nothing
+else has taken it meanwhile. ↑ off the top of any list reaches the tab row,
+which walks with ← and → on its own (the keyboard staying on the tabs, as a tab
+row does) and ↓ back into the list. The tabs carry a roving `tabIndex`, so Tab
+reaches the active one only.
+
+This took → away from "go into the file", which is why that is Enter on the open
+file now: the first Enter opens, the second enters, Escape leaves.
 
 **The editor's focus request is handed over once.** Both the editor and the
 rendered Markdown page act on the nonce when they *mount*, deliberately, since

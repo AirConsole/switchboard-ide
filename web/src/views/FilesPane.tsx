@@ -1117,6 +1117,69 @@ export const FilesPane = ({
    * On the tree rather than on the document: with a dozen tiles awake, a
    * document-level arrow handler has no idea whose files it is moving.
    */
+  /*
+   * ← and → step between Files, Changes and Commits.
+   *
+   * From a list the keyboard goes with you, into the list the new mode shows --
+   * onto its selected row, or its first -- so walking sideways and then down is
+   * one motion. The list is often not there yet (Changes and Commits are read
+   * when their mode opens), so the active tab holds the keyboard until it is,
+   * and the list takes it over only if nothing else has since. From the tabs
+   * themselves the keyboard stays on the tabs, the way a tab row behaves.
+   */
+  const modesRef = useRef<HTMLDivElement | null>(null)
+  /** Where the keyboard goes once the new mode is on screen. */
+  const follow = useRef<'none' | 'list' | 'tabs'>('none')
+  const activeTab = (): HTMLElement | null =>
+    modesRef.current?.querySelector<HTMLElement>('.files__mode--on') ?? null
+  const listTarget = (): HTMLElement | null => {
+    const list = treeRef.current
+    return (
+      list?.querySelector<HTMLElement>('.files__row--on, .files__commit--on') ??
+      list?.querySelector<HTMLElement>('button.files__row, button.files__commit') ??
+      null
+    )
+  }
+  const intoList = (): void => {
+    if (mode === 'files' && !searching) {
+      setKeyFocus((n) => n + 1)
+      return
+    }
+    listTarget()?.focus()
+  }
+  const switchMode = (step: 1 | -1, keyboard: 'list' | 'tabs'): void => {
+    const at = MODES.findIndex((m) => m.mode === mode)
+    const next = MODES[at + step]
+    if (next === undefined) return
+    follow.current = keyboard
+    onMode(next.mode)
+  }
+  useLayoutEffect(() => {
+    // The tab first either way, so the keyboard is never left on a list that
+    // just went, or on the tab that stopped being the active one.
+    if (follow.current === 'none') return
+    activeTab()?.focus()
+    if (follow.current === 'tabs') follow.current = 'none'
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
+  useLayoutEffect(() => {
+    if (follow.current !== 'list') return
+    // Somebody put the keyboard somewhere else in the meantime: leave it.
+    if (document.activeElement !== activeTab()) {
+      follow.current = 'none'
+      return
+    }
+    if (mode === 'files' && !searching) {
+      follow.current = 'none'
+      setKeyFocus((n) => n + 1)
+      return
+    }
+    const target = listTarget()
+    if (target === null) return
+    follow.current = 'none'
+    target.focus()
+  })
+
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
     const row = rows[here]
@@ -1134,14 +1197,17 @@ export const FilesPane = ({
         return
       case 'ArrowUp':
         event.preventDefault()
-        step(here - 1)
+        // Off the top of the list is the tab row above it.
+        if (here <= 0) activeTab()?.focus()
+        else step(here - 1)
         return
       case 'ArrowRight':
         if (!row) return
         event.preventDefault()
         if (row.kind === 'file') {
-          // A file has nothing to unfold, so → goes into it.
-          enterFile(row)
+          // A file has nothing to unfold, so → goes on to the next tab, as it
+          // does in the flat lists. Enter on the open file goes into it.
+          switchMode(1, 'list')
         } else if (!row.open) {
           setKeyFocus((n) => n + 1)
           toggleDir(row.path)
@@ -1167,6 +1233,15 @@ export const FilesPane = ({
       case ' ':
         if (!row) return
         event.preventDefault()
+        /*
+         * Enter opens a file; Enter on the file that is already open goes into
+         * it -- the editor, or nowhere for a picture or a rendered page (see
+         * `enterFile`). Escape comes back.
+         */
+        if (event.key === 'Enter' && row.kind === 'file' && row.path === files.path && contentOpen) {
+          enterFile(row)
+          return
+        }
         setKeyFocus((n) => n + 1)
         pick(row)
         return
@@ -1410,12 +1485,50 @@ export const FilesPane = ({
       }}
     >
       {sideShown && (
-      <div className="files__side">
-        <div className="files__modes">
+      <div
+        className="files__side"
+        onKeyDown={(event) => {
+          /*
+           * The flat lists -- hits, Changes, Commits -- have no use for ← and →
+           * (`useListKeys` takes them so the row does not scroll), so here they
+           * are the tab row's. The tree answers them itself: it folds.
+           */
+          if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+          const target = event.target as HTMLElement
+          if (!treeRef.current?.contains(target)) return
+          if (mode === 'files' && !searching) return
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault()
+            switchMode(event.key === 'ArrowRight' ? 1 : -1, 'list')
+            return
+          }
+          // Off the top of the list is the tab row, as it is from the tree.
+          if (event.key === 'ArrowUp' && target === treeRef.current.querySelector('button')) {
+            event.preventDefault()
+            activeTab()?.focus()
+          }
+        }}
+      >
+        <div
+          className="files__modes"
+          ref={modesRef}
+          onKeyDown={(event) => {
+            if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+              // Taken at the ends too, or the browser scrolls the row.
+              event.preventDefault()
+              switchMode(event.key === 'ArrowRight' ? 1 : -1, 'tabs')
+            } else if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              intoList()
+            }
+          }}
+        >
           {MODES.map(({ mode: name, label }) => (
             <button
               key={name}
               className={name === mode ? 'files__mode files__mode--on' : 'files__mode'}
+              tabIndex={name === mode ? 0 : -1}
               onClick={() => onMode(name)}
             >
               {label}
