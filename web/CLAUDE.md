@@ -43,7 +43,7 @@ the tabs of that one too, **5** the usage readout altogether. Past it the strip
 scrolls, which is what it has always done.
 
 Measured with two projects holding three and one awake worktrees: stage 0 from
-900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 240 -- and at
+900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 340 -- and at
 *every* width the strip has no overflow, which is the whole claim. The ladder is
 monotone, it never collapses more than it must (at each width, forcing it one
 rung up overflows), and a sweep back up the widths reproduces the same rungs
@@ -55,6 +55,21 @@ where `session 34% 4h` is the whole reading -- so the picture goes at rung 1 and
 the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
+
+**Signing out is the far corner, and the ladder never takes it.** A 37px icon
+button past the usage block -- a door with the way out through it, the glyph
+every web application uses, with the words in `title` and in its accessible
+name. It is the mirror of `Open project`: the two controls in this bar that are
+about the browser and the machine rather than about a worktree, one in each
+corner, each with its own hairline facing the strip. It was in the open-project
+dialog's foot, pushed away from that dialog's own answers, on the argument that
+the bar's width is budgeted to the pixel -- and the price was a door behind
+another door. It costs the ladder its *last* rung only: every other threshold
+measured where it did (1 at 800, 2 at 700, 3 at 640, 4 at 540), and rung 5
+arrives at 340 where it used to arrive at 300, which is the 37px said back. Past
+that the strip scrolls, as it always has. The `dialog__aside` class and the
+filter in `useDialogKeys` that kept an arrow press off it went with the move:
+that button was the only aside there has ever been.
 
 **A limit says how much is left in colour**: `usageLevel` is amber from 75% and
 red from 90%, inclusive, and the class goes on the *row* so the number wears it

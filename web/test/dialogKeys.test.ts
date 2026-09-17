@@ -9,7 +9,6 @@ const dialog = () => {
       <div class="addserver" data-own-enter><input id="own" type="password" /></div>
       <input id="path" type="text" />
       <div class="dialog__foot">
-        <button id="aside" class="btn btn--quiet dialog__aside">Sign out</button>
         <button id="cancel" class="btn btn--quiet">Cancel</button>
         <button id="open" class="btn">Open project</button>
       </div>
@@ -50,17 +49,5 @@ describe('dialog keys', () => {
     const clicked = dialog()
     enterOn('path')
     expect(clicked).toEqual(['open'])
-  })
-
-  it('never lands on an aside with the arrows', () => {
-    dialog()
-    const focused: string[] = []
-    for (let i = 0; i < 4; i++) {
-      // From the body, as a real keypress with nothing focused would be; a
-      // window target is not an element and the handler rightly ignores it.
-      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-      focused.push(document.activeElement?.id ?? '')
-    }
-    expect(focused).not.toContain('aside')
   })
 })
