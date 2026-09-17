@@ -19,12 +19,16 @@ export const MIN_PANE_COLUMNS = 80
  * inside the editor's gutter instead -- so it simply has more room than this
  * requires. That mismatch is not a bug to fix.
  *
- * The "change one, change both" rule is suspended below NARROW_MAX, where
+ * The "change one, change both" rule is suspended below `narrowBelow`, where
  * `.tile__pane` drops its padding and this constant stays where it is. It is
  * allowed to, because the only thing this feeds is `units` -- and `units` is
  * pinned at its floor of 2 across that whole band, at either gap. Moving the
  * constant instead would change how many windows fit at desktop widths, which
  * is the one thing this layout exists to decide.
+ *
+ * It is also why the threshold is honest about what it buys: below it the pane
+ * really has 2px of chrome rather than 18, so the terminal gets those sixteen
+ * back on top of the two gaps -- five columns at an 8px cell, measured.
  */
 export const PANE_CHROME_WIDTH = 18
 
@@ -128,20 +132,6 @@ export const monoAdvance = (fontSize: number, fontFamily: string): number => {
   return width
 }
 
-/**
- * The window width at which the interface becomes a phone's, in px.
- *
- * It is a statement about the **top bar**: below this the strip cannot hold a
- * project and its tabs at a size worth reading, so it collapses to a hamburger
- * and its contents move into a sheet -- see `useNarrow`. The row changes with
- * it only in its chrome; how many windows fit is unaffected, because `units` is
- * already pinned at its floor of 2 everywhere below about 1017px.
- *
- * Deliberately not shared with the 440px the todo panel uses. That one is about
- * how narrow a column of prose can be before it reads as fragments; this one is
- * about a strip of tabs. Two questions, two numbers, each free to move.
- */
-export const NARROW_MAX = 640
 
 /**
  * Space between tiles and around the row, in px.
@@ -162,6 +152,35 @@ export const GAP = 12
  * three columns of terminal out of forty-three.
  */
 export const gapFor = (narrow: boolean): number => (narrow ? 0 : GAP)
+
+/**
+ * The window width below which the interface becomes a phone's, in px.
+ *
+ * **It is the width at which Claude loses its eightieth column**, and it is
+ * computed rather than chosen: one pane's floor, plus the tile's own edges,
+ * plus the two gaps a single window pays for -- the leading inset and the
+ * trailing one. At 8px a cell that is 658 + 3 + 24 = 685.
+ *
+ * It was 640 for a while, and 640 was a statement about a top bar that no
+ * longer has a breakpoint: the strip gives things up by the rung now, measured
+ * against the room it has. A number left behind by the thing it described is a
+ * number nobody can check, and this one was wrong in the direction that costs
+ * the most -- between 640 and 685 the row kept paying for chrome the window
+ * could not afford, and the agent wrapped at 76 columns to buy a 12px gap
+ * either side of a single window.
+ *
+ * Below it, the row drops that chrome and the pane's own 8px inset, which is
+ * about 40px -- five columns at this size -- and that is the whole of what
+ * "phone" means here: the window is the screen, so the spacing that says "these
+ * are windows in a row" has nothing to say and the terminal takes it instead.
+ *
+ * Still deliberately not the 440px the todo panel uses. That one is about how
+ * narrow a column of prose can be before it reads as fragments. Two questions,
+ * two numbers, each free to move -- and this one moves on its own now, with the
+ * font the terminal actually resolves to.
+ */
+export const narrowBelow = (charWidth: number): number =>
+  MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH + TILE_CHROME + 2 * GAP
 
 /**
  * How the row divides, given a measured scrollport.
