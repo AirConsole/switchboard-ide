@@ -38,10 +38,17 @@ Everything above is `server/src/gate.ts`, and it is about 90 lines.
 
 ## Running it
 
-Requires Node 22+, pnpm, git, and tmux. `pnpm install` compiles `node-pty` from
-source, so a C toolchain too.
+Requires Node 22+, pnpm, git, tmux, and the `claude` CLI on your `PATH` — the
+server spawns it by name, so an agent that cannot start is usually this.
+
+On Linux `pnpm install` compiles `node-pty` from source and needs a C toolchain.
+macOS uses the prebuilt binary that ships with it and needs none:
 
 ```sh
+brew install node pnpm tmux
+
+git clone https://github.com/AirConsole/switchboard-ide.git
+cd switchboard-ide
 pnpm install
 pnpm build
 pnpm start          # serves on http://127.0.0.1:8084
