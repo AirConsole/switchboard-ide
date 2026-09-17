@@ -713,7 +713,17 @@ attachment that owned it.
 
 ## Testing server behaviour
 
-There is no test suite. Measure instead:
+`pnpm test` runs `server/test/` with the rest: the gate and its routing, the
+socket's origin and ticket rules, login and headers, linking, the proxy and the
+relay, the state file, the workspace funnel, attention, readiness and the
+dispatcher, the transcript reader and the git parsers. The git tests run real
+git against throwaway repositories (`test/helpers/repo.ts`), and anything that
+needs a password writes one with `test/helpers/password.ts` before `config` is
+imported. A test there records a bug that happened; break the line it guards
+and watch it fail before trusting it.
+
+What the suite does not reach -- the pty and tmux engine, and anything you have
+to look at -- is measured against a scratch instance instead:
 
 - To prove what arguments a spawned process got, put a shim earlier on `PATH`
   that logs its argv. That is how `--continue` was confirmed to appear only

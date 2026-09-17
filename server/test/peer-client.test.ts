@@ -28,6 +28,32 @@ const peerAt = async (handler: Parameters<typeof createServer>[1]): Promise<Peer
 
 describe('talking to a peer', () => {
   /*
+   * A redirect is never followed. Measured before the fix: a 307 to another
+   * origin sent it `x-swb-token` -- a link token that never expires -- and, at
+   * link time, the login body with the password in it. `plainHttpAllowed`
+   * judged only the address that was typed.
+   */
+  it('follows no redirect, so neither the token nor the password leaves', async () => {
+    const seen: string[] = []
+    const elsewhere = await serve((req, res) => {
+      seen.push(`${req.method} ${req.url} token=${String(req.headers['x-swb-token'])}`)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end('{"token":"x"}')
+    })
+    servers.push(elsewhere)
+    const redirecting = await serve((req, res) => {
+      res.writeHead(307, { location: `${urlOf(elsewhere)}${req.url ?? '/'}` })
+      res.end()
+    })
+    servers.push(redirecting)
+    const peer = new PeerClient(urlOf(redirecting), 'LINKTOKEN')
+    await expect(peer.request('GET', '/api/snapshot')).rejects.toBeInstanceOf(PeerUnreachable)
+    await expect(peer.login('hunter2')).rejects.toBeInstanceOf(PeerUnreachable)
+    await expect(peer.requestRaw('/api/worktrees/w/raw')).rejects.toBeInstanceOf(PeerUnreachable)
+    expect(seen).toEqual([])
+  })
+
+  /*
    * The timeout has to cover the body, not just the headers.
    *
    * `finally` on the fetch alone clears the abort the instant the response head

@@ -204,6 +204,7 @@ export class Workspace {
     for (const project of this.store.projects) {
       try {
         const list = await listWorktrees(project.id, project.root)
+        this.forgetGoneWorktrees(project.id, list)
         // Once per project, not once per worktree: they share a repository and
         // therefore a default branch.
         const defaultRef = await defaultBranchRef(project.root)
@@ -248,12 +249,52 @@ export class Workspace {
    * to sleep the moment one of them is touched.
    */
   async setAwake(worktreeIds: string[], awake: boolean): Promise<void> {
-    const current =
-      this.store.awake ?? (await this.worktrees()).filter((w) => this.isAwake(w.id)).map((w) => w.id)
-    const next = awake
-      ? [...current, ...worktreeIds]
-      : current.filter((id) => !worktreeIds.includes(id))
-    this.store.setAwake(next)
+    /*
+     * One at a time. The seed awaits the worktree list, so two first-ever
+     * changes landing together -- two tabs, or opening a project while
+     * clicking another worktree -- both seeded from the same starting list and
+     * the second write dropped the first: measured, waking `wt-a` and `wt-b`
+     * at once stored only `wt-b`.
+     */
+    const turn = this.awakeWrites.then(async () => {
+      const current =
+        this.store.awake ??
+        (await this.worktrees()).filter((w) => this.isAwake(w.id)).map((w) => w.id)
+      const next = awake
+        ? [...current, ...worktreeIds]
+        : current.filter((id) => !worktreeIds.includes(id))
+      this.store.setAwake(next)
+    })
+    this.awakeWrites = turn.catch(() => {})
+    return turn
+  }
+
+  private awakeWrites: Promise<void> = Promise.resolve()
+
+  /** Each open project's worktree ids as last listed; see `forgetGoneWorktrees`. */
+  private readonly listed = new Map<string, Set<string>>()
+
+  /**
+   * Drop the awake mark of a worktree that has gone from its project.
+   *
+   * Removing one through the IDE clears it, but an agent running `git worktree
+   * remove` itself is routine here, and ids are hashed from the path -- so the
+   * same branch made again later came back awake, a window with nothing
+   * running in it. Only on a listing that succeeded, and only for ids this
+   * project listed before: a closed project's marks are kept on purpose, since
+   * reopening it picks them back up. A worktree removed while the server was
+   * down is not caught; nothing here saw it.
+   */
+  private forgetGoneWorktrees(projectId: string, list: readonly { id: string }[]): void {
+    const now = new Set(list.map((w) => w.id))
+    const before = this.listed.get(projectId)
+    this.listed.set(projectId, now)
+    const awake = this.store.awake
+    if (before === undefined || awake === null) return
+    const gone = [...before].filter((id) => !now.has(id))
+    if (gone.length > 0 && awake.some((id) => gone.includes(id))) {
+      this.store.setAwake(awake.filter((id) => !gone.includes(id)))
+    }
   }
 
   async resolve(worktreeId: string): Promise<{ worktree: Worktree; project: Project }> {
