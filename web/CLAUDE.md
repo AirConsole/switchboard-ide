@@ -712,13 +712,28 @@ and a scroll is looking around. On a phone the row shows **one**, so a swipe is
 not looking around, it is going somewhere, and the strip went on lighting the
 worktree you had scrolled away from -- the one thing it exists to answer.
 
-So `settleActive` marks a window when **exactly one cell is wholly on screen**,
-which is the same condition said as geometry rather than as a breakpoint: a wide
-row never has one, a phone always does. Two things it will not do. It does not
-override the keyboard -- if the focused pane is in that cell, the mark is
-already right, and if it is in one you scrolled away from, moving the mark is
-the whole point. And it hands over no focus, unlike `onReveal`: a swipe must not
-open a keyboard, and on a phone focus is what opens one.
+`settleActive` asks which window is showing, two ways. "Wholly on screen, and
+the only one" is the exact statement and is what a wide row needs -- with two
+windows up, neither is *the* one. **But on a phone that missed by a pixel**: a
+swipe lands through momentum and rubber-banding at a fractional offset, 390.4
+against a pitch of its own, so nothing was ever "wholly" on screen and the strip
+went on pointing at the window you had left. So where the row is one window wide
+(`units` at its floor of 2, which is every phone) the answer is whichever cell
+covers the middle of the screen -- which cannot be ambiguous and cannot round
+away.
+
+**And it arrives rather than merely marking**: `onReveal`, the same arrival a
+tab click makes, so the window you scrolled to is the one you can type into.
+That was `onActivate` -- the mark alone -- on the argument that a swipe must not
+open a keyboard; it does not, because a programmatic focus is not the gesture
+Android opens one for (measured: after a scroll the key row stays away, which is
+the tell, and typing goes straight to that window with no tap), and the cost of
+the caution was a window you had to tap before you could use.
+
+Answered once per window, not once per settle: `onReveal` carries a nonce, so
+repeating it would write `ui` on every scroll and could chase its own smooth
+scroll. The scroll it carries is a no-op by construction -- the row is already
+where that cell is.
 
 It runs when the row comes to rest, on `scrollend` where the browser has it and
 a 140ms timeout where it does not: a swipe crosses every window between here and

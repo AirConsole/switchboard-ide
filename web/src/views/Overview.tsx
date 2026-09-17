@@ -1974,28 +1974,59 @@ export const Overview = ({
    * difference between this and `onReveal`: a swipe must not open a keyboard,
    * and on a phone focus is what opens one.
    */
+  const settled = useRef<string | null>(null)
   const settleActive = useCallback((): void => {
     const grid = gridRef.current
     if (!grid || pitch <= 0) return
-    const seen = cellsRef.current.filter((cell) =>
+    /*
+     * Which window the row is showing, asked two ways.
+     *
+     * "Wholly on screen, and the only one" is the exact statement, and it is
+     * what a desktop needs: with two windows up, neither is *the* one. But on a
+     * phone a swipe lands on a snap point through momentum and rubber-banding,
+     * and the offset it settles at is fractional -- `scrollLeft` 390.4 against a
+     * 390.4px pitch of its own -- so "wholly" missed by a pixel and the strip
+     * went on pointing at the window you had left. That is the bug as reported.
+     *
+     * So where the row is one window wide (`units` is at its floor of 2, which
+     * is every phone), the answer is whichever cell covers the middle of the
+     * screen. It cannot be ambiguous and it cannot round away.
+     */
+    const cells = cellsRef.current
+    const onePane = units <= 2
+    const middle = (grid.scrollLeft + width / 2) / pitch
+    const seen = cells.filter((cell) =>
       wholeOnScreen({ at: cell.at, units: cell.units }, grid.scrollLeft, pitch, width, gap),
     )
-    const only = seen.length === 1 ? seen[0] : undefined
-    if (only === undefined) return
-    const held = (document.activeElement as HTMLElement | null)
-      ?.closest('[data-pane]')
-      ?.getAttribute('data-pane')
-    if (held !== undefined && held !== null) {
-      const owner = only.panes.some((pane) => pane.key === held)
-      // The keyboard is in this window already, or in one you have scrolled
-      // away from -- in which case moving the mark to what you are looking at
-      // is exactly the point.
-      if (owner) return
-    }
-    const first = only.panes[0]
+    const showing = onePane
+      ? cells.find((cell) => middle >= cell.at && middle < cell.at + cell.units)
+      : seen.length === 1
+        ? seen[0]
+        : undefined
+    if (showing === undefined) return
+    const first = showing.panes[0]
     if (first === undefined) return
-    onActivate(only.key, first.kind === 'project' ? 'project' : first.kind)
-  }, [pitch, width, gap, onActivate])
+    /*
+     * Once per window, not once per scroll event: `onReveal` is a request with
+     * a nonce, and answering the same one repeatedly would write `ui` on every
+     * settle and could chase its own scroll.
+     */
+    if (settled.current === showing.key) return
+    settled.current = showing.key
+    /*
+     * Through `onReveal`, which is the same arrival a tab click makes: it marks
+     * the window *and* hands it the keyboard, so what you scrolled to is what
+     * you can type into. It was `onActivate` -- the mark alone -- on the
+     * argument that a swipe must not open a keyboard; it does not, since a
+     * programmatic focus is not the gesture Android opens one for, and the cost
+     * of the caution was a window you had to tap before you could use.
+     *
+     * The scroll it carries is a no-op here by construction: the row is already
+     * where this cell is, so `wholeOnScreen` inside the scroll effect answers
+     * yes and nothing moves.
+     */
+    onReveal(showing.key, first.kind === 'project' ? 'project' : first.kind)
+  }, [pitch, width, gap, units, onReveal])
 
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
