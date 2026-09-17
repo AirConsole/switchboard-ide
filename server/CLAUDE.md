@@ -388,33 +388,70 @@ A kill emits no event of its own, so any route that ends a session must call
 
 ## Who may reach this server
 
-Two callers, no login, no cookie and no session between them — `gate.ts` is the
-whole of it, and `config.ts`'s `publicOrigins` is the list it consults.
+Three callers, and the password is behind all of them. `gate.ts` decides,
+`auth.ts` holds the credentials, and `config.ts`'s `publicOrigins` and
+`publicHosts` are the lists they consult.
 
-- **Our own page**, in a browser.
-- **A gateway**, which is this same program on another machine reading a project
-  that lives here. Not a browser; it presents `SWB_TOKEN`.
+- **Our own page**, in a browser, holding a session cookie obtained with the
+  password at `POST /api/login`.
+- **Our own socket**, opened with a single-use ticket from `POST /api/ws-ticket`
+  -- never with the cookie. See below.
+- **A gateway**, which is this same program on another machine reading this
+  one. Not a browser; it presents a token in `x-swb-token`.
 
-`SWB_TOKEN` is what a machine sets to *be* a peer. Set, anything arriving over
-the network must carry it. **Unset, this instance serves only this machine** —
-every request and every socket must come from a loopback address. That is not
-belt-and-braces: with no credential, every header a caller could be judged by is
-one the caller writes. Measured on `--bind 0.0.0.0` with no token, a request
-from the network carrying `Host: 127.0.0.1:<port>` — a name this server
-genuinely answers to — read the whole snapshot, and a socket forging
-`Origin: http://127.0.0.1:<port>` was admitted, which is attach-and-type. So
-binding elsewhere without a token is not a configuration that can be made safe,
-and it now fails at the first request rather than quietly serving the network.
+**There is no unauthenticated way in, from anywhere, including loopback.** The
+server will not start without a password (`index.ts`, checked before
+`listen`, and in `swb`'s preflight so the sentence reaches a terminal). That is
+deliberate twice over. Every hole ever measured in this gate lived in the branch
+that ran when no credential was configured. And a reverse proxy connects from
+loopback -- measured on the deployment this was built for, a request carrying
+the public `Host` and arriving at `127.0.0.1` exactly as Caddy delivers it was
+answered 200 -- so any rule of the form "local callers are fine" is a bypass for
+the internet, and per-IP rate limiting counts one IP. `isLoopback` decides
+nothing any more.
 
-**The `/ws` check exists even on a normal instance**, and it closes a live hole:
-a WebSocket is exempt from CORS, so any page you visit can open one, and every
-liveness and attention change is broadcast to every connected sink with the
-session id in it. Read an id off that broadcast, send one `{"t":"input"}`, and
-that is a prompt and a Return typed into a running Claude. Neither the loopback
-bind nor Caddy is in that path: the page runs in *your* browser, which is
-already inside, and Caddy fronts the public name while the socket is reached on
-127.0.0.1. Measured, and recorded in `test/ws-origin.test.ts`: the socket
-opened, `clientCount()` went to 1, and a `session-state` frame arrived unasked.
+**A password was built here once before and abandoned** (branch `remote`, tip
+`61b640e`). Four adversarial passes found sixteen holes, and the last was the
+worst: the session cookie reopened `/ws` command execution, because a page on a
+*sibling port* of the same hostname is same-site and the browser attached the
+cookie to a socket it opened -- `attach`, `focus`, `input`, a shell command, from
+a page the user merely visited. The live proxy serves five ports on one hostname
+and one of them has no auth. Hence:
+
+- **`/ws` does not accept the cookie.** A browser presents a ticket in the
+  WebSocket subprotocol -- the only thing a page can put on an upgrade, and not
+  the URL, which access logs record. The ticket is minted over `/api`, where the
+  origin is checked, so a hostile same-site page cannot obtain one. The origin
+  is checked again at the upgrade. `wsPluginOptions` echoes the offered
+  subprotocol, without which a browser refuses the handshake -- it is exported
+  so the tests register the plugin exactly as `index.ts` does.
+- **The origin is established before a credential is consulted.** That
+  ordering is the fix from `61b640e`, not a style.
+- **Refusals say which.** A socket closes `4401` when a page we serve lacks a
+  usable ticket and `1008` when the page is not ours, so a signed-out tab shows
+  the login while a misconfigured `--host` keeps retrying. `swb` relies on the
+  difference to check `--host` with a ticket that was never issued; the `/api`
+  half answers 401 for a name we serve and 404 for one we do not.
+- **Revocation reaches open sockets.** A socket is judged once, at the upgrade,
+  and then lives for days, so it is re-judged every minute against the current
+  key. The session key is `hkdf(hash, salt, generation)`: changing the password
+  or `pnpm password --revoke-sessions` kills every token, and a restart kills
+  none -- `pnpm restart` is the deploy, several times a day.
+- **The login is a public oracle, and is written as one.** `claimSlot` counts
+  attempts, never outcomes (a ramp keyed on failures made a correct password
+  reset it, and the next reply then answered for the previous guess), and hands
+  out slots monotonically (a delay read at request time was per batch, 135x the
+  intended ceiling under concurrency). One scrypt runs at a time, because each
+  pins 64MB on a threadpool shared with every file read.
+- **CSRF is three layers on the cookie path**: `SameSite=Strict`, Fetch
+  Metadata (a missing header is now refused), and `Origin` against the allow
+  list on anything that is not GET or HEAD. That last one rests on **no GET
+  mutating anything** -- check that when adding a route.
+
+`local.json` in the state directory holds a session token for `swb`, which
+`status` and the restart's readiness poll need now that `/api/server` is gated.
+It adds nothing: whatever can read it can already read `auth.json` and attach to
+the tmux socket.
 
 Five rules, each of which was wrong once and found by measurement:
 
@@ -448,10 +485,8 @@ Five rules, each of which was wrong once and found by measurement:
   defeated with one forged header: `curl -H 'Sec-Fetch-Site: none'` read the
   whole API, and a raw socket sending `Origin: http://127.0.0.1:<port>` — always
   in the allow-list — was admitted to `/ws`, where attach and input are full
-  terminal control. So on a peer the **token is the only credential that crosses
-  the network**, and a browser is believed solely from a loopback peer address,
-  which a header cannot forge. Fetch Metadata now only *narrows* traffic that
-  already came from this machine.
+  terminal control. So Fetch Metadata and `Origin` only ever *narrow* traffic
+  that already holds a credential; they authenticate nothing.
 - **The refusal happens before the sink joins `sinks`.** Closing a socket that is
   already in the broadcast set is a race, not a fix.
 - **An allow-list, not `Origin` against `Host`.** DNS rebinding makes those two
@@ -461,32 +496,22 @@ Five rules, each of which was wrong once and found by measurement:
 
 Behind a proxy this process only ever sees `127.0.0.1`, so it cannot derive the
 origin the page was served from and a deployment must say so: `--host`, which
-`swb` passes from `~/.config/switchboard/config.json`. Unset, the loopback
-defaults still admit a
-browser on this machine, so a scratch instance needs nothing — and every socket
-through Caddy is refused, which is the failure to expect if it is forgotten.
+`swb` passes from `~/.config/switchboard/config.json`. Unset, only the loopback
+names are served, and every socket through a proxy is refused -- which is the
+failure to expect if it is forgotten.
 
-Three consequences worth stating plainly. A peer's own web UI works only from
-the peer itself -- its page is not even served elsewhere -- so you look at a
-peer through the gateway. **Do not put a reverse proxy in front of a peer**: a
-proxy connects from loopback, so everything it forwards would look local, and a
-peer needs none because the gateway reaches it directly. And **the token is the
-whole of a peer's security**, so it wants the properties that implies: high
-entropy (`pnpm scratch start <name>` generates one; a memorable one is not), and `https://` for
-a peer across a network you do not own, since `PeerClient` sends it as a plain
-header. There is no attempt limit and no lockout -- a token is the credential
-for `POST /api/sessions`, which is arbitrary command execution on that machine.
+The page itself -- the shell, the bundle, the manifest, the icons -- is served
+to any name we answer to, because a login page cannot need a login. Everything
+about projects, worktrees and sessions is behind `/api`.
 
-Rebinding was worth closing rather than documenting: on a token-less instance
-`/api` was fully *writable* by any page that kept a DNS record pointed at this
-address. `POST /api/sessions` spawns a pty, and a queued todo is typed into a
-live Claude by the dispatcher with no browser open — exactly the capability the
-`/ws` check closes, reached through `/api` instead. Fetch Metadata narrows
-browser traffic on top of that, on every instance rather than only on a peer: a
-client sending none is not a browser and is judged by its address, while a
-browser naming a cross-site initiator is refused. Measured before that,
-`POST /api/worktrees/<id>/sleep` from a page you merely visited returned 200 —
-it cannot read the reply, and does not need to in order to act.
+Rebinding was worth closing rather than documenting, and matters more with a
+cookie: a rebound page is same-origin with us, so the browser attaches the
+session to it. Before the check, `/api` on an instance was fully *writable* by
+any page that kept a DNS record pointed at this address -- `POST /api/sessions`
+spawns a pty, and a queued todo is typed into a live Claude with no browser
+open. Measured before Fetch Metadata, `POST /api/worktrees/<id>/sleep` from a
+page you merely visited returned 200 -- it cannot read the reply, and does not
+need to in order to act.
 
 ## A machine you have linked
 
@@ -525,11 +550,11 @@ translation is the ids:
   twice over: `new URL().origin` drops it silently, and `fetch()` refuses a URL
   that carries credentials.
 
-  Worth knowing what that costs, though, and it is why the advice above stands:
-  **a proxy connects from loopback**, so on a peer behind one, every request it
-  forwards satisfies the loopback rule. Basic auth becomes that machine's real
-  boundary and the token stops doing the work. Reach a peer directly where you
-  can.
+  This used to carry a warning that a proxy in front of a peer dissolved the
+  peer's own boundary, because the gate trusted loopback and a proxy connects
+  from loopback. The gate no longer trusts loopback, so the peer's password is
+  its boundary with or without a proxy. Reaching a peer directly is still
+  simpler.
 
   **A gateway's own socket gets no relay.** Two machines linked to each other
   otherwise melt down: A's relay opens a socket to B, B accepts it as an
@@ -624,7 +649,7 @@ a typo.
 | --- | --- | --- |
 | `SWB_BIND` / `SWB_PORT` | `127.0.0.1` / `8084` | Where the server listens. `--bind` overrides. |
 | `NODE_ENV` | unset | `development` also trusts Vite's origin; anything else does not. `production` turns off the pretty logger. |
-| `SWB_TOKEN` | unset | Set to be somebody's peer. Unset, this server answers loopback only. |
+| `SWB_TOKEN` | unset | A static token a gateway may present instead of one obtained by logging in. The password is required either way. |
 | `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |
 | `SWB_STATE_DIR` | `~/.config/switchboard` | `state.json` *and* the tmux socket. |
 | `SWB_TMUX_SOCKET` | `<state dir>/tmux.sock` | Overrides just the socket. |

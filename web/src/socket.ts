@@ -136,6 +136,23 @@ class TerminalSocket {
     ws.onerror = () => ws.close()
   }
 
+  /**
+   * Close the socket and do not come back until `connect` is called again.
+   *
+   * For signing out: the server clears the cookie but a session token is
+   * stateless, so an open socket would otherwise stay authorised until the
+   * next re-check -- and a signed-out page has no business holding one.
+   */
+  disconnect(): void {
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    const ws = this.ws
+    this.ws = null
+    ws?.close(1000)
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectTimer !== null) return
     this.reconnectTimer = window.setTimeout(() => {

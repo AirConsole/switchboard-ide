@@ -11,9 +11,9 @@ import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
  * whose files live elsewhere, not a second kind of build.
  *
  * Everything here is server-to-server. No browser ever talks to a peer, so
- * there is no CORS, no cookie, no preflight and no login page in this design --
- * the credential is a token this process holds and the user's browser never
- * sees. That is most of what a direct browser-to-peer design has to build.
+ * there is no CORS, no cookie and no preflight in this design -- the
+ * credential is a token this process holds and the user's browser never sees.
+ * That is most of what a direct browser-to-peer design has to build.
  */
 
 /**

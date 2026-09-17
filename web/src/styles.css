@@ -2689,6 +2689,11 @@ button {
   border-top: 1px solid var(--rule);
 }
 
+/* Pushed to the far side of the actions, so it is not read as one of them. */
+.dialog__aside {
+  margin-right: auto;
+}
+
 /*
  * `⏎` on the answer Enter would take.
  *
