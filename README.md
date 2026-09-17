@@ -38,6 +38,7 @@ git clone https://github.com/AirConsole/switchboard-ide.git
 cd switchboard-ide
 pnpm install        # compiles node-pty; Linux needs a C toolchain, macOS does not
 pnpm build
+pnpm password       # the server will not start without one
 pnpm start          # http://127.0.0.1:8084
 ```
 
@@ -55,29 +56,44 @@ Nothing registers it to start at boot.
 
 ## Read this before you expose it
 
-**There is no password.** Not on localhost, not anywhere. The server binds
-`127.0.0.1` and expects a reverse proxy in front of it if you want to reach it
-from elsewhere — that proxy is what authenticates you.
+**One password, and it is the whole boundary.** Anyone who gets past it can run
+commands as you. Set it with `pnpm password`; the server will not start without
+one. A browser asks for it once and then holds a session for up to a week.
 
-This is a deliberate choice, not an omission. A process running as you on the
-same machine is *not* kept out: it can already read your SSH keys and your
-source, so a password in the app would be theatre against it. The caller worth
-keeping out is the one that is not you.
+It is asked for **everywhere, including on localhost**, and that is forced
+rather than cautious: a reverse proxy connects from loopback, so "local callers
+skip the password" would let the whole internet skip it through the proxy.
 
-What the server does enforce, because a reverse proxy cannot:
+A process running as you on the same machine is still *not* kept out, and
+cannot be: it can read the password file and the tmux socket, and your SSH keys
+besides. The caller worth keeping out is the one that is not you.
 
-- **Which pages may open its WebSocket.** A socket is exempt from CORS, so
-  without this any page you visited could open one, read a session id off the
-  state broadcast, and type a prompt and a Return into a running agent.
-- **Which names it answers to**, so a rebound DNS name pointed at your loopback
-  address cannot reach it.
-- **Cross-site requests**, via Fetch Metadata.
+What the server enforces beyond the password, because a password alone covers
+none of it:
 
-All of it is `server/src/gate.ts`, and it is about 90 lines.
+- **What may open its WebSocket.** A socket is exempt from CORS, and a session
+  cookie is not enough: cookies ignore the port, so a page on another port of
+  the same hostname is same-site and your browser hands it your cookie. So the
+  socket does not accept the cookie at all. The page fetches a single-use ticket
+  over `/api`, where the origin *is* checked, and opens the socket with that.
+- **Which names it answers to**, so a DNS name re-pointed at your machine
+  cannot reach it. That matters more with a password, not less: a rebound page
+  is same-origin with the server, so the browser attaches your cookie to it.
+- **Cross-site requests**, via `SameSite=Strict`, Fetch Metadata, and an
+  `Origin` check on anything that changes state.
+- **How fast a password can be guessed.** Every attempt waits its turn, and the
+  wait does not depend on whether the guess was right, so timing tells an
+  attacker nothing.
+
+All of it is `server/src/gate.ts` and `server/src/auth.ts`.
+
+Changing the password signs out every browser within a second, with no
+restart, and closes their open terminals within a minute.
+`pnpm password --revoke-sessions` does the same without changing it.
 
 Behind a proxy, tell the server the name a browser will type, or every socket
 arriving through it is refused. Settings live in
-`~/.config/switchboard/config.json` (mode 0600, because of the token):
+`~/.config/switchboard/config.json`:
 
 ```json
 { "port": 8084, "host": "ide.example.com:84", "token": "..." }

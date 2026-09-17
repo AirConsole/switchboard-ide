@@ -623,6 +623,20 @@ export const restart = async (opts = {}) => {
   }
 }
 
+/**
+ * Whether a password is set, and when -- never the hash, never a length.
+ * `status` output gets pasted into issues.
+ */
+const passwordState = () => {
+  try {
+    const rec = JSON.parse(readFileSync(join(stateDir(), 'auth.json'), 'utf8'))
+    const when = typeof rec.updatedAt === 'number' ? new Date(rec.updatedAt).toISOString().slice(0, 10) : 'at an unknown time'
+    return `set ${when}`
+  } catch {
+    return 'NOT SET -- the server will not start; run `pnpm password`'
+  }
+}
+
 export const status = async () => {
   const run = readRun()
   const cfg = readConfig()
@@ -640,6 +654,7 @@ export const status = async () => {
    */
   if (run === undefined) {
     console.log('switchboard   not running (no record of one)')
+    console.log(`  password   ${passwordState()}`)
     const taken = await portInUse(port)
     if (taken) {
       console.log(`  but something is listening on :${port}`)
@@ -670,6 +685,7 @@ export const status = async () => {
     console.log('  answering  no')
     process.exitCode = 2
   }
+  console.log(`  password   ${passwordState()}`)
   console.log(`  config     ${configPath()}${existsSync(configPath()) ? '' : '   (none yet)'}`)
   console.log(`  log        ${logPath()}`)
   const sessions = await sessionSummary(run.port)
