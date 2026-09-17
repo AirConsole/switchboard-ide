@@ -101,9 +101,9 @@ There is no linter; the compiler does that work. Two throwaway instances for
 trying things, each with its own state directory, tmux socket and port:
 
 ```sh
-pnpm swb scratch start
-pnpm swb scratch start peer     # a second one, to link
-pnpm swb scratch stop           # removes every trace
+pnpm scratch start
+pnpm scratch start peer         # a second one, to link
+pnpm scratch stop               # removes every trace
 ```
 
 ## The comments are the documentation

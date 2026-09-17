@@ -66,8 +66,8 @@ pnpm ensure-native   # rebuild node-pty if a Node upgrade left it ABI-stale
 start is how you bring something up. A failed build restarts nothing, so what is
 running stays running and it is the last thing that built.
 
-All of it is one command, `cli/bin/swb.js`, and `pnpm swb` reaches the parts
-without an alias (`pnpm swb --help`). It is plain JavaScript with no build step,
+Each is an alias for one command, `cli/bin/swb.js`; `pnpm swb` prints its usage.
+It is plain JavaScript with no build step,
 because `postinstall` runs it before anything has been built and because a
 `start` that must be compiled before it can start anything is circular. It is
 still typechecked: `cli/tsconfig.json` turns on `checkJs`, so the repository's
@@ -132,21 +132,21 @@ have checked. Consequences:
   Use a scratch instance:
 
 ```sh
-pnpm swb scratch start    # this checkout's own instance; prints its URL
-pnpm swb scratch          # that URL again, and anything else on the machine
-pnpm swb scratch stop     # removes every trace
-CLAUDE_CMD=vim pnpm swb scratch start   # vim as the stand-in agent
+pnpm scratch start        # this checkout's own instance; prints its URL
+pnpm scratch              # that URL again, and anything else on the machine
+pnpm scratch stop         # removes every trace
+CLAUDE_CMD=vim pnpm scratch start   # vim as the stand-in agent
 ```
 
 Each checkout gets its own instance — its own state dir, tmux socket, scratch
 repositories and port, all derived from the checkout's path — so several
 worktrees can run one at once without reaching each other. **The port differs
-per worktree**, so read it from `start` or ask `pnpm swb scratch`; do not assume
+per worktree**, so read it from `start` or ask `pnpm scratch`; do not assume
 one. `vim` is the useful stand-in for anything about attention or resizing:
 silent at rest, full redraw on SIGWINCH. Close any browser tab you opened when
 you finish, and `stop` before you go.
 
-**`pnpm start` is the machine's one instance; `pnpm swb scratch start` is the
+**`pnpm start` is the machine's one instance; `pnpm scratch start` is the
 throwaway one.** A worktree uses the second and never the first — which is why
 `start`, `stop` and `restart` refuse to run from one, and why it is safe for the
 two to share verb names. The refusal is not only the deploy rule: a worktree has
@@ -374,9 +374,9 @@ Everything else follows from those two sentences:
 Testing needs two instances:
 
 ```sh
-pnpm swb scratch start         # the gateway
-pnpm swb scratch start peer    # the machine to link; prints its token
-pnpm swb scratch stop peer     # each one goes down by name
+pnpm scratch start             # the gateway
+pnpm scratch start peer        # the machine to link; prints its token
+pnpm scratch stop peer         # each one goes down by name
 ```
 
 ## Not built yet

@@ -1140,7 +1140,7 @@ from a desktop.
 
 ## Verifying UI changes
 
-Drive a real browser against a scratch instance (`pnpm swb scratch start`),
+Drive a real browser against a scratch instance (`pnpm scratch start`),
 never the user's instance on
 :8084, and close the tab when you finish — a second viewer competes for terminal
 geometry. Then:

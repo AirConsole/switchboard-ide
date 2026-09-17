@@ -298,7 +298,7 @@ export const status = async (opts = {}) => {
 
   if (opts.url) {
     if (port === undefined) {
-      console.error('swb: no scratch instance for this checkout -- run `pnpm swb scratch start`')
+      console.error('swb: no scratch instance for this checkout -- run `pnpm scratch start`')
       process.exit(1)
     }
     console.log(`http://127.0.0.1:${port}`)
@@ -307,7 +307,7 @@ export const status = async (opts = {}) => {
 
   if (port === undefined) {
     console.log('no scratch instance for this checkout')
-    console.log(`  start one with: pnpm swb scratch start${opts.name ? ` ${opts.name}` : ''}`)
+    console.log(`  start one with: pnpm scratch start${opts.name ? ` ${opts.name}` : ''}`)
   } else {
     console.log(`http://127.0.0.1:${port}${live ? '' : '   (not running)'}`)
     console.log(`  checkout: ${repoRoot}`)

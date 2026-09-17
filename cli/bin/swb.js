@@ -23,10 +23,10 @@ const USAGE = `swb -- Switchboard
   pnpm restart                   build, then stop and start; this is the deploy
   pnpm status                    what it is, and whether the public name is right
 
-  pnpm swb scratch start [name]  a throwaway instance for this checkout
-  pnpm swb scratch stop  [name]
-  pnpm swb scratch restart [name]
-  pnpm swb scratch [name]        its URL, plus any other instance on this machine
+  pnpm scratch start [name]      a throwaway instance for this checkout
+  pnpm scratch stop  [name]
+  pnpm scratch restart [name]
+  pnpm scratch [name]            its URL, plus any other instance on this machine
 
   pnpm ensure-native             rebuild node-pty if a Node upgrade left it stale
 
@@ -102,8 +102,18 @@ const main = async () => {
     process.exit(1)
   }
 
+  /*
+   * Bare `swb` prints usage rather than status, because `swb` alone names no
+   * object -- the same reason bare `git` prints usage while bare `git remote`
+   * lists remotes. `swb scratch` does name one, so it reports.
+   */
+  if (first === undefined) {
+    console.log(USAGE)
+    return
+  }
+
   const service = await import('../src/service.js')
-  if (first === undefined || first === 'status') return service.status()
+  if (first === 'status') return service.status()
   if (first === 'start' || first === 'stop' || first === 'restart') return service[first](opts)
 
   console.error(`swb: no such command "${first}"`)

@@ -442,7 +442,7 @@ peer through the gateway. **Do not put a reverse proxy in front of a peer**: a
 proxy connects from loopback, so everything it forwards would look local, and a
 peer needs none because the gateway reaches it directly. And **the token is the
 whole of a peer's security**, so it wants the properties that implies: high
-entropy (`swb scratch start <name>` generates one; a memorable one is not), and `https://` for
+entropy (`pnpm scratch start <name>` generates one; a memorable one is not), and `https://` for
 a peer across a network you do not own, since `PeerClient` sends it as a plain
 header. There is no attempt limit and no lockout -- a token is the credential
 for `POST /api/sessions`, which is arbitrary command execution on that machine.
