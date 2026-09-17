@@ -1,5 +1,5 @@
 import { decodeOutputFrame, type ClientMsg, type ServerMsg } from '@switchboard/shared'
-import { api } from './api.js'
+import { api, ApiError } from './api.js'
 
 export interface ConsumerOptions {
   /** Size authority. True for the focused detail view, false for overview tiles. */
@@ -80,11 +80,18 @@ class TerminalSocket {
     let ticket: string
     try {
       ticket = await api.wsTicket()
-    } catch {
+    } catch (err) {
       this.connecting = false
-      // A ticket needs a session, so failing to get one means signed out. Say
-      // so rather than retrying forever behind a row that never paints.
-      this.unauthorized()
+      /*
+       * Only a 401 means signed out. Anything else is the server not being
+       * there -- a restart, which is every deploy -- and the proxy answers 502
+       * or the fetch fails outright for those seconds. Reading that as signed
+       * out put up the login screen on every restart while the cookie was
+       * still perfectly good, so the password had to be typed again for
+       * nothing. Keep retrying instead; the row paints when it is back.
+       */
+      if (err instanceof ApiError && err.status === 401) this.unauthorized()
+      else this.scheduleReconnect()
       return
     }
     this.connecting = false
