@@ -11,6 +11,7 @@
 set -eu
 
 REPO_URL="https://github.com/AirConsole/switchboard-ide.git"
+RAW_URL="https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/install.sh"
 DIR="${SWB_INSTALL_DIR:-$HOME/src/switchboard-ide}"
 ASSUME_YES=0
 CHECK_ONLY=0
@@ -86,9 +87,19 @@ if [ -n "$MISSING" ]; then
 fi
 say "Will clone $REPO_URL into $DIR, then build it."
 if [ "$ASSUME_YES" -eq 0 ]; then
-  # `< /dev/tty`, because stdin is the script itself under `curl | sh`.
-  printf 'Continue? [y/N] '
-  read -r reply < /dev/tty || reply=n
+  # `/dev/tty` and not stdin, because under `curl | sh` stdin is the script.
+  # Where there is no terminal to ask on -- CI, a hook, a container -- say so
+  # and name the flag, rather than letting the shell's own "cannot open
+  # /dev/tty" be the last thing anyone sees.
+  if (: < /dev/tty) 2>/dev/null; then
+    printf 'Continue? [y/N] '
+    read -r reply < /dev/tty || reply=n
+  else
+    say "No terminal to ask on. Nothing was changed."
+    say "  re-run with --yes to proceed without asking:"
+    say "    curl -fsSL $RAW_URL | sh -s -- --yes"
+    exit 1
+  fi
   case "$reply" in y|Y|yes|YES) ;; *) say "Nothing was changed."; exit 1 ;; esac
 fi
 
