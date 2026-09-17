@@ -1277,11 +1277,13 @@ the row -- which is what makes the legend follow you as you walk.
 inside the word -- the button grew from 86.98px to 95 the moment Cmd went down.
 Wrapped, it is 86.98 to 87.00. Weight is not used either, for the same reason.
 
-## A dialog answers to the keyboard: arrows choose, Enter does, Escape leaves
+## Arrows choose, Enter does, Escape leaves
 
 `useDialogKeys` gives every dialog's foot a toolbar's keyboard, because that is
-what it is: one question with two or three answers in a row. Left and right move
-between them, Enter takes the one you are on, and `⏎` is drawn on it -- a
+what it is: one question with two or three answers in a row. **All four arrows**
+move between them -- the answers are drawn in a row, but a hand reaching for an
+arrow has not looked at which way they run, and the project pane's column takes
+the same four keys from the other side, Enter takes the one you are on, and `⏎` is drawn on it -- a
 keyboard nobody can see is a keyboard nobody uses. The mark is reserved at every
 width and merely hidden, so stepping along the row does not move the row, which
 is the rule the panel toggles' legend keeps for the same reason. **Not on a
@@ -1297,6 +1299,27 @@ came for -- `Sleep`, `Close project` -- so that is where it begins, unless that
 answer is `--danger`, when the way out takes the focus instead and reaching the
 red one is a deliberate arrow press. Measured: `Sleep feature-x?` starts on
 `Sleep`, `Remove worktree feature-x?` starts on `Keep it`.
+
+**The project pane is the same interface stood on end** (`useListKeys`). Up and
+down walk the column -- every awake and sleeping worktree, then the branch box,
+the button beside it and `Close project` -- and left and right reach the second
+control on a line, which is a row's × , the same shape a tab in the top bar has.
+No wrapping: a list has a top and a bottom, and running off either end of one
+should feel like an end rather than a loop.
+
+It exists because **Tab could not do this job here**. The lists come *before*
+the form in the markup, and arriving puts the caret in the form, which is the
+right place to arrive -- so tabbing forward reached `Close project` and then
+left the pane entirely (measured: the next stop was the following window's
+TERMINAL), and everything the pane is *for* was behind Shift+Tab, which is not
+where anybody looks. The hook listens on the pane's own box rather than the
+window, because unlike a dialog it is one pane among several and means nothing
+while the keyboard is elsewhere.
+
+The `⏎` goes on the foot's buttons and not on the worktree rows: Enter on a row
+you are standing on obviously opens it, and the focus ring already says which.
+A disabled button is not in the walk at all, which is why `Create` is skipped
+until the branch box has something in it.
 
 **On the window, in capture, like `useEscape`** -- and that is the half that
 makes "the dialog listens to Enter" true rather than "its focused button does".
