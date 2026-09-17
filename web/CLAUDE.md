@@ -1154,8 +1154,20 @@ keyboard has letters, digits and Enter: no arrows, no Tab, no Ctrl -- and those
 are not conveniences here. Claude's menus are walked with the arrows and its
 dialogs answered with Escape, a shell completes with Tab, and everything is
 interrupted with Ctrl+C; without them a phone can watch an agent and not answer
-it. So a terminal that holds the keyboard draws `.keybar` under itself on a
-coarse pointer: `esc ⇥ ← ↑ ↓ → ctrl`, 44px each in equal shares.
+it. So a terminal draws `.keybar` under itself -- `esc ⇥ ← ↑ ↓ → ctrl`, 44px each
+in equal shares, the glyphs at 22px because an arrow at label size is a mark you
+aim at rather than a key you can see (`esc` and `ctrl` are words and stay at
+13px). Three things have to hold: a coarse pointer, this terminal holding the
+keyboard, and **the on-screen keyboard actually being up**. Nothing reports
+that last one -- `navigator.virtualKeyboard` describes only a keyboard the page
+asked to own, and this page uses `interactive-widget=resizes-content` instead --
+so `useSoftKeyboard` reads it off the height: a visual viewport at least 120px
+shorter than the tallest seen *at this width* is a keyboard. Per width, so
+turning the phone is a new tallest rather than a landscape viewport read as a
+keyboard; and the tallest is remembered rather than taken from `screen.height`,
+which is the device rather than the browser's share of it -- and the difference
+is the browser's own chrome, which is the thing this must not mistake for a
+keyboard.
 
 Four things about it are load-bearing:
 
@@ -1184,18 +1196,23 @@ Four things about it are load-bearing:
   Claude does (`modifyOtherKeys` at startup, see `server/tmux.conf`), and tmux
   drops it for one that did not -- measured, the stand-in agent received nothing
   for it while every other key arrived.
-- **A press must not move the focus.** `onPointerDown` with the default
-  prevented, since blurring xterm's textarea closes the keyboard -- the row
-  would take away the keyboard every time it was used, and `onClick` is too late
-  to prevent it.
+- **A press must not move the focus, and the keys are spans for it.** Blurring
+  xterm's textarea closes the on-screen keyboard, so a control that can take
+  focus can take the keyboard away -- which is what happened: *typing stopped
+  working after a tap on the row*, reported on a real phone and not reproducible
+  with a synthetic tap, which is the signature of focus (a synthetic tap does
+  not move it; a real one does). `onPointerDown` with the default prevented was
+  not enough on a real device. So the keys are `span role="button"`, which
+  cannot hold focus at all, and every tap calls `term.focus()` afterwards
+  regardless -- a keyboard that has gone is a terminal you cannot type into.
 - **It is in the flow, not over the terminal.** The pty is resized to what is
   left: measured, the focused session went 46x43 to 46x40, three rows for the
   bar. Drawn over the bottom rows it would hide the prompt, which is the one
   line you are typing at.
 
-It stays while the keyboard is dismissed, deliberately -- the arrows are worth
-having then too, and a row that slid away with the keyboard would take the
-control you were reaching for. `(pointer: coarse)` is the test: there is no way
+It goes when the keyboard goes: with the keyboard down the screen is the row of
+windows again, and 44px of keys over a terminal is chrome in the way of what you
+are watching. `(pointer: coarse)` is the other test: there is no way
 to ask whether a physical keyboard is attached, so a tablet with a keyboard case
 gets 44px it does not need, and a phone gets the only thing that lets it answer
 an agent. Desktop is untouched -- no bar, and the host still fills its pane

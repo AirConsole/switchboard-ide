@@ -2967,6 +2967,9 @@ button {
 }
 
 .keybar__key {
+  /* A span, so that a tap cannot move the focus -- see TerminalView. Everything
+     a button gave it is said here instead. */
+  cursor: pointer;
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
@@ -2976,12 +2979,24 @@ button {
   /* Mono, because every one of these is a key on a keyboard rather than a word
      the interface is saying. */
   font-family: var(--font-mono);
-  font-size: 15px;
+  /*
+   * 22px, which is the glyph and not the label: an arrow drawn at label size is
+   * a mark you aim at rather than a key you can see, and these are the whole
+   * keyboard for the hand using them. `esc` and `ctrl` are words and step back
+   * down -- a word at 22px in a 54px key does not fit.
+   */
+  font-size: 22px;
+  line-height: 1;
   color: var(--bone);
   background: var(--level-object);
   /* A tap is a key press, never a double-tap zoom or a text selection. */
   touch-action: manipulation;
   user-select: none;
+}
+
+.keybar__key--word {
+  font-size: 13px;
+  letter-spacing: 0.04em;
 }
 
 .keybar__key:active {
