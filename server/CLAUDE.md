@@ -294,9 +294,19 @@ safe direction: this decides whether to show a mark saying there is work here,
 and git falling over is not a reason to tell somebody their work is already
 merged.
 
-What is deliberately **not** done is `merge-tree`, which would also catch a
-branch that is ahead *and* behind where the ahead part is already in. That costs
-a real merge of two trees per worktree per refresh, and nothing has hit it yet.
+**Identical trees stop being enough the moment the default branch moves on.**
+The branch then lacks the newer work, so the trees differ, while everything the
+branch *has* is already in. That was deferred as unlikely and hit within the
+hour: one more pull request landed on master and `ui` wore the fork again, with
+19 commits behind it and nothing to contribute. So where the trees differ, the
+merge itself is asked -- `git merge-tree --write-tree <default> HEAD` -- and a
+result equal to `<default>^{tree}` means merging would change nothing. It is a
+real three-way merge, in memory and touching no checkout: 7ms on this
+repository, and it only runs for a branch that is both ahead and different. It
+writes the merged tree into the object store, which is content-addressed, so
+the same inputs write nothing twice and an unreferenced tree is pruned by gc. A
+conflict exits 1 and counts as work, as any other failure does. Needs git 2.38;
+older git fails the call and the mark stays, which is the behaviour before it.
 
 What counts as the default branch is resolved once per repository and
 cached for the life of the process, in this order: `origin/HEAD`, because that
@@ -314,7 +324,8 @@ Cost: one `rev-list` per worktree per poll, alongside the `git status` that
 halves together and 15ms for the `rev-list` half, against a 4s poll. The diff
 runs only where the count is non-zero — so the common answer is still one
 `rev-list` — and is a tree comparison rather than a walk: 2ms on this
-repository.
+repository. The merge runs only where that comparison fails; the whole answer
+measured 14–18ms for a branch that needed it.
 
 ## What a worktree is working on
 
