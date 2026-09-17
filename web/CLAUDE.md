@@ -312,8 +312,14 @@ The pieces, and why each is the way it is:
 - **A + follows the project's name, while its tabs are showing.** It goes
   where the name goes -- the project's pane, where arriving puts the caret in
   the branch box -- because that pane is where a worktree is made, and this is
-  the door to it that says so. It is a segment of the expanded slab, 24px and
-  seamed like the tabs, and it is hidden at exactly the rungs they are: a + on a
+  the door to it that says so. It reads as part of the name -- the name and
+  then an icon, not a segment of its own: an earlier cut seamed it off like a
+  tab, and 2px of sleeve was enough to make it a separate object. So the seam is
+  cancelled, the pill hands its right padding to the icon, the 4px between them
+  is the pill's own word gap, and the two share every ground (resting, lit,
+  hovered -- hovering either lifts both); only the glyph brightening says which
+  one the pointer is on. It is hidden at exactly the rungs the tabs are, and the
+  name takes its 12px right edge back when it goes: a + on a
   collapsed head would be a control on something no longer drawn, and going
   with the tabs keeps every rung narrower than the last, which is what the
   sweep stops on. Measured across 1600 -> 390px: at every width each project's
