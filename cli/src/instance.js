@@ -113,6 +113,7 @@ export const validateName = (name) => {
  * @property {string} runFile
  * @property {string} portFile
  * @property {string} tokenFile
+ * @property {string} passwordFile
  * @property {string} logFile
  */
 
@@ -157,6 +158,7 @@ export const deriveScratch = (repo, name = '', tmp = tmpdir()) => {
     runFile: join(root, 'run.json'),
     portFile: join(root, 'port'),
     tokenFile: join(root, 'token'),
+    passwordFile: join(root, 'password'),
     logFile: join(root, 'server.log'),
   }
 }

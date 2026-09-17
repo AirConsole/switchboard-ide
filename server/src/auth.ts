@@ -1,5 +1,5 @@
 import { createHmac, hkdfSync, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { config } from './config.js'
@@ -315,3 +315,190 @@ export const spendTicket = (value: string | undefined): boolean => {
 
 /** Every outstanding ticket, dropped. Called when the password changes. */
 export const dropTickets = (): void => tickets.clear()
+
+// ---------------------------------------------------------------------------
+// What a guess costs
+// ---------------------------------------------------------------------------
+
+/**
+ * The throttle, and it must cost the same whether the guess was right.
+ *
+ * Recovered from the previous attempt, where it was measured wrong twice:
+ *
+ * **It was a timing oracle.** Counting consecutive *failures* meant a correct
+ * password reset the counter, so the next request came back in 86ms instead of
+ * 4089ms -- which answered for the previous guess, from a page whose every
+ * fetch was CORS-rejected, so hiding the response body hid nothing. The inverse
+ * leaks equally. So this counts **attempts, never outcomes**, and a correct
+ * password buys no relief at all.
+ *
+ * **And it was per batch, not per guess.** The delay was read when the promise
+ * was created, so a thousand concurrent requests all slept the same interval
+ * and then all failed: 0.51/s serially against 33.8/s at 1000-way concurrency,
+ * ~135x what the cap implied. A slot is *claimed* now -- `nextSlot` only ever
+ * moves forward -- so concurrency queues instead of overlapping.
+ *
+ * Attempts decay, because a hostile flood must not lock the owner out of their
+ * own machine; with nobody guessing the ramp is gone within a minute. And past
+ * a ceiling a guess is refused outright rather than queued, because serialising
+ * an unbounded queue is itself the lockout the delay exists to avoid.
+ */
+const STEP_MS = 250
+const MAX_STEP_MS = 5000
+const DECAY_MS = 20_000
+const MAX_WAIT_MS = 20_000
+
+let attempts = 0
+let decayedAt = Date.now()
+let nextSlot = 0
+
+/** @returns the epoch ms this attempt may be answered at, or null to refuse it. */
+export const claimSlot = (now: number = Date.now()): number | null => {
+  const forgiven = Math.floor((now - decayedAt) / DECAY_MS)
+  if (forgiven > 0) {
+    attempts = Math.max(0, attempts - forgiven)
+    decayedAt = now
+  }
+  const step = Math.min(MAX_STEP_MS, STEP_MS * 2 ** Math.min(attempts, 16))
+  const slot = Math.max(now, nextSlot) + step
+  if (slot - now > MAX_WAIT_MS) return null
+  attempts += 1
+  nextSlot = slot
+  return slot
+}
+
+/** Only for tests: the ramp is process-wide and otherwise leaks between them. */
+export const resetSlots = (): void => {
+  attempts = 0
+  decayedAt = Date.now()
+  nextSlot = 0
+}
+
+// ---------------------------------------------------------------------------
+// Cookies
+// ---------------------------------------------------------------------------
+
+/**
+ * Two names, and the port is not in either.
+ *
+ * `__Host-` is browser-enforced: it is refused unless the cookie is `Secure`,
+ * `Path=/` and carries no `Domain`. That is what stops anything else under
+ * `n-dream.com` shadowing ours with a `Domain=` cookie -- a live concern here,
+ * since this deployment has sibling names. It cannot be used over plain http,
+ * so a loopback instance falls back to an ordinary name.
+ */
+const SECURE_COOKIE = '__Host-swb'
+const PLAIN_COOKIE = 'swb_session'
+export const COOKIE_NAMES = [SECURE_COOKIE, PLAIN_COOKIE] as const
+
+/**
+ * Every value under `name`, in order.
+ *
+ * *Every*, not the first: anything able to set a `Domain=` cookie of the same
+ * name on a parent domain adds a second entry, and browsers order equal-path
+ * cookies by creation time, so an older plant always wins. A reader taking the
+ * first match is then permanently signed out with no cure but clearing site
+ * data. That is not session theft -- the plant cannot be forged into a valid
+ * token -- but it is a denial of service anyone on a sibling name can perform.
+ */
+export const cookieValues = (header: string | undefined, name: string): string[] => {
+  if (header === undefined || header.length > 8192) return []
+  const found: string[] = []
+  for (const part of header.split(';')) {
+    const at = part.indexOf('=')
+    if (at === -1) continue
+    if (part.slice(0, at).trim() !== name) continue
+    const value = part.slice(at + 1).trim()
+    // No percent-decoding: the token alphabet is base64url and `.`, so it never
+    // needs encoding -- and decoding here would create a second spelling of
+    // every token, which is the class of bug `/%61pi/snapshot` already records.
+    if (value !== '') found.push(value)
+  }
+  return found
+}
+
+/**
+ * Whether this reply's cookie may carry `Secure`.
+ *
+ * Keyed on the name we were addressed by, not on `x-forwarded-proto`: this
+ * process deliberately does not trust headers about the connection
+ * (`trustProxy` is off), and making a security attribute depend on another
+ * program's configuration is how it silently stops being set. `Host` is
+ * attacker-chosen too, but only on the attacker's *own* request -- they cannot
+ * make somebody else's browser send a loopback Host to the public name, so the
+ * only session they can downgrade is their own.
+ */
+export const secureFor = (host: string | undefined): boolean => {
+  if (host === undefined) return true
+  try {
+    const name = new URL(`http://${host}`).hostname
+    return !(name === 'localhost' || name === '127.0.0.1' || name === '::1')
+  } catch {
+    return true
+  }
+}
+
+export const cookieFor = (host: string | undefined, token: string): string => {
+  const secure = secureFor(host)
+  return [
+    `${secure ? SECURE_COOKIE : PLAIN_COOKIE}=${token}`,
+    'Path=/',
+    'HttpOnly',
+    // Strict, not Lax. Lax still sends the cookie on a top-level cross-site
+    // GET, and `GET /api/usage` execs a process. Nothing is lost: a bookmark or
+    // an address-bar navigation has no initiator and counts as same-site, so
+    // only following a link from another site costs a sign-in.
+    'SameSite=Strict',
+    secure ? 'Secure' : '',
+    `Max-Age=${Math.floor(IDLE_MS / 1000)}`,
+  ]
+    .filter((part) => part !== '')
+    .join('; ')
+}
+
+/** Both names, cleared. A clear only matches if its attributes match the set. */
+export const clearedCookies = (host: string | undefined): string[] => {
+  const secure = secureFor(host)
+  return COOKIE_NAMES.map((name) =>
+    [
+      `${name}=`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Strict',
+      name === SECURE_COOKIE || secure ? 'Secure' : '',
+      'Max-Age=0',
+    ]
+      .filter((part) => part !== '')
+      .join('; '),
+  )
+}
+
+// ---------------------------------------------------------------------------
+// The local tool's credential
+// ---------------------------------------------------------------------------
+
+export const localFile = (): string => join(config.stateDir, 'local.json')
+
+/**
+ * A session token on disk, for the CLI on this machine.
+ *
+ * `swb status` and the readiness poll that `pnpm restart` waits on both call
+ * `/api/server`, which is now behind the gate -- so without this, turning the
+ * password on would break the deploy, and the failure would be a restart that
+ * hangs and then reports the server never came back.
+ *
+ * It is an ordinary session token, not a new kind of credential, so there is no
+ * extra branch in the gate to get wrong and no second piece of crypto to keep
+ * in step. Reading it requires being the user, who can already attach to the
+ * tmux socket and read `state.json`; it adds no exposure that was not already
+ * there. It dies with the password, like everything else.
+ */
+export const writeLocalToken = (): void => {
+  const token = mintSession()
+  if (token === null) return
+  mkdirSync(config.stateDir, { recursive: true })
+  const target = localFile()
+  const tmp = `${target}.${process.pid}.tmp`
+  writeFileSync(tmp, `${JSON.stringify({ token }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  renameSync(tmp, target)
+}

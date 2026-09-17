@@ -29,6 +29,23 @@ import {
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * The session token the server writes for local tooling.
+ *
+ * `status` and the readiness poll both ask `/api/server`, which is behind the
+ * password now -- so without this, turning the gate on would break `pnpm
+ * restart` and the symptom would be a restart that hangs and then says the
+ * server never came back. Reading it requires being the user, who can already
+ * attach to the tmux socket.
+ */
+const localToken = () => {
+  try {
+    return JSON.parse(readFileSync(join(stateDir(), 'local.json'), 'utf8')).token
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * @typedef {object} Run
  * @property {number} pid
  * @property {number} port
@@ -129,6 +146,16 @@ const askServer = async (port, hostHeader) => {
   /** @type {Record<string,string>} */
   const headers = { 'sec-fetch-site': 'same-origin' }
   if (hostHeader !== undefined) headers.Host = hostHeader
+  /*
+   * The token is sent for `status`, and deliberately **not** when a Host is
+   * being probed: a token short-circuits the gate before it ever looks at the
+   * name, so a token-bearing probe would pass whatever `--host` says -- which
+   * is the one thing `verifyHost` exists to test.
+   */
+  if (hostHeader === undefined) {
+    const token = localToken()
+    if (token !== undefined) headers['x-swb-token'] = token
+  }
   const res = await get(port, '/api/server', headers)
   const protocol = res.headers['x-swb-protocol']
   let body
@@ -375,6 +402,13 @@ const WHY = {
 }
 
 const preflight = () => {
+  if (!existsSync(join(stateDir(), 'auth.json'))) {
+    fail(
+      'no password is set, and the server will not start without one.\n' +
+        '  set one:  pnpm password\n' +
+        '  it is asked for once per browser, and is what a linked machine logs in with.',
+    )
+  }
   const { missing, agent, agentMissing } = checkTools()
   if (missing.length > 0) {
     const lines = [`${missing.join(' and ')} not on your PATH.`]
@@ -394,7 +428,11 @@ const preflight = () => {
 /** @param {number} port */
 const sessionSummary = async (port) => {
   try {
-    const res = await get(port, '/api/snapshot', { 'sec-fetch-site': 'same-origin' })
+    const token = localToken()
+    const res = await get(port, '/api/snapshot', {
+      'sec-fetch-site': 'same-origin',
+      ...(token === undefined ? {} : { 'x-swb-token': token }),
+    })
     if (res.status !== 200) return undefined
     const snap = /** @type {any} */ (JSON.parse(res.text))
     const live = snap.sessions.filter((/** @type {any} */ s) => s.liveness === 'live').length

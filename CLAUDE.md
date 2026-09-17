@@ -217,11 +217,12 @@ us afterwards, so `Host` is the only thing about it that is not the attacker's
 to choose. Both need `--host` behind a proxy -- the public name a browser types,
 which `swb` passes from its config file and checks after every restart.
 
-Without `SWB_TOKEN` this instance serves **this machine only** -- there is no
-credential, so the connection's own address is the whole of the boundary.
-Setting `SWB_TOKEN` is what lets another machine read it, and therefore what
-makes binding anything but loopback a thing that can be made safe. See
-`server/CLAUDE.md`.
+Every request needs the password, **including on localhost**, and that is
+forced rather than cautious: a reverse proxy connects from loopback, so a rule
+of the form "local callers are fine" hands the whole internet a bypass.
+Measured -- a request carrying the public `Host` and arriving at 127.0.0.1
+exactly as Caddy delivers it is indistinguishable from one typed here. The
+address is no longer a boundary at all; the password is. See `server/CLAUDE.md`.
 
 It also **installs as an app** -- a manifest and icons in `web/public/`, so
 Chrome's "Install page as app" gives it its own window, icon and place in the
@@ -404,10 +405,18 @@ Everything else follows from those two sentences:
   losing them costs panels and open files permanently — and liveness recalled
   is worse than absent: it claims an agent is running, and that one is blocked
   on you, on a machine that is switched off.
-- **Authentication is a token between servers, and there is no login.** A peer
-  sets `SWB_TOKEN`, which is also what makes it safe for it to bind an address
-  other than loopback. Your browser never talks to a peer, so there is no CORS,
-  no cookie, no preflight — and Caddy keeps its `basicauth` exactly as it is.
+- **One password, and a login exactly once per browser.** The machine is
+  protected by a password set with `pnpm password`; the server will not start
+  without one. Linking a machine means typing *its* password once, which the
+  gateway exchanges for a token it holds — it never stores the password. Your
+  browser still never talks to a peer, so there is still no CORS and no second
+  login.
+- **The socket does not take the cookie.** Cookies ignore the port, so a page on
+  a sibling port of the same hostname is same-site and the browser hands it your
+  cookie — and a WebSocket is exempt from CORS. That combination was measured
+  into arbitrary command execution the last time a password was tried here. The
+  page fetches a single-use ticket over `/api`, where the origin *is* checked,
+  and opens the socket with that.
 
 Testing needs two instances:
 
