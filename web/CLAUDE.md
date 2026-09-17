@@ -43,7 +43,7 @@ the tabs of that one too, **5** the usage readout altogether. Past it the strip
 scrolls, which is what it has always done.
 
 Measured with two projects holding three and one awake worktrees: stage 0 from
-900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 340 -- and at
+900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 240 -- and at
 *every* width the strip has no overflow, which is the whole claim. The ladder is
 monotone, it never collapses more than it must (at each width, forcing it one
 rung up overflows), and a sweep back up the widths reproduces the same rungs
@@ -55,21 +55,6 @@ where `session 34% 4h` is the whole reading -- so the picture goes at rung 1 and
 the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
-
-**Signing out is the far corner, and the ladder never takes it.** A 37px icon
-button past the usage block -- a door with the way out through it, the glyph
-every web application uses, with the words in `title` and in its accessible
-name. It is the mirror of `Open project`: the two controls in this bar that are
-about the browser and the machine rather than about a worktree, one in each
-corner, each with its own hairline facing the strip. It was in the open-project
-dialog's foot, pushed away from that dialog's own answers, on the argument that
-the bar's width is budgeted to the pixel -- and the price was a door behind
-another door. It costs the ladder its *last* rung only: every other threshold
-measured where it did (1 at 800, 2 at 700, 3 at 640, 4 at 540), and rung 5
-arrives at 340 where it used to arrive at 300, which is the 37px said back. Past
-that the strip scrolls, as it always has. The `dialog__aside` class and the
-filter in `useDialogKeys` that kept an arrow press off it went with the move:
-that button was the only aside there has ever been.
 
 **A limit says how much is left in colour**: `usageLevel` is amber from 75% and
 red from 90%, inclusive, and the class goes on the *row* so the number wears it
@@ -727,13 +712,28 @@ and a scroll is looking around. On a phone the row shows **one**, so a swipe is
 not looking around, it is going somewhere, and the strip went on lighting the
 worktree you had scrolled away from -- the one thing it exists to answer.
 
-So `settleActive` marks a window when **exactly one cell is wholly on screen**,
-which is the same condition said as geometry rather than as a breakpoint: a wide
-row never has one, a phone always does. Two things it will not do. It does not
-override the keyboard -- if the focused pane is in that cell, the mark is
-already right, and if it is in one you scrolled away from, moving the mark is
-the whole point. And it hands over no focus, unlike `onReveal`: a swipe must not
-open a keyboard, and on a phone focus is what opens one.
+`settleActive` asks which window is showing, two ways. "Wholly on screen, and
+the only one" is the exact statement and is what a wide row needs -- with two
+windows up, neither is *the* one. **But on a phone that missed by a pixel**: a
+swipe lands through momentum and rubber-banding at a fractional offset, 390.4
+against a pitch of its own, so nothing was ever "wholly" on screen and the strip
+went on pointing at the window you had left. So where the row is one window wide
+(`units` at its floor of 2, which is every phone) the answer is whichever cell
+covers the middle of the screen -- which cannot be ambiguous and cannot round
+away.
+
+**And it arrives rather than merely marking**: `onReveal`, the same arrival a
+tab click makes, so the window you scrolled to is the one you can type into.
+That was `onActivate` -- the mark alone -- on the argument that a swipe must not
+open a keyboard; it does not, because a programmatic focus is not the gesture
+Android opens one for (measured: after a scroll the key row stays away, which is
+the tell, and typing goes straight to that window with no tap), and the cost of
+the caution was a window you had to tap before you could use.
+
+Answered once per window, not once per settle: `onReveal` carries a nonce, so
+repeating it would write `ui` on every scroll and could chase its own smooth
+scroll. The scroll it carries is a no-op by construction -- the row is already
+where that cell is.
 
 It runs when the row comes to rest, on `scrollend` where the browser has it and
 a 140ms timeout where it does not: a swipe crosses every window between here and
