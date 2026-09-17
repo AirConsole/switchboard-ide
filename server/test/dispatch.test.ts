@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Session, WorktreeTodo } from '@switchboard/shared'
-import { SETTLE_MS, USER_QUIET_MS } from '../src/session/readiness.js'
+import { SETTLE_MS } from '../src/session/readiness.js'
 
 /* See state.test.ts: `stateFile` is derived from config at import time. */
 const stateDir = await mkdtemp(join(tmpdir(), 'swb-dispatch-'))
@@ -58,7 +58,7 @@ const fakeEngine = (over: {
             dead: false,
             hasPty: true,
             lastOutputAt: over.lastOutputAt ?? Date.now() - SETTLE_MS - 1,
-            lastUserInputAt: over.lastUserInputAt ?? Date.now() - USER_QUIET_MS - 1,
+            lastUserInputAt: over.lastUserInputAt ?? 0,
             tail: screen,
             brightTail: screen,
           },
@@ -243,12 +243,29 @@ describe('the dispatcher', () => {
     expect(dispatcher.lastReason(WORKTREE)).toBe('needs-you')
   })
 
-  it('waits while someone is at the keyboard', async () => {
-    store.addTodo(todo({ id: 't-1', queuedAt: 1 }))
-    const { engine, typed } = fakeEngine({ lastUserInputAt: Date.now() })
-    const dispatcher = await run(engine)
-    expect(typed).toEqual([])
-    expect(dispatcher.lastReason(WORKTREE)).toBe('user-typing')
+  it('sends on the next tick when the human typed just before queueing', async () => {
+    const typedAt = Date.now() - SETTLE_MS - 10
+    store.addTodo(todo({ id: 't-1', queuedAt: typedAt + 1 }))
+    const { engine, typed } = fakeEngine({ lastUserInputAt: typedAt })
+    await run(engine)
+    expect(typed).toHaveLength(2)
+  })
+
+  it('hands back every todo queued before the human typed, and keeps later ones', async () => {
+    const typedAt = Date.now()
+    store.addTodo(todo({ id: 't-1', queuedAt: typedAt - 20 }))
+    store.addTodo(todo({ id: 't-2', queuedAt: typedAt - 10 }))
+    store.addTodo(todo({ id: 't-3', queuedAt: typedAt + 10, prompt: 'later' }))
+    const { engine, typed } = fakeEngine({ lastUserInputAt: typedAt })
+    await run(engine)
+    for (const id of ['t-1', 't-2']) {
+      expect(store.todo(id)?.queuedAt).toBeUndefined()
+      expect(store.todo(id)?.lastError).toMatch(/typed into Claude/)
+    }
+    // Only the one queued after the keystroke went out.
+    expect(typed).toHaveLength(2)
+    expect(typed[0]).toContain('later')
+    expect(store.todo('t-3')).toBeUndefined()
   })
 
   it('picks a live Claude over a dead one in the same worktree', async () => {

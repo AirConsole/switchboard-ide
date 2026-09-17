@@ -221,8 +221,26 @@ export const startDispatcher = (opts: {
       const verdict = readiness({
         ...state,
         turn,
+        queuedAt: todo.queuedAt ?? 0,
         notBefore: notBefore.get(worktreeId) ?? 0,
       })
+      if (!verdict.ready && verdict.why === 'typed-after-queue') {
+        /*
+         * Every todo queued before that keystroke, not just the head: they were
+         * all parked against the conversation the human has now taken over, and
+         * dropping one per tick would read as the queue emptying itself.
+         * Unqueued rather than deleted, so pressing RUN NEXT again sends it.
+         */
+        for (const t of store.todos) {
+          if (t.worktreeId !== worktreeId || t.queuedAt === undefined) continue
+          if (t.dispatchingAt !== undefined || t.queuedAt >= state.lastUserInputAt) continue
+          store.patchTodo(t.id, {
+            queuedAt: undefined,
+            lastError: 'You typed into Claude after queueing this, so it was not sent. Queue it again?',
+          })
+        }
+        onChange()
+      }
       if (!verdict.ready) {
         if (reasons.get(worktreeId) !== verdict.why) {
           // The turn is read from the verdict's own inputs rather than fetched
