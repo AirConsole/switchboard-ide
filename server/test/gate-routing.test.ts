@@ -102,6 +102,17 @@ describe('what the hook does with the routes that are not the API', () => {
       remoteAddress: '10.0.0.7',
       headers: { host: '127.0.0.1:8084' },
     })
-    expect(fromAway.statusCode).toBe(404)
+    // Served, and deliberately: this was keyed on the address, which behind a
+    // reverse proxy is every caller on earth -- so the restriction described
+    // something that had never been true. A login page cannot need a login.
+    expect(fromAway.statusCode).toBe(200)
+    // The name is what decides, and it is the only half of this a proxy leaves
+    // intact.
+    const strange = await app.inject({
+      method: 'GET',
+      url: '/anything',
+      headers: { host: 'evil.example' },
+    })
+    expect(strange.statusCode).toBe(404)
   })
 })

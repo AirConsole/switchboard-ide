@@ -9,7 +9,7 @@ import type {
   PanelName,
 } from '@switchboard/shared'
 import { defaultUiState } from '@switchboard/shared'
-import { api } from './api.js'
+import { ApiError, api } from './api.js'
 import { terminalSocket } from './socket.js'
 
 const UI_CACHE_KEY = 'swb.ui'
@@ -90,6 +90,16 @@ const cachedUi = (): UiState => {
 
 interface AppState extends AppSnapshot {
   loaded: boolean
+  /**
+   * Whether this browser holds a session. `null` until the first answer.
+   *
+   * Separate from `error` because it is a different screen rather than a
+   * failure, and separate from `loaded` because `loaded` goes true in the catch
+   * too -- keying the login on `loaded` alone would fall straight through to
+   * the main view with an empty row.
+   */
+  authed: boolean | null
+  signedIn: () => void
   /** Whether the server's stored UI state has been taken; see refresh(). */
   adopted: boolean
   error: string | null
@@ -126,6 +136,11 @@ export const useStore = create<AppState>((set, get) => ({
   ui: cachedUi(),
   loaded: false,
   adopted: false,
+  authed: null,
+  signedIn: () => {
+    set({ authed: true, error: null })
+    void get().refresh()
+  },
   error: null,
 
   refresh: async () => {
@@ -146,6 +161,8 @@ export const useStore = create<AppState>((set, get) => ({
       // deploy failed, `loaded` went true in the catch, and the reconnect that
       // followed then kept the browser's cached defaults -- and overwrote the
       // real layout with them on the first click.
+      // Reaching here at all means the session was accepted.
+      if (get().authed !== true) set({ authed: true })
       const firstLoad = !get().adopted
       /*
        * Over the defaults, not instead of them: the stored copy can predate a
@@ -163,6 +180,15 @@ export const useStore = create<AppState>((set, get) => ({
       })
       if (firstLoad) localStorage.setItem(UI_CACHE_KEY, JSON.stringify(adopted))
     } catch (err) {
+      /*
+       * A 401 is not an error, it is a different screen. Setting `error` here
+       * would put "not allowed" in the top banner behind an empty row, which
+       * says nothing about what to do; `authed: false` shows the login instead.
+       */
+      if (err instanceof ApiError && err.status === 401) {
+        set({ authed: false, loaded: true })
+        return
+      }
       set({ error: err instanceof Error ? err.message : String(err), loaded: true })
     }
   },
@@ -200,6 +226,9 @@ export const useStore = create<AppState>((set, get) => ({
  * then fetched the snapshot twice for the life of the page.
  */
 export const bindSocketToStore = (): (() => void) => {
+  // A socket that closed 4401 means the session is gone. Without this the tab
+  // retried forever behind a row that never painted, with nothing said.
+  terminalSocket.onUnauthorized(() => useStore.setState({ authed: false, loaded: true }))
   const offState = terminalSocket.onSessionState((msg) => {
     useStore.getState().applySessionState(msg.sessionId, {
       liveness: msg.liveness,

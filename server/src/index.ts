@@ -8,8 +8,10 @@ import { StateStore } from './state.js'
 import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
-import { registerWs } from './routes/ws.js'
+import { registerWs, wsPluginOptions } from './routes/ws.js'
 import { registerGate } from './gate.js'
+import { registerAuth } from './routes/auth.js'
+import { hasPassword, writeLocalToken } from './auth.js'
 import { registerProxy } from './remote/proxy.js'
 import { PROTOCOL_HEADER } from './remote/peer.js'
 import { PROTOCOL_VERSION } from '@switchboard/shared'
@@ -28,13 +30,7 @@ const workspace = new Workspace(store, engine)
 await store.load()
 await engine.start()
 
-await app.register(fastifyWebsocket, {
-  options: {
-    // Terminal output frames are small; the default 100MB limit is pointless
-    // here, and a lower cap bounds the damage from a malformed frame.
-    maxPayload: 8 * 1024 * 1024,
-  },
-})
+await app.register(fastifyWebsocket, wsPluginOptions)
 
 /*
  * The IDE outliving a bug in itself.
@@ -65,6 +61,8 @@ app.addHook('onSend', async (_request, reply, payload) => {
 })
 
 registerGate(app)
+
+registerAuth(app)
 
 registerProxy(app, workspace)
 
@@ -185,6 +183,34 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
  * while starting a scratch instance twice. Everything else may be survivable;
  * a server with no socket is not.
  */
+/*
+ * No password, no server.
+ *
+ * In here rather than only in the CLI, because `pnpm dev` runs
+ * `tsx watch src/index.ts` directly and never goes through `swb` -- and it is
+ * also the one configuration that trusts Vite's origin, so leaving the most
+ * permissive instance in the project ungated would be exactly backwards. The
+ * CLI checks too, but only so the sentence lands on a terminal instead of in a
+ * log file nobody is tailing.
+ *
+ * There is deliberately no way to start without one: not a flag, not an
+ * environment variable. Every hole ever measured in this gate lived in the
+ * branch that ran when no credential was configured.
+ */
+if (!hasPassword()) {
+  app.log.error('no password is set, and this server will not start without one')
+  console.error('')
+  console.error('switchboard: no password is set, and this server will not start without one.')
+  console.error('  set one:  pnpm password')
+  console.error('')
+  console.error('  It is asked for once per browser, and is what a linked machine logs in with.')
+  process.exit(1)
+}
+
+// A session token for `swb status` and for the readiness poll `pnpm restart`
+// waits on. Rewritten on every start, so it always matches the current key.
+writeLocalToken()
+
 try {
   await app.listen({ host: config.bind, port: config.port })
 } catch (err) {

@@ -3,6 +3,7 @@ import { api } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
 import { useNarrow } from './components/useNarrow.js'
+import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
@@ -31,7 +32,7 @@ export interface ProjectGroup {
 }
 
 export const App = (): React.ReactElement => {
-  const { projects, worktrees, sessions, todos, ui, loaded, error, refresh, setUi, setError } =
+  const { projects, worktrees, sessions, todos, ui, loaded, error, authed, signedIn, refresh, setUi, setError } =
     useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
@@ -652,6 +653,15 @@ export const App = (): React.ReactElement => {
     },
     [setUi],
   )
+
+  /*
+   * Before `loaded`, because `loaded` goes true in the refresh catch as well --
+   * keying on it alone drops a signed-out browser into the main view with an
+   * empty row and no way to act. Replaces the view rather than overlaying it: a
+   * row of tiles that looks alive and can no longer refresh is the failure this
+   * project keeps fixing elsewhere.
+   */
+  if (authed === false) return <LoginScreen onSignedIn={signedIn} />
 
   if (!loaded) {
     return (

@@ -10,7 +10,20 @@ const api = vi.hoisted(() => ({
   snapshot: vi.fn(),
   patchUi: vi.fn(),
 }))
-vi.mock('../src/api.js', () => ({ api }))
+/*
+ * `ApiError` is the real class, not a stub: `store.ts` branches on
+ * `err instanceof ApiError` to tell a signed-out browser -- which is a
+ * different screen -- from a failure, which is a banner. A mock that omits it
+ * makes that branch a ReferenceError the moment anything rejects.
+ */
+class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+vi.mock('../src/api.js', () => ({ api, ApiError }))
 
 const { migrateUi, useStore } = await import('../src/store.js')
 

@@ -3,11 +3,25 @@ import type { FastifyRequest } from 'fastify'
 
 /* `config` reads the environment at import time. See state.test.ts. */
 process.env.SWB_TOKEN = 'the-secret'
+const { withPassword, writePassword } = await import('./helpers/password.js')
+const STATE = withPassword()
 const { allowRequest, allowSocket, hasPeerToken } = await import('../src/gate.js')
+const { mintSession } = await import('../src/auth.js')
 
-/** Only what the gate reads. A real request always carries a Host. */
+/**
+ * Only what the gate reads. A real request always carries a Host and a method.
+ *
+ * The method matters now: a missing one is treated as a mutation, which is the
+ * fail-closed reading and is what this fixture originally tripped over.
+ */
 const req = (headers: Record<string, string>, ip = '127.0.0.1'): FastifyRequest =>
-  ({ headers: { host: '127.0.0.1:8084', ...headers }, ip }) as unknown as FastifyRequest
+  ({ headers: { host: '127.0.0.1:8084', ...headers }, ip, method: 'GET' }) as unknown as FastifyRequest
+
+/** A browser holding a valid session, which is now the only way our page gets in. */
+const signedIn = (extra: Record<string, string> = {}): Record<string, string> => ({
+  cookie: `swb_session=${mintSession()}`,
+  ...extra,
+})
 
 /** The port `config` derives its default allow-list from. */
 const OURS = 'http://127.0.0.1:8084'
@@ -44,18 +58,76 @@ describe('who may reach a peer’s API', () => {
     }
   })
 
-  it('still lets the page served on this machine work', () => {
-    // A browser omits Origin on a same-origin GET, so this is the only thing
-    // left that says "our own page" -- and it is believed solely from loopback.
-    expect(allowRequest(req({ 'sec-fetch-site': 'same-origin' }, '127.0.0.1'))).toBe(true)
-    expect(allowRequest(req({ 'sec-fetch-site': 'none' }, '::1'))).toBe(true)
-    // Another site's page, even on this machine, is asking on its own account.
-    expect(allowRequest(req({ 'sec-fetch-site': 'cross-site' }, '127.0.0.1'))).toBe(false)
+  it('lets the page served on this machine work, once it has signed in', () => {
+    // A browser omits Origin on a same-origin GET, so Fetch Metadata is what
+    // says "our own page" -- but it is no longer what says "allowed". The
+    // session is. Fetch Metadata only narrows which of our pages may act.
+    expect(allowRequest(req(signedIn({ 'sec-fetch-site': 'same-origin' })))).toBe(true)
+    expect(allowRequest(req(signedIn({ 'sec-fetch-site': 'none' }), '::1'))).toBe(true)
+    // Another site's page, even on this machine, is asking on its own account --
+    // and now it may be doing so while the browser attaches our cookie for it.
+    expect(allowRequest(req(signedIn({ 'sec-fetch-site': 'cross-site' })))).toBe(false)
+  })
+
+  /*
+   * The rule the password replaced, and the reason it had to be replaced.
+   *
+   * Being on loopback used to be most of the evidence. Behind a reverse proxy
+   * it is *all* of the internet: a proxy connects from 127.0.0.1, so every
+   * request it forwards satisfies that test. Measured against the deployment
+   * this was built for -- a request carrying the public Host, arriving at
+   * loopback exactly as Caddy delivers it, was answered 200.
+   */
+  it('refuses a perfect-looking browser request from loopback with no session', () => {
+    expect(allowRequest(req({ 'sec-fetch-site': 'same-origin' }, '127.0.0.1'))).toBe(false)
+    expect(allowRequest(req({ 'sec-fetch-site': 'none' }, '127.0.0.1'))).toBe(false)
   })
 
   it('refuses a non-browser on this machine that carries no token', () => {
     // curl from a shell on the peer is not our page; it sends no Fetch Metadata.
     expect(allowRequest(req({}, '127.0.0.1'))).toBe(false)
+  })
+
+  /*
+   * A mutation needs an Origin as well, which is the layer that still works on
+   * the browsers that send no Fetch Metadata at all (Safari before 16.4,
+   * Firefox before 90). With a cookie in play, that residual is a cross-site
+   * POST that would otherwise land *authenticated*.
+   */
+  it('refuses a mutation with a session but no Origin, and takes one with it', () => {
+    const post = (headers: Record<string, string>): FastifyRequest =>
+      ({ ...req(headers), method: 'POST' }) as unknown as FastifyRequest
+    expect(allowRequest(post(signedIn({ 'sec-fetch-site': 'same-origin' })))).toBe(false)
+    expect(
+      allowRequest(post(signedIn({ 'sec-fetch-site': 'same-origin', origin: OURS }))),
+    ).toBe(true)
+    expect(
+      allowRequest(post(signedIn({ 'sec-fetch-site': 'same-origin', origin: 'https://evil.example' }))),
+    ).toBe(false)
+  })
+
+  /*
+   * A token minted under a different password must not verify. This is the one
+   * property the whole key-derivation choice exists for: `pnpm password` has to
+   * revoke every session, and nothing else in the design does it.
+   */
+  it('refuses a session minted before the password changed', async () => {
+    const before = mintSession()
+    expect(allowRequest(req({ cookie: `swb_session=${before}`, 'sec-fetch-site': 'same-origin' }))).toBe(
+      true,
+    )
+    // In place, because `config.stateDir` is captured at import -- pointing the
+    // environment at a new directory changes nothing, which is itself worth
+    // knowing when writing any fixture here.
+    writePassword(STATE, 'a different password entirely')
+    // The record is re-read at most once a second; the wait is the price of not
+    // stat-ing on every single request.
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(allowRequest(req({ cookie: `swb_session=${before}`, 'sec-fetch-site': 'same-origin' }))).toBe(
+      false,
+    )
+    // And a session minted after it is fine, so this is revocation and not breakage.
+    expect(allowRequest(req(signedIn({ 'sec-fetch-site': 'same-origin' })))).toBe(true)
   })
 })
 
@@ -80,12 +152,26 @@ describe('who may open a peer’s socket', () => {
     expect(allowSocket(req({ 'x-swb-token': 'the-secret' }, '10.0.0.7'))).toBe(true)
   })
 
-  it('lets the peer’s own page in, from the peer', () => {
-    expect(allowSocket(req({ origin: OURS }, '127.0.0.1'))).toBe(true)
-    // Still not a page we serve, even from here.
-    expect(allowSocket(req({ origin: 'https://evil.example' }, '127.0.0.1'))).toBe(false)
-    // And a non-browser on the peer still needs the token.
+  /*
+   * The hole that killed the previous attempt at a password here, as a test.
+   *
+   * `allowSocket` takes a gateway's token and **nothing else** -- no Origin, no
+   * cookie. Cookies ignore the port, so a page on a sibling port of this
+   * hostname is same-site and the browser attaches our cookie to a socket that
+   * page opens; a WebSocket is exempt from CORS, so nothing else is in the way.
+   * Measured end to end last time: `attach`, `focus`, `input`, and a shell
+   * command ran as the user from a page they merely visited.
+   *
+   * A browser gets in with a single-use ticket instead, spent in `routes/ws.ts`,
+   * which it can only obtain over `/api` where the origin is checked.
+   */
+  it('takes no cookie at all, whatever origin it arrives with', () => {
+    expect(allowSocket(req(signedIn({ origin: OURS })))).toBe(false)
+    expect(allowSocket(req(signedIn({ origin: 'http://127.0.0.1:8543' })))).toBe(false)
+    expect(allowSocket(req({ origin: OURS }, '127.0.0.1'))).toBe(false)
     expect(allowSocket(req({}, '127.0.0.1'))).toBe(false)
+    // The gateway, which is what this function is now for.
+    expect(allowSocket(req({ 'x-swb-token': 'the-secret' }, '10.0.0.7'))).toBe(true)
   })
 })
 
@@ -110,7 +196,7 @@ describe('a name we never published', () => {
 
   it('answers to loopback, by every spelling', () => {
     for (const host of ['127.0.0.1:8084', 'localhost:8084', '[::1]:8084', '127.0.0.1']) {
-      expect(allowRequest(req({ host, 'sec-fetch-site': 'same-origin' }))).toBe(true)
+      expect(allowRequest(req(signedIn({ host, 'sec-fetch-site': 'same-origin' })))).toBe(true)
     }
   })
 
