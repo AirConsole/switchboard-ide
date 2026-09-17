@@ -293,8 +293,9 @@ export const password = async (opts = {}) => {
     return
   }
 
-  const { volumeConfigured, rekey } = await import('./luks.js')
-  const encrypted = existing !== null && volumeConfigured()
+  const { volumeState, rekey } = await import('./luks.js')
+  const volume = existing === null ? 'none' : volumeState()
+  const encrypted = volume === 'encrypted'
 
   /** @type {string} */
   let next
@@ -357,6 +358,14 @@ export const password = async (opts = {}) => {
    * are refused here rather than quietly leaving a machine that logs in and
    * cannot open its own disk. The recovery passphrase is the way back in.
    */
+  if (volume === 'unknown') {
+    fail(
+      'this machine has a data volume and there is no way to tell whether it is encrypted\n' +
+        '  with this password, because cryptsetup cannot be run. Changing the password now\n' +
+        '  could leave a machine that logs in and cannot open its own disk. Run it with sudo.',
+    )
+  }
+
   if (encrypted) {
     if (current === null) {
       fail(

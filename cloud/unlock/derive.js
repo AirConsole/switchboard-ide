@@ -19,6 +19,28 @@
 import { execFileSync } from 'node:child_process'
 import { scrypt } from 'node:crypto'
 
+/**
+ * cryptsetup, as root when we are not.
+ *
+ * The unlock service runs as root; `swb password` runs as the user who owns
+ * the IDE. Without this, every cryptsetup call from the second one failed on
+ * permission to read the device -- and failure here reads as "there is no
+ * encrypted volume", so `swb password --stdin` cheerfully changed the login
+ * password on a machine whose disk key it had not touched. Measured on a real
+ * machine: the next boot would have wanted a password that no longer existed.
+ *
+ * `-n`, so a machine whose user has no sudo fails immediately and loudly
+ * rather than waiting on a prompt nobody can answer.
+ *
+ * @param {string[]} args
+ * @param {{stdio?: 'ignore'|'pipe'}} [opts]
+ */
+const cryptsetup = (args, opts = {}) => {
+  const root = typeof process.getuid === 'function' && process.getuid() === 0
+  const [cmd, argv] = root ? ['cryptsetup', args] : ['sudo', ['-n', 'cryptsetup', ...args]]
+  return execFileSync(cmd, argv, { encoding: 'utf8', stdio: opts.stdio ?? 'pipe' })
+}
+
 /** 64MB per hash, which is why only one runs at a time. */
 const PARAMS = { N: 1 << 17, r: 8, p: 1, keylen: 32, maxmem: 192 * 1024 * 1024 }
 
@@ -26,13 +48,12 @@ const PARAMS = { N: 1 << 17, r: 8, p: 1, keylen: 32, maxmem: 192 * 1024 * 1024 }
  * @param {string} device
  * @returns {Buffer} the salt for this volume: its LUKS UUID
  */
-export const volumeSalt = (device) =>
-  Buffer.from(execFileSync('cryptsetup', ['luksUUID', device], { encoding: 'utf8' }).trim(), 'utf8')
+export const volumeSalt = (device) => Buffer.from(cryptsetup(['luksUUID', device]).trim(), 'utf8')
 
 /** @param {string} device */
 export const isLuks = (device) => {
   try {
-    execFileSync('cryptsetup', ['isLuks', device], { stdio: 'ignore' })
+    cryptsetup(['isLuks', device], { stdio: 'ignore' })
     return true
   } catch {
     return false
