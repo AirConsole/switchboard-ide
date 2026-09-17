@@ -1,19 +1,36 @@
-import { useEffect, useState } from 'react'
-import type { Project, Session, Usage, Worktree, WorktreeTodo } from '@switchboard/shared'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
-import { api } from '../api.js'
 import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
 import { UsageBars, useUsage } from './UsageBars.js'
-import { MobileBar } from './MobileBar.js'
-import { useNarrow } from './useNarrow.js'
 import { projectKey } from '../views/Overview.js'
 import {
-  claudeSession,
-  mostUrgentStatus,
   queuedTodoCount,
-  stateLabel,
   worktreeStatus,
+  type WorktreeStatus,
 } from '../selectors.js'
+
+/**
+ * The last rung of the ladder -- see the sweep in `TopBar`.
+ *
+ * 0 the bar as it is, 1 without the usage tracks, 2 without the `Open project`
+ * label, 3 with every project but the current one collapsed to its head, 4 with
+ * all of them collapsed, 5 without the usage readout at all. Past it the strip
+ * scrolls, which is what it has always done and the honest end of the ladder.
+ */
+const LAST_STAGE = 5
+
+/**
+ * Is this the project you are in?
+ *
+ * Either one of its worktrees has the row, or its own pane does -- `activeId`
+ * carries both, and a project whose *pane* you are looking at is as much where
+ * you are as one whose terminal you are typing in. It decides which project
+ * keeps its tabs at rung 3, and which head lights up once the tabs are gone.
+ */
+const isCurrent = (group: ProjectGroup, activeId: string | null): boolean =>
+  activeId !== null &&
+  (activeId === projectKey(group.project.id) || group.awake.some((w) => w.id === activeId))
 
 export interface TopBarProps {
   /** Every open project, in the order they were opened. */
@@ -37,15 +54,6 @@ export interface TopBarProps {
    * Claude has the keyboard. Null before anything has been navigated to.
    */
   activeId: string | null
-  /**
-   * Put the keyboard back in the pane it came from.
-   *
-   * Only the phone's sheet uses it, and for the reason every dialog does: it is
-   * the one thing here outside the row that takes focus away from it, so
-   * closing it without going anywhere has to hand the keyboard back rather than
-   * leave it on the document.
-   */
-  onRefocus: () => void
 }
 
 /**
@@ -87,6 +95,7 @@ const Group = ({
   sessions,
   todos,
   activeId,
+  current,
   onRevealProject,
   onWake,
   onReveal,
@@ -95,6 +104,8 @@ const Group = ({
   group: ProjectGroup
   sessions: Session[]
   todos: WorktreeTodo[]
+  /** Holds the row or its own pane -- see `isCurrent`. */
+  current: boolean
 } & Pick<
   TopBarProps,
   'activeId' | 'onRevealProject' | 'onWake' | 'onReveal' | 'onSleep'
@@ -103,14 +114,19 @@ const Group = ({
   /*
    * What the head's state bar says, and only two states can say anything.
    *
-   * It stands for the worktrees with no tab of their own -- the sleeping ones.
-   * Sleeping does not mean stopped, Claude can be left running, so one of them
-   * being blocked on you still has to reach the top bar; that was the zZ tab's
-   * job and this is what took it over. Amber and green only: the two states a
-   * row of agents is scanned for. Working and not-running say nothing here,
-   * because a summary that is always lit is not a summary.
+   * It stands for the worktrees with no tab of their own. Expanded that is the
+   * sleeping ones -- sleeping does not mean stopped, Claude can be left
+   * running, so one of them being blocked on you still has to reach the top
+   * bar. Collapsed it is all of them, which is the same sentence with a wider
+   * subject: the awake ones have no tab either once the bar has taken them.
+   *
+   * Both are computed every render and both are on the pill, because which one
+   * is showing is a CSS question -- the rung is written on the header, and
+   * nothing React renders may depend on it.
    */
-  const asleepStatus = mostUrgentStatus(asleep.map((w) => worktreeStatus(sessions, w.id)))
+  const statusOf = (w: Worktree): WorktreeStatus => worktreeStatus(sessions, w.id)
+  const shutSignal = summaryClass([...asleep, ...awake].map(statusOf))
+  const openSignal = summaryClass(asleep.map(statusOf))
 
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
     const queued = queuedTodoCount(todos, worktree.id)
@@ -134,10 +150,9 @@ const Group = ({
       />
     )
   }
-  const asleepSignal = summaryClass(asleepStatus)
 
   return (
-    <div className="tabgroup">
+    <div className={current ? 'tabgroup tabgroup--current' : 'tabgroup'}>
       {/*
         * The project's name is its pane's tab.
         *
@@ -157,14 +172,19 @@ const Group = ({
         className={[
           'tabgroup__pill',
           activeId === projectKey(project.id) ? 'tabgroup__pill--on' : '',
-          asleepSignal,
+          openSignal,
+          shutSignal === '' ? '' : `${shutSignal}-shut`,
         ]
           .filter(Boolean)
           .join(' ')}
         onClick={() => onRevealProject(project)}
+        /* True at every rung, because the tabs that used to say it are the
+           first thing the bar gives up -- and a title that described only the
+           expanded bar would be a lie exactly when it was the only thing left
+           to read. */
         title={`${project.host.kind === 'remote' ? `on ${hostLabel(project.host)}\n` : ''}${project.root}\n${
-          asleep.length === 0 ? 'Nothing asleep' : `${asleep.length} asleep`
-        }\nClick for this project's worktrees, a new one, and closing it`}
+          awake.length === 0 ? 'Nothing awake' : `${awake.length} awake: ${awake.map((w) => w.name).join(', ')}`
+        }${asleep.length === 0 ? '' : `, ${asleep.length} asleep`}\nClick for this project's worktrees, a new one, and closing it`}
       >
         {/*
           * Which machine, and only when it is not this one.
@@ -185,10 +205,19 @@ const Group = ({
           <span className="tabgroup__host">{hostLabel(project.host)}</span>
         )}
         <span className="tabgroup__name">{project.name}</span>
-        {/* That there is something behind this project you cannot see. The
-            count sat here for a day and was noise: how many is a thing you find
-            out by looking, and the pane is one click away. */}
-        {asleep.length > 0 && <span className="tabgroup__zz">zZ</span>}
+        {/*
+          * How many windows this head is standing in for, once the bar has
+          * taken their tabs. Always rendered and hidden by CSS until then,
+          * because the sweep that picks the rung measures the markup it is
+          * about to show.
+          *
+          * Only when there is something awake, and that is not cosmetic: a
+          * project with nothing awake has no tab to give up, so a count on it
+          * would make the bar *wider* as it collapsed -- and every rung getting
+          * narrower is the whole reason the sweep can stop at the first one
+          * that fits.
+          */}
+        {awake.length > 0 && <span className="tabgroup__count">{awake.length}</span>}
       </button>
 
       {awake.map((worktree) => tab(worktree, false))}
@@ -235,55 +264,114 @@ export const TopBar = ({
   onWake,
   onReveal,
   onSleep,
-  onRefocus,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
-  const narrow = useNarrow()
+  const bar = useRef<HTMLElement | null>(null)
+  const strip = useRef<HTMLElement | null>(null)
   /*
    * How much a tab may say, from how many there are.
    *
    * Chrome shrinks its tabs and drops what stops fitting; the widths here come
    * from the names, so what a tab can afford to say comes from the count. Four
    * steps, and the last one still keeps the name, the bullet and the ×.
+   *
+   * Count-driven and deliberately *not* part of the ladder below: "a tab may
+   * not be 200px when there are thirteen of them" is true on a 2560px monitor
+   * where the ladder never fires, and it has to shave labels before the ladder
+   * starts dropping whole regions.
    */
   const tabCount = groups.reduce(
     (total, group) => total + group.awake.length + (group.asleep.length > 0 ? 1 : 0),
     0,
   )
   const tight = tabCount > 12 ? 3 : tabCount > 9 ? 2 : tabCount > 6 ? 1 : 0
+
   /*
-   * A phone gets the same bar's worth of information behind one button.
+   * The bar gives things up in order, as it runs out of room.
    *
-   * Branching here rather than in `App` so that `useUsage` stays mounted across
-   * the switch: it is called above this line, and swapping two sibling
-   * components would unmount it on every rotation, drop the reading it is
-   * holding, and ask again -- and a request that lands outside the server's
-   * five-minute cache runs `claude -p /usage` for a turn of the phone.
+   * `data-stage` on the header is the rung, and every rung is a CSS
+   * consequence of it: 1 drops the usage tracks, 2 the `Open project` label, 3
+   * the tabs of every project but the one you are in, 4 the rest of them, 5 the
+   * usage readout altogether. The strip is what runs out -- it is `flex: 1;
+   * min-width: 0`, so it takes whatever the other two leave -- and it says so
+   * by `scrollWidth > clientWidth`.
+   *
+   * **Why a sweep and not state.** Each rung either hands the strip more room
+   * or takes content out of it, so `fits` is monotone in the rung and "start at
+   * 0, descend to the first that fits" returns the least sufficient one. Held
+   * in React state it would need a signature of every width-affecting thing --
+   * names, counts, the dirty mark, which project is current, whether usage has
+   * landed -- and one missed term is a bar that stays collapsed after it has
+   * room again. Worse, it would unmount and remount every hidden tab on each
+   * pass: no paint happens between them, but a node that leaves the DOM between
+   * mousedown and mouseup produces no click, and a focused one hands focus to
+   * the document.
+   *
+   * So the rung is written on the DOM, once, inside one synchronous block --
+   * and **nothing React renders may depend on it**. The count, the tabs and the
+   * usage rows are always in the markup; CSS is what hides them. Otherwise a
+   * pass would measure rung n against the text of rung n-1.
+   *
+   * No dependency array, so it runs after every commit -- which is exactly the
+   * set of things that can change a width. A layout effect, so the answer is
+   * settled before the browser paints and no one sees the full bar flash.
+   * Idempotent, because it starts from 0 every time, which is what makes
+   * StrictMode's double invocation a non-event.
    */
-  if (narrow) {
-    return (
-      <MobileBar
-        groups={groups}
-        sessions={sessions}
-        todos={todos}
-        usage={usage}
-        activeId={activeId}
-        onOpenProject={onOpenProject}
-        onRevealProject={onRevealProject}
-        onReveal={onReveal}
-        onWake={onWake}
-        onSleep={onSleep}
-        onRefocus={onRefocus}
-      />
-    )
+  /*
+   * Walk down the rungs until the strip fits, from the top every time.
+   *
+   * The header is measured too, not only the strip: squeezed hard enough --
+   * `Open project` and the usage bars are 314px between them -- the strip is
+   * given a clientWidth of 0 and stops being able to report an overflow at all,
+   * while the header's own flex line is the thing that has overrun.
+   */
+  const settle = (): void => {
+    const header = bar.current
+    const nav = strip.current
+    if (!header || !nav) return
+    const over = (): boolean =>
+      nav.scrollWidth > nav.clientWidth + 1 || header.scrollWidth > header.clientWidth + 1
+    let stage = 0
+    header.dataset.stage = '0'
+    while (stage < LAST_STAGE && over()) header.dataset.stage = String(++stage)
   }
+
+  // Every commit, because a commit is the only way a width in here changes:
+  // a name, a count, the dirty mark, which project is current, usage landing.
+  useLayoutEffect(settle)
+
+  /*
+   * And every resize -- of the header, not the strip.
+   *
+   * The header's width is the app's, since `.app` is a two-row grid of one
+   * column, so it never moves in answer to a rung. The strip's does: dropping
+   * the usage bars widens it by 189px, so an observer on it would fire on the
+   * consequence of its own callback and earn a "ResizeObserver loop completed
+   * with undelivered notifications", which drops the rest of that frame's
+   * notifications on the floor.
+   */
+  useLayoutEffect(() => {
+    const header = bar.current
+    if (!header) return
+    const observer = new ResizeObserver(settle)
+    observer.observe(header)
+    return () => observer.disconnect()
+    // `settle` reads refs and writes the DOM; it closes over nothing that
+    // changes, so re-subscribing on every render would only churn the observer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
-  <header className="topbar">
+  /* `data-stage` is written by the sweep above and never from here: React diffs
+     against its own last props, so a render with an unchanged prop would not
+     put back what the effect wrote, and the two would drift apart. */
+  <header className="topbar" ref={bar}>
     <button className="topbar__open" onClick={onOpenProject} title="Open another project">
       <OpenProjectIcon />
-      Open project
+      <span className="topbar__label">Open project</span>
     </button>
-    <nav className="tabstrip" data-tight={tight}>
+    <nav className="tabstrip" data-tight={tight} ref={strip}>
       {groups.map((group) => (
         <Group
           key={group.project.id}
@@ -291,6 +379,7 @@ export const TopBar = ({
           sessions={sessions}
           todos={todos}
           activeId={activeId}
+          current={isCurrent(group, activeId)}
           onRevealProject={onRevealProject}
           onWake={onWake}
           onReveal={onReveal}

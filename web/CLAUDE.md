@@ -12,7 +12,6 @@ components/TopBar    the tab strip: project heads, tabs, usage bars
 components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
 components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
 components/useAnchoredMenu  a menu hung under its trigger, kept on screen
-components/MobileBar    the phone's bar: a hamburger, and the strip as a sheet
 components/UsageBars    Claude's limits, as bars; polled once for both bars
 components/useNarrow    is this a phone -- one threshold, asked once
 views/Overview       the row: spot arithmetic, scrolling, what fits
@@ -32,16 +31,50 @@ views/tileMotion       keeps a departing tile alive while it animates out
 
 ## The top bar is Chrome's tab strip
 
-**Under 640px it is one button.** A 390px screen cannot hold `Open project`, a
-project head, its tabs and 189px of usage bars in a 38px band, and what gets
-squeezed out is the tabs -- which are the part the bar is *for*. So the strip
-collapses to a hamburger and its contents stand up vertically in a sheet; see
-**On a phone**. `TopBar` branches to `MobileBar` *inside itself* rather than
-`App` choosing between two components, and that is not a nicety: `useUsage` is
-called above the branch, so swapping siblings would unmount it on every
-rotation, drop the reading it holds and ask again -- and a request that lands
-outside the server's five-minute cache runs `claude -p /usage` for a turn of the
-phone. Measured across two rotations: **zero** further requests.
+**It gives things up in order as it runs out of room.** A 390px screen cannot
+hold `Open project` (~125px), a project head, its tabs and 189px of usage bars
+in a 38px band -- and what used to get squeezed out was the tabs, which are the
+part the bar is *for*. So `data-stage` on the header is a rung, and the bar
+walks down them: **1** drops the usage tracks, **2** the `Open project` label
+(the icon stays), **3** the tabs of every project but the one you are in, **4**
+the tabs of that one too, **5** the usage readout altogether. Past it the strip
+scrolls, which is what it has always done.
+
+Measured with two projects holding three and one awake worktrees: stage 0 from
+900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 240 -- and at
+*every* width the strip has no overflow, which is the whole claim. The ladder is
+monotone, it never collapses more than it must (at each width, forcing it one
+rung up overflows), and a sweep back up the widths reproduces the same rungs
+exactly.
+
+**The usage block goes in two bites, first and last.** The tracks are 54px of
+its 189 and the least of it -- a bar with no number beside it is hard to act on,
+where `session 34% 4h` is the whole reading -- so the picture goes at rung 1 and
+the numbers survive to rung 5. `useUsage` keeps polling at every rung: a reading
+you cannot see is one you want the moment the window widens, and the server
+caches it anyway.
+
+**How the rung is chosen, and why it is not React state.** `.tabstrip` is
+`flex: 1; min-width: 0`, so it takes what the other two leave, and it says it is
+out of room by `scrollWidth > clientWidth`. Each rung either hands it more room
+or takes content out of it, so "start at 0, descend to the first that fits"
+returns the least sufficient rung and cannot oscillate. A layout effect with no
+dependency array sweeps it on every commit -- which is exactly the set of things
+that can change a width -- and a `ResizeObserver` on the **header** does the
+same on a resize. The header, not the strip: the header's width is the app's and
+never moves in answer to a rung, while the strip's grows by 189px the moment the
+usage bars go, so observing it would fire the observer on the consequence of its
+own callback.
+
+Two things follow and are load-bearing. **Nothing React renders may depend on
+the rung** -- the count, the tabs and the usage rows are always in the markup and
+CSS is what hides them -- because the sweep measures the DOM it is about to
+settle on, and markup that moved with the rung would have it measuring the last
+rung's text. And **`data-stage` is never rendered from JSX**: React diffs against
+its own previous props, so a re-render would not put back what the effect wrote,
+and the two would drift apart. It is also why the sweep is written to start from
+0 every time rather than carry a cursor: that makes StrictMode's double
+invocation a non-event.
 
 Copied on purpose, and closely: everyone already knows what a tab strip is,
 which tab they are in, and what the × on one does. Chromium's own constants are
@@ -216,15 +249,40 @@ The pieces, and why each is the way it is:
   sleep it, one mis-click apart. Closing lives in the pane now; the head is a
   button that walks you there and lights `--level-lit` while you are in it, with
   `--bone` text, because `--graphite` is 3.90:1 on that ground.
-- **The head's state bar carries only its sleepers, and only amber or green.**
-  That is the zZ tab's job, which was the one thing that could not be lost when
-  it went: sleeping does not mean stopped, so a sleeper blocked on you still has
-  to reach the top bar. An awake worktree says its own state on its own tab, so
-  the head reports what has no tab. `tab--working` and `tab--off` are never
-  applied to it — a summary that is always lit is not a summary. A quiet `zZ`
-  beside the name says there is something behind this project you cannot see;
-  it carried the count for a day and that was noise, since how many is a thing
-  you find out by looking and the pane is one click away.
+- **The head's state bar carries whatever has no tab of its own, and only amber
+  or green.** Expanded that is the sleeping worktrees — sleeping does not mean
+  stopped, so a sleeper blocked on you still has to reach the top bar, which was
+  the zZ tab's job and the one thing that could not be lost when it went.
+  Collapsed it is every worktree the project has, which is the same sentence
+  with a wider subject: the awake ones have no tab either once the ladder has
+  taken them. Both aggregates are on the pill at every rung and CSS picks
+  between them, since the rung is not something React may know.
+  `tab--working` and `tab--off` are never applied — a summary that is always lit
+  is not a summary.
+- **It reads the whole set, not the most urgent of it** (`summarySignal`). That
+  is a correction: composed with `mostUrgentStatus`, which ranks *working* above
+  *idle*, a project with one worktree at rest and one working reported **nothing
+  at all** — the busy one won the ranking and then said nothing, because only
+  amber and green are shown. Collapsing makes that the common shape rather than
+  a rare one. Said as prose the rule has no ranking in it: amber if anything
+  here needs you, else green if anything here has come to rest.
+- **The head shows a count once its tabs are gone, and never a `zZ`.** The mark
+  said "there is something behind this project you cannot see", and how many and
+  which is what the pane is for; the half of it that is urgent — a sleeper
+  blocked on you — was never carried by the mark anyway but by the state bar
+  beside it, in colour, which is the channel that says come here. A **count** is
+  worth the width only in the one state you cannot resolve by looking, which is
+  when the tabs have gone. It is rendered only when something is awake, and that
+  is not cosmetic: a project with nothing awake has no tab to give up, so a
+  count on it would make the bar *wider* as it collapsed — and every rung
+  getting narrower is what lets the sweep stop at the first one that fits.
+- **Collapsed, the head says where you are.** `--on` means "you are in this
+  project's pane"; at rungs 4 and 5 the lit head is the only thing standing for
+  the window you are in, which is what a lit tab has always meant here. The
+  distinction between being in the pane and being in one of its worktrees is
+  exactly what collapsing gives up. `.tabgroup--current` is "holds the row or is
+  its own pane", and it is also what rung 3 uses to decide which project keeps
+  its tabs.
 - **The × opens the sleep dialog**, which is also where deleting lives — so a
   worktree's own toolbar carries neither a trashcan nor a zZ: both questions are
   asked here, on the tab, and asking them twice in two places only made the
@@ -263,6 +321,22 @@ The pieces, and why each is the way it is:
   sleeve — and the strip scrolled while there was room. Nor may the sleeve carry
   `min-width: 0`: it then shrinks past its own tabs and one project's tabs
   overprint the next project's.
+
+  It carries **`min-width: min-content`**, and the paragraph above was wrong
+  without it. A flex item whose `overflow` is not `visible` has an automatic
+  minimum size of *zero*, and the sleeve hides its overflow to clip the end
+  segments to the shell's curve — so under pressure it was never overflowing the
+  strip, it was being crushed and clipping its own tabs: measured at 390px, two
+  sleeves at 40px and 15px with 62px tabs hidden inside them. That is a bar that
+  has quietly stopped saying anything rather than one that scrolls, and it is
+  what the ladder's overflow signal was reading as "everything fits".
+  `min-content` is the floor that comment assumed was already there; it is the
+  opposite edit to `min-width: 0`, not a softer one.
+
+  `data-tight` and the ladder stay separate, and they compose in that order: a
+  count-driven cap shaves labels first, because "a tab may not be 200px when
+  there are thirteen of them" is true on a 2560px monitor where the ladder never
+  fires, and only then does a width-driven ladder start dropping whole regions.
 - **The strip runs Chrome's way round, and the page runs with it.** A dark
   interface usually gets darker as it goes deeper; Chrome's strip does the
   opposite, and that is what makes it legible: the frame is the darkest thing on
@@ -833,43 +907,23 @@ bare `9999...8888` arriving in a prompt.
 Everything below is something the desktop never exercises, and every number in
 it was measured on a 390×800 screen rather than reasoned about:
 
-**Below 640px the interface is one window and one button.** `useNarrow` asks
-`matchMedia` once, in `App`, and hands the answer to both halves -- the bar,
-which becomes a hamburger, and the row, which drops its gaps -- so the two
-cannot disagree about what a phone is. `NARROW_MAX` is where the number lives,
-in TS; CSS is told the *answer* through `data-narrow` on `.app` rather than
-being given the number to repeat, which is the `data-tight` arrangement the tab
-strip already uses. It reads the **layout** viewport, not `visualViewport`: the
-keyboard and a pinch both change the visual one and neither turns a phone into a
-desktop. And it is `useSyncExternalStore` rather than state written from an
-effect, which is one render late -- late enough to build every terminal in the
-row at the wrong width and then resize every pty behind it.
+**Below 640px the row is one window, edge to edge.** `useNarrow` asks
+`matchMedia` once, in `App`, and hands the answer to the row; `NARROW_MAX` is
+where the number lives, in TS, and CSS is told the *answer* through
+`data-narrow` on `.app` rather than being given the number to repeat, which is
+the `data-tight` arrangement the tab strip already uses. It reads the **layout**
+viewport, not `visualViewport`: the keyboard and a pinch both change the visual
+one and neither turns a phone into a desktop. And it is `useSyncExternalStore`
+rather than state written from an effect, which is one render late — late enough
+to build every terminal in the row at the wrong width and then resize every pty
+behind it.
 
 Deliberately not the 440px the todo panel uses. That one is about how narrow a
-column of prose can be; this one is about a strip of tabs. Two questions, two
-numbers, each free to move.
-
-**What the bar held, the sheet holds.** `Open project`, each project's head, its
-awake worktrees as stacked rows, and the usage bars pinned to the foot -- in the
-bar's own order, because it is the same thing rather than a summary of it. A
-project's *sleeping* worktrees and its new-worktree form are one tap further, in
-that project's own pane, which is where they already live and where tapping its
-head takes you. It borrows `.projpane__section` / `.projpane__heading` /
-`.projpane__list` rather than inventing a third way to stack a `WorktreeTab`.
-Fixed, like `.menu` and for the same reason -- every box between it and the root
-clips -- and therefore positioned against the *viewport*, which is the one place
-`#root`'s safe-area padding does not reach, so it carries the insets itself and
-takes its height from `--app-height`. Verified with 59px of notch and 34px of
-indicator overridden on `:root`: the sheet starts at y=97 and its foot ends at
-766 of 800.
-
-**Closed, the hamburger still says whether anything needs you.** That is the
-whole job of this interface and it cannot go behind a tap, so the button wears
-the aggregate band the project head wears -- `summaryClass` is now shared by
-both -- over every worktree of every project, awake and asleep. Amber or green
-only: measured, `tab--needs` resolves the band to `#ffb454` and `tab--idle` to
-`#4ade80`, while a row of agents all *working* leaves the button bare, because a
-summary that is always lit is not a summary.
+column of prose can be; this one is about a row of windows. Two questions, two
+numbers, each free to move. **The top bar has no breakpoint at all** — it
+measures the room it has and gives things up in order, which is the ladder in
+*The top bar is Chrome's tab strip*. A phone is where it ends up at its last
+rung; it gets there the same way a desktop window dragged narrow does.
 
 **And the window is the screen.** No grid padding, no gap between tiles, and no
 8px inset inside the pane -- 16px of a 390px window is two columns of terminal,

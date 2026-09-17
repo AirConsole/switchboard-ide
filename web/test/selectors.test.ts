@@ -10,6 +10,7 @@ import {
   removalLanding,
   removalQuestions,
   removalWarnings,
+  summarySignal,
   stateLabel,
   terminalSessions,
   worktreeStatus,
@@ -368,5 +369,42 @@ describe('removalLanding', () => {
 
   it('says nothing about a worktree no run holds', () => {
     expect(removalLanding(runs, 'gone')).toBeNull()
+  })
+})
+
+/*
+ * What a head's bar says for the worktrees it stands in for.
+ *
+ * The case that matters is the third: composed with `mostUrgentStatus`, which
+ * ranks working above idle, a project with one worktree at rest and one working
+ * reported *nothing at all* -- the busy one won the ranking and then said
+ * nothing, because a summary shows only amber and green. Collapsing the bar
+ * makes that the common shape rather than a rare one, since every collapsed
+ * head then has awake worktrees in its set.
+ */
+describe('summarySignal', () => {
+  it('says amber when anything here needs you', () => {
+    expect(summarySignal(['needs-you'])).toBe('needs-you')
+    expect(summarySignal(['working', 'needs-you', 'idle'])).toBe('needs-you')
+    // Amber outranks green, which is the one ranking this rule does have.
+    expect(summarySignal(['idle', 'needs-you'])).toBe('needs-you')
+  })
+
+  it('says green when something has come to rest and nothing needs you', () => {
+    expect(summarySignal(['idle'])).toBe('idle')
+    expect(summarySignal(['off', 'idle'])).toBe('idle')
+  })
+
+  it('is not masked by a busy neighbour', () => {
+    // The regression: `mostUrgentStatus` answers 'working' here, which clamps
+    // to nothing, and the worktree that had finished stopped being reported.
+    expect(summarySignal(['working', 'idle'])).toBe('idle')
+    expect(summarySignal(['working', 'working', 'idle'])).toBe('idle')
+  })
+
+  it('says nothing when nothing here is worth saying', () => {
+    expect(summarySignal([])).toBeNull()
+    expect(summarySignal(['working'])).toBeNull()
+    expect(summarySignal(['off', 'working', 'off'])).toBeNull()
   })
 })
