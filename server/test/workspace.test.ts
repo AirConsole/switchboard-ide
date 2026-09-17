@@ -701,8 +701,15 @@ describe('the worktree listing', () => {
   it('carries the dirty and unmerged counts a window needs', async () => {
     const projectId = (await workspace.openProject(repo.path)).id
     const created = await workspace.createWorktree({ projectId, branch: 'feature' })
+    /*
+     * A commit with something in it: `unmerged` asks whether merging this
+     * branch would bring anything, so an `--allow-empty` commit counts for
+     * nothing and the fixture would pass only while the count was naive.
+     */
+    await writeFile(join(created.path, 'committed.txt'), 'done\n')
+    await repo.git('-C', created.path, 'add', '-A')
+    await repo.git('-C', created.path, 'commit', '-m', 'committed work')
     await writeFile(join(created.path, 'scratch.txt'), 'work\n')
-    await repo.git('-C', created.path, 'commit', '--allow-empty', '-m', 'committed work')
 
     workspace.invalidate()
     const worktree = (await workspace.worktrees()).find((w) => w.id === created.id)

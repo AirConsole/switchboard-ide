@@ -257,22 +257,66 @@ export const defaultBranchRef = async (root: string): Promise<string | null> => 
 }
 
 /**
- * How many commits this worktree has that the default branch has not.
+ * How many commits this worktree has that the default branch has not, *and*
+ * that would bring anything with them.
  *
- * `rev-list --count <default>..HEAD`, which is the same question as "would
- * merging this branch bring anything". Zero for the default branch itself, and
- * zero when there is nothing to compare against -- a repository with no default
- * branch cannot have anything unmerged from it.
+ * The question this answers is "would merging this branch bring anything" --
+ * that is what the fork glyph on a tab and on the Files toggle means -- and
+ * `rev-list --count <default>..HEAD` answers a narrower one: are there commits
+ * over there that are not over here, *by identity*. The two agree until
+ * something lands by any route that rewrites history, and then they disagree
+ * permanently.
+ *
+ * A **squash merge** is that route, and it is how everything lands in this
+ * repository. Master gets one new commit holding the same changes; the
+ * branch's own commits are not ancestors of it, so `rev-list` goes on counting
+ * them for as long as the worktree exists. Measured on this very branch an hour
+ * after its pull request was merged: `rev-list --count master..HEAD` said 2 and
+ * `git diff master HEAD` was empty. Every worktree in the row wore a fork glyph
+ * saying it had work to contribute, having contributed it.
+ *
+ * So the count is confirmed against the *content*: identical trees mean the
+ * merge would bring nothing, whatever the commits say. A rebase-and-merge lies
+ * the same way and is fixed by the same check.
+ *
+ * Zero for the default branch itself, and zero when there is nothing to compare
+ * against -- a repository with no default branch cannot have anything unmerged
+ * from it.
+ *
+ * Two things this deliberately does not do. It does not reach for
+ * `merge-tree`, which would also catch a branch that is ahead *and* behind
+ * where the ahead part is already in -- that costs a real merge of two trees
+ * per worktree per refresh, and nothing has hit it yet. And it does not run the
+ * diff unless the count is non-zero, so the common answer stays one `rev-list`.
  */
 export const unmergedCount = async (path: string, defaultRef: string | null): Promise<number> => {
   if (defaultRef === null) return 0
   try {
     const out = await git(path, 'rev-list', '--count', `${defaultRef}..HEAD`)
     const count = Number(out.trim())
-    return Number.isFinite(count) ? count : 0
+    if (!Number.isFinite(count) || count === 0) return 0
+    return (await differs(path, defaultRef, 'HEAD')) ? count : 0
   } catch {
     // A detached HEAD, an unborn branch, or a default ref that has gone.
     return 0
+  }
+}
+
+/**
+ * Whether two revisions hold different content.
+ *
+ * `git diff --quiet` says so by exiting 1, which `execFile` reports as a
+ * failure rather than as an answer -- so the throw is the answer. Any *other*
+ * failure lands here too, and is answered "they differ": this decides whether
+ * to show a mark saying there is work here, and git falling over is not a
+ * reason to tell somebody their work is already merged.
+ */
+const differs = async (path: string, from: string, to: string): Promise<boolean> => {
+  try {
+    await git(path, 'diff', '--quiet', from, to)
+    return false
+  } catch {
+    return true
   }
 }
 
