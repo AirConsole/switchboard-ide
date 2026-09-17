@@ -565,6 +565,14 @@ interface WorktreeTileProps {
   /** Which face its files panel is showing. */
   filesMode: FilesMode
   /**
+   * Whether Markdown opens rendered rather than as its source.
+   *
+   * Not a fact about this worktree, unlike everything around it: it is one
+   * switch for the whole IDE, because what it records is whether the reader
+   * reads the Markdown here or edits it.
+   */
+  markdownPreview: boolean
+  /**
    * Cmd is down, so the panel toggles may show the letter that opens them.
    *
    * "May", because only the window you are in does: the shortcut acts on one
@@ -606,6 +614,7 @@ interface WorktreeTileProps {
   /** Open a directory and its ancestors: a search hit that is a place. */
   onExpandDir: (dir: string) => void
   onFilesMode: (mode: FilesMode) => void
+  onMarkdownPreview: (on: boolean) => void
 }
 
 /**
@@ -634,6 +643,7 @@ const WorktreeTile = ({
   openFiles,
   expandedDirs,
   filesMode,
+  markdownPreview,
   keysLit,
   step,
   commit,
@@ -652,6 +662,7 @@ const WorktreeTile = ({
   onToggleDir,
   onExpandDir,
   onFilesMode,
+  onMarkdownPreview,
 }: WorktreeTileProps): React.ReactElement => {
   // An exited session is offered as something to restart rather than left as a
   // frozen terminal -- but with what it printed on its way out, which is often
@@ -891,10 +902,12 @@ const WorktreeTile = ({
                 files={files}
                 changes={changes}
                 openFiles={openFiles}
+                markdownPreview={markdownPreview}
                 onCloseFile={onCloseFile}
                 onCollapse={() =>
                   filesMode === 'commits' ? onSelectCommit(null) : onOpenPath('')
                 }
+                onMarkdownPreview={onMarkdownPreview}
               />
             )}
             {index === controlsIndex && controls}
@@ -963,6 +976,7 @@ const WorktreeTile = ({
                 files={files}
                 changes={changes}
                 openFiles={openFiles}
+                markdownPreview={markdownPreview}
                 branch={worktree.branch}
                 near={near}
                 focus={focusPane === 'files' ? focus : null}
@@ -1045,6 +1059,13 @@ export interface OverviewProps {
   /** Which face each worktree's files panel is showing. */
   filesModeByWorktree: Record<string, FilesMode>
   /**
+   * Whether Markdown opens rendered rather than as its source.
+   *
+   * Not keyed by worktree, unlike the four above it: it is the reader's habit,
+   * and the same in every window.
+   */
+  markdownPreview: boolean
+  /**
    * The project a new worktree would go to, when there is only one open.
    *
    * Null with several open, because the add tile would have to guess which one
@@ -1092,6 +1113,7 @@ export interface OverviewProps {
   onToggleDir: (worktreeId: string, dir: string) => void
   onExpandDir: (worktreeId: string, dir: string) => void
   onFilesMode: (worktreeId: string, mode: FilesMode) => void
+  onMarkdownPreview: (on: boolean) => void
 }
 
 /**
@@ -1118,6 +1140,7 @@ export const Overview = ({
   openFilesByWorktree,
   expandedByWorktree,
   filesModeByWorktree,
+  markdownPreview,
   scrollTo,
   active,
   onActivate,
@@ -1139,6 +1162,7 @@ export const Overview = ({
   onToggleDir,
   onExpandDir,
   onFilesMode,
+  onMarkdownPreview,
 }: OverviewProps): React.ReactElement => {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const { width } = useElementSize(gridRef)
@@ -1952,6 +1976,7 @@ export const Overview = ({
                       openFiles={openFilesByWorktree[worktree.id] ?? EMPTY_FILES}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
                       filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
+                      markdownPreview={markdownPreview}
                       keysLit={keysLit}
                       /*
                        * Left wins when a worktree is both, which cannot happen
@@ -1981,6 +2006,7 @@ export const Overview = ({
                       onToggleDir={(dir) => onToggleDir(worktree.id, dir)}
                       onExpandDir={(dir) => onExpandDir(worktree.id, dir)}
                       onFilesMode={(mode) => onFilesMode(worktree.id, mode)}
+                      onMarkdownPreview={onMarkdownPreview}
                     />
                   )}
                 </div>

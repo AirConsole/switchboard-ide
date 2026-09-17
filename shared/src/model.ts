@@ -330,6 +330,20 @@ export interface UiState {
    * working in.
    */
   openFilesByWorktree: Record<string, string[]>
+  /**
+   * Whether a Markdown file opens rendered rather than as its source.
+   *
+   * One switch for the whole IDE, not one per file or per worktree, because
+   * what it records is a habit: whether you read the Markdown in this
+   * repository or edit it. Everything else in here is keyed by worktree
+   * because it describes a worktree -- which file is open, what is expanded --
+   * and this describes the reader.
+   *
+   * Rendered by default. The panel is eighty columns of a file you are looking
+   * at, and prose is the thing a Markdown file mostly is; the toggle is in the
+   * bar above it, and the first flip is remembered.
+   */
+  markdownPreview: boolean
 }
 
 export const defaultUiState = (): UiState => ({
@@ -340,6 +354,7 @@ export const defaultUiState = (): UiState => ({
   expandedByWorktree: {},
   filesModeByWorktree: {},
   openFilesByWorktree: {},
+  markdownPreview: true,
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */

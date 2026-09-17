@@ -17,6 +17,7 @@ views/TodoPane       a worktree's todos, RUN NEXT, and Move to
 views/TerminalsPane  a worktree's terminals and their tab strip
 views/ChangesPane    what changed and what was committed; the patch renderer
 views/FilesPane      the panel: its three modes, the search box, and the editor
+views/Markdown       a `.md` file rendered, from the tree the editor highlights by
 editor/CodeEditor    one CodeMirror view over one file
 editor/theme         the syntax palette and the editor's chrome
 editor/language      filename -> grammar, fetched on demand
@@ -638,6 +639,41 @@ measured, a 1600x1200 png drawn at 652x489 and a 16px favicon at 16px -- and the
 line under it carries the real dimensions and the file size, which is the one
 thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
 table: it is text, it decodes, and editing it is the reason to open it.
+
+**A Markdown file can be read rather than edited.** `Preview` in the bar swaps
+the editor for `views/Markdown`, and the switch is `ui.markdownPreview` -- one
+boolean for the whole IDE, not one per file or per worktree, because what it
+records is a habit: whether the reader reads the Markdown in this repository or
+edits it. It opens rendered by default and the first flip is remembered.
+
+Four things about the renderer are load-bearing:
+
+- **It builds React elements, never HTML**, which is why there is no sanitiser
+  here and no need of one: nothing in the file can become markup. HTML the file
+  wrote is drawn as the source it is. This is the origin that can type into
+  every running agent, so a `<script>` or an `onerror=` in a file an agent just
+  wrote may not reach the parser.
+- **The words are the gaps between the nodes.** `@lezer/markdown` marks up the
+  delimiters and leaves the text itself as unmarked space between children, so a
+  renderer that only visited nodes draws a page of correctly nested empty tags.
+  The same parser the editor highlights the source with, through
+  `@codemirror/language-data`: two parsers would be two answers to "is this a
+  heading".
+- **A link into the repository opens that file in this panel**, resolved against
+  the file it was written in -- `server/CLAUDE.md` from the root one is the next
+  page, not an address. Only `http`, `https` and `mailto` are handed to the
+  browser; anything else is drawn as its own words.
+- **An image is drawn only if it is in the worktree**, through `/raw`. A remote
+  one becomes a link instead: fetching a URL a file names is an outbound request
+  the file chose and the reader did not, with room in it to say who opened the
+  document and when.
+
+The editor may now be unmounted while it is dirty, which is what Preview does to
+it, and `CodeEditor` had a latent bug that only that could reach: both of its
+effects run on a mount, and the second found the file the first had just built
+from and dispatched the disk text into it, throwing away the restored draft and
+then reporting the buffer as clean. `freshRef` is the guard. Flipping to Preview
+with an unsaved edit renders the edit, not what is on disk.
 
 Nothing auto-selects any more. The commit list used to choose its newest for you,
 which was free when the pane was always there and is not now: it would open the
