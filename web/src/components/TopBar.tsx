@@ -5,6 +5,7 @@ import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
 import { UsageBars, useUsage } from './UsageBars.js'
 import { LinkIcon } from './LinkIcon.js'
 import { projectKey } from '../views/Overview.js'
+import { useStore } from '../store.js'
 import {
   queuedTodoCount,
   worktreeStatus,
@@ -98,6 +99,32 @@ const NewWorktreeIcon = (): React.ReactElement => (
     aria-hidden="true"
   >
     <path d="M8 3.5v9M3.5 8h9" />
+  </svg>
+)
+
+/**
+ * Sign out: a door with the way out drawn through its open side.
+ *
+ * The convention every web application uses for this, which is the whole
+ * argument for it -- an icon with no label has to be one the reader has already
+ * learnt somewhere else. Same 16 box, same hairline stroke and `currentColor` as
+ * the two above, so the three controls in the chrome read as one set.
+ */
+const SignOutIcon = (): React.ReactElement => (
+  <svg
+    className="topbar__icon"
+    viewBox="0 0 16 16"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M9.4 2.6H4.2a1.6 1.6 0 0 0-1.6 1.6v7.6a1.6 1.6 0 0 0 1.6 1.6h5.2" />
+    <path d="M11.2 5.4 13.8 8l-2.6 2.6M13.4 8H6.6" />
   </svg>
 )
 
@@ -319,6 +346,7 @@ export const TopBar = ({
   onReveal,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
+  const signOut = useStore((state) => state.signOut)
   const bar = useRef<HTMLElement | null>(null)
   const strip = useRef<HTMLElement | null>(null)
   /*
@@ -440,6 +468,30 @@ export const TopBar = ({
       ))}
     </nav>
     {usage !== null && <UsageBars usage={usage} />}
+    {/*
+      * The way out, in the opposite corner from the way in.
+      *
+      * It was in the open-project dialog, tucked into the foot away from that
+      * dialog's own answers, on the argument that the bar's width is budgeted
+      * to the pixel -- but the price of that was a door you had to already know
+      * was behind another door. A 36px icon is affordable at every rung, and
+      * this is the one control in the interface that is about the browser
+      * rather than about any worktree, so it takes the far corner and the bar
+      * never gives it up: the last rung of the ladder is what the machine looks
+      * like when it is busiest, which is no time to lose the lock.
+      *
+      * No label, and none is missing: `title` and the accessible name say the
+      * words, and the glyph is the one every web application uses. Its own
+      * hairline on the left, the mirror of `Open project`'s on the right.
+      */}
+    <button
+      className="topbar__signout"
+      onClick={() => void signOut()}
+      title="Sign out of this browser"
+      aria-label="Sign out"
+    >
+      <SignOutIcon />
+    </button>
   </header>
   )
 }

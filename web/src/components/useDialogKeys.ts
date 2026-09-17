@@ -37,10 +37,7 @@ export const useDialogKeys = (
     /** The answers, in the order they are drawn; disabled ones are not answers. */
     const answers = (): HTMLButtonElement[] =>
       [...box.querySelectorAll<HTMLButtonElement>('.dialog__foot .btn')].filter(
-        // An aside is in the foot but is not an answer to the question on
-        // screen -- `Sign out` must never be where an arrow press lands, or
-        // what a stray Enter takes.
-        (button) => !button.disabled && !button.classList.contains('dialog__aside'),
+        (button) => !button.disabled,
       )
 
     const roving = (): void => {
