@@ -704,6 +704,30 @@ at all if it is already there (`nearestOffset`, `wholeOnScreen`). A tab click, a
 Cmd+arrow step, waking, and opening a panel all mean that same thing, so
 whatever you were already looking at stays in front of you when it can.
 
+**And where one window is all there is, scrolling to it says you are in it.**
+The lit tab and the lit window bar both come from `active`, which is written
+when something takes the keyboard -- and a swipe takes nothing. On a desktop
+that is right: several windows are on screen, the caret says which one is yours,
+and a scroll is looking around. On a phone the row shows **one**, so a swipe is
+not looking around, it is going somewhere, and the strip went on lighting the
+worktree you had scrolled away from -- the one thing it exists to answer.
+
+So `settleActive` marks a window when **exactly one cell is wholly on screen**,
+which is the same condition said as geometry rather than as a breakpoint: a wide
+row never has one, a phone always does. Two things it will not do. It does not
+override the keyboard -- if the focused pane is in that cell, the mark is
+already right, and if it is in one you scrolled away from, moving the mark is
+the whole point. And it hands over no focus, unlike `onReveal`: a swipe must not
+open a keyboard, and on a phone focus is what opens one.
+
+It runs when the row comes to rest, on `scrollend` where the browser has it and
+a 140ms timeout where it does not: a swipe crosses every window between here and
+where it lands, and marking each in turn would light three tabs on the way to
+the fourth -- and each is a write of `ui`. Measured at 390px: the lit tab walked
+feature-x, fourth, two-terms, alpha as the row scrolled, the project's own head
+lit while its pane was the window on screen, and the same in reverse; at 1600px,
+where two windows fit, a 397px scroll changed nothing.
+
 **Focus landing in a pane means it too** (`revealTile`). Navigation lands the
 row on a tile boundary, but a drag or a wheel leaves it wherever the gesture
 ended, so the window you reach for is often the one hanging half off an edge --
@@ -1180,6 +1204,19 @@ Four things about it are load-bearing:
   a modifier -- and that is the sequence a shell reads as word-left and
   word-right, which is most of why you want Ctrl on a phone. Measured against a
   stand-in that sets `?1h`: `ESC O D/A/B/C` plain, `ESC [ 1;5 D/C/A` latched.
+- **Ctrl with ← or → is the row's, not the app's.** That walk is Cmd+arrow on a
+  desktop and a phone has no Cmd; with one window on the glass at a time,
+  reaching the next worktree is worth more than the `ESC [ 1;5 D` it would
+  otherwise send, which a shell reads as word-left and Claude ignores. It is the
+  *same* walk, not a second one: `stepRow` was lifted out of the Cmd+arrow
+  listener in `Overview` and reaches the terminal through the `RowStep` context,
+  rather than being threaded through `WorktreeTile` and `TerminalsPane`, which
+  have nothing to do with walking the row. Up and down keep their modified form,
+  where nothing is competing for them.
+- **Tab says `tab`.** It was `⇥`, which at a glyph's size is a right arrow with
+  a line on it -- sitting two keys along from the actual right arrow. `esc` and
+  `ctrl` are words for the same reason: what a key says matters more than the
+  row being all symbols.
 - **Ctrl latches**, because there is nothing to hold it with, and it modifies
   the *next* key whether that comes from the bar or the keyboard. A letter is
   caught in `attachCustomKeyEventHandler` -- where the soft keyboard's letter

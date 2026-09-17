@@ -54,6 +54,7 @@ import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
 import { PanelIcon } from '../components/PanelIcon.js'
 import { useNearViewport } from './useNearViewport.js'
+import { RowStep } from './rowStep.js'
 
 /** How the add tile is identified in the layout. */
 
@@ -1684,6 +1685,14 @@ export const Overview = ({
   const restRef = useRef(rest)
   restRef.current = rest
 
+  /*
+   * The cells as they are now, for the scroll handler: it runs between renders
+   * and a closure over `cells` would be measuring the row as it was.
+   */
+  const restTimer = useRef<number | undefined>(undefined)
+  const cellsRef = useRef<Cell[]>([])
+  cellsRef.current = cells
+
   const slots: Slot<Cell>[] = cells.map((cell) => ({
     key: cell.key,
     width: Math.max(0, cell.units * pitch - gap),
@@ -1878,25 +1887,15 @@ export const Overview = ({
       units: cell.units,
     })),
   )
-  useEffect(() => {
-    const step = (event: KeyboardEvent): void => {
-      if (!isModHeld(event)) return
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-      /*
-       * A dialog is the only thing that keeps this key.
-       *
-       * It is modal -- the row is behind a scrim and you are answering a
-       * question -- so stepping the windows underneath would be acting on
-       * something nobody asked about. Everywhere else the shortcut belongs to
-       * the row: a todo's prompt, the editor in the files panel and the
-       * terminals are all places you sit for minutes at a time, and a
-       * navigation key that dies wherever the caret happens to be is a
-       * navigation key you cannot rely on. Cmd+Left as "start of line" is the
-       * price, and Home still does it.
-       */
-      const target = event.target as HTMLElement | null
-      if (target?.closest('.dialog')) return
-
+  /**
+   * One step along the row, in panes.
+   *
+   * The body of the Cmd+arrow walk, lifted out because a phone has no Cmd: the
+   * soft key row calls this for ctrl+← and ctrl+→ (see `TerminalView`), and it
+   * must be the same walk rather than a second one that drifts from it.
+   */
+  const stepRow = useCallback(
+    (dir: 'left' | 'right'): void => {
       const grid = gridRef.current
       if (!grid || stops.length === 0 || pitch <= 0) return
       /*
@@ -1916,38 +1915,106 @@ export const Overview = ({
        * answer is the tile you are looking at rather than the one you left.
        */
       const held = (document.activeElement as HTMLElement | null)
-        ?.closest('[data-pane]')
-        ?.getAttribute('data-pane')
+      ?.closest('[data-pane]')
+      ?.getAttribute('data-pane')
       let here =
-        held === undefined || held === null
-          ? -1
-          : stops.findIndex((stop) => paneKey(stop.id, stop.kind) === held)
+      held === undefined || held === null
+        ? -1
+        : stops.findIndex((stop) => paneKey(stop.id, stop.kind) === held)
 
       if (here === -1) {
-        const at = stops.findIndex(
-          (stop) => stop.id === active?.id && stop.kind === active.pane,
-        )
-        const seen = stops[at]
-        const tile = seen ? { at: seen.at, units: seen.units } : null
-        here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap) ? at : -1
+      const at = stops.findIndex(
+        (stop) => stop.id === active?.id && stop.kind === active.pane,
+      )
+      const seen = stops[at]
+      const tile = seen ? { at: seen.at, units: seen.units } : null
+      here = tile && wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap) ? at : -1
       }
       if (here === -1) {
-        /*
-         * Back to the leftmost unit, and to that tile's *first* pane: landing
-         * mid-tile would make the next step continue from a pane you are not
-         * looking at.
-         */
-        const unit = Math.round(grid.scrollLeft / pitch)
-        const owner = stops.filter((stop) => stop.at <= unit).at(-1)
-        here =
-          owner === undefined
-            ? 0
-            : stops.findIndex((stop) => stop.id === owner.id)
+      /*
+       * Back to the leftmost unit, and to that tile's *first* pane: landing
+       * mid-tile would make the next step continue from a pane you are not
+       * looking at.
+       */
+      const unit = Math.round(grid.scrollLeft / pitch)
+      const owner = stops.filter((stop) => stop.at <= unit).at(-1)
+      here =
+        owner === undefined
+          ? 0
+          : stops.findIndex((stop) => stop.id === owner.id)
       }
-      const to = stops[here + (event.key === 'ArrowRight' ? 1 : -1)]
+      const to = stops[here + (dir === 'right' ? 1 : -1)]
       // Counted only while the count is still read, so a walk taken every day
       // for a year is one write in total rather than one per press.
       if (to && stepsTaken < LEGEND_LEARNED) onStepTaken()
+      // Through the same request the top bar makes, rather than scrolling from
+      // here: arriving somewhere is one thing, and it also hands over the
+      // keyboard.
+      if (to) onReveal(to.id, to.kind)
+    },
+    [stops, active, pitch, width, gap, onReveal, stepsTaken, onStepTaken],
+  )
+
+  /*
+   * Scrolling to a window says you are in it, where it is the only one there.
+   *
+   * The lit tab in the top bar and the lit window bar both come from `active`,
+   * which is written when something takes the keyboard -- and a swipe takes
+   * nothing. On a desktop that is right: the row shows several windows, you can
+   * see which one your caret is in, and a scroll is you looking around. On a
+   * phone the row shows **one**, so a swipe is not looking around, it is going
+   * somewhere: the strip went on lighting the worktree you had scrolled away
+   * from, which is the one thing it exists to answer.
+   *
+   * So it follows the row only when exactly one window is wholly on screen, and
+   * only when the keyboard is not in one that is -- what holds the keyboard is
+   * the better answer wherever there is one, and this never overrides it.
+   *
+   * It says where you are without handing anything the keyboard, which is the
+   * difference between this and `onReveal`: a swipe must not open a keyboard,
+   * and on a phone focus is what opens one.
+   */
+  const settleActive = useCallback((): void => {
+    const grid = gridRef.current
+    if (!grid || pitch <= 0) return
+    const seen = cellsRef.current.filter((cell) =>
+      wholeOnScreen({ at: cell.at, units: cell.units }, grid.scrollLeft, pitch, width, gap),
+    )
+    const only = seen.length === 1 ? seen[0] : undefined
+    if (only === undefined) return
+    const held = (document.activeElement as HTMLElement | null)
+      ?.closest('[data-pane]')
+      ?.getAttribute('data-pane')
+    if (held !== undefined && held !== null) {
+      const owner = only.panes.some((pane) => pane.key === held)
+      // The keyboard is in this window already, or in one you have scrolled
+      // away from -- in which case moving the mark to what you are looking at
+      // is exactly the point.
+      if (owner) return
+    }
+    const first = only.panes[0]
+    if (first === undefined) return
+    onActivate(only.key, first.kind === 'project' ? 'project' : first.kind)
+  }, [pitch, width, gap, onActivate])
+
+  useEffect(() => {
+    const step = (event: KeyboardEvent): void => {
+      if (!isModHeld(event)) return
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      /*
+       * A dialog is the only thing that keeps this key.
+       *
+       * It is modal -- the row is behind a scrim and you are answering a
+       * question -- so stepping the windows underneath would be acting on
+       * something nobody asked about. Everywhere else the shortcut belongs to
+       * the row: a todo's prompt, the editor in the files panel and the
+       * terminals are all places you sit for minutes at a time, and a
+       * navigation key that dies wherever the caret happens to be is a
+       * navigation key you cannot rely on. Cmd+Left as "start of line" is the
+       * price, and Home still does it.
+       */
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.dialog')) return
       /*
        * Taken outright, and this handler listens in the capture phase so that
        * it can be. A text field's own handling runs at the target, before a
@@ -1956,14 +2023,11 @@ export const Overview = ({
        */
       event.preventDefault()
       event.stopPropagation()
-      // Through the same request the top bar makes, rather than scrolling from
-      // here: arriving somewhere is one thing, and it also hands over the
-      // keyboard.
-      if (to) onReveal(to.id, to.kind)
+      stepRow(event.key === 'ArrowRight' ? 'right' : 'left')
     }
     document.addEventListener('keydown', step, true)
     return () => document.removeEventListener('keydown', step, true)
-  }, [stops, active, pitch, width, onReveal, stepsTaken, onStepTaken])
+  }, [stepRow])
 
   /*
    * Cmd+I, Cmd+O and Cmd+F open a worktree's terminals, todos and files.
@@ -2179,6 +2243,8 @@ export const Overview = ({
   }, [pitch, totalUnits])
 
   return (
+    /* The walk, for anything under the row that needs it -- see `rowStep.ts`. */
+    <RowStep.Provider value={stepRow}>
     <section className="view overview">
       <div
         className="grid"
@@ -2195,7 +2261,18 @@ export const Overview = ({
         onScroll={(event) => {
           const el = event.currentTarget
           if (pitch > 0) unitRef.current = Math.round(el.scrollLeft / pitch)
+          /*
+           * When it stops, not while it moves: a swipe crosses every window
+           * between here and where it lands, and marking each one in turn would
+           * light three tabs on the way to the fourth -- and each is a write of
+           * `ui`. `scrollend` is the honest signal and Chrome has it; the
+           * timeout is for the browsers that do not, and is harmless where both
+           * fire because `activate` bails when nothing changed.
+           */
+          window.clearTimeout(restTimer.current)
+          restTimer.current = window.setTimeout(settleActive, 140)
         }}
+        onScrollEnd={settleActive}
       >
         {/*
           * One marker per place the row may rest -- see `rest`: each pane's
@@ -2385,5 +2462,6 @@ export const Overview = ({
           })}
       </div>
     </section>
+    </RowStep.Provider>
   )
 }
