@@ -9,7 +9,7 @@ import type { Session } from '@switchboard/shared'
  * its environment there. A bare name, which is what a deployment passes, and
  * which the server expands to both schemes.
  */
-process.argv.push('--host', 'ide.example:84')
+process.argv.push('--host', 'ide.example:83')
 const { withPassword } = await import('./helpers/password.js')
 withPassword()
 const Fastify = (await import('fastify')).default
@@ -109,7 +109,7 @@ describe('/ws origin', () => {
    * command ran as the user from a page they had merely visited.
    */
   it('lets our own page in when it brings a ticket', async () => {
-    const settled = connect('https://ide.example:84', newTicket())
+    const settled = connect('https://ide.example:83', newTicket())
     setTimeout(() => fire(session), 20)
     const { code, messages } = await settled
     expect(code).toBe(1000)
@@ -117,7 +117,7 @@ describe('/ws origin', () => {
   })
 
   it('refuses our own origin with no ticket, and tells it nothing', async () => {
-    const settled = connect('https://ide.example:84')
+    const settled = connect('https://ide.example:83')
     setTimeout(() => fire(session), 20)
     const { code, messages } = await settled
     expect(code).toBe(1008)
@@ -134,7 +134,7 @@ describe('/ws origin', () => {
    * password as misconfigured.
    */
   it('tells a page we serve from one we do not, even with a bogus ticket', async () => {
-    expect((await connect('https://ide.example:84', 'never-issued')).code).toBe(4401)
+    expect((await connect('https://ide.example:83', 'never-issued')).code).toBe(4401)
     expect((await connect('https://evil.example', 'never-issued')).code).toBe(1008)
     // A real ticket from a foreign origin is still refused as a foreign origin.
     expect((await connect('https://evil.example', newTicket())).code).toBe(1008)
@@ -143,8 +143,8 @@ describe('/ws origin', () => {
   /* One use. A replayed ticket is a ticket somebody else may be holding. */
   it('spends a ticket exactly once', async () => {
     const ticket = newTicket()
-    expect((await connect('https://ide.example:84', ticket)).code).toBe(1000)
-    expect((await connect('https://ide.example:84', ticket)).code).toBe(4401)
+    expect((await connect('https://ide.example:83', ticket)).code).toBe(1000)
+    expect((await connect('https://ide.example:83', ticket)).code).toBe(4401)
   })
 
   /*
@@ -154,7 +154,7 @@ describe('/ws origin', () => {
    * row that never paints, which is a bad thing to learn from the browser.
    */
   it('accepts either scheme for a name given without one', async () => {
-    for (const origin of ['https://ide.example:84', 'http://ide.example:84']) {
+    for (const origin of ['https://ide.example:83', 'http://ide.example:83']) {
       const { code } = await connect(origin, newTicket())
       expect([origin, code]).toEqual([origin, 1000])
     }

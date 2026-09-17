@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 /* `config` reads the environment at import time. */
-process.argv.push('--host', 'ide.example:84')
+process.argv.push('--host', 'ide.example:83')
 const { withPassword, PASSWORD } = await import('./helpers/password.js')
 withPassword()
 const Fastify = (await import('fastify')).default
@@ -45,7 +45,7 @@ describe('logout', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/api/logout',
-      headers: { 'sec-fetch-site': 'same-origin', origin: 'https://ide.example:84', host: 'ide.example:84' },
+      headers: { 'sec-fetch-site': 'same-origin', origin: 'https://ide.example:83', host: 'ide.example:83' },
     })
     expect(res.statusCode).toBe(200)
     expect(String(res.headers['set-cookie'])).toContain('Max-Age=0')
@@ -69,7 +69,7 @@ describe('login', () => {
       method: 'POST',
       url: '/api/login',
       payload: { password: PASSWORD },
-      headers: { 'sec-fetch-site': 'same-origin', host: '127.0.0.1:8084' },
+      headers: { 'sec-fetch-site': 'same-origin', host: '127.0.0.1:8083' },
     })
     expect(String(browser.headers['set-cookie'])).toContain('HttpOnly')
     expect(browser.json().token).toBeUndefined()

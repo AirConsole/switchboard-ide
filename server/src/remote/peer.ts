@@ -64,7 +64,7 @@ const READ_TIMEOUT_MS = 10_000
 /**
  * `user:password` out of a URL, if it carries any.
  *
- * `https://user:pw@box:84` is the syntax people reach for, and every
+ * `https://user:pw@box:83` is the syntax people reach for, and every
  * layer below refuses it: `new URL().origin` drops it silently, and `fetch()`
  * throws outright on a URL that carries credentials. So it is taken out here
  * and travels as an `Authorization` header instead -- which is what it would
@@ -100,7 +100,7 @@ export const normalizeBaseUrl = (raw: string): string => {
   try {
     url = new URL(raw.trim())
   } catch {
-    // Only a genuinely malformed URL lands here. `box.local:8084` does *not*
+    // Only a genuinely malformed URL lands here. `box.local:8083` does *not*
     // throw -- it parses as the scheme `box.local:` -- so the protocol check
     // below is what actually catches the abbreviation the placeholder invites.
     throw new HttpError(400, 'a server is http:// or https://')

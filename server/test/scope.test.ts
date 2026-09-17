@@ -143,14 +143,14 @@ describe('a machine behind a password', () => {
    */
   it('takes the password out of the address and leaves the address alone', async () => {
     const { basicFrom, normalizeBaseUrl } = await import('../src/remote/peer.js')
-    expect(basicFrom('https://user:pw@box:84')).toBe(
+    expect(basicFrom('https://user:pw@box:83')).toBe(
       Buffer.from('user:pw').toString('base64'),
     )
     // The base URL is hashed into the key that scopes every id from that
     // machine, shown in the picker and written into log lines. None of those is
     // a place for a password.
-    expect(normalizeBaseUrl('https://user:pw@box:84')).toBe('https://box:84')
-    expect(basicFrom('https://box:84')).toBeUndefined()
+    expect(normalizeBaseUrl('https://user:pw@box:83')).toBe('https://box:83')
+    expect(basicFrom('https://box:83')).toBeUndefined()
   })
 
   it('decodes what the URL had to encode', async () => {

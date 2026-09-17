@@ -10,7 +10,7 @@ const int = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback
 }
 
-const port = int(env.SWB_PORT, 8084)
+const port = int(env.SWB_PORT, 8083)
 const isDev = env.NODE_ENV !== 'production'
 
 /**
@@ -58,8 +58,8 @@ const flag = (name: string): string[] => {
  * process has no way to derive, so a deployment must name it: `--host`, which
  * `swb` passes from its config file.
  *
- * **A bare name means both schemes.** `--host ide.example:84` allows
- * `https://ide.example:84` and `http://ide.example:84`, because which one the
+ * **A bare name means both schemes.** `--host ide.example:83` allows
+ * `https://ide.example:83` and `http://ide.example:83`, because which one the
  * browser sends depends on how the proxy terminates and that is not something
  * the person typing the flag should have to know -- getting it wrong costs a
  * page that loads over a row that never paints. Write the scheme yourself to
@@ -104,7 +104,7 @@ const publicOrigins = (): ReadonlySet<string> => {
          * so that is what has to be in here.
          *
          * The scheme is checked, and not as a formality: a name that is itself
-         * scheme-shaped (`box.local:8084`) parses as the *scheme*
+         * scheme-shaped (`box.local:8083`) parses as the *scheme*
          * `box.local:`, and `.origin` for any non-special scheme is the
          * literal string `"null"` -- which would land in this set and blow up
          * `new URL` downstream.
