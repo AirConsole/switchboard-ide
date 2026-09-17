@@ -1966,13 +1966,11 @@ export const Overview = ({
    * somewhere: the strip went on lighting the worktree you had scrolled away
    * from, which is the one thing it exists to answer.
    *
-   * So it follows the row only when exactly one window is wholly on screen, and
-   * only when the keyboard is not in one that is -- what holds the keyboard is
-   * the better answer wherever there is one, and this never overrides it.
-   *
-   * It says where you are without handing anything the keyboard, which is the
-   * difference between this and `onReveal`: a swipe must not open a keyboard,
-   * and on a phone focus is what opens one.
+   * So it follows the row where the row is one window wide, and it *arrives*
+   * rather than merely marking: the window you scrolled to is the one you can
+   * type into, which is `onReveal` -- the same arrival a tab click makes. The
+   * two readings of "which window", and why the exact one is not enough on a
+   * phone, are in the body.
    */
   const settled = useRef<string | null>(null)
   const settleActive = useCallback((): void => {

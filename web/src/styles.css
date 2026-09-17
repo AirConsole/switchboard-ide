@@ -883,6 +883,29 @@ button {
 }
 
 /*
+ * Last in the bar, so its rule is on its left -- the mirror of `Open project`
+ * in the other corner, and the two are the only controls up here that are not
+ * about a worktree. The icon's square padding rather than the label's 14px,
+ * since this one never has a label: the words are in `title` and in the
+ * accessible name, and the ladder never takes it away -- at 36px it is
+ * affordable at every rung, and the rung the bar reaches when it is busiest is
+ * no time to lose the one way out.
+ */
+.topbar__signout {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0 11px;
+  border-left: 1px solid var(--rule);
+  color: var(--graphite);
+}
+
+.topbar__signout:hover {
+  color: var(--bone);
+  background: var(--level-raised);
+}
+
+/*
  * A phone's window is the screen, so the pane stops insetting its text.
  *
  * 8px either side is 16px of a 390px window -- two columns of terminal out of
@@ -2699,11 +2722,6 @@ button {
   justify-content: flex-end;
   padding: 12px 16px;
   border-top: 1px solid var(--rule);
-}
-
-/* Pushed to the far side of the actions, so it is not read as one of them. */
-.dialog__aside {
-  margin-right: auto;
 }
 
 /*

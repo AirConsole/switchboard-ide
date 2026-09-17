@@ -130,7 +130,6 @@ export const OpenProjectDialog = ({
   onOpened,
 }: OpenProjectDialogProps): React.ReactElement => {
   useEscape(onClose)
-  const signOut = useStore((state) => state.signOut)
   const box = useRef<HTMLDivElement | null>(null)
   /* No initial focus: this one is a form, and the hand that opened it is
      aiming at the path field rather than at an answer. */
@@ -570,14 +569,8 @@ export const OpenProjectDialog = ({
           {error && <p className="field__hint" style={{ color: 'var(--danger)' }}>{error}</p>}
         </div>
         <div className="dialog__foot">
-          {/*
-           * Here rather than in the top bar, whose width is budgeted to the
-           * pixel and gives things up in a fixed order as it narrows. This
-           * dialog is already where the machine-level things live.
-           */}
-          <button className="btn btn--quiet dialog__aside" onClick={() => void signOut()}>
-            Sign out
-          </button>
+          {/* Signing out is in the top bar's far corner now -- a door behind
+             another door is one nobody finds. See `topbar__signout`. */}
           <button className="btn btn--quiet" onClick={onClose}>
             Cancel
           </button>
