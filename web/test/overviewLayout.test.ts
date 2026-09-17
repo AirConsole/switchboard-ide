@@ -5,9 +5,11 @@ import {
   MIN_PANE_COLUMNS,
   PANE_CHROME_WIDTH,
   TILE_CHROME,
+  XTERM_RULER_WIDTH,
   gapFor,
   measureMonoCharWidth,
   monoAdvance,
+  PANE_CHROME,
   narrowBelow,
   nearestOffset,
   rowMetrics,
@@ -99,26 +101,38 @@ describe('narrowBelow', () => {
    * window in between kept its gaps and wrapped the agent at 76 columns to pay
    * for them.
    */
-  const columnsAt = (width: number, charWidth: number): number => {
-    const minPane = MIN_PANE_COLUMNS * charWidth + PANE_CHROME_WIDTH
+  const columnsAt = (width: number, charWidth: number, chrome: number): number => {
+    const minPane = MIN_PANE_COLUMNS * charWidth + chrome
     const { pitch } = rowMetrics(width, GAP, minPane)
-    // A tile of two units, less the tile's own edges and the pane's inset.
+    // A tile of two units, less the tile's own edges and everything the pane
+    // spends before a character: its inset, its border, and xterm's scrollbar.
     const pane = 2 * pitch - GAP - TILE_CHROME
-    return Math.floor((pane - PANE_CHROME_WIDTH) / charWidth)
+    return Math.floor((pane - chrome) / charWidth)
   }
 
   it('is the width where the eightieth column goes', () => {
     for (const charWidth of [7, 8, 9]) {
       const at = narrowBelow(charWidth)
-      expect(columnsAt(at, charWidth)).toBe(MIN_PANE_COLUMNS)
-      expect(columnsAt(at - 1, charWidth)).toBe(MIN_PANE_COLUMNS - 1)
+      expect(columnsAt(at, charWidth, PANE_CHROME)).toBe(MIN_PANE_COLUMNS)
+      expect(columnsAt(at - 1, charWidth, PANE_CHROME)).toBe(MIN_PANE_COLUMNS - 1)
     }
   })
 
   it('moves with the font, which is the point of computing it', () => {
-    // 658 + 3 + 24 at an 8px cell, and eighty px more for every px of cell.
-    expect(narrowBelow(8)).toBe(685)
+    // 672 + 3 + 24 at an 8px cell, and eighty px more for every px of cell.
+    expect(narrowBelow(8)).toBe(699)
     expect(narrowBelow(9) - narrowBelow(8)).toBe(MIN_PANE_COLUMNS)
+  })
+
+  /*
+   * The bug the pane's chrome had: `PANE_CHROME_WIDTH` counts what the
+   * stylesheet spends, and xterm keeps back 14 more before it divides the rest
+   * into cells -- `FitAddon`'s `overviewRuler?.width || 14`. A pane on the old
+   * floor handed it 640px and got 78 columns for the 80 this layout promises.
+   */
+  it('reserves what xterm keeps back as well as what the stylesheet does', () => {
+    expect(PANE_CHROME).toBe(PANE_CHROME_WIDTH + XTERM_RULER_WIDTH)
+    expect(columnsAt(narrowBelow(8), 8, PANE_CHROME_WIDTH + 1)).toBeGreaterThan(MIN_PANE_COLUMNS)
   })
 })
 

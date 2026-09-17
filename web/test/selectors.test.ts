@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import {
   claudeSession,
+  drainTakesKeyboard,
   isRunning,
   mostUrgentStatus,
   orderWorktrees,
@@ -10,8 +11,8 @@ import {
   removalLanding,
   removalQuestions,
   removalWarnings,
-  summarySignal,
   stateLabel,
+  summarySignal,
   terminalSessions,
   worktreeStatus,
   worktreeTodos,
@@ -406,5 +407,34 @@ describe('summarySignal', () => {
     expect(summarySignal([])).toBeNull()
     expect(summarySignal(['working'])).toBeNull()
     expect(summarySignal(['off', 'working', 'off'])).toBeNull()
+  })
+})
+
+describe('drainTakesKeyboard', () => {
+  /*
+   * The bug: a queue drains on the server whether or not a browser is open, so
+   * this fires in windows nobody is in -- and it moved the keyboard and scrolled
+   * the row to them regardless, minutes after the todos were queued, out of
+   * whatever the reader was actually doing.
+   */
+  it('leaves the keyboard alone in a window you are not in', () => {
+    expect(drainTakesKeyboard({ id: 'wt-2', pane: 'todo' }, 'wt-1')).toBe(false)
+    expect(drainTakesKeyboard(null, 'wt-1')).toBe(false)
+  })
+
+  /*
+   * ...and the case that has to survive: the pane you are in is the one being
+   * unmounted, so focus left alone falls to the body, where the row's own keys
+   * stop working.
+   */
+  it('hands it on when the pane you are in is the one that closes', () => {
+    expect(drainTakesKeyboard({ id: 'wt-1', pane: 'todo' }, 'wt-1')).toBe(true)
+  })
+
+  // Already in that worktree's Claude, or reading its files: nothing is closing
+  // under you, so nothing moves.
+  it('does not move within the same worktree', () => {
+    expect(drainTakesKeyboard({ id: 'wt-1', pane: 'claude' }, 'wt-1')).toBe(false)
+    expect(drainTakesKeyboard({ id: 'wt-1', pane: 'files' }, 'wt-1')).toBe(false)
   })
 })

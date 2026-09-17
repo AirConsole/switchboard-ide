@@ -270,8 +270,35 @@ Two counts answer that, and the bar shows whichever applies: `dirty` is work not
 committed, `unmerged` is work committed and not merged. A worktree with neither
 is one you can forget about.
 
-`unmerged` is `rev-list --count <default>..HEAD` — "would merging this bring
-anything". What counts as the default branch is resolved once per repository and
+`unmerged` is `rev-list --count <default>..HEAD`, **confirmed against the
+content**, because the question it is asked is "would merging this bring
+anything" and `rev-list` answers a narrower one: are there commits over there
+that are not over here, *by identity*. The two agree until something lands by a
+route that rewrites history, and then they disagree permanently.
+
+A **squash merge** is that route, and it is how everything lands in this
+repository. The default branch gets one new commit holding the same changes; the
+branch's own commits are not ancestors of it, so `rev-list` goes on counting
+them for as long as the worktree exists. Measured on the `ui` worktree an hour
+after its pull request was merged: `rev-list --count master..HEAD` said 2 and
+`git diff master HEAD` was empty — every worktree in the row wore a fork glyph
+saying it had work to contribute, having contributed it. So a non-zero count is
+checked with `git diff --quiet <default> HEAD`, and identical trees mean zero
+whatever the commits say. A rebase-and-merge lies the same way and is fixed by
+the same check.
+
+`git diff --quiet` says "they differ" by *exiting 1*, which `execFile` reports
+as a failure rather than as an answer — so the throw is the answer, and any
+other failure lands in the same place and is read as "they differ". That is the
+safe direction: this decides whether to show a mark saying there is work here,
+and git falling over is not a reason to tell somebody their work is already
+merged.
+
+What is deliberately **not** done is `merge-tree`, which would also catch a
+branch that is ahead *and* behind where the ahead part is already in. That costs
+a real merge of two trees per worktree per refresh, and nothing has hit it yet.
+
+What counts as the default branch is resolved once per repository and
 cached for the life of the process, in this order: `origin/HEAD`, because that
 is what the remote itself says its default is and it survives a repository whose
 default is neither `main` nor `master`; then `origin/main` or `origin/master` if
@@ -284,7 +311,10 @@ and the count is 0.
 
 Cost: one `rev-list` per worktree per poll, alongside the `git status` that
 `dirty` already pays. Measured over four worktrees of this repo, 38ms for both
-halves together and 15ms for the `rev-list` half, against a 4s poll.
+halves together and 15ms for the `rev-list` half, against a 4s poll. The diff
+runs only where the count is non-zero — so the common answer is still one
+`rev-list` — and is a tree comparison rather than a walk: 2ms on this
+repository.
 
 ## What a worktree is working on
 

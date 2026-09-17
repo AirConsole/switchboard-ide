@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
   LOCAL_HEAD_BASE,
@@ -173,9 +173,42 @@ describe('against a real repository', () => {
     const inWorktree = async (...args: string[]): Promise<void> => {
       await repo.git('-C', path, ...args)
     }
-    await inWorktree('commit', '--allow-empty', '-m', 'one')
-    await inWorktree('commit', '--allow-empty', '-m', 'two')
+    /*
+     * Real content, not `--allow-empty`. The count exists to answer "would
+     * merging this bring anything", and two empty commits are two commits that
+     * bring nothing -- a fixture that passes for the wrong reason.
+     */
+    await writeFile(join(path, 'one.txt'), 'one\n', 'utf8')
+    await inWorktree('add', '-A')
+    await inWorktree('commit', '-m', 'one')
+    await writeFile(join(path, 'two.txt'), 'two\n', 'utf8')
+    await inWorktree('add', '-A')
+    await inWorktree('commit', '-m', 'two')
     expect(await unmergedCount(path, 'main')).toBe(2)
+  })
+
+  it('counts nothing once a squash merge has taken the work', async () => {
+    /*
+     * How everything lands in this repository, and the reason this check
+     * exists: a squash merge puts one *new* commit on the default branch, so
+     * the branch's own commits are never its ancestors and `rev-list` counts
+     * them for as long as the worktree exists. Measured on the branch this was
+     * written on: `rev-list --count master..HEAD` said 2 and `git diff master
+     * HEAD` was empty, and every worktree in the row wore a fork glyph saying
+     * it had work to contribute, having contributed it.
+     */
+    const path = join(repo.path, '.claude', 'worktrees', 'squashed')
+    await addWorktree({ root: repo.path, path, branch: 'squashed' })
+    await writeFile(join(path, 'work.txt'), 'work\n', 'utf8')
+    await repo.git('-C', path, 'add', '-A')
+    await repo.git('-C', path, 'commit', '-m', 'the work')
+    expect(await unmergedCount(path, 'main')).toBe(1)
+
+    await repo.git('merge', '--squash', 'squashed')
+    await repo.git('commit', '-m', 'the work (#1)')
+    // The commit is still not in main -- only what it did is.
+    expect((await repo.git('rev-list', '--count', 'main..squashed')).trim()).toBe('1')
+    expect(await unmergedCount(path, 'main')).toBe(0)
   })
 
   it('counts nothing unmerged when there is no default branch to compare with', async () => {
