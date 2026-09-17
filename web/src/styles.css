@@ -675,30 +675,17 @@ button {
 }
 
 /*
- * The machine a project is on, when it is not this one.
+ * The mark for a project on a linked machine; see `LinkIcon`.
  *
- * The same `--graphite` as the name beside it, deliberately: the rung below is
- * `--graphite-dim`, and the note further down records that it measures 4.42:1
- * on the pill's ground -- under the 4.5 floor. So the machine is told apart by
- * the separator rather than by brightness, which is why the `/` is drawn here
- * rather than written into the label: `peer/one` reads as a path, and a path is
- * a thing you already know how to read left to right.
- *
- * No colour either. Where a project lives is not one of the two things a row of
- * agents is scanned for.
+ * `--graphite`, the name's own grey, rather than the dim rung below it, which
+ * measures 4.42:1 on the head's ground -- under the floor a hairline glyph
+ * needs more than text does. `flex: none` because a mark that shrinks is a mark
+ * that disappears, and it is 12px; the name beside it is what gives way.
  */
 .tabgroup__host {
   color: var(--graphite);
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 0 1 auto;
-}
-
-.tabgroup__host::after {
-  content: '/';
-  padding-inline: 2px;
-  color: var(--rule-bright);
+  flex: none;
+  margin-right: 5px;
 }
 
 /*
