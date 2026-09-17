@@ -11,6 +11,13 @@
 # local VM all take -- so a second provider needs its own `create` and not a
 # second definition of the machine.
 #
+# **Not a `swb` verb, and not a pnpm script**, though everything else in this
+# repository is one. Those run on the machine the IDE is on; this one runs on
+# your laptop, against a machine that does not exist yet, from a checkout
+# nobody has installed -- `pnpm install` is several minutes of compiling
+# node-pty for a program that only talks to gcloud. `install.sh` is the other
+# script with that shape, and for the same reason.
+#
 # Two things about this script are load-bearing:
 #
 #   - **It refuses a project inside an organisation** unless told otherwise.
