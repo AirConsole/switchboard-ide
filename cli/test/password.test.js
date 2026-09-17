@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MIN_LENGTH, feedKey, matches, passwordFileFor, readRecord, recordFor } from '../src/password.js'
+import { MIN_LENGTH, feedKey, matches, passwordFileFor, readRecord, recordFor, tooShort } from '../src/password.js'
 
 const CTRL_C = String.fromCharCode(3)
 const DELETE = String.fromCharCode(127)
@@ -109,5 +109,16 @@ describe('the stored record', () => {
 
   it('has a minimum length the server cannot enforce, because it only sees a hash', () => {
     expect(MIN_LENGTH).toBeGreaterThanOrEqual(12)
+  })
+
+  /*
+   * Counted the way a person counts. `String.length` counts UTF-16 units, so
+   * eleven characters with an emoji among them read as twelve and passed, while
+   * the person who typed them had been told twelve was the minimum.
+   */
+  it('counts characters, not UTF-16 units', () => {
+    expect(tooShort('a'.repeat(11))).toBe(true)
+    expect(tooShort('a'.repeat(12))).toBe(false)
+    expect(tooShort(`${'a'.repeat(10)}\u{1f600}`)).toBe(true)
   })
 })
