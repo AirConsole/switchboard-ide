@@ -32,6 +32,7 @@ const USAGE = `swb -- Switchboard
   pnpm start                     bring the instance up (does not build)
   pnpm stop                      stop it; tmux sessions and their agents keep running
   pnpm restart                   build, then stop and start; this is the deploy
+  pnpm pull                      update this checkout to the newest version, then restart
   pnpm status                    what it is, and whether the public name is right
 
   pnpm scratch start [name]      a throwaway instance for this checkout
@@ -161,6 +162,11 @@ const main = async () => {
 
   const service = await import('../src/service.js')
   if (first === 'status') return service.status()
+  if (first === 'pull') {
+    const { pull } = await import('../src/pull.js')
+    const now = service.running()
+    return pull({ host: opts.host, force: opts.force, running: now.running, runningCommit: now.commit })
+  }
   if (first === 'start' || first === 'stop' || first === 'restart') return service[first](opts)
 
   console.error(`swb: no such command "${first}"`)
