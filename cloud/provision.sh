@@ -319,9 +319,18 @@ cmd_create() {
   RECOVERY=$(printf '%s' "$PASSWORD" | ssh_vm --command 'sudo SWB_DATA_DEV=/dev/disk/by-id/google-switchboard-data node /opt/switchboard/cloud/unlock/format.js' 2>/dev/null | tail -1)
   [ -n "$RECOVERY" ] || die "the volume was not formatted; nothing else was changed"
 
-  printf '%s' "$PASSWORD" | ssh_vm --command 'sudo /opt/switchboard/cli/bin/swb.js password --stdin --reset' >/dev/null 2>&1 || true
+  # Order matters, and each step needs the one before it:
+  #   mount, so the user has a home at all;
+  #   unlocked, which makes that home and the IDE's settings in it;
+  #   the password, written into that home as the user who owns it -- as root
+  #   it would land in root's own state directory, where the IDE never looks;
+  #   and only then the IDE, which refuses to start without a password.
   ssh_vm --command 'sudo mount /dev/mapper/switchboard-data /home && sudo systemctl start switchboard-unlocked.service' >/dev/null 2>&1 \
-    || die "the volume was formatted but the machine did not start; ssh in and look at switchboard-unlocked.service"
+    || die "the volume was formatted but the machine did not come up; ssh in and look at switchboard-unlocked.service"
+  printf '%s' "$PASSWORD" | ssh_vm --command 'sudo -u switchboard env HOME=/home/switchboard /opt/switchboard/cli/bin/swb.js password --stdin --reset' >/dev/null 2>&1 \
+    || die "the password could not be set; nothing is serving yet"
+  ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
+    || die "the IDE did not start; ssh in and look at switchboard.service"
 
   wait_for "the IDE" 60 curl -fsS --max-time 5 -o /dev/null "https://$IP/api/health" || \
     say "note: the IDE did not answer yet; it may still be starting"

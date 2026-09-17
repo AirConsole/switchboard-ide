@@ -222,12 +222,21 @@ usermod -aG docker "$SWB_USER" 2>/dev/null || true
 # --- the IDE, on the boot disk ----------------------------------------------
 # In the clear on purpose: it has to be able to run in order to ask for the
 # password that decrypts everything else.
+# The build happens before there is a /home: the volume that becomes it is
+# still shut, and it is the IDE being built here that will ask for the password
+# to open it. So the build gets a home of its own on the boot disk. Measured --
+# without it corepack fails with EACCES on the user's not-yet-existing cache,
+# and the machine comes up with no IDE.
+BUILD_HOME=/var/lib/switchboard
+install -d -o "$SWB_USER" -g "$SWB_USER" "$BUILD_HOME"
+as_swb() { sudo -u "$SWB_USER" env HOME="$BUILD_HOME" PATH=/usr/local/bin:/usr/bin:/bin "$@"; }
+
 if [ ! -d "$IDE_DIR/.git" ]; then
   log "installing the IDE into $IDE_DIR"
   mkdir -p "$IDE_DIR"
   chown "$SWB_USER:$SWB_USER" "$IDE_DIR"
-  sudo -u "$SWB_USER" git clone --branch "$REPO_REF" "$REPO_URL" "$IDE_DIR"
-  sudo -u "$SWB_USER" bash -lc "cd $IDE_DIR && pnpm install && pnpm build"
+  as_swb git clone --branch "$REPO_REF" "$REPO_URL" "$IDE_DIR"
+  as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
 fi
 
 if ! command -v claude >/dev/null; then
@@ -309,6 +318,7 @@ RemainAfterExit=yes
 User=$SWB_USER
 WorkingDirectory=$IDE_DIR
 Environment=PATH=/home/$SWB_USER/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=/home/$SWB_USER
 ExecStart=/usr/bin/pnpm start
 ExecStop=/usr/bin/pnpm stop
 EOF
@@ -326,7 +336,11 @@ ExecStart=/etc/switchboard/unlocked.sh
 EOF
 
 systemctl daemon-reload
-systemctl enable --now switchboard-setup.service >/dev/null 2>&1 || true
+# Enabled, not started: this script *is* that unit, so `--now` starts a second
+# copy of itself doing the same work concurrently -- and when the first copy is
+# an ssh session that then ends, the unit goes down with it, leaving a machine
+# half built and nothing saying so. The unit is for the next boot.
+systemctl enable switchboard-setup.service >/dev/null 2>&1 || true
 systemctl enable --now switchboard-unlock.service
 
 log "done"

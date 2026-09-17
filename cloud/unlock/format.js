@@ -13,19 +13,11 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
-import { deriveKey, writeSalt } from './derive.js'
+import { randomUUID } from 'node:crypto'
+import { deriveKey, isLuks } from './derive.js'
 
 const device = process.env.SWB_DATA_DEV ?? '/dev/disk/by-id/google-switchboard-data'
 const mapper = process.env.SWB_MAPPER ?? 'switchboard-data'
-
-const isLuks = () => {
-  try {
-    execFileSync('cryptsetup', ['isLuks', device], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
 
 const password = readFileSync(0, 'utf8').replace(/\n$/, '')
 if (password === '') {
@@ -33,20 +25,26 @@ if (password === '') {
   process.exit(1)
 }
 
-if (isLuks()) {
+if (isLuks(device)) {
   console.error(`format: ${device} already holds a LUKS volume; refusing`)
   process.exit(2)
 }
 
-const salt = writeSalt()
-const key = await deriveKey(password, salt)
+/*
+ * The UUID is chosen here rather than by cryptsetup, because it is also the
+ * salt -- and the key has to exist before the header it will open does.
+ */
+const uuid = randomUUID()
+const key = await deriveKey(password, Buffer.from(uuid, 'utf8'))
 // Words, not bytes: this is the thing a person copies into a password manager
 // and may one day have to type by hand.
 const recovery = [...randomBytes(10)].map((b) => b.toString(36).padStart(2, '0')).join('-')
 
-execFileSync('cryptsetup', ['luksFormat', '--type', 'luks2', '--batch-mode', '--key-file=-', device], {
-  input: key,
-})
+execFileSync(
+  'cryptsetup',
+  ['luksFormat', '--type', 'luks2', '--batch-mode', '--uuid', uuid, '--key-file=-', device],
+  { input: key },
+)
 
 /*
  * The second slot, so a forgotten password is recoverable and a lost recovery

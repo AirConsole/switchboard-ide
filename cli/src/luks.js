@@ -12,12 +12,12 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
-import { deriveKey, readSalt, SALT_FILE } from '../../cloud/unlock/derive.js'
+import { deriveKey, isLuks, volumeSalt } from '../../cloud/unlock/derive.js'
 
 const DEVICE = process.env.SWB_DATA_DEV ?? '/dev/disk/by-id/google-switchboard-data'
 
 /** Is this a machine whose disk is opened by the IDE password? */
-export const volumeConfigured = () => existsSync(SALT_FILE) && existsSync(DEVICE)
+export const volumeConfigured = () => existsSync(DEVICE) && isLuks(DEVICE)
 
 /**
  * Replace the password's key slot. The recovery slot is never touched, so a
@@ -27,7 +27,7 @@ export const volumeConfigured = () => existsSync(SALT_FILE) && existsSync(DEVICE
  * @param {string} newPassword
  */
 export const rekey = async (oldPassword, newPassword) => {
-  const salt = readSalt()
+  const salt = volumeSalt(DEVICE)
   const oldKey = await deriveKey(oldPassword, salt)
   const newKey = await deriveKey(newPassword, salt)
   // cryptsetup wants the new key as a file while stdin carries the old one.

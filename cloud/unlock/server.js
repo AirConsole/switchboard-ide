@@ -25,7 +25,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { promisify } from 'node:util'
-import { deriveKey, readSalt } from './derive.js'
+import { deriveKey, volumeSalt } from './derive.js'
 
 const run = promisify(execFile)
 const PORT = Number(process.env.SWB_UNLOCK_PORT ?? 7998)
@@ -42,7 +42,7 @@ let attempts = 0
 const unlocked = () => existsSync(`/dev/mapper/${MAPPER}`)
 
 const openVolume = async (password) => {
-  const key = await deriveKey(password, readSalt())
+  const key = await deriveKey(password, volumeSalt(DEVICE))
   await run('cryptsetup', ['open', '--key-file=-', DEVICE, MAPPER], { input: key })
   await run('mount', [`/dev/mapper/${MAPPER}`, MOUNT])
   // Everything that could not happen while the volume was shut: the user's

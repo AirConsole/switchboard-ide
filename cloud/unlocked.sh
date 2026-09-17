@@ -86,5 +86,14 @@ if [ -s "$PKG_LIST" ]; then
 fi
 
 systemctl start docker 2>/dev/null || true
-systemctl start switchboard.service
-log "IDE started"
+
+# On a machine being built there is no password yet -- provision.sh sets it
+# next, as the user, and starts the IDE itself. The IDE refuses to start
+# without one, so starting it here would only be a failed unit for the first
+# minute of every machine's life.
+if [ -s "$HOME_DIR/.config/switchboard/auth.json" ]; then
+  systemctl start switchboard.service
+  log "IDE started"
+else
+  log "no password set yet; leaving the IDE stopped"
+fi
