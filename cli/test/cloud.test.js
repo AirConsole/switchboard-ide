@@ -35,14 +35,14 @@ const renderCaddyfile = (ip = '203.0.113.7', internal = '10.10.0.2', domain = ''
 
 describe('the scripts parse', () => {
   it.each([
-    ['provision.sh', 'sh'],
+    ['provision-gcp.sh', 'sh'],
     ['setup.sh', 'bash'],
     ['unlocked.sh', 'bash'],
   ])('%s', (file, shell) => {
     expect(() => execFileSync(shell, ['-n', join(CLOUD, file)])).not.toThrow()
   })
 
-  it('cloud-config carries the placeholders provision.sh fills in', () => {
+  it('cloud-config carries the placeholders provision-gcp.sh fills in', () => {
     const yaml = readFileSync(join(CLOUD, 'cloud-config.yaml'), 'utf8')
     expect(yaml.startsWith('#cloud-config')).toBe(true)
     for (const key of ['PLACEHOLDER_SETUP_B64', 'PLACEHOLDER_REPO_URL', 'PLACEHOLDER_REPO_REF']) {
@@ -59,7 +59,7 @@ describe('the scripts parse', () => {
     // instance metadata that the setup script never read, so it was a flag
     // that silently granted sudo.
     const yaml = readFileSync(join(CLOUD, 'cloud-config.yaml'), 'utf8')
-    const provision = readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
+    const provision = readFileSync(join(CLOUD, 'provision-gcp.sh'), 'utf8')
     for (const [placeholder] of yaml.matchAll(/PLACEHOLDER_[A-Z0-9_]+/g)) {
       expect(provision).toContain(`s|${placeholder}|`)
     }
@@ -146,14 +146,14 @@ describe('running it straight from the internet', () => {
     // A ref that does not exist should cost nothing. Finding out the machine's
     // own files cannot be fetched *after* creating a network and a disk is
     // finding out too late.
-    const script = readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
+    const script = readFileSync(join(CLOUD, 'provision-gcp.sh'), 'utf8')
     const create = script.slice(script.indexOf('cmd_create() {'))
     expect(create.indexOf('ensure_machine_files')).toBeLessThan(create.indexOf('ensure_network'))
   })
 })
 
 describe('the machine is named after its person', () => {
-  const provision = () => readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
+  const provision = () => readFileSync(join(CLOUD, 'provision-gcp.sh'), 'utf8')
 
   /** @param {string} name */
   const validUser = (name) => {
@@ -207,7 +207,7 @@ describe('the machine is named after its person', () => {
     // place the name could go stale in. The software keeps its own name --
     // /opt/switchboard, /etc/switchboard, switchboard.service -- which is a
     // different thing, and is not what this looks for.
-    for (const file of ['provision.sh', 'setup.sh', 'unlocked.sh']) {
+    for (const file of ['provision-gcp.sh', 'setup.sh', 'unlocked.sh']) {
       const text = readFileSync(join(CLOUD, file), 'utf8')
       expect(text, file).not.toMatch(/\/home\/switchboard|sudo -u switchboard|switchboard:switchboard|-o switchboard/)
     }
@@ -247,7 +247,7 @@ exit 0
       try {
         execFileSync(
           'sh',
-          [join(CLOUD, 'provision.sh'), 'create', 'x', '--project', 'p', '--yes', '--in-org', '--password-stdin'],
+          [join(CLOUD, 'provision-gcp.sh'), 'create', 'x', '--project', 'p', '--yes', '--in-org', '--password-stdin'],
           { input: 'the-piped-password', env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, stdio: ['pipe', 'ignore', 'ignore'] },
         )
       } catch {

@@ -474,9 +474,9 @@ pnpm scratch stop peer         # each one goes down by name
 
 ## A machine in the cloud
 
-`cloud/provision.sh create <name>` builds a GCP machine running this IDE and
+`cloud/provision-gcp.sh create <name>` builds a GCP machine running this IDE and
 prints a URL. The reasoning lives where this repository keeps it — in the
-headers of `cloud/provision.sh` and `cloud/setup.sh`, each measurement beside
+headers of `cloud/provision-gcp.sh` and `cloud/setup.sh`, each measurement beside
 the line it justifies. Four of them cross into the rest of the repository:
 
 - **The machine's address is its name.** Let's Encrypt issues certificates for

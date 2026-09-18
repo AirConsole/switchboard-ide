@@ -30,7 +30,7 @@ IDE_PORT=7999
 UNLOCK_PORT=7998
 PORT_LO=8000
 PORT_HI=8099
-# Written by cloud-init from what `provision.sh` was told. A machine pinned to
+# Written by cloud-init from what `provision-gcp.sh` was told. A machine pinned to
 # a branch is how this file gets tested before it is the one everybody boots.
 #
 # The file is absent on a machine somebody set up by hand, and that is fine:
@@ -44,7 +44,7 @@ REPO_REF=${SWB_REPO_REF:-master}
 # The person this machine is for. Named after them rather than after the
 # program, because it is their shell, their files and their prompt -- `/opt`,
 # `/etc/switchboard` and `switchboard.service` name the software, and keep that
-# name. It arrives from provision.sh, which keeps it as a label on the data disk
+# name. It arrives from provision-gcp.sh, which keeps it as a label on the data disk
 # so a rebuilt machine is always the same person's. A machine built before there
 # was a name, or by hand, is `switchboard`, which is what those always were.
 SWB_USER=${SWB_USER:-switchboard}
@@ -318,7 +318,7 @@ printf '%s\n' "$IP" > /etc/switchboard/public-ip
 # that shipped first. A transient unit outlives apt and gets the lock.
 cat > /etc/switchboard/record-packages.sh <<'EOF'
 #!/bin/sh
-# What an agent has installed, so `provision.sh recreate` can put it back.
+# What an agent has installed, so `provision-gcp.sh recreate` can put it back.
 set -eu
 mountpoint -q /home || exit 0
 [ -f /etc/switchboard/env ] && . /etc/switchboard/env

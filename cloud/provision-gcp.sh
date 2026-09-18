@@ -1,15 +1,26 @@
 #!/bin/sh
 # Switchboard, on a machine in the cloud.
 #
-#   ./provision.sh create   <name> --project <id>    build it, print its URL
-#   ./provision.sh status   <name> --project <id>    what it is, and who touched it
-#   ./provision.sh recreate <name> --project <id>    new VM, same data disk
-#   ./provision.sh destroy  <name> --project <id>    everything it made
+#   ./provision-gcp.sh create   <name> --project <id>    build it, print its URL
+#   ./provision-gcp.sh status   <name> --project <id>    what it is, and who touched it
+#   ./provision-gcp.sh recreate <name> --project <id>    new VM, same data disk
+#   ./provision-gcp.sh destroy  <name> --project <id>    everything it made
 #
 # POSIX sh, like install.sh, and gcloud is the only thing it needs. The machine
 # itself is cloud-config -- the format GCP, Hetzner, DigitalOcean, AWS and a
 # local VM all take -- so a second provider needs its own `create` and not a
 # second definition of the machine.
+#
+# **Named for its cloud, because nearly all of it is that cloud's.** The
+# network, the firewall, the static address, the snapshot schedule, the audit
+# log and even the ssh are gcloud; what is not -- the machine's definition --
+# is already in cloud-config.yaml and setup.sh, beside this. A second provider
+# is a second script, provision-hetzner.sh next to this one, not a --provider
+# flag threaded through every function here. The pieces the two would share
+# (the password prompt, the checks on a user name and a domain) move into a
+# file of their own when there is a second script to share them with -- and
+# not before, since a seam named for a caller that does not exist yet is a
+# guess about its shape.
 #
 # **Not a `swb` verb, and not a pnpm script**, though everything else in this
 # repository is one. Those run on the machine the IDE is on; this one runs on
@@ -89,7 +100,22 @@ valid_domain() {
 }
 
 usage() {
-  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+  # The verbs are the file's own header. Under `curl | sh` there is no file --
+  # $0 is the shell's name -- so they are said here instead, rather than
+  # `--help` opening with "sed: can't read sh", which is what the README's own
+  # one-liner produced.
+  if [ -f "$0" ]; then
+    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+  else
+    cat <<'EOF'
+Switchboard, on a machine in the cloud.
+
+  provision-gcp.sh create   <name> --project <id>    build it, print its URL
+  provision-gcp.sh status   <name> --project <id>    what it is, and who touched it
+  provision-gcp.sh recreate <name> --project <id>    new VM, same data disk
+  provision-gcp.sh destroy  <name> --project <id>    everything it made
+EOF
+  fi
   cat <<'EOF'
 
 Options
@@ -119,7 +145,7 @@ VERB=${1:-}
 case "$VERB" in -h|--help|help) usage; exit 0 ;; esac
 shift
 NAME=${1:-}
-case "$NAME" in ""|-*) die "which machine? e.g. provision.sh $VERB mybox --project my-project" ;; esac
+case "$NAME" in ""|-*) die "which machine? e.g. provision-gcp.sh $VERB mybox --project my-project" ;; esac
 shift
 
 while [ $# -gt 0 ]; do

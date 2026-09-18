@@ -297,7 +297,7 @@ export const password = async (opts = {}) => {
    * On a cloud machine this password is also the key to /home, so changing one
    * has to change the other (`luks.js`). With no password set yet there is
    * nothing to re-key *from*: that is a machine being built, where
-   * `provision.sh` has just formatted the volume with the password it is about
+   * `provision-gcp.sh` has just formatted the volume with the password it is about
    * to set here. Imported lazily, because a laptop has no volume and this
    * reaches for cryptsetup.
    */

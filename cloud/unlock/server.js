@@ -171,7 +171,7 @@ const server = createServer(async (req, res) => {
 
   /*
    * This service answers every path Caddy could not reach the IDE on, so it
-   * must not answer *as* the IDE. `/api/health` is what `provision.sh` and
+   * must not answer *as* the IDE. `/api/health` is what `provision-gcp.sh` and
    * anything else asks to find out whether the IDE is up, and a page saying
    * "locked" with a 200 on it is a machine reporting itself healthy while it
    * is shut. Everything under /api is 503 here, which is what it is.
