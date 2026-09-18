@@ -10,7 +10,7 @@ const { mintSession } = await import('../src/auth.js')
 const Fastify = (await import('fastify')).default
 
 const req = (headers: Record<string, string>, ip = '127.0.0.1'): FastifyRequest =>
-  ({ headers: { host: '127.0.0.1:8083', ...headers }, ip, method: 'GET' }) as unknown as FastifyRequest
+  ({ headers: { host: '127.0.0.1:7999', ...headers }, ip, method: 'GET' }) as unknown as FastifyRequest
 
 const signedIn = (extra: Record<string, string> = {}): Record<string, string> => ({
   cookie: `swb_session=${mintSession()}`,
@@ -44,8 +44,8 @@ describe('an instance that is nobody’s peer', () => {
    * ticket obtained over `/api`, which that page cannot get.
    */
   it('admits neither our own origin nor a stranger, because the origin is not the credential', () => {
-    expect(allowSocket(req({ origin: 'http://127.0.0.1:8083' }))).toBe(false)
-    expect(allowSocket(req(signedIn({ origin: 'http://127.0.0.1:8083' })))).toBe(false)
+    expect(allowSocket(req({ origin: 'http://127.0.0.1:7999' }))).toBe(false)
+    expect(allowSocket(req(signedIn({ origin: 'http://127.0.0.1:7999' })))).toBe(false)
     expect(allowSocket(req({ origin: 'https://evil.example' }))).toBe(false)
   })
 
@@ -55,7 +55,7 @@ describe('an instance that is nobody’s peer', () => {
    * the network forged it and was admitted, which is attach-and-type.
    */
   it('refuses a forged loopback Origin from off this machine', () => {
-    expect(allowSocket(req({ origin: 'http://127.0.0.1:8083' }, '10.0.0.7'))).toBe(false)
+    expect(allowSocket(req({ origin: 'http://127.0.0.1:7999' }, '10.0.0.7'))).toBe(false)
   })
 
   /*
@@ -64,7 +64,7 @@ describe('an instance that is nobody’s peer', () => {
    * snapshot from the network.
    */
   it('refuses a forged loopback Host from off this machine', () => {
-    expect(allowRequest(req({ host: '127.0.0.1:8083' }, '10.0.0.7'))).toBe(false)
+    expect(allowRequest(req({ host: '127.0.0.1:7999' }, '10.0.0.7'))).toBe(false)
   })
 
   /*
@@ -109,7 +109,7 @@ describe('the page, on an instance that is nobody\u2019s peer', () => {
     app.setNotFoundHandler(async (_request, reply) => reply.send({ page: true }))
     await app.ready()
 
-    const here = await app.inject({ method: 'GET', url: '/', headers: { host: '127.0.0.1:8083' } })
+    const here = await app.inject({ method: 'GET', url: '/', headers: { host: '127.0.0.1:7999' } })
     expect(here.statusCode).toBe(200)
     /*
      * From the network too, and deliberately: this was `isLoopback`, which
@@ -122,7 +122,7 @@ describe('the page, on an instance that is nobody\u2019s peer', () => {
       method: 'GET',
       url: '/',
       remoteAddress: '10.0.0.7',
-      headers: { host: '127.0.0.1:8083' },
+      headers: { host: '127.0.0.1:7999' },
     })
     expect(away.statusCode).toBe(200)
     // A name we do not answer to is still nothing, from anywhere. That is the

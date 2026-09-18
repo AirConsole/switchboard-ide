@@ -48,7 +48,7 @@ describe('security headers', () => {
     const server = await app()
     const pub = await server.inject({ url: '/page', headers: { host: 'ide.example:83' } })
     expect(pub.headers['strict-transport-security']).toBe('max-age=31536000')
-    for (const host of ['127.0.0.1:8083', 'localhost:8083', '[::1]:8083']) {
+    for (const host of ['127.0.0.1:7999', 'localhost:7999', '[::1]:7999']) {
       const local = await server.inject({ url: '/page', headers: { host } })
       expect(local.headers['strict-transport-security'], host).toBeUndefined()
     }

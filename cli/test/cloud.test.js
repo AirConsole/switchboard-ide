@@ -17,7 +17,7 @@ import { deriveKey } from '../../cloud/unlock/derive.js'
 const CLOUD = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'cloud')
 
 /** Run setup.sh's own renderer, with the variables it would have on a machine. */
-const renderCaddyfile = (ip = '203.0.113.7', internal = '10.10.0.2') =>
+const renderCaddyfile = (ip = '203.0.113.7', internal = '10.10.0.2', domain = '') =>
   execFileSync(
     'bash',
     [
@@ -25,7 +25,7 @@ const renderCaddyfile = (ip = '203.0.113.7', internal = '10.10.0.2') =>
       // One function out of the setup script, because running the script
       // itself would install packages. The end marker is why it can be cut
       // out at all: the config it emits is full of lines that are just `}`.
-      `IP=${ip}; INTERNAL_IP=${internal}; IDE_PORT=7999; UNLOCK_PORT=7998; PORT_LO=8000; PORT_HI=8099
+      `IP=${ip}; INTERNAL_IP=${internal}; DOMAIN=${domain}; IDE_PORT=7999; UNLOCK_PORT=7998; PORT_LO=8000; PORT_HI=8099
        eval "$(sed -n '/^render_caddyfile() {/,/^} # end render_caddyfile/p' ${CLOUD}/setup.sh)"
        render_caddyfile`,
     ],
@@ -115,6 +115,30 @@ describe('the Caddy config decides what the internet can reach', () => {
     expect(rendered).toMatch(/^\s*cert_issuer acme \{$/m)
     // ... and never per site, which is the shape that refuses to start.
     expect(rendered).not.toMatch(/^\s+issuer acme \{$/m)
+  })
+})
+
+describe('a domain, when one is associated', () => {
+  const rendered = renderCaddyfile('203.0.113.7', '10.10.0.2', 'ide.example.com')
+
+  it('is answered to everywhere the address is, and never instead of it', () => {
+    // The address is the one name that cannot be wrong, and it is what you
+    // fall back to the day the DNS is. So every site carries both.
+    const sites = [...rendered.matchAll(/^(https:\/\/\S+(?:, \S+)?) \{$/gm)].map(([, a]) => a ?? '')
+    expect(sites).toHaveLength(101)
+    expect(sites.every((a) => a.includes('203.0.113.7') && a.includes('ide.example.com'))).toBe(true)
+  })
+
+  it('redirects to whichever name was typed', () => {
+    // `redir https://<ip>` on a request for the domain would bounce the
+    // browser off the name it asked for, once per visit, forever.
+    expect(rendered).toContain('redir https://{host}{uri} permanent')
+  })
+
+  it('still identifies the machine by its address when no name is sent', () => {
+    // A browser sends no SNI for a bare IP, so this is what answers the
+    // address itself; a domain request carries its own name.
+    expect(rendered).toMatch(/^\s*default_sni 203\.0\.113\.7$/m)
   })
 })
 

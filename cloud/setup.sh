@@ -60,7 +60,16 @@ internal_ip() { hostname -I | awk '{print $1}'; }
 
 IP=$(public_ip) || { log "no public IP; cannot configure TLS"; exit 1; }
 INTERNAL_IP=$(internal_ip)
-log "public $IP, internal $INTERNAL_IP"
+# A domain, if one was associated. The machine answers to both from then on:
+# the address never stops working, which matters the day the DNS is wrong.
+DOMAIN=${SWB_DOMAIN:-}
+if [ -n "$DOMAIN" ]; then
+  NAMES="$IP,$DOMAIN"
+  log "public $IP (also $DOMAIN), internal $INTERNAL_IP"
+else
+  NAMES="$IP"
+  log "public $IP, internal $INTERNAL_IP"
+fi
 
 # --- packages ---------------------------------------------------------------
 apt_install() {
@@ -135,6 +144,16 @@ EOF
 # them is what makes a port work the moment something listens, and it is also
 # what stops a service publishing itself: 0.0.0.0 is already taken.
 render_caddyfile() {
+  # A site block takes several addresses separated by commas, and one
+  # certificate covers them all -- which is why the domain costs nothing here
+  # beyond the name itself.
+  SITE_ALSO=""
+  HTTP_ALSO=""
+  PORT_ALSO=""
+  if [ -n "$DOMAIN" ]; then
+    SITE_ALSO=", https://$DOMAIN"
+    HTTP_ALSO=", http://$DOMAIN"
+  fi
   cat <<EOF
 {
   default_sni $IP
@@ -155,7 +174,7 @@ render_caddyfile() {
   }
 }
 
-https://$IP {
+https://$IP$SITE_ALSO {
   # While /home is locked the IDE is not running, so the unlock page answers
   # instead. It is a fallback rather than a route, so that unlocking needs no
   # separate URL to remember.
@@ -168,15 +187,16 @@ https://$IP {
   }
 }
 
-http://$IP {
-  redir https://$IP{uri} permanent
+http://$IP$HTTP_ALSO {
+  redir https://{host}{uri} permanent
 }
 EOF
   local port
   for ((port = PORT_LO; port <= PORT_HI; port++)); do
+    if [ -n "$DOMAIN" ]; then PORT_ALSO=", https://$DOMAIN:$port"; fi
     cat <<EOF
 
-https://$IP:$port {
+https://$IP:$port$PORT_ALSO {
   bind $INTERNAL_IP
   reverse_proxy 127.0.0.1:$port
 }
@@ -249,7 +269,10 @@ if [ ! -d "$IDE_DIR/.git" ]; then
   as_swb git clone --branch "$REPO_REF" "$REPO_URL" "$IDE_DIR"
 fi
 if [ ! -f "$IDE_DIR/server/dist/index.js" ] || [ ! -f "$IDE_DIR/web/dist/index.html" ]; then
-  log "building the IDE (several minutes: node-pty compiles here)"
+  # Fast, and worth saying so because the first version of this line promised
+  # several minutes: node-pty ships prebuilt binaries, so nothing is compiled
+  # here. Measured at 40 seconds for install and build together.
+  log "building the IDE"
   as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
 fi
 
@@ -353,7 +376,7 @@ User=$SWB_USER
 WorkingDirectory=$IDE_DIR
 Environment=PATH=/home/$SWB_USER/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=HOME=/home/$SWB_USER
-ExecStart=/usr/bin/pnpm start
+ExecStart=/usr/bin/pnpm start --host $NAMES
 ExecStop=/usr/bin/pnpm stop
 EOF
 

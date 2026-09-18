@@ -100,7 +100,7 @@ export const normalizeBaseUrl = (raw: string): string => {
   try {
     url = new URL(raw.trim())
   } catch {
-    // Only a genuinely malformed URL lands here. `box.local:8083` does *not*
+    // Only a genuinely malformed URL lands here. `box.local:7999` does *not*
     // throw -- it parses as the scheme `box.local:` -- so the protocol check
     // below is what actually catches the abbreviation the placeholder invites.
     throw new HttpError(400, 'a server is http:// or https://')
