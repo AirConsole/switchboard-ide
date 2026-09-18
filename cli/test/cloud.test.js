@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -211,6 +212,53 @@ describe('the machine is named after its person', () => {
       expect(text, file).not.toMatch(/\/home\/switchboard|sudo -u switchboard|switchboard:switchboard|-o switchboard/)
     }
   })
+})
+
+describe('a password piped in is the password used', () => {
+  /*
+   * The real script against a stand-in gcloud that behaves like the real one
+   * where it matters: `compute ssh` forwards stdin to the far end, exactly as
+   * ssh does. It records what the format step is handed, which is the password
+   * that becomes the key to the disk.
+   *
+   * Measured before the fix: the wait-for-install loop is an ssh, it swallowed
+   * the pipe, and the format step was handed a *generated* password -- which
+   * `create` then printed as though it were the one asked for.
+   */
+  it('reaches the disk, not the first ssh that happens to run', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'swb-shim-'))
+    try {
+      writeFileSync(
+        join(dir, 'gcloud'),
+        `#!/bin/sh
+case "$*" in
+  *"addresses describe"*"value(address)"*) echo 203.0.113.9 ;;
+  *"disks describe"*"switchboard-user"*) echo andrin ;;
+  *"config get-value account"*) echo me@example.com ;;
+  *"compute ssh"*format.js*) cat > "${dir}/format-stdin"; echo rec-over-y ;;
+  *"compute ssh"*) cat > /dev/null ;;
+esac
+exit 0
+`,
+      )
+      writeFileSync(join(dir, 'curl'), '#!/bin/sh\nexit 0\n')
+      chmodSync(join(dir, 'gcloud'), 0o755)
+      chmodSync(join(dir, 'curl'), 0o755)
+      try {
+        execFileSync(
+          'sh',
+          [join(CLOUD, 'provision.sh'), 'create', 'x', '--project', 'p', '--yes', '--in-org', '--password-stdin'],
+          { input: 'the-piped-password', env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, stdio: ['pipe', 'ignore', 'ignore'] },
+        )
+      } catch {
+        // Where the stand-in stops being convincing is past the point this is
+        // about; what matters is what the format step was handed.
+      }
+      expect(readFileSync(join(dir, 'format-stdin'), 'utf8')).toBe('the-piped-password')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
 })
 
 describe('a domain, when one is associated', () => {

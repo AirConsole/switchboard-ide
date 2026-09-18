@@ -145,6 +145,19 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Read the piped password **now**, before any other command can touch stdin.
+# `gcloud compute ssh` forwards stdin to the far end exactly as ssh does, so the
+# first ssh -- the loop that waits for the machine to finish installing --
+# swallowed the pipe, and choose_password, reading it minutes later, found
+# nothing and quietly made a password up. Measured with a gcloud shim that eats
+# stdin the way ssh does: the format step was handed a generated password, and
+# `create` printed it as though that were what had been asked for.
+PIPED_PASSWORD=""
+if [ "$PASSWORD_STDIN" -eq 1 ]; then
+  PIPED_PASSWORD=$(cat | tr -d '\n')
+  [ -n "$PIPED_PASSWORD" ] || die "--password-stdin: nothing arrived on stdin"
+fi
+
 valid_domain "$DOMAIN" || die "--domain takes a name like ide.example.com"
 [ -z "$USER_FLAG" ] || valid_user "$USER_FLAG" \
   || die "--user takes a lowercase login name that is not a system account's"
@@ -518,7 +531,7 @@ wait_for() {
   printf 'waiting for %s' "$what"
   i=0
   while [ "$i" -lt "$limit" ]; do
-    if "$@" >/dev/null 2>&1; then printf ' ok\n'; return 0; fi
+    if "$@" </dev/null >/dev/null 2>&1; then printf ' ok\n'; return 0; fi
     printf '.'
     sleep 5
     i=$((i + 1))
@@ -551,8 +564,7 @@ read_secret() {
 
 choose_password() {
   if [ "$PASSWORD_STDIN" -eq 1 ]; then
-    PASSWORD=$(cat)
-    PASSWORD=$(printf '%s' "$PASSWORD" | tr -d '\n')
+    PASSWORD=$PIPED_PASSWORD
     CHOSEN=1
   elif have_tty; then
     say ""
