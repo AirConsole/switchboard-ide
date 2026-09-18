@@ -92,18 +92,16 @@ export const summarySignal = (
  * silence that makes the other two worth scanning for, so the quiet title is
  * the bare name.
  *
- * **Where the circle goes depends on where the title is shown.** In a browser
- * tab it goes first, because a tab truncates from the end. In the installed
- * app it goes last, because Chrome rewrites an app window's title: one that
- * starts with the app's short name is shown as it is, and anything else as
- * `<name> - <title>` (`WebAppBrowserController::GetTitle`). A leading circle
- * came out as `Switchboard - 🟠 Switchboard`.
+ * **The circle goes after the name**, and in the installed app it has to:
+ * Chrome rewrites an app window's title, showing one that starts with the
+ * app's short name as it is and anything else as `<name> - <title>`
+ * (`WebAppBrowserController::GetTitle`), so a leading circle came out as
+ * `Switchboard - 🟠 Switchboard`. A browser tab is the same order, since the
+ * name is short enough that the circle survives truncation there too.
  */
-export const titleFor = (statuses: WorktreeStatus[], installed: boolean): string => {
+export const titleFor = (statuses: WorktreeStatus[]): string => {
   const signal = summarySignal(statuses)
-  const circle = signal === 'needs-you' ? '🟠' : signal === 'idle' ? '🟢' : null
-  if (circle === null) return 'Switchboard'
-  return installed ? `Switchboard ${circle}` : `${circle} Switchboard`
+  return signal === 'needs-you' ? 'Switchboard 🟠' : signal === 'idle' ? 'Switchboard 🟢' : 'Switchboard'
 }
 
 /**
