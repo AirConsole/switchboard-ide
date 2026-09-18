@@ -1,7 +1,7 @@
 /**
  * The one place a password becomes the volume's key.
  *
- * Shared by `format.js`, `server.js` and `swb password` on purpose: a machine
+ * Shared by `format.js`, `server.js` and `pnpm password` on purpose: a machine
  * whose formatter and whose unlocker derive keys differently is a machine
  * nobody can open, and the failure arrives days later at the worst moment.
  *
@@ -22,10 +22,10 @@ import { scrypt } from 'node:crypto'
 /**
  * cryptsetup, as root when we are not.
  *
- * The unlock service runs as root; `swb password` runs as the user who owns
+ * The unlock service runs as root; `pnpm password` runs as the user who owns
  * the IDE. Without this, every cryptsetup call from the second one failed on
  * permission to read the device -- and failure here reads as "there is no
- * encrypted volume", so `swb password --stdin` cheerfully changed the login
+ * encrypted volume", so `pnpm password --stdin` cheerfully changed the login
  * password on a machine whose disk key it had not touched. Measured on a real
  * machine: the next boot would have wanted a password that no longer existed.
  *
