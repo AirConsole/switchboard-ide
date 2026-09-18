@@ -131,9 +131,12 @@ curl -fsSL https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/c
 It needs `gcloud` signed in, and nothing else — not even a checkout. From one,
 it is `./cloud/provision.sh create mybox --project my-project`.
 
-It shows what it will create and roughly what it costs, then asks. Ten minutes
-later you get `https://<ip>`, a password and a recovery passphrase, each shown
-once. Three things are worth knowing before you use it:
+It shows what it will create and roughly what it costs, then asks. It also asks
+for a password — the login *and* the key to the disk — and makes one up if you
+would rather not choose. Ten minutes later you get `https://<ip>` and a recovery
+passphrase, shown once and stored nowhere. (`--password-stdin` reads it from a
+pipe instead, for scripts; there is no flag to put it on the command line, where
+`ps` and your shell history would both keep it.) Three things are worth knowing before you use it:
 
 - **There is no domain and no DNS.** Let's Encrypt issues certificates for bare
   IP addresses, so the machine's address is its name. A domain is optional and
