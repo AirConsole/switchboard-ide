@@ -159,6 +159,19 @@ export interface Worktree {
    */
   prompt?: string
   /**
+   * The newest prompt that set Claude a task, as opposed to steering one --
+   * see `isTask`. What the worktree is *about*: after a piece of work the
+   * newest prompt is almost always "merge and deploy", which says what it was
+   * told last and nothing about what it is for. Absent from a machine too old
+   * to say, where the viewer falls back to `prompt`.
+   */
+  task?: string
+  /**
+   * The prompts since `task`, oldest first: the "yes" and "merge and deploy"
+   * that steered it. Only the newest few are kept.
+   */
+  followUps?: string[]
+  /**
    * Whether this worktree has a window in the row.
    *
    * Decided by the machine the worktree lives on, not by whoever is looking:
@@ -232,6 +245,27 @@ export type SessionKind = 'claude' | 'shell'
  * word alone (`server/src/remote/scope.ts`).
  */
 export const MACHINE_WORKTREE_ID = 'machine'
+
+/**
+ * Whether a prompt sets Claude a task rather than steering the one it has.
+ *
+ * Length, and nothing cleverer. Measured over every transcript on the machine
+ * it was written on -- 63 sessions, 1,151 prompts -- the short end is nearly
+ * all steering: `merge and deploy`, `yes`, `continue`, `pr, merge and reload`,
+ * and as often `mege` and `Metge and deploy`, which is why a list of workflow
+ * words would do worse than a count. A short question is steering too -- "is
+ * this url stable?" asks about the work, it does not start any -- until it is
+ * long enough to be a brief of its own.
+ *
+ * Where it is wrong it is wrong at 8-12 words, where either reading is fair:
+ * `slide 9 should be after monetization slide 12` reads as steering. The cost
+ * is which of two lines it lands on, and there was no call for a model.
+ */
+export const isTask = (prompt: string): boolean => {
+  const words = prompt.split(/\s+/).filter((word) => word !== '').length
+  if (words < 10) return false
+  return !(prompt.trimEnd().endsWith('?') && words < 20)
+}
 
 /**
  * Liveness of the underlying tmux session.

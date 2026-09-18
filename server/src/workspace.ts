@@ -56,7 +56,7 @@ import {
   resolveDefaultBase,
   worktreePathFor,
 } from './git/worktree.js'
-import { lastPrompt } from './session/claude.js'
+import { promptSummary } from './session/claude.js'
 
 /** Opaque, unlike a worktree id: nothing derives a todo from its path. */
 const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
@@ -169,7 +169,7 @@ export class Workspace {
           // A branch appearing on or vanishing from a remote changes what the
           // removal dialog asks, so it is part of "something changed here".
           `${w.remoteBranch ?? ''}:${w.remoteBranchMerged === true ? 'm' : ''}:` +
-          `${w.missing === true}:${w.prompt ?? ''}`,
+          `${w.missing === true}:${w.prompt ?? ''}:${w.task ?? ''}:${(w.followUps ?? []).join('\u0000')}`,
       )
       .join('|')
   }
@@ -231,7 +231,7 @@ export class Workspace {
             unmerged: await unmergedCount(worktree.path, defaultRef),
             remoteBranch: remote?.ref,
             remoteBranchMerged: remote?.merged,
-            prompt: await lastPrompt(worktree.path),
+            ...(await promptSummary(worktree.path)),
           })
         }
       } catch {

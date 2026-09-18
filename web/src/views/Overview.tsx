@@ -16,6 +16,7 @@ import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
 import type { Failure } from '../store.js'
 import { requestUpdate } from '../components/UpdateBanner.js'
+import { TaskStrip } from '../components/TaskStrip.js'
 import {
   claudeSession,
   isRunning,
@@ -1004,21 +1005,6 @@ const WorktreeTile = ({
   )
 
   /*
-   * What this worktree is about, in the words you asked for it in.
-   *
-   * A row of windows all look alike -- same chrome, same terminal -- and the
-   * name only says which branch it is. This is the line that answers "which one
-   * is doing what" without reading four terminals. Quiet, because the state and
-   * the name still outrank it, and one line however long the prompt was; the
-   * whole of it is in the tooltip.
-   */
-  const prompt = worktree.prompt ? (
-    <span className="tile__prompt" title={worktree.prompt}>
-      {worktree.prompt}
-    </span>
-  ) : null
-
-  /*
    * What the worktree can show, and nothing else.
    *
    * Two controls left this row and neither is missed: the state, because the
@@ -1161,7 +1147,6 @@ const WorktreeTile = ({
           // tab, Save -- reports that panel rather than the tile at large.
           <div className="tile__seg" key={pane.key} data-pane={pane.key}>
             {index === 0 && identity}
-            {index === 0 && prompt}
             {pane.kind === 'terminals' && (
               <TerminalsTabs
                 terminals={terminals}
@@ -1211,6 +1196,7 @@ const WorktreeTile = ({
             key={pane.key}
             data-pane={pane.key}
           >
+            {pane.kind === 'claude' && <TaskStrip worktree={worktree} />}
             {pane.kind === 'claude' &&
               (running && session ? (
                 near && (

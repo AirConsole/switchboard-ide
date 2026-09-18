@@ -1,6 +1,7 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { isTask } from '@switchboard/shared'
 
 /**
  * The directory Claude Code keeps a working directory's transcripts in.
@@ -83,47 +84,6 @@ const newestTranscript = async (
     }
   }
   return newest
-}
-
-/**
- * The last thing the user asked Claude in this worktree.
- *
- * Claude Code writes two candidates into the transcript, and this is
- * deliberately the second of them. `ai-title` is Claude's own name for the
- * conversation, but it is written from its opening subject and does not track
- * where the work went -- measured across six live transcripts, including one
- * titled "Worktree topbar project name" whose last prompt was about mouse-wheel
- * phantom typing an hour later. A title that is quietly an hour out of date is
- * worse than none in a dispatcher. `last-prompt` is rewritten every turn, and
- * it is in the user's own words, which is what you recognise fastest.
- *
- * Neither costs anything to read: both are already on disk, so nothing here
- * asks Claude a question or spends a token.
- *
- * Whitespace is collapsed because this lands on one line of a window's bar, and
- * a prompt is often several paragraphs.
- */
-/**
- * A byte range of a file as text, whole lines only, or null.
- *
- * A range that does not start at the beginning starts mid-line, and half a line
- * is not JSON, so the first partial line is dropped.
- */
-const readRange = async (path: string, from: number, to: number): Promise<string | null> => {
-  if (to <= from) return ''
-  try {
-    const handle = await open(path, 'r')
-    try {
-      const buffer = Buffer.alloc(to - from)
-      await handle.read(buffer, 0, buffer.length, from)
-      const text = buffer.toString('utf8')
-      return from > 0 ? text.slice(text.indexOf('\n') + 1) : text
-    } finally {
-      await handle.close()
-    }
-  } catch {
-    return null
-  }
 }
 
 /** The last TAIL_BYTES of a file as text, whole lines only, or null. */
@@ -335,37 +295,85 @@ const SEED_CHUNK_BYTES = 256 * 1024
 const SEED_MAX_BYTES = 8 * 1024 * 1024
 
 /**
- * Enough overlap that a record straddling the last read is not lost.
+ * The whole lines between two offsets, and where the last of them ends.
  *
- * The incremental read starts where the previous one stopped, and a range that
- * starts mid-line drops that line -- so without an overlap a prompt written
- * across the boundary would be skipped once and then never looked at again.
+ * The next incremental read starts exactly there, which is what lets a prompt
+ * be counted once. The prompt used to be a single "newest", and re-reading a
+ * 64KB overlap to catch a record straddling the boundary cost nothing; with a
+ * list of follow-ups the overlap reads every one of them twice. So the read
+ * stops at the last newline instead, and a line still being written is left for
+ * the next look to read whole. `from` must be the start of a line.
  */
-const OVERLAP_BYTES = 64 * 1024
+const readLines = async (
+  path: string,
+  from: number,
+  to: number,
+): Promise<{ text: string; end: number } | null> => {
+  if (to <= from) return { text: '', end: from }
+  try {
+    const handle = await open(path, 'r')
+    try {
+      const buffer = Buffer.alloc(to - from)
+      await handle.read(buffer, 0, buffer.length, from)
+      // Found on the bytes, not the decoded text: a line cut mid-character
+      // decodes to a replacement character of a different length.
+      const whole = buffer.lastIndexOf(0x0a) + 1
+      return { text: buffer.subarray(0, whole).toString('utf8'), end: from + whole }
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return null
+  }
+}
+
+/** What a worktree's transcript says it was asked. */
+export interface PromptSummary {
+  /** The newest prompt, whatever it was. */
+  prompt?: string
+  /** The newest prompt that set a task -- `isTask` -- or the oldest there is. */
+  task?: string
+  /** The prompts since `task`, oldest first. */
+  followUps: string[]
+}
+
+/**
+ * How many follow-ups are kept. Runs of them between two tasks, measured over
+ * 1,151 prompts: none 318 times, one 155, two 61, three 22, four or more 26. So
+ * six is every ordinary run whole, and a bound on the snapshot for the rest.
+ */
+const FOLLOW_UPS_MAX = 6
+
+interface Seen extends PromptSummary {
+  path: string
+  /** Where the last whole line ends: the next read starts here. */
+  size: number
+  /** The newest `last-prompt` record, for a session with no real prompt. */
+  recorded?: string
+}
 
 /**
  * What has already been read, per working directory.
  *
- * The prompt is remembered rather than re-derived because a transcript only
- * grows: everything before `size` has been looked at, so the next look reads
- * the new bytes and nothing else. That is what makes this affordable at one
- * poll every couple of seconds per worktree, and it is also what makes it
- * correct -- a prompt is picked up when it is written and kept until a newer
- * one arrives, rather than having to still be inside a window by the time
- * anybody asks.
+ * Remembered rather than re-derived because a transcript only grows:
+ * everything before `size` has been looked at, so the next look reads the new
+ * bytes and nothing else. That is what makes this affordable at one poll every
+ * couple of seconds per worktree, and it is also what makes it correct -- a
+ * prompt is picked up when it is written and kept until a newer task arrives,
+ * rather than having to still be inside a window by the time anybody asks.
  */
-const prompts = new Map<string, { path: string; size: number; prompt: string | undefined }>()
+const prompts = new Map<string, Seen>()
 
-/** A prompt tidied for the one line of a window's bar that shows it. */
+/** A prompt tidied for the few lines a window has for it. */
 const tidy = (text: string): string => {
   const prompt = text.replace(/\s+/g, ' ').trim()
   if (prompt === '') return ''
-  return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
+  return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}…` : prompt
 }
 
 /**
- * The newest prompt in a block of transcript, and separately the newest
- * `last-prompt` record in it.
+ * Every prompt in a block of transcript, oldest first, and separately the
+ * newest `last-prompt` record in it.
  *
  * They are kept apart because the second is not to be trusted over the first.
  * `last-prompt` is Claude's own bookkeeping and it is re-stamped every turn with
@@ -375,24 +383,53 @@ const tidy = (text: string): string => {
  * `last-prompt` for. So a real record wins whenever there is one, and the
  * bookkeeping is the fallback for a session that has none in reach.
  */
-const promptsIn = (text: string): { real?: string; recorded?: string } => {
-  const lines = text.split('\n')
-  const found: { real?: string; recorded?: string } = {}
-  for (let index = lines.length - 1; index >= 0; index--) {
-    const line = lines[index]
-    if (line === undefined) continue
+const promptsIn = (text: string): { real: string[]; recorded?: string } => {
+  const found: { real: string[]; recorded?: string } = { real: [] }
+  for (const line of text.split('\n')) {
     const mark = markOf(line)
     if (mark === null || mark.kind === 'turn-end') continue
     const prompt = tidy(mark.text)
     if (prompt === '') continue
-    if (mark.kind === 'prompt') return { ...found, real: prompt }
-    found.recorded ??= prompt
+    if (mark.kind === 'prompt') found.real.push(prompt)
+    else found.recorded = prompt
   }
   return found
 }
 
 /**
- * The last thing the user asked Claude in this worktree.
+ * Prompts folded onto what is already known, oldest first.
+ *
+ * A task replaces the one before it and clears its follow-ups; anything else
+ * follows the task it came after. With no task yet the first prompt stands in
+ * for one, so a session that opened with `merge origin master` still has a
+ * line saying so.
+ */
+const fold = (into: PromptSummary, real: string[]): PromptSummary => {
+  let { task, followUps } = into
+  for (const prompt of real) {
+    if (task === undefined || isTask(prompt)) {
+      task = prompt
+      followUps = []
+    } else {
+      followUps = [...followUps, prompt]
+    }
+  }
+  return {
+    prompt: real.at(-1) ?? into.prompt,
+    task,
+    followUps: followUps.slice(-FOLLOW_UPS_MAX),
+  }
+}
+
+const summaryOf = (seen: Seen): PromptSummary => ({
+  prompt: seen.prompt ?? seen.recorded,
+  task: seen.task ?? seen.recorded,
+  followUps: seen.followUps,
+})
+
+/**
+ * What the user asked Claude in this worktree: the task, what followed it, and
+ * the newest prompt of all.
  *
  * Not `ai-title`, which is Claude's own name for the conversation: it is written
  * from the opening subject and does not track where the work went -- measured
@@ -402,44 +439,45 @@ const promptsIn = (text: string): { real?: string; recorded?: string } => {
  *
  * Nothing here costs a token: it is all already on disk.
  */
-export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
+export const promptSummary = async (cwd: string): Promise<PromptSummary | undefined> => {
   const newest = await newestTranscript(transcriptDir(cwd))
   if (newest === null) return undefined
   const seen = prompts.get(cwd)
 
   // The same file, longer than last time: read only what has been added.
   if (seen !== undefined && seen.path === newest.path && newest.size >= seen.size) {
-    const from = Math.max(0, seen.size - OVERLAP_BYTES)
-    const text = await readRange(newest.path, from, newest.size)
-    const found = text === null ? {} : promptsIn(text)
-    const prompt = found.real ?? seen.prompt ?? found.recorded
-    prompts.set(cwd, { path: newest.path, size: newest.size, prompt })
-    return prompt
+    const read = await readLines(newest.path, seen.size, newest.size)
+    if (read === null) return summaryOf(seen)
+    const found = promptsIn(read.text)
+    const next: Seen = {
+      ...seen,
+      ...fold(seen, found.real),
+      size: read.end,
+      recorded: found.recorded ?? seen.recorded,
+    }
+    prompts.set(cwd, next)
+    return summaryOf(next)
   }
 
   /*
    * A file this has not seen before -- a fresh server, a new conversation, or
-   * one that was truncated. Walk backwards until a real prompt turns up.
+   * one that was truncated. Widen the window back from the end until a task
+   * turns up, since only one can say what the prompts after it follow.
    */
-  let real: string | undefined
-  let recorded: string | undefined
+  let next: Seen = { path: newest.path, size: 0, followUps: [] }
   for (let window = SEED_CHUNK_BYTES; ; window *= 4) {
     const from = Math.max(0, newest.size - window)
-    const text = await readRange(newest.path, from, newest.size)
-    if (text === null) break
+    const read = await readLines(newest.path, from, newest.size)
+    if (read === null) break
+    // Everything up to the first newline is the tail of a line cut in half.
+    const text = from > 0 ? read.text.slice(read.text.indexOf('\n') + 1) : read.text
     const found = promptsIn(text)
-    recorded ??= found.recorded
-    if (found.real !== undefined) {
-      real = found.real
-      break
-    }
-    if (from === 0 || window >= SEED_MAX_BYTES) break
+    next = { ...next, ...fold({ followUps: [] }, found.real), size: read.end, recorded: found.recorded }
+    if (found.real.some(isTask) || from === 0 || window >= SEED_MAX_BYTES) break
   }
-  const prompt = real ?? recorded
-  prompts.set(cwd, { path: newest.path, size: newest.size, prompt })
-  return prompt
+  prompts.set(cwd, next)
+  return summaryOf(next)
 }
-
 
 /**
  * Where a worktree's conversation stands: has the last thing asked been

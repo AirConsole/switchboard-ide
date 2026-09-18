@@ -1715,7 +1715,8 @@ button {
 .tile--current .tile__project,
 .tile--current .tile__slash,
 .tile--current .tile__branch,
-.tile--current .tile__prompt {
+.tile--current .tile__prompt,
+.tile--current .taskstrip__task {
   color: var(--quiet-on);
 }
 
@@ -2036,13 +2037,10 @@ button {
 }
 
 /*
- * The last prompt, filling whatever the bar has left between the name and the
- * controls.
- *
- * One line, always: a prompt runs to paragraphs and the bar is a bar. Dim and
- * 11px so it stays under the worktree's name -- it says what this window is
- * about, not which window it is -- and it is the interface speaking prose, so
- * --font-ui rather than the mono the identifiers beside it use.
+ * A line of prose filling whatever the bar has left between the name and the
+ * controls -- now only the machine's own window, saying what it is. Dim and
+ * 11px so it stays under the name, and --font-ui because it is the interface
+ * speaking rather than an identifier.
  */
 .tile__prompt {
   flex: 1;
@@ -2054,6 +2052,71 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * The task above Claude, and what followed it.
+ *
+ * It is the interface speaking prose, so --font-ui, and it stays under the
+ * terminal it sits on: the task one rung down the grey ladder, the follow-ups
+ * a rung below that, neither a colour. Three lines of task at most -- enough
+ * for the sentence that says what the work is, never so many that it eats the
+ * terminal's rows -- and the whole of it is in the tooltip.
+ *
+ * The follow-ups flow as one line while they fit, each behind its own arrow,
+ * and wrap only when they do not; any one of them longer than the pane is cut
+ * to a line of its own rather than pushing the rest off the edge.
+ */
+.taskstrip {
+  flex: none;
+  margin: -2px 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.taskstrip__task {
+  margin: 0;
+  color: var(--graphite);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.taskstrip__followups {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--graphite-dim);
+}
+
+.taskstrip__followup {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskstrip__followup::before {
+  content: '\2192\00a0';
+}
+
+/*
+ * Gone while the soft keys are up, by the same `:has()` the top bar uses and
+ * for the same reason: a phone with its keyboard open has about 380px of
+ * height, and you are typing into the very Claude this reminds you about.
+ */
+.app:has(.keybar) .taskstrip {
+  display: none;
 }
 
 .tile__idle {
