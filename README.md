@@ -40,7 +40,7 @@ cd switchboard-ide
 pnpm install        # compiles node-pty; Linux needs a C toolchain, macOS does not
 pnpm build
 pnpm password       # the server will not start without one
-pnpm start          # http://127.0.0.1:8083
+pnpm start          # http://127.0.0.1:7999
 ```
 
 ## First run
@@ -107,7 +107,7 @@ Behind a proxy, tell the server the name a browser will type, or every socket
 arriving through it is refused:
 
 ```json
-{ "port": 8083, "host": "ide.example.com:83" }
+{ "port": 7999, "host": "ide.example.com:83" }
 ```
 
 in `~/.config/switchboard/config.json`. `start` and `restart` check that name
@@ -134,7 +134,12 @@ later you get `https://<ip>`, a password and a recovery passphrase, each shown
 once. Three things are worth knowing before you use it:
 
 - **There is no domain and no DNS.** Let's Encrypt issues certificates for bare
-  IP addresses, so the machine's address is its name.
+  IP addresses, so the machine's address is its name. A domain is optional and
+  an addition rather than a replacement: `--domain ide.example.com` prints the
+  A record to go and make, waits for it, and sets the machine up to answer to
+  the name *and* the address — which is what you want the day the DNS is
+  wrong. `create` again with a different one changes it; `--domain ""` removes
+  it.
 - **Your data is encrypted and the password is the key.** `/home` is a LUKS
   volume whose key is derived from the IDE password and stored nowhere. A
   snapshot, a disk clone or a stopped machine is unreadable; anyone with root on
@@ -188,7 +193,7 @@ the first person to hit something.
 ## Working on it
 
 ```sh
-pnpm dev            # vite on :5240, proxying the server on :8083
+pnpm dev            # vite on :5240, proxying the server on :7999
 pnpm typecheck      # a gate
 pnpm test           # the other gate
 pnpm scratch start  # a throwaway instance, with its own state and port

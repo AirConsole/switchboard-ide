@@ -27,14 +27,31 @@ chmod 0700 "$HOME_DIR"
 
 IP=$(cat /etc/switchboard/public-ip 2>/dev/null || true)
 
-# The IDE's own settings. `host` is the name a browser types, which behind
-# Caddy this process cannot derive -- unset, every socket through the proxy is
-# refused and the row never paints, which is the failure that looks like
-# nothing being wrong.
+# The IDE's own settings, written once and then the user's to edit.
+#
+# The port is pinned rather than left to the default, because Caddy is pointed
+# at this exact number and a machine whose proxy and whose server disagree is a
+# machine that serves nothing.
+#
+# `host` is deliberately *not* here: the names this machine answers to change
+# when a domain is associated, and they are passed on the command line by the
+# unit that starts the IDE (`setup.sh`), which knows them. A copy here would be
+# the one that goes stale, and a wrong host is the quiet failure -- the page
+# loads, every button works, and the row never paints.
 sudo -u "$SWB_USER" mkdir -p "$HOME_DIR/.config/switchboard"
-if [ ! -f "$HOME_DIR/.config/switchboard/config.json" ] && [ -n "$IP" ]; then
-  printf '{\n  "port": %s,\n  "host": "https://%s"\n}\n' "$IDE_PORT" "$IP" \
-    | sudo -u "$SWB_USER" tee "$HOME_DIR/.config/switchboard/config.json" >/dev/null
+if [ ! -f "$HOME_DIR/.config/switchboard/config.json" ]; then
+  sudo -u "$SWB_USER" tee "$HOME_DIR/.config/switchboard/config.json" >/dev/null <<CFG
+{
+  // Settings for this machine's Switchboard. Comments are allowed here.
+  //
+  // The port Caddy proxies to. Change it and change /etc/caddy/Caddyfile too.
+  "port": $IDE_PORT
+
+  // The names this machine answers to are passed by switchboard.service, from
+  // the address and any domain associated with it -- not from here.
+}
+CFG
+  sudo chmod 600 "$HOME_DIR/.config/switchboard/config.json"
 fi
 
 # What every agent on this machine reads before it starts.

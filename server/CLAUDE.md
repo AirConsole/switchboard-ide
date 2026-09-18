@@ -513,7 +513,7 @@ Five rules, each of which was wrong once and found by measurement:
   is what stops them disagreeing: they were derived twice, and
   `https://IDE.Example.com` then allowed `/api` and refused `/ws`. A name that
   is itself scheme-shaped is dropped rather than repaired -- `new
-  URL('box.local:8083')` does not throw, it parses as a *scheme*, whose
+  URL(`box.local:7999`)` does not throw, it parses as a *scheme*, whose
   `.origin` is the literal string `"null"`.
 
 - **Key on the route Fastify matched, never on the URL text.** `request.url` is
@@ -715,7 +715,7 @@ a typo.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SWB_BIND` / `SWB_PORT` | `127.0.0.1` / `8083` | Where the server listens. `--bind` overrides. |
+| `SWB_BIND` / `SWB_PORT` | `127.0.0.1` / `7999` | Where the server listens. `--bind` overrides. |
 | `NODE_ENV` | unset | `development` also trusts Vite's origin; anything else does not. `production` turns off the pretty logger. |
 | `SWB_TOKEN` | unset | A static token a gateway may present instead of one obtained by logging in. The password is required either way. |
 | `SWB_SERVER_NAME` | `os.hostname()` | What this machine calls itself in another's picker. |

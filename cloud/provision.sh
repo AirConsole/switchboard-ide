@@ -44,6 +44,8 @@ NO_SUDO=0
 DELETE_DATA=0
 FROM_SNAPSHOT=""
 ALERT_EMAIL=""
+DOMAIN=""
+DOMAIN_ASKED=0
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
 
@@ -61,6 +63,7 @@ Options
   --machine <type>    default e2-standard-4
   --disk-size <GB>    data disk, default 100
   --alert-email <a>   who to mail when someone else touches the machine
+  --domain <name>     also answer to this name; it tells you the DNS record
   --repo <url>        which checkout the machine builds from
   --repo-ref <ref>    which branch or tag of it (default master)
   --in-org            allow a project inside an organisation (see above)
@@ -86,6 +89,7 @@ while [ $# -gt 0 ]; do
     --machine) MACHINE=$2; shift ;;
     --disk-size) DISK_SIZE=$2; shift ;;
     --alert-email) ALERT_EMAIL=$2; shift ;;
+    --domain) DOMAIN=$2; DOMAIN_ASKED=1; shift ;;
     --repo) REPO_URL=$2; shift ;;
     --repo-ref) REPO_REF=$2; shift ;;
     --from-snapshot) FROM_SNAPSHOT=$2; shift ;;
@@ -160,6 +164,83 @@ check_org() {
     exit 1
   fi
   ask "Continue anyway?"
+}
+
+# --- a name for the address --------------------------------------------------
+# The machine is reachable by its IP whatever happens; a domain is an addition,
+# never a replacement. That is on purpose: the address is the one name that
+# cannot be wrong, and it is what you fall back to the day the DNS is.
+resolves_to() {
+  # name, address. Whichever of these the machine has -- getent on Linux, dig
+  # and host on macOS, nslookup nearly everywhere. A machine with none of them
+  # is not an error: the check is a convenience, and Caddy asks the real
+  # question anyway when it tries to get the certificate.
+  name=$1; want=$2
+  if have getent; then getent hosts "$name" 2>/dev/null | grep -q "^$want\b" && return 0
+  elif have dig; then dig +short "$name" A 2>/dev/null | grep -qx "$want" && return 0
+  elif have host; then host -t A "$name" 2>/dev/null | grep -q " $want$" && return 0
+  elif have nslookup; then nslookup "$name" 2>/dev/null | grep -q "Address: $want$" && return 0
+  else return 2
+  fi
+  return 1
+}
+
+ask_domain() {
+  [ "$DOMAIN_ASKED" -eq 1 ] && return 0
+  DOMAIN_ASKED=1
+  [ "$ASSUME_YES" -eq 1 ] && return 0
+  have_tty || return 0
+  say ""
+  say "A domain is optional: the machine works at https://$IP either way."
+  printf 'Also answer to a domain? Type it, or press enter for none: '
+  read -r reply </dev/tty || reply=""
+  DOMAIN=$(printf '%s' "$reply" | tr -d ' ')
+}
+
+# What to go and do, printed as early as the address exists -- which is before
+# the ten minutes the machine spends building itself, so the record has time to
+# propagate while you wait rather than after.
+say_dns_record() {
+  [ -n "$DOMAIN" ] || return 0
+  say ""
+  say "  Point $DOMAIN at this machine, at whoever runs its DNS:"
+  say ""
+  say "      type   A"
+  say "      name   $DOMAIN"
+  say "      value  $IP"
+  say ""
+  say "  (A record, not CNAME: this is an address, and a CNAME cannot point at one.)"
+}
+
+wait_for_dns() {
+  [ -n "$DOMAIN" ] || return 0
+  if resolves_to "$DOMAIN" "$IP"; then say "$DOMAIN resolves here already"; return 0; fi
+  case $? in
+    2) say "note: no way to check DNS on this machine; carrying on."; return 0 ;;
+  esac
+  printf 'waiting for %s to resolve to %s' "$DOMAIN" "$IP"
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if resolves_to "$DOMAIN" "$IP"; then printf ' ok\n'; return 0; fi
+    printf '.'
+    sleep 5
+    i=$((i + 1))
+  done
+  printf '\n'
+  say "note: $DOMAIN does not point here yet. The machine is set up for it anyway --"
+  say "  Caddy gets the certificate on its own once the record exists. Until then,"
+  say "  https://$IP works."
+}
+
+# Applied over ssh rather than baked into the machine's first boot, so that
+# adding, changing or removing a domain later is the same code path as setting
+# one up -- `create` again, with a different --domain.
+apply_domain() {
+  ssh_vm --command "sudo sed -i '/^SWB_DOMAIN=/d' /etc/switchboard/env && \
+    printf 'SWB_DOMAIN=%s\\n' '$DOMAIN' | sudo tee -a /etc/switchboard/env >/dev/null && \
+    sudo /etc/switchboard/setup.sh >/dev/null 2>&1 && \
+    sudo systemctl try-restart switchboard.service" >/dev/null 2>&1 \
+    || die "the domain could not be applied; the machine is otherwise fine at https://$IP"
 }
 
 # --- the pieces, each looked up before it is made ---------------------------
@@ -322,6 +403,8 @@ cmd_create() {
 
   ensure_network
   ensure_address
+  ask_domain
+  say_dns_record
   ensure_data_disk
   ensure_vm
   ensure_alert
@@ -351,11 +434,18 @@ cmd_create() {
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
 
+  if [ -n "$DOMAIN" ]; then
+    wait_for_dns
+    say "teaching the machine its name"
+    apply_domain
+  fi
+
   wait_for "the IDE" 60 curl -fsS --max-time 5 -o /dev/null "https://$IP/api/health" || \
     say "note: the IDE did not answer yet; it may still be starting"
 
   say ""
   say "  https://$IP"
+  [ -n "$DOMAIN" ] && say "  https://$DOMAIN"
   say ""
   say "  password   $PASSWORD"
   say "  recovery   $RECOVERY"
@@ -381,6 +471,15 @@ cmd_status() {
     say "  locked -- open https://$IP and enter the password"
   else
     say "  not answering"
+  fi
+
+  domain=$(ssh_vm --command 'sed -n "s/^SWB_DOMAIN=//p" /etc/switchboard/env' 2>/dev/null | tr -d "\r" | tail -1)
+  if [ -n "${domain:-}" ]; then
+    if resolves_to "$domain" "$IP"; then
+      say "  also https://$domain"
+    else
+      say "  also $domain -- which does NOT point here; add an A record to $IP"
+    fi
   fi
 
   snap=$(g compute snapshots list --filter="sourceDisk~$DATA_DISK" --sort-by=~creationTimestamp \

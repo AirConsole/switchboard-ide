@@ -202,6 +202,50 @@ else
   pnpm build
 fi
 
+# --- a settings file to read, with nothing turned on ------------------------
+# Written with every setting commented out, which is both the default state and
+# the documentation: the alternative is a program whose settings you can only
+# find by reading its source. Nothing ever rewrites this file -- it is read and
+# never written -- so what is put here stays here.
+#
+# 0600 because of `token`: it makes this machine readable as somebody else's
+# peer, and it is the one secret that would otherwise sit in a world-readable
+# file in a home directory.
+CONFIG_DIR="${SWB_STATE_DIR:-$HOME/.config/switchboard}"
+CONFIG="$CONFIG_DIR/config.json"
+if [ ! -e "$CONFIG" ]; then
+  mkdir -p "$CONFIG_DIR"
+  cat > "$CONFIG" <<'CONFIG_EOF'
+{
+  // Settings for this machine's Switchboard. Comments are allowed here, and
+  // everything below is commented out -- which is to say, these are the
+  // defaults. Uncomment a line to change one.
+
+  // The port the server listens on. It sits just below 8000-8099, which is
+  // what a cloud machine publishes for the things you are building, so the
+  // IDE and a test service of yours never want the same port.
+  // "port": 7999,
+
+  // The public name a browser types, when something proxies to this. Without
+  // it every socket arriving through the proxy is refused -- and the failure
+  // is quiet: the page loads, every button works, and the row never paints.
+  // Write "https://name" to pin the scheme; a bare name allows both.
+  // "host": "ide.example.com:83",
+
+  // The address to listen on. Loopback unless another machine has to reach
+  // this one directly -- linking it as a peer, over a network you own.
+  // "bind": "0.0.0.0",
+
+  // A shared secret letting another Switchboard read this one as a peer
+  // without logging in with this machine's password. Rarely needed.
+  // "token": ""
+}
+CONFIG_EOF
+  chmod 600 "$CONFIG"
+  say ""
+  say "Wrote $CONFIG -- every setting, all commented out."
+fi
+
 # --- set a password, and start it -------------------------------------------
 # The server refuses to start without a password, so an install that stops at
 # the build leaves the last two steps as homework -- and the first of them is a

@@ -13,6 +13,7 @@ import { request } from 'node:http'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import {
+  DEFAULT_PORT,
   configPath,
   inLinkedWorktree,
   isOurServer,
@@ -357,7 +358,7 @@ const guard = (verb, force) => {
 /** What the child will run and with what. One place, so `start` and `restart` agree. */
 const invocation = (/** @type {{host?: string}} */ opts) => {
   const cfg = readConfig()
-  const port = Number(process.env.SWB_PORT ?? cfg.port ?? 8083)
+  const port = Number(process.env.SWB_PORT ?? cfg.port ?? DEFAULT_PORT)
   const host = opts.host ?? cfg.host
   const argv = [serverScript]
   /*
@@ -544,6 +545,7 @@ export const start = async (opts = {}) => {
    * is /dev/null rather than inherited: a backgrounded terminal would otherwise
    * hand the agents SIGTTIN, and a closed one EIO.
    */
+  const previousPort = readRun()?.port
   const child = spawn(process.execPath, argv, {
     cwd: repoRoot,
     env,
@@ -577,6 +579,18 @@ export const start = async (opts = {}) => {
     const problems = await verifyHost(port, host)
     for (const problem of problems) console.error(`swb: ${problem}`)
     if (problems.length > 0) process.exit(1)
+  }
+
+  /*
+   * The default port moved from 8083 to 7999 (`DEFAULT_PORT` says why), so the
+   * one upgrade that changes a URL says so rather than letting somebody find
+   * out from a bookmark. It fires only where the port was not configured --
+   * `run.json` remembers what the last start used -- and so it says nothing
+   * ever again once this start has recorded the new one.
+   */
+  if (!opts.quiet && previousPort !== undefined && previousPort !== port && readConfig().port === undefined) {
+    console.log(`note: this was on :${previousPort} and is now on :${port}.`)
+    console.log(`  the default moved; set "port": ${previousPort} in ${configPath()} to keep the old one.`)
   }
 
   if (opts.quiet) return
@@ -696,7 +710,7 @@ const passwordState = () => {
 export const status = async () => {
   const run = readRun()
   const cfg = readConfig()
-  const port = Number(process.env.SWB_PORT ?? cfg.port ?? 8083)
+  const port = Number(process.env.SWB_PORT ?? cfg.port ?? DEFAULT_PORT)
 
   if (existsSync(join(repoRoot, 'scripts', 'deploy.env'))) {
     console.log(`note: scripts/deploy.env is no longer read; its settings belong in ${configPath()}`)

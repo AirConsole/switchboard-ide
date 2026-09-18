@@ -32,6 +32,18 @@ export const stateDir = () => process.env.SWB_STATE_DIR ?? join(homedir(), '.con
 
 /** Settings: port, public host, peer token. 0600, because of the last one. */
 export const configPath = () => join(stateDir(), 'config.json')
+
+/**
+ * The port an instance serves on when nothing says otherwise.
+ *
+ * 7999 and not 8083, which it was: a cloud machine (`cloud/provision.sh`)
+ * publishes **8000-8099** as the ports you run the things you are building on,
+ * and 8083 sits inside that range -- so the IDE and a test service wanted the
+ * same port, and the one that lost is whichever started second. The IDE sits
+ * just below the range instead, on every machine, so the same number means the
+ * same thing everywhere.
+ */
+export const DEFAULT_PORT = 7999
 /** What `start` wrote about the process it started, so `stop` can identify it. */
 export const runPath = () => join(stateDir(), 'run.json')
 /** Replaces /tmp/swb-prod.log: one directory holds everything about one instance. */
@@ -46,19 +58,78 @@ export const logPath = () => join(stateDir(), 'server.log')
  */
 
 /**
+ * Drop `//` and `/* *\/` comments, leaving the JSON underneath.
+ *
+ * **It walks strings, and that is the whole difficulty.** The one setting most
+ * likely to be written here is a URL -- `"host": "https://ide.example.com"` --
+ * and a stripper that scans for `//` cuts that value in half and leaves a file
+ * that no longer parses, blaming the user's syntax. Escapes are tracked for
+ * the same reason: a `\"` inside a string does not end it.
+ *
+ * Comment text is replaced by nothing rather than by spaces, which is fine
+ * because the result is only ever handed to `JSON.parse`; a parse error's
+ * reported position is the one thing that shifts, and `readConfig` names the
+ * file rather than the offset.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export const stripComments = (text) => {
+  let out = ''
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inString) {
+      out += c
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      out += c
+      continue
+    }
+    if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++
+      // The newline itself is kept: JSON does not care, and a reader looking at
+      // the stripped text should still see the same shape.
+      out += '\n'
+      continue
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++
+      i++
+      continue
+    }
+    out += c
+  }
+  return out
+}
+
+/**
  * Read `config.json`, or return an empty config.
  *
  * Every key is optional and a missing file is not an error: with no config at
- * all this serves loopback on 8083, which is exactly what
+ * all this serves loopback on `DEFAULT_PORT`, which is exactly what
  * `server/src/config.ts` defaults to and exactly what the old `deploy.sh` did
  * with no `deploy.env`.
+ *
+ * **Comments are allowed**, `//` and `/* *\/` both, and stripped before the
+ * parse. The file is written by a person and never by this program -- nothing
+ * here rewrites it -- so a comment put there stays there, and the installed
+ * template can explain each setting beside it instead of in documentation
+ * somebody has to go and find.
  * @returns {Config}
  */
 export const readConfig = () => {
   const path = configPath()
   if (!existsSync(path)) return {}
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8'))
+    const parsed = JSON.parse(stripComments(readFileSync(path, 'utf8')))
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('expected a JSON object')
     }
@@ -73,7 +144,7 @@ export const readConfig = () => {
 // Scratch instances
 // ---------------------------------------------------------------------------
 
-/** 8200-8499, clear of the live instance on 8083 and of Vite on 5240. */
+/** 8200-8499, clear of the live instance on 7999 and of Vite on 5240. */
 export const PORT_FLOOR = 8200
 export const PORT_SPAN = 300
 

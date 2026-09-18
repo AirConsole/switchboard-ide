@@ -62,9 +62,9 @@ pnpm install     # also compiles node-pty from source for this platform
 pnpm build       # shared -> web -> server, in that order
 pnpm typecheck   # a gate; builds shared first because the others import it
 pnpm test        # the other gate: vitest over all four packages
-pnpm dev         # vite on :5240 proxying the server on :8083
+pnpm dev         # vite on :5240 proxying the server on :7999
 
-pnpm start       # bring the machine's instance up, detached, on :8083
+pnpm start       # bring the machine's instance up, detached, on :7999
 pnpm stop        # stop it; the tmux sessions and their agents keep running
 pnpm restart     # build, then stop and start -- this is the deploy
 pnpm pull        # fast-forward to origin, install if the lockfile moved, then restart
@@ -146,7 +146,7 @@ cost. Every test in the suite was checked that way once.
 ## The IDE is probably serving somebody while you work on it
 
 This project is used to develop itself, so a checkout usually has a live
-instance running from it -- by default `127.0.0.1:8083`, serving `server/dist`
+instance running from it -- by default `127.0.0.1:7999`, serving `server/dist`
 and `web/dist`, often behind a reverse proxy. Assume that is true unless you
 have checked. Consequences:
 
@@ -471,7 +471,10 @@ the line it justifies. Four of them cross into the rest of the repository:
 - **The machine's address is its name.** Let's Encrypt issues certificates for
   bare IP addresses, so there is no domain and no DNS. Only under the
   `shortlived` profile, and `default_sni` is required or every handshake fails
-  with a valid certificate in hand — a browser sends no SNI for an IP.
+  with a valid certificate in hand — a browser sends no SNI for an IP. A
+  `--domain` is an *addition*: every site answers to both, because the address
+  is the one name that cannot be wrong and is what you fall back to the day
+  the DNS is.
 - **`/home` is encrypted and the IDE password is the key**, so the boot disk
   holds nothing of the user's and a snapshot is ciphertext. An unlock page
   answers `https://<ip>` while the volume is shut — Caddy's 502 falling
