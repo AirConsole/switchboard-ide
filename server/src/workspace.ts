@@ -20,7 +20,14 @@ import { HttpError } from './http-error.js'
 import { config } from './config.js'
 import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl, plainHttpAllowed } from './remote/peer.js'
 import { hostKeyFor, unscopeId } from './remote/scope.js'
-import { findFiles, listDirectory, mediaFile, readTextFile, writeTextFile } from './files.js'
+import {
+  findFiles,
+  listDirectory,
+  mediaFile,
+  readTextFile,
+  takeableFile,
+  writeTextFile,
+} from './files.js'
 import type { StateStore } from './state.js'
 import type { SessionEngine } from './session/engine.js'
 import {
@@ -1027,6 +1034,20 @@ export class Workspace {
   ): Promise<{ file: string; type: string; size: number }> {
     const { worktree } = await this.resolve(worktreeId)
     return mediaFile(worktree.path, path)
+  }
+
+  /**
+   * The same, for a file being taken out of the IDE rather than shown in it.
+   *
+   * Separate from `mediaFile` because the condition is different, not because
+   * the plumbing is -- see `takeableFile`.
+   */
+  async takeableFile(
+    worktreeId: string,
+    path: string,
+  ): Promise<{ file: string; type: string; size: number }> {
+    const { worktree } = await this.resolve(worktreeId)
+    return takeableFile(worktree.path, path)
   }
 
   /** Save a file, refusing if it moved on disk since it was read. */

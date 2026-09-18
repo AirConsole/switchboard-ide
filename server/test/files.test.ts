@@ -10,6 +10,7 @@ import {
   mediaFile,
   mediaTypeOf,
   readTextFile,
+  takeableFile,
   writeTextFile,
 } from '../src/files.js'
 import { config } from '../src/config.js'
@@ -406,5 +407,53 @@ describe('media files', () => {
     expect(media.type).toBe('image/png')
     expect(media.file.endsWith('art/logo.png')).toBe(true)
     expect(media.size).toBe('pretend bytes'.length)
+  })
+})
+
+describe('files to take away', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('art/logo.png', 'pretend bytes')
+    await repo.commit('add art')
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('hands over a file there is no renderer for', async () => {
+    /*
+     * The bug: a file the panel would not open -- not text, or past the cap --
+     * had no way out of the IDE at all, because the only route that streams
+     * bytes refused anything the media table did not name. Reported as
+     * "if a file is too large to be displayed, there is no download button".
+     */
+    expect(await statusOf(mediaFile(repo.path, 'README.md'))).toBe(415)
+    const take = await takeableFile(repo.path, 'README.md')
+    expect(take.type).toBe('application/octet-stream')
+    expect(take.file.endsWith('README.md')).toBe(true)
+  })
+
+  it('names an image as itself, so the one route serves both', async () => {
+    expect((await takeableFile(repo.path, 'art/logo.png')).type).toBe('image/png')
+  })
+
+  it('has nothing to do with the size cap', async () => {
+    // The cap is about text going through JSON, and a file over it is exactly
+    // the one this exists for: it streams from disk, so nothing here reads a
+    // size at all.
+    const big = 'x'.repeat(config.maxFileBytes + 1)
+    await repo.write('huge.log', big)
+    const take = await takeableFile(repo.path, 'huge.log')
+    expect(take.size).toBe(big.length)
+    const read = await readTextFile(repo.path, 'huge.log')
+    expect('tooLarge' in read ? read.tooLarge : false).toBe(true)
+  })
+
+  it('is contained like every other read', async () => {
+    // Taking the media gate off must not take the boundary off with it.
+    expect(await statusOf(takeableFile(repo.path, '../../../etc/hosts'))).toBe(403)
+    expect(await statusOf(takeableFile(repo.path, 'art'))).toBe(400)
   })
 })

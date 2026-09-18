@@ -1013,13 +1013,32 @@ Six things in it are load-bearing:
   every fetch effect and must stay there**: that is what makes switching back
   re-read within a render instead of showing the last poll's answer for three
   more seconds.
-- **The open file can be taken out of the IDE**, by a glyph next to Save. Two
-  sources, because a file here is one of two things: an image is already a URL
-  the server serves (`/raw`, carrying the file's rev) so the link is that, and
-  text is in the browser already so it is handed over as a blob rather than
-  asked for twice. What arrives is **what is on screen** -- the draft while
-  there is one, the file on disk otherwise -- which is the rule Preview keeps,
-  and the alternative is a surprise a download cannot be taken back from. A
+- **The open file can be taken out of the IDE**, by a glyph next to Save. Three
+  sources (`downloadSource`), because a file here is one of three things: an
+  image is already a URL the server serves (`/raw`, carrying the file's rev) so
+  the link is that; text is in the browser already so it is handed over as a
+  blob rather than asked for twice; and a file the panel **would not open at
+  all** is fetched, `/raw?download=1`, which is the only thing that reaches it.
+  That third one was missing and is the whole of this feature's second pass --
+  *"if a file is too large to be displayed, there is no download button"*, and
+  the same for a file with no text in it: both are reported as a note and
+  nothing else, both have bytes on disk, and neither had any way out. It is the
+  one route the size cap does not govern, because the cap is about text going
+  through JSON and this streams.
+
+  What arrives is **what is on screen** -- the draft while there is one, the
+  file on disk otherwise -- which is the rule Preview keeps, and the
+  alternative is a surprise a download cannot be taken back from. The **bar
+  asks the same function** whether to draw the button at all, rather than
+  re-deriving the three cases as a condition: two derivations of one fact agree
+  best when there is one of them, and the first cut of that condition named the
+  two sources it knew about, which is exactly how the third went missing. Null
+  while the read is in flight, or the button would offer an empty file as the
+  file.
+
+  The name on the saved file is the **anchor's** `download` attribute, not the
+  response's: the route sends no filename in its disposition header, which is
+  what lets the attribute win and is one less thing to escape correctly. A
   glyph and no word because the bar is budgeted to the pixel and this is the
   one control there you press rarely; it is after Save for the same reason Save
   is before Preview, since the bar clips from the end.
