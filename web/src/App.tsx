@@ -194,11 +194,7 @@ export const App = (): React.ReactElement => {
    * wherever it is. That is `titleFor`; this only hands it every worktree.
    */
   useEffect(() => {
-    const installed = window.matchMedia('(display-mode: standalone)').matches
-    document.title = titleFor(
-      worktrees.map((worktree) => worktreeStatus(sessions, worktree.id)),
-      installed,
-    )
+    document.title = titleFor(worktrees.map((worktree) => worktreeStatus(sessions, worktree.id)))
   }, [worktrees, sessions])
 
   useEffect(() => {
