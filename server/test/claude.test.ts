@@ -328,6 +328,35 @@ describe('lastPrompt', () => {
     })
   })
 
+  it('reads a message sent mid-turn as a follow-up, however long', async () => {
+    /*
+     * Claude records one as a `queued_command` attachment, not a user record,
+     * so none of them reached the strip. Shaped as measured in a live
+     * transcript; the second is long enough that `isTask` alone would have
+     * made it the task, and the task-notification is machinery.
+     */
+    const cwd = freshCwd()
+    const queued = (prompt: string, commandMode = 'prompt'): unknown => ({
+      type: 'attachment',
+      isSidechain: false,
+      attachment: { type: 'queued_command', prompt, commandMode, humanTurn: true },
+    })
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the files search should have a switch between file name and content'),
+      queued('also italic'),
+      queued('the last prompt display should strip the text so newlines at the end are ignored'),
+      queued('<task-notification>done</task-notification>', 'task-notification'),
+    ])
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'the last prompt display should strip the text so newlines at the end are ignored',
+      task: 'the files search should have a switch between file name and content',
+      followUps: [
+        'also italic',
+        'the last prompt display should strip the text so newlines at the end are ignored',
+      ],
+    })
+  })
+
   it('lets a new task clear the follow-ups of the last one as it is written', async () => {
     // The incremental path, which folds onto what it had rather than rescanning.
     const cwd = freshCwd()

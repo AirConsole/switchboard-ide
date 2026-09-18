@@ -551,6 +551,19 @@ export interface FileHit {
 }
 
 /**
+ * One line of a file that contains what was searched for.
+ *
+ * `line` is 1-based, the number the editor's gutter shows, so a hit can be
+ * opened at the line it names. `text` is the line itself, trimmed and cut to
+ * what a row can show -- it is there to be recognised, not read in full.
+ */
+export interface ContentHit {
+  path: string
+  line: number
+  text: string
+}
+
+/**
  * A file's identity, for the stale-write guard. Opaque to the client.
  *
  * Deliberately not the mtime alone. `mtimeMs` is a double that rounds away

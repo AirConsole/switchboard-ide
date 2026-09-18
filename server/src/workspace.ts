@@ -6,6 +6,7 @@ import { customAlphabet } from 'nanoid'
 import type {
   AppSnapshot,
   FileContent,
+  ContentHit,
   FileHit,
   FileListing,
   FileSaved,
@@ -23,6 +24,7 @@ import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl, plainHttpAllo
 import { hostKeyFor, unscopeId } from './remote/scope.js'
 import {
   findFiles,
+  grepFiles,
   listDirectory,
   mediaFile,
   readTextFile,
@@ -1011,6 +1013,15 @@ export class Workspace {
   ): Promise<{ hits: FileHit[]; truncated?: boolean }> {
     const { worktree } = await this.resolve(worktreeId)
     return findFiles(worktree.path, query)
+  }
+
+  /** Lines containing the query -- the finder's other half; see `grepFiles`. */
+  async grepFiles(
+    worktreeId: string,
+    query: string,
+  ): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> {
+    const { worktree } = await this.resolve(worktreeId)
+    return grepFiles(worktree.path, query)
   }
 
   /** One file's text, or word that it has not moved since `ifNotRev`. */

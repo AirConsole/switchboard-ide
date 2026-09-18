@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import type { Readable } from 'node:stream'
@@ -10,6 +10,7 @@ import { promisify } from 'node:util'
 import type {
   FileContent,
   FileEntry,
+  ContentHit,
   FileHit,
   FileListing,
   FileRev,
@@ -376,6 +377,115 @@ export const findFiles = async (
     hits: hits.slice(0, MAX_FIND),
     ...(hits.length > MAX_FIND ? { truncated: true } : {}),
   }
+}
+
+/**
+ * Lines that contain the query, case-insensitively, across the worktree.
+ *
+ * `git grep` rather than a walk of our own, for the reason `allFiles` asks git:
+ * tracked plus untracked (`--untracked`), minus what is ignored, so
+ * `node_modules` and `dist` are never searched, and never a binary (`-I`).
+ * Fixed strings (`-F`), because the box is where you paste an error message
+ * and a regex would make half of one mean something else; `-e` so a query that
+ * starts with a dash is still a query.
+ *
+ * Bounded twice. `-m` keeps one file of a thousand hits from being the whole
+ * answer -- and `more` names the files it cut short, and the process is killed once there are `MAX_FIND` lines, since
+ * this runs as you type and a one-letter query matches most of a repository.
+ * The time limit is for a repository big enough that even that takes a while.
+ */
+const GREP_PER_FILE = 20
+const GREP_TIMEOUT_MS = 5000
+
+export const grepFiles = (
+  worktreePath: string,
+  query: string,
+): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> => {
+  // Not trimmed, unlike a name: in a file, `x = ` and `x =` are different.
+  const needle = query
+  if (needle.trim() === '') return Promise.resolve({ hits: [] })
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(
+      'git',
+      [
+        'grep', '-I', '-n', '-i', '-F', '-z', '--untracked',
+        // One past the cap, so a file that was cut short can say so.
+        '-m', String(GREP_PER_FILE + 1), '-e', needle, '--',
+      ],
+      { cwd: worktreePath, stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    const hits: ContentHit[] = []
+    const perFile = new Map<string, number>()
+    const more = new Set<string>()
+    let truncated = false
+    let pending = ''
+    let stderr = ''
+    const timer = setTimeout(() => {
+      truncated = true
+      child.kill()
+    }, GREP_TIMEOUT_MS)
+    /*
+     * `path\0line\0text\n`, measured: with `-z` the separator after the line
+     * number is a NUL as well, so a colon in a path or in the text is never
+     * mistaken for one.
+     */
+    const take = (record: string): void => {
+      const a = record.indexOf('\0')
+      const b = a === -1 ? -1 : record.indexOf('\0', a + 1)
+      if (b === -1) return
+      const line = Number(record.slice(a + 1, b))
+      if (!Number.isInteger(line)) return
+      const path = record.slice(0, a)
+      const count = (perFile.get(path) ?? 0) + 1
+      perFile.set(path, count)
+      if (count > GREP_PER_FILE) {
+        more.add(path)
+        return
+      }
+      const text = record.slice(b + 1).trim()
+      hits.push({
+        path,
+        line,
+        text: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+      })
+    }
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      if (hits.length >= MAX_FIND) return
+      pending += chunk
+      let end = pending.indexOf('\n')
+      while (end !== -1 && hits.length < MAX_FIND) {
+        take(pending.slice(0, end))
+        pending = pending.slice(end + 1)
+        end = pending.indexOf('\n')
+      }
+      if (hits.length >= MAX_FIND) {
+        truncated = true
+        child.kill()
+      }
+    })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      // 1 is "nothing matched"; a kill of our own is not a failure either.
+      if (code !== 0 && code !== 1 && code !== null) {
+        reject(new Error(stderr.trim() || `git grep exited ${code}`))
+        return
+      }
+      resolvePromise({
+        hits,
+        ...(truncated ? { truncated: true } : {}),
+        ...(more.size > 0 ? { more: [...more] } : {}),
+      })
+    })
+  })
 }
 
 /* ---------------------------------------------------------------- listing -- */

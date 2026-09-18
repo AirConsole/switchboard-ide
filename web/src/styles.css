@@ -2075,14 +2075,21 @@ button {
    * than as text that landed on the terminal's ground. 20px in from either
    * side: lined up with the bar's name at 10px it read as cramped against the
    * window's edges, and prose wants a wider margin than a label does.
+   *
+   * Tight underneath: Claude's own screen opens with a blank row of its own,
+   * so 13px of padding and 10px of margin below the text measured as a 24px
+   * gap *before* that row, and read as the strip floating free of the thing
+   * it describes.
    */
-  margin: -8px -8px 10px;
-  padding: 12px 20px 13px;
+  margin: -8px -8px 4px;
+  padding: 10px 20px 7px;
   background: var(--level-panel);
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-ui);
   font-size: 12px;
   line-height: 1.5;
+  /* Italic, because all of it is quoted: your words, not the interface's. */
+  font-style: italic;
 }
 
 .taskstrip__task {
@@ -4179,10 +4186,14 @@ button {
  */
 .files__find {
   flex: none;
+  display: flex;
+  align-items: center;
   border-top: 1px solid var(--rule-bright);
 }
 
 .files__search {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 5px 8px;
   background: none;
@@ -4201,6 +4212,61 @@ button {
 .files__search:focus {
   outline: none;
   border-bottom-color: var(--pulse);
+}
+
+/*
+ * Name or Text: what the files search looks at. Two words at the box's right
+ * edge, the chosen one bright, in the grey ladder -- which one is on is a
+ * setting, not a state, so it takes no colour.
+ */
+.files__in {
+  flex: none;
+  display: flex;
+  padding-right: 4px;
+}
+
+.files__in-opt {
+  padding: 2px 5px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--graphite-dim);
+  border-radius: 3px;
+}
+
+.files__in-opt:hover {
+  color: var(--bone);
+}
+
+.files__in-opt--on {
+  color: var(--bone);
+  background: var(--level-lit);
+}
+
+/*
+ * A line under its file in a content search: the number, then the line, in
+ * the mono face because it is the file talking. What matched goes bright.
+ */
+.files__line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.files__lineno {
+  flex: none;
+  min-width: 3ch;
+  text-align: right;
+  color: var(--graphite-dim);
+}
+
+/* Under a file cut short: sits in the rows' own rhythm, not a paragraph's. */
+.files__more {
+  padding-top: 2px;
+  padding-bottom: 4px;
+}
+
+.files__match {
+  font-weight: inherit;
+  color: var(--bone);
 }
 
 /*

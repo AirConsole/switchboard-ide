@@ -458,6 +458,17 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return workspace.findFiles(id, q)
   })
 
+  /*
+   * What is *in* the files rather than what they are called: the finder's
+   * content switch. The query goes to `git grep` as one argument after `-e`,
+   * so it is never read as an option, and every path in the answer is git's.
+   */
+  app.get('/api/worktrees/:id/grep', async (request) => {
+    const { id } = request.params as { id: string }
+    const { q } = findQuery.parse(request.query)
+    return workspace.grepFiles(id, q)
+  })
+
   app.get('/api/worktrees/:id/file', async (request) => {
     const { id } = request.params as { id: string }
     const { path, ifNotRev } = fileQuery.parse(request.query)
