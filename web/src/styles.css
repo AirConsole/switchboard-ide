@@ -2075,9 +2075,14 @@ button {
    * than as text that landed on the terminal's ground. 20px in from either
    * side: lined up with the bar's name at 10px it read as cramped against the
    * window's edges, and prose wants a wider margin than a label does.
+   *
+   * Tight underneath: Claude's own screen opens with a blank row of its own,
+   * so 13px of padding and 10px of margin below the text measured as a 24px
+   * gap *before* that row, and read as the strip floating free of the thing
+   * it describes.
    */
-  margin: -8px -8px 10px;
-  padding: 12px 20px 13px;
+  margin: -8px -8px 4px;
+  padding: 10px 20px 7px;
   background: var(--level-panel);
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-ui);
