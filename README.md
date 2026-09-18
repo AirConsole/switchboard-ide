@@ -124,12 +124,10 @@ One command builds a machine on Google Cloud that runs this IDE, and prints a
 URL you can open from anywhere:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/cloud/provision.sh \
-  | sh -s -- create mybox --project my-project
+git clone https://github.com/AirConsole/switchboard-ide.git
+cd switchboard-ide
+./cloud/provision.sh create mybox --project my-project
 ```
-
-It needs `gcloud` signed in, and nothing else — not even a checkout. From one,
-it is `./cloud/provision.sh create mybox --project my-project`.
 
 It shows what it will create and roughly what it costs, then asks. Ten minutes
 later you get `https://<ip>`, a password and a recovery passphrase, each shown

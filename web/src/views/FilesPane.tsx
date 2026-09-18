@@ -1582,8 +1582,19 @@ export const FilesPane = ({
       return <p className="files__note">No uncommitted changes to this file.</p>
     }
     if (changes.patch === null) return <></>
-    // A commit touches any number of files and the hunks never say which.
-    return <Diff patch={changes.patch} showFiles={mode === 'commits'} />
+    /*
+     * A commit touches any number of files and the hunks never say which.
+     *
+     * The scroller is the panel's, like `.files__cm` and `.files__media`: a
+     * patch is as long as it is, and every other thing this slot holds brings
+     * its own -- CodeMirror's, and `.md`'s -- which is how this one came to have
+     * none. See `.files__diff`.
+     */
+    return (
+      <div className="files__diff">
+        <Diff patch={changes.patch} showFiles={mode === 'commits'} />
+      </div>
+    )
   }
 
   return (

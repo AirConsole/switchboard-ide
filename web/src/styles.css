@@ -3363,7 +3363,24 @@ button {
   color: var(--graphite);
 }
 
-.git__diff {
+/*
+ * The box a patch scrolls in.
+ *
+ * It was `.git__diff`, from when the git panel was a panel of its own, and when
+ * the two panels became one it was left behind in the stylesheet while the diff
+ * went into `.files__file` with **no scroller at all**: measured at a 898px
+ * pane, a 10,563px patch, `.files__file` and `.files` at `overflow: visible`
+ * and `.tile__pane--files` at `hidden` -- so 9,665px of it was clipped away
+ * with no way to reach it, which is 600 changed lines of which 22 could be
+ * read. `flex: 1; min-height: 0` is the same pair the editor's host and the
+ * image box need, and for the same reason: without it a flex item is floored at
+ * its content's height, so the pane grows instead of the child scrolling.
+ *
+ * The scroller is this box and not `.diff`, which carries `min-width:
+ * max-content` -- a box that is as wide as its content cannot clip it, and so
+ * cannot scroll it either.
+ */
+.files__diff {
   flex: 1;
   min-height: 0;
   padding-top: 6px;

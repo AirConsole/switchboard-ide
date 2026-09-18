@@ -1058,6 +1058,23 @@ Six things in it are load-bearing:
   downward wheel a pane did not want, so scrolling a file slid the windows
   sideways. The row no longer answers to a downward wheel at all -- see below --
   but the flex column is still what makes the file scroll.)
+- **Everything that column holds brings its own scroller, and the patch had
+  none.** `.files__file` bounds its children and clips nothing itself, so each
+  thing shown in it scrolls itself: CodeMirror's `.cm-scroller`, `.md` for a
+  rendered page, and now `.files__diff` for a patch. That last one was missing
+  for as long as the two panels have been one -- the box that used to hold it,
+  `.git__diff`, stayed in the stylesheet when the git panel went and nothing
+  rendered it again. Measured at a 898px pane: a 10,563px patch, with
+  `.files__file` and `.files` at `overflow: visible` and `.tile__pane--files` at
+  `hidden`, so 600 changed lines were drawn and 22 could be read, the rest
+  clipped away with nothing in the chain able to scroll. Both modes had it, and
+  both are fixed by the one box. The scroller cannot be `.diff` itself: that
+  carries `min-width: max-content` so long lines scroll rather than wrap, and a
+  box as wide as its content cannot clip it -- so the scroller is the wrapper
+  and the max-content box is what it scrolls. Measured after: 898 over 10,569
+  vertically and 678 over 3,334 with a 425-character line, the end of the patch
+  reachable in both modes, and `.grid` unmoved at 358 throughout -- and at
+  390px, 722 over 5,325 with the row still where the swipe left it.
 - **The tree must stay a scroller** (`overflow-y: auto`), which is what lets a
   wheel over it scroll the tree rather than falling through to nothing.
 - **The error notice is in the sidebar, not in the content pane.** A tree that

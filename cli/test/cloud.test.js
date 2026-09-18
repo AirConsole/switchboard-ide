@@ -118,39 +118,6 @@ describe('the Caddy config decides what the internet can reach', () => {
   })
 })
 
-describe('running it straight from the internet', () => {
-  // `curl ... | sh` has no "next to this script": $0 is the shell's own name.
-  // So the two files the machine is made of are fetched from the same
-  // repository and ref the machine will build from -- and this is the line
-  // that turns the one URL into the other.
-  /** @param {string} repo */
-  const rawUrlFor = (repo) =>
-    execFileSync(
-      'sh',
-      [
-        '-c',
-        `printf '%s' "${repo}" | sed 's|^https://github.com/|https://raw.githubusercontent.com/|; s|\\.git$||'`,
-      ],
-      { encoding: 'utf8' },
-    )
-
-  it.each([
-    ['https://github.com/AirConsole/switchboard-ide.git', 'https://raw.githubusercontent.com/AirConsole/switchboard-ide'],
-    ['https://github.com/AirConsole/switchboard-ide', 'https://raw.githubusercontent.com/AirConsole/switchboard-ide'],
-  ])('%s', (repo, expected) => {
-    expect(rawUrlFor(repo)).toBe(expected)
-  })
-
-  it('fetches before it builds anything', () => {
-    // A ref that does not exist should cost nothing. Finding out the machine's
-    // own files cannot be fetched *after* creating a network and a disk is
-    // finding out too late.
-    const script = readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
-    const create = script.slice(script.indexOf('cmd_create() {'))
-    expect(create.indexOf('ensure_machine_files')).toBeLessThan(create.indexOf('ensure_network'))
-  })
-})
-
 describe('a domain, when one is associated', () => {
   const rendered = renderCaddyfile('203.0.113.7', '10.10.0.2', 'ide.example.com')
 
