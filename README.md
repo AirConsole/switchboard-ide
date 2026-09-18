@@ -30,8 +30,9 @@ macOS or Linux. Needs Node 22+, git, tmux, pnpm, and the `claude` CLI on your
 curl -fsSL https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/install.sh | sh
 ```
 
-It checks what is missing, tells you what it will do, and does nothing until you
-agree — `--check` reports and changes nothing. Or by hand:
+It reports what is missing and does nothing until you agree, then installs it,
+builds, **asks you for a password, starts the server and prints its URL**.
+`--check` reports and changes nothing. Or by hand:
 
 ```sh
 git clone https://github.com/AirConsole/switchboard-ide.git
@@ -42,31 +43,48 @@ pnpm password       # the server will not start without one
 pnpm start          # http://127.0.0.1:8083
 ```
 
-Then open it, add a project — any directory inside a git repository works — and
-its worktrees appear as windows.
+## First run
+
+Open the URL and sign in with that password. The browser holds a session for up
+to a week; changing the password signs every browser out.
+
+**Open a project.** A project is any directory inside a git repository. Every
+branch you work on becomes a worktree with its own Claude, its own terminals and
+its own window in the row — and they keep running whether or not the page is
+open.
+
+**Nothing on the machine yet?** The row ends with a terminal on the machine
+itself, in your home directory. Clone a repository there, then open it as a
+project. It is also where the rest of the administration goes: a disk that is
+filling up, a process to kill, `gh auth login`.
+
+From then on the row is the interface: scroll it, or press `Cmd`/`Alt` with the
+arrow keys to walk it. Hold that key to see what else it does — the letters that
+open a window's terminals, todos and files light up on the window you are in.
+
+## The commands
 
 ```sh
-pnpm status         # is it up, and is its public name right
-pnpm stop           # leaves the tmux sessions and their agents running
-pnpm restart        # builds first; this is the deploy
+pnpm status         # is it up, and what name is it answering to
+pnpm stop           # stops the server; the agents keep running in tmux
+pnpm restart        # builds first, then restarts on what it built
 pnpm pull           # update to the newest version and restart on it
+pnpm password       # change it; every browser is signed out
 ```
 
-`start` detaches from your shell, so closing the terminal does not take it down.
-Nothing registers it to start at boot.
+`start` detaches from your shell, so closing the terminal does not take it down,
+and nothing registers it to start at boot.
 
 ## Read this before you expose it
 
 **One password, and it is the whole boundary.** Anyone who gets past it can run
-commands as you. Set it with `pnpm password`; the server will not start without
-one. A browser asks for it once and then holds a session for up to a week.
+commands as you. It is asked for **everywhere, including on localhost**, and
+that is forced rather than cautious: a reverse proxy connects from loopback, so
+"local callers skip the password" would let the whole internet skip it through
+the proxy.
 
-It is asked for **everywhere, including on localhost**, and that is forced
-rather than cautious: a reverse proxy connects from loopback, so "local callers
-skip the password" would let the whole internet skip it through the proxy.
-
-A process running as you on the same machine is still *not* kept out, and
-cannot be: it can read the password file and the tmux socket, and your SSH keys
+A process running as you on the same machine is still *not* kept out, and cannot
+be: it can read the password file and the tmux socket, and your SSH keys
 besides. The caller worth keeping out is the one that is not you.
 
 What the server enforces beyond the password, because a password alone covers
@@ -74,35 +92,31 @@ none of it:
 
 - **What may open its WebSocket.** A socket is exempt from CORS, and a session
   cookie is not enough: cookies ignore the port, so a page on another port of
-  the same hostname is same-site and your browser hands it your cookie. So the
-  socket does not accept the cookie at all. The page fetches a single-use ticket
-  over `/api`, where the origin *is* checked, and opens the socket with that.
-- **Which names it answers to**, so a DNS name re-pointed at your machine
-  cannot reach it. That matters more with a password, not less: a rebound page
-  is same-origin with the server, so the browser attaches your cookie to it.
+  the same hostname is same-site and your browser hands it your cookie. The
+  socket does not accept the cookie at all — the page fetches a single-use
+  ticket over `/api`, where the origin *is* checked.
+- **Which names it answers to**, so a DNS name re-pointed at your machine cannot
+  reach it. That matters more with a password, not less: a rebound page is
+  same-origin with the server, so the browser attaches your cookie to it.
 - **Cross-site requests**, via `SameSite=Strict`, Fetch Metadata, and an
   `Origin` check on anything that changes state.
 - **How fast a password can be guessed.** Every attempt waits its turn, and the
-  wait does not depend on whether the guess was right, so timing tells an
-  attacker nothing.
-
-All of it is `server/src/gate.ts` and `server/src/auth.ts`.
-
-Changing the password signs out every browser within a second, with no
-restart, and closes their open terminals within a minute.
-`pnpm password --revoke-sessions` does the same without changing it.
+  wait does not depend on whether the guess was right.
 
 Behind a proxy, tell the server the name a browser will type, or every socket
-arriving through it is refused. Settings live in
-`~/.config/switchboard/config.json`:
+arriving through it is refused:
 
 ```json
 { "port": 8083, "host": "ide.example.com:83" }
 ```
 
-`start` and `restart` check that name afterwards rather than trusting it,
-because a wrong value does not fail loudly: the page loads, every REST call
-works, and only the row never paints.
+in `~/.config/switchboard/config.json`. `start` and `restart` check that name
+afterwards rather than trusting it, because a wrong value does not fail loudly:
+the page loads, every REST call works, and only the row never paints.
+
+`pnpm password --revoke-sessions` signs every browser out without changing the
+password. The whole of it is `server/src/gate.ts` and `server/src/auth.ts`, and
+`server/CLAUDE.md` says why each rule is there.
 
 ## Run it in the cloud
 
@@ -117,55 +131,23 @@ cd switchboard-ide
 
 It shows what it will create and roughly what it costs, then asks. Ten minutes
 later you get `https://<ip>`, a password and a recovery passphrase, each shown
-once.
+once. Three things are worth knowing before you use it:
 
-**There is no domain and no DNS.** Let's Encrypt issues certificates for bare
-IP addresses, so the machine's address is its name. They are six-day
-certificates and Caddy renews them.
+- **There is no domain and no DNS.** Let's Encrypt issues certificates for bare
+  IP addresses, so the machine's address is its name.
+- **Your data is encrypted and the password is the key.** `/home` is a LUKS
+  volume whose key is derived from the IDE password and stored nowhere. A
+  snapshot, a disk clone or a stopped machine is unreadable; anyone with root on
+  the *running* machine reads everything, which is why `create` refuses a
+  project owned by an organisation unless you pass `--in-org`.
+- **Ports 8000–8099 are public.** Anything listening on one of them is at
+  `https://<ip>:<port>` with no password — which is how you show somebody what
+  an agent just built, and a thing to know before an agent starts a server.
 
-**Your data is encrypted, and the password is the key.** `/home` — the repos,
-your Claude and `gh` logins, the IDE's own state — is a LUKS volume whose key is
-derived from the IDE password and is never stored anywhere. After a reboot the
-machine shows an unlock page instead of the IDE; the same password opens it.
-
-What that does and does not protect, plainly:
-
-- A snapshot, a disk clone, a stopped machine, or the disk attached to another
-  instance are **unreadable**, including a snapshot taken while it is running.
-- Anyone with **root on the running machine** reads everything — the kernel
-  holds the key while the volume is open. On a cloud project, that means
-  anyone who can administer Compute Engine there, without your password: they
-  can reset the machine into a startup script of their own. So `create`
-  **refuses a project that belongs to an organisation**, names the people who
-  could do it, and takes `--in-org` if you want it anyway. A project created
-  under a personal account belongs to no organisation.
-- `create` also sets up an email alert for when anyone else touches the
-  machine, and `provision.sh status <name>` reads the same audit log — which
-  cannot be switched off or deleted — from your own machine.
-
-**Showing a service you are building.** Listen on `127.0.0.1` on any port from
-**8000 to 8099**, and it is at `https://<ip>:<port>` over TLS, **public to
-anyone with the link and with no password**. Nothing else to run. Anything an
-agent starts on one of those ports is on the internet from the moment it
-starts.
-
-```sh
-./cloud/provision.sh status   mybox --project my-project   # and who touched it
-./cloud/provision.sh recreate mybox --project my-project   # new VM, same data
-./cloud/provision.sh destroy  mybox --project my-project   # everything it made
-```
-
-`recreate` replaces the machine and keeps the data disk, which is how an OS
-upgrade and a rescue both work; `--from-snapshot` restores a backup. `destroy`
-keeps the data disk too unless you add `--delete-data`, which asks you to type
-the machine's name — in a terminal, with no flag to skip it, because that disk
-and its snapshots are the only copy. The boot
-disk is disposable, so packages installed on the machine are recorded on the
-data disk and reinstalled after a rebuild.
-
-The machine is `cloud/cloud-config.yaml` — cloud-init, the format GCP, Hetzner,
-DigitalOcean, AWS and a local VM all take — so another provider needs its own
-`create` and not a second definition of the machine.
+`provision.sh status | recreate | destroy` do the rest — what it is and who
+touched it, a new VM on the same data disk, and taking it all down. Their own
+`--help` and the comments at the top of `cloud/provision.sh` have the detail,
+including what `destroy` keeps unless you ask it not to.
 
 ## Linking another machine
 
@@ -174,23 +156,14 @@ here — its projects, worktrees, sessions and queued prompts join the row. Ther
 is no per-project subscription: an agent blocked on you is blocked on you
 wherever it is.
 
-The machine being linked has its own password, like any instance. Make it
-reachable from the machine you use by binding an address other than loopback:
-
-```jsonc
-// on the machine to link, in ~/.config/switchboard/config.json
-{ "bind": "0.0.0.0" }
-```
-
-Then add it in the open dialog with its address and **its** password. Your
-server signs in to it once and keeps the link it gets back, never the password.
-Your browser never talks to that machine; the server you have open forwards
-everything, so there is no CORS and no second login.
+The machine being linked has its own password, like any instance, and must be
+reachable from the machine you use — `{ "bind": "0.0.0.0" }` in its config.
+Add it in the open dialog with its address and **its** password: your server
+signs in once and keeps the link it gets back, never the password, and your
+browser never talks to that machine at all.
 
 Over plain `http://`, only addresses on your own network are accepted — a
-password that opens a shell should not cross the internet in clear. If that
-machine's password changes, its windows stay where they are and the dialog
-offers to link it again.
+password that opens a shell should not cross the internet in clear.
 
 ## What it is not
 
@@ -212,35 +185,18 @@ Developed on Linux. macOS is supported — the portability work is done and the
 install path runs there — but it has had far fewer hours on it, so expect to be
 the first person to hit something.
 
-## Development
+## Working on it
 
 ```sh
-pnpm dev        # vite on :5240, proxying the server on :8083
-pnpm typecheck  # a gate
-pnpm test       # the other gate
+pnpm dev            # vite on :5240, proxying the server on :8083
+pnpm typecheck      # a gate
+pnpm test           # the other gate
+pnpm scratch start  # a throwaway instance, with its own state and port
 ```
 
-There is no linter; the compiler does that work. Throwaway instances for trying
-things, each with its own state directory, tmux socket and port, so they cannot
-reach the one you actually use:
-
-```sh
-pnpm scratch start
-pnpm scratch start peer    # a second one, to link
-pnpm scratch stop          # removes every trace
-```
-
-## Contributing
-
-`master` is protected — everything arrives by pull request. Both gates
-(`pnpm typecheck` and `pnpm test`) must pass.
-
-A test here records a bug that actually happened, and most of them cite the
-measurement in a comment. When you add one, break the line it guards and watch
-it fail; a test that passes either way is documentation with a runtime cost.
-
-Commit messages say what changed and **why it was wrong before**, and record
-what was measured. They are long here on purpose.
+`master` is protected: everything arrives by pull request and both gates must
+pass. There is no linter; the compiler does that work. `CLAUDE.md` has the rest
+— what a test is for here, what a commit message has to say, and why.
 
 ## The comments are the documentation
 

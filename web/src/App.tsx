@@ -7,7 +7,7 @@ import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview, projectKey, type PaneKind } from './views/Overview.js'
+import { MACHINE_KEY, Overview, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -24,7 +24,14 @@ import {
 } from './selectors.js'
 import type { MoveTarget } from './views/TodoPane.js'
 import { softKeys, useSoftKeyboard } from './terminal/softKeyboard.js'
-import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
+import {
+  MACHINE_WORKTREE_ID,
+  type FilesMode,
+  type PanelName,
+  type Project,
+  type UiState,
+  type Worktree,
+} from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
 export interface ProjectGroup {
@@ -416,6 +423,22 @@ export const App = (): React.ReactElement => {
     void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
   }
 
+  /**
+   * The machine's own terminal: one shell, in your home directory.
+   *
+   * The same route every other terminal is made through, with the reserved
+   * worktree id the server answers by skipping the worktree lookup entirely
+   * (`MACHINE_WORKTREE_ID`). Nothing about it is stored in `ui`: there is one,
+   * so there is no selection to remember, and the layout pruner has nothing of
+   * it to throw away when the worktrees change.
+   */
+  const machineTerminal = (): void => {
+    void api
+      .createSession({ worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
+      .then(refresh)
+      .catch(fail)
+  }
+
   const newTerminal = (worktreeId: string): void => {
     // The wire calls it a shell -- the pane runs $SHELL -- while the interface
     // calls it a terminal.
@@ -772,6 +795,7 @@ export const App = (): React.ReactElement => {
        * project is in that pane now rather than on a × up here.
        */
       onRevealProject={(project) => reveal(projectKey(project.id), 'project')}
+      onRevealMachine={() => reveal(MACHINE_KEY, 'machine')}
       onWake={wake}
       onReveal={revealClaude}
       activeId={active?.id ?? null}
@@ -892,24 +916,16 @@ export const App = (): React.ReactElement => {
     </>
   )
 
-  if (projects.length === 0) {
-    return (
-      <div className="app" data-narrow={narrow ? '' : undefined}>
-        {topBar}
-        <div className="empty">
-          <h1 className="empty__title">No project open</h1>
-          <p className="empty__body">
-            Choose a git repository. Every branch you work on becomes a worktree with Claude running
-            in it, and they all keep running whether or not this page is open.
-          </p>
-          <button className="btn" onClick={() => setShowOpenProject(true)}>
-            Open project
-          </button>
-        </div>
-        {dialogs}
-      </div>
-    )
-  }
+  /*
+   * No early return for "nothing open" any more.
+   *
+   * It used to replace the row with a screen that said *No project open*, and
+   * that screen had nowhere to go: the way to get a repository onto a machine
+   * that has none is a terminal, and every terminal here belonged to a
+   * worktree. The row now carries the invitation as its first window and the
+   * machine's own terminal as the next one, so the sentence "clone it in the
+   * terminal to the right" is literally true -- see `WelcomeTile`.
+   */
 
   return (
     <div className="app" data-narrow={narrow ? '' : undefined}>
@@ -926,6 +942,8 @@ export const App = (): React.ReactElement => {
 
       <Overview
         narrow={narrow}
+        onMachineTerminal={machineTerminal}
+        onOpenProject={() => setShowOpenProject(true)}
         worktrees={rowWorktrees}
         projects={projects}
         todos={todos}

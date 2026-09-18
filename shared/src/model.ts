@@ -212,6 +212,28 @@ export interface WorktreeTodo {
 export type SessionKind = 'claude' | 'shell'
 
 /**
+ * The worktree id of the machine's own terminal, which belongs to no worktree.
+ *
+ * One shell in your home directory, for the things that come *before* a
+ * project: cloning the repository you are about to open, looking at a disk,
+ * killing something. Every other terminal here belongs to a worktree, so with
+ * no project open there was nowhere to type at all.
+ *
+ * **A reserved literal rather than a null**, and that is load-bearing in two
+ * places. A session whose tmux metadata has no `worktreeId` is refused by
+ * `parseMeta` and therefore never adopted after a restart -- its tmux session
+ * runs on, unreachable, for the life of the machine. And `Session.worktreeId`
+ * stays a required string, so nothing downstream becomes nullable: not the
+ * selectors, not a peer's slice, not the two independently versioned sides of
+ * the wire.
+ *
+ * It cannot collide with a real one: `idFor` hashes a path into `wt-<hex>`
+ * (`server/src/git/worktree.ts`), and the peer scoper leaves an unprefixed
+ * word alone (`server/src/remote/scope.ts`).
+ */
+export const MACHINE_WORKTREE_ID = 'machine'
+
+/**
  * Liveness of the underlying tmux session.
  * `dead` means the tmux session is gone; we keep the record so the UI can show
  * and clear it rather than silently resurrecting something the user killed.

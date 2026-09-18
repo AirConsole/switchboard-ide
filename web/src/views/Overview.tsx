@@ -17,6 +17,7 @@ import { api } from '../api.js'
 import {
   claudeSession,
   isRunning,
+  machineSession,
   terminalSessions,
   worktreeTodos,
   type TodoView,
@@ -54,6 +55,8 @@ import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
 import { PanelIcon } from '../components/PanelIcon.js'
 import { useNearViewport } from './useNearViewport.js'
+import { MachineTile } from './MachineTile.js'
+import { WelcomeTile } from './WelcomeTile.js'
 import { RowStep } from './rowStep.js'
 
 /** How the add tile is identified in the layout. */
@@ -191,6 +194,8 @@ const LANDS_IN: Record<PaneKind, string> = {
   todo: 'these todos',
   files: 'these files',
   project: 'this project',
+  machine: 'this machine',
+  welcome: 'where to start',
 }
 
 /**
@@ -331,7 +336,7 @@ const panelLabel = (panel: PanelName, counts: PanelCounts, lit: boolean): React.
  * half a pane, and the 80-column floor is a promise about panes. The two that
  * do are chrome -- the files tree by itself, and the placeholder below.
  */
-const PANE_UNITS: Record<'claude' | 'project' | PanelName, number> = {
+const PANE_UNITS: Record<'claude' | 'project' | 'machine' | 'welcome' | PanelName, number> = {
   claude: 2,
   /*
    * The new-worktree placeholder is one unit, not two.
@@ -343,6 +348,14 @@ const PANE_UNITS: Record<'claude' | 'project' | PanelName, number> = {
    * never enough of it.
    */
   project: 1,
+  /*
+   * The machine's own terminal is a whole pane, because it is a terminal: you
+   * clone into it, watch a build in it and read what it prints, and none of
+   * that is better at half the width. The welcome window beside it is two for
+   * the plain reason that it is the only thing on screen when it is there.
+   */
+  machine: 2,
+  welcome: 2,
   todo: 2,
   terminals: 2,
   files: 3,
@@ -371,7 +384,7 @@ const FILES_TREE_UNITS = 1
  * only worktrees, so that stepping right can take you into the thing you were
  * about to type in rather than past it.
  */
-export type PaneKind = 'claude' | PanelName | 'project'
+export type PaneKind = 'claude' | PanelName | 'project' | 'machine' | 'welcome'
 
 export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktreeId}:${pane}`
 
@@ -384,6 +397,16 @@ export const paneKey = (worktreeId: string, pane: PaneKind): string => `${worktr
  * worktree id come from the same hash and must not collide.
  */
 export const projectKey = (projectId: string): string => `project:${projectId}`
+
+/**
+ * The row id of the machine's own window, and of the welcome window.
+ *
+ * Literals, because there is exactly one of each: the machine you are looking
+ * at, and the one invitation shown while nothing is open. Both are outside the
+ * hash space worktree and project ids come from, so neither can collide.
+ */
+export const MACHINE_KEY = 'machine'
+export const WELCOME_KEY = 'welcome'
 
 /**
  * Whether the modifier is down right now -- Cmd on a Mac, Alt elsewhere.
@@ -438,6 +461,13 @@ type Pane =
       treeFits?: boolean
     }
   | { kind: 'project'; key: string; units: number }
+  /*
+   * The two windows that belong to no worktree and no project: the machine's
+   * own terminal at the end of the row, and -- only while nothing is open --
+   * the invitation to open something.
+   */
+  | { kind: 'machine'; key: string; units: number }
+  | { kind: 'welcome'; key: string; units: number }
 
 const useElementSize = (ref: RefObject<HTMLElement | null>): { width: number; height: number } => {
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -1303,6 +1333,10 @@ export interface OverviewProps {
   active: { id: string; pane: PaneKind } | null
   /** Anything in this pane took focus, so this is where you are now. */
   onActivate: (worktreeId: string, pane: PaneKind) => void
+  /** Start the machine's own terminal; it has none. */
+  onMachineTerminal: () => void
+  /** The open-project dialog, for the welcome window's button. */
+  onOpenProject: () => void
   /** A worktree was just made in one of the row's project panes. */
   onCreated: (worktreeId: string) => void
   /** This project's worktrees, awake and asleep, for its own pane. */
@@ -1367,6 +1401,8 @@ export const Overview = ({
   scrollTo,
   active,
   onActivate,
+  onMachineTerminal,
+  onOpenProject,
   onCreated,
   groups,
   onWake,
@@ -1672,6 +1708,17 @@ export const Overview = ({
    * more than one project was open, and why it used to appear only when exactly
    * one was.
    */
+  /*
+   * Nothing open: the row is an invitation, and the machine's terminal beside
+   * it -- which is what the invitation points at. A window rather than a screen
+   * of its own, so that "the terminal to the right" is literally true and the
+   * swipe that reaches it is the one every other window is reached by.
+   */
+  if (groups.length === 0) {
+    push(WELCOME_KEY, null, null, [
+      { kind: 'welcome', key: WELCOME_KEY, units: Math.min(PANE_UNITS.welcome, units) },
+    ])
+  }
   for (const group of groups) {
     const key = projectKey(group.project.id)
     /*
@@ -1688,6 +1735,17 @@ export const Overview = ({
     ])
     for (const worktree of group.awake) push(worktree.id, worktree, null, panesOf(worktree, units))
   }
+  /*
+   * The machine itself, at the end of every row.
+   *
+   * After the projects because it is not one of them: it is the box they sit
+   * on, and what you do in it -- clone, prune, look at a disk -- comes before
+   * or after the work rather than during it. It is always here, so the row's
+   * far end is a fixed thing you can learn.
+   */
+  push(MACHINE_KEY, null, null, [
+    { kind: 'machine', key: MACHINE_KEY, units: Math.min(PANE_UNITS.machine, units) },
+  ])
   const totalUnits = next
   /*
    * The far end is a resting place whether or not a pane begins there.
@@ -2399,7 +2457,53 @@ export const Overview = ({
                  * not uncovered yet is simply clipped.
                  */}
                 <div className="slot__inner" style={{ width: slot.width }}>
-                  {worktree === null ? (
+                  {/*
+                   * The two windows that belong to nobody: the machine's own
+                   * terminal at the end of the row, and the invitation shown
+                   * while nothing is open. Both are keyed by a literal, so they
+                   * are told apart by the key rather than by asking a cell what
+                   * it is not.
+                   */}
+                  {slot.key === MACHINE_KEY ? (
+                    <div
+                      className={
+                        here?.id === slot.key ? 'tile__pane--here slot__machine' : 'slot__machine'
+                      }
+                      data-pane={paneKey(MACHINE_KEY, 'machine')}
+                      onFocus={() => onActivate(MACHINE_KEY, 'machine')}
+                    >
+                      {((h) =>
+                        h === null ? null : stepHintFor(h.dir, h.pane, h.teaching))(
+                        hintFor(slot.key),
+                      )}
+                      <MachineTile
+                        session={machineSession(sessions)}
+                        fontSize={TERMINAL_FONT_SIZE}
+                        scroller={gridRef}
+                        focus={scrollTo?.id === slot.key && scrollTo.focus ? scrollTo.nonce : null}
+                        current={active?.id === MACHINE_KEY}
+                        onStart={onMachineTerminal}
+                        onReveal={() => onReveal(MACHINE_KEY, 'machine')}
+                      />
+                    </div>
+                  ) : slot.key === WELCOME_KEY ? (
+                    <div
+                      className={
+                        here?.id === slot.key ? 'tile__pane--here slot__machine' : 'slot__machine'
+                      }
+                      data-pane={paneKey(WELCOME_KEY, 'welcome')}
+                      onFocus={() => onActivate(WELCOME_KEY, 'welcome')}
+                    >
+                      {((h) =>
+                        h === null ? null : stepHintFor(h.dir, h.pane, h.teaching))(
+                        hintFor(slot.key),
+                      )}
+                      <WelcomeTile
+                        onOpenProject={onOpenProject}
+                        onGoToMachine={() => onReveal(MACHINE_KEY, 'machine')}
+                      />
+                    </div>
+                  ) : worktree === null ? (
                     <div
                       className={
                         here?.id === slot.key

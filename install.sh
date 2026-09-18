@@ -116,7 +116,7 @@ UPDATING=0
 if [ "$UPDATING" -eq 1 ]; then
   say "Will update $DIR to the newest version (fast-forward only), then build and restart it."
 else
-  say "Will clone $REPO_URL into $DIR, then build it."
+  say "Will clone $REPO_URL into $DIR, build it, ask you for a password and start it."
 fi
 if [ "$ASSUME_YES" -eq 0 ]; then
   # `/dev/tty` and not stdin, because under `curl | sh` stdin is the script.
@@ -190,7 +190,7 @@ if [ "$UPDATING" -eq 1 ]; then
   if [ -f cli/src/pull.js ]; then
     node cli/bin/swb.js pull
     say ""
-    say "Updated $DIR. From now on: pnpm pull"
+    say "Updated $DIR, and restarted on it. From now on: pnpm pull"
     exit 0
   fi
   pnpm build
@@ -202,17 +202,51 @@ else
   pnpm build
 fi
 
+# --- set a password, and start it -------------------------------------------
+# The server refuses to start without a password, so an install that stops at
+# the build leaves the last two steps as homework -- and the first of them is a
+# thing nobody can guess the shape of. `password` asks on /dev/tty itself, which
+# is the same terminal this script has already required for its own `Continue?`,
+# so it works under `curl | sh`. Where there is none -- `--yes` in CI, a
+# container -- it is skipped and the block at the end says what is left to do.
+STARTED=0
+if node cli/bin/swb.js password --status 2>/dev/null | grep -q '^password set'; then
+  say ""
+  say "A password is already set on this machine; keeping it."
+  STARTED=1
+elif (: < /dev/tty) 2>/dev/null; then
+  say ""
+  say "Set a password. It is asked for once per browser, and it is the whole"
+  say "boundary: anyone past it can run commands as you."
+  if node cli/bin/swb.js password; then
+    STARTED=1
+  fi
+fi
+
+if [ "$STARTED" -eq 1 ]; then
+  say ""
+  node cli/bin/swb.js start || STARTED=0
+fi
+
 say ""
-say "Installed in $DIR"
+if [ "$STARTED" -eq 1 ]; then
+  say "Switchboard is installed and running."
+else
+  say "Installed in $DIR. Two commands left:"
+  say ""
+  say "  cd $DIR"
+  say "  pnpm password     # the server will not start without one"
+  say "  pnpm start"
+fi
 say ""
-say "  cd $DIR"
-say "  pnpm password     # the server will not start without one"
-say "  pnpm start        # http://127.0.0.1:8083"
-say "  pnpm status"
-say "  pnpm stop"
+say "  pnpm status       is it up, and what name is it answering to"
+say "  pnpm stop         stops the server; the agents keep running in tmux"
+say "  pnpm restart      builds, then restarts on what it built"
+say "  pnpm pull         update to the newest version and restart on it"
+say "  pnpm password     change it; every browser is signed out"
 say ""
-say "To update later: pnpm pull -- it fetches, installs if needed, builds and"
-say "restarts."
+say "Open it, and open a project -- or clone one first in the terminal the"
+say "row ends with, which is a shell on this machine."
 say ""
-say "Nothing starts it at boot. Settings, if you need them, go in"
-say "  ~/.config/switchboard/config.json"
+say "It runs until you stop it, and nothing starts it at boot. Settings, if you"
+say "need them, go in ~/.config/switchboard/config.json"

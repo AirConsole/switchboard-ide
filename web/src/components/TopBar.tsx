@@ -4,7 +4,8 @@ import type { ProjectGroup } from '../App.js'
 import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
 import { UsageBars, useUsage } from './UsageBars.js'
 import { LinkIcon } from './LinkIcon.js'
-import { projectKey } from '../views/Overview.js'
+import { MACHINE_KEY, projectKey } from '../views/Overview.js'
+import { PanelIcon } from './PanelIcon.js'
 import { useStore } from '../store.js'
 import {
   queuedTodoCount,
@@ -43,6 +44,8 @@ export interface TopBarProps {
   onOpenProject: () => void
   /** Walk to this project's own pane in the row. */
   onRevealProject: (project: Project) => void
+  /** Go to the machine's own terminal, the window at the end of the row. */
+  onRevealMachine: () => void
   onWake: (worktreeId: string) => void
   /** Bring an awake worktree's window into view. */
   onReveal: (worktreeId: string) => void
@@ -342,6 +345,7 @@ export const TopBar = ({
   activeId,
   onOpenProject,
   onRevealProject,
+  onRevealMachine,
   onWake,
   onReveal,
 }: TopBarProps): React.ReactElement => {
@@ -484,6 +488,23 @@ export const TopBar = ({
       * words, and the glyph is the one every web application uses. Its own
       * hairline on the left, the mirror of `Open project`'s on the right.
       */}
+    {/*
+      * The machine itself, beside the way out and for the same reason: it is
+      * about the box rather than about any worktree, and this corner is the one
+      * the ladder never takes anything from. It lights while you are in that
+      * window, which is also the only mark the strip can make then -- no
+      * project is current when the window you are in belongs to none.
+      */}
+    <button
+      className={
+        activeId === MACHINE_KEY ? 'topbar__signout topbar__machine--on' : 'topbar__signout'
+      }
+      onClick={onRevealMachine}
+      title="A terminal on this machine"
+      aria-label="A terminal on this machine"
+    >
+      <PanelIcon panel="terminals" className="topbar__icon" />
+    </button>
     <button
       className="topbar__signout"
       onClick={() => void signOut()}

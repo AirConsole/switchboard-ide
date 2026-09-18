@@ -32,6 +32,14 @@ continues the conversation it was having rather than starting a new one. Which
 of the two it is belongs to the worktree, recorded on the machine it lives on,
 so every browser and every machine linking that one shows the same answer.
 
+**The row ends with the machine itself**: one shell in your home directory,
+belonging to no worktree and no project. It is where the work that comes before
+a worktree happens -- cloning the repository you are about to open, looking at a
+disk, killing something -- and before it existed a fresh install had nowhere to
+type at all, since every other terminal here belongs to a worktree. With nothing
+open the row is an invitation to open a project and that terminal beside it,
+which is what the invitation points at.
+
 The row of windows is a strip you scroll along, and it is laid out in **units**
 of half a pane. Claude is two units, and so is a terminal or the todo list. The
 files panel is the one that changes size: **one unit while it is only its tree**,
@@ -66,6 +74,11 @@ pnpm test:watch  # the same, staying open
 pnpm coverage    # with a per-file table
 pnpm ensure-native   # rebuild node-pty if a Node upgrade left it ABI-stale
 ```
+
+`install.sh` runs the first three of these for you: it installs what is missing,
+builds, asks for a password -- the server will not start without one -- and
+starts it. What it cannot do is prompt where there is no terminal (`--yes` under
+`curl | sh`, CI), and there it prints the two commands that are left instead.
 
 **`restart` builds and `start` does not.** Restart is how you ship a change;
 start is how you bring something up. A failed build restarts nothing, so what is

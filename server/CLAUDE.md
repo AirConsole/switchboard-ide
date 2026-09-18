@@ -238,6 +238,33 @@ Anything destructive checks first and in the right order: `removeWorktree`
 refuses a dirty worktree *before* killing its sessions, so a refusal costs
 nothing.
 
+## The machine's own terminal
+
+One shell that belongs to no worktree: `POST /api/sessions` with the reserved
+worktree id `machine` (`MACHINE_WORKTREE_ID`, in `shared/`) skips
+`workspace.resolve` entirely and creates with `cwd` of `homedir()` and an empty
+`projectId`. Everything else in the engine already worked: it never looks a
+worktree up from a session, the tmux name is decorative, attention and readiness
+read only the screen, and the dispatcher can never target it because a todo can
+only be made against a worktree that resolves.
+
+**A reserved literal rather than a null, and that is the whole design.**
+`parseMeta` refuses a session whose `@swb_meta` has no `worktreeId`, and a
+refused session is never adopted after a restart -- its tmux session runs on,
+unreachable, for the life of the machine. Keeping the field a required string
+also keeps `Session.worktreeId` non-optional on both sides of a wire that is
+versioned separately. The literal cannot collide: `idFor` hashes paths into
+`wt-<hex>`, and `remote/scope.ts` leaves an unprefixed word alone.
+
+The empty `projectId` is deliberate too: it is what `killForProject` matches on,
+so closing a project can never take this terminal with it, and `killForWorktree`
+cannot match `machine` either.
+
+**A peer's machine terminal is not merged**, and that is not an oversight:
+`localTo` filters a peer's sessions by its worktree ids, so a linked machine's
+own terminal stays on that machine. The window is about the box serving the
+page.
+
 ## Files
 
 `files.ts` is the one place that reads or writes inside a worktree, and three
