@@ -412,6 +412,16 @@ export interface UiState {
    * traffic: no PATCH per arrow key for the life of the install.
    */
   stepsTaken: number
+  /**
+   * The window you were in -- a worktree's id, a project pane's key, or the
+   * machine's -- so a reload lands where you left off rather than at the start
+   * of the row with nothing lit. Null before anything has been navigated to.
+   *
+   * Written as you move, on the same debounced write as the rest of this, so
+   * a step taken a moment before a reload can be lost; the row just starts one
+   * window back.
+   */
+  activeWorktree: string | null
 }
 
 export const defaultUiState = (): UiState => ({
@@ -423,6 +433,7 @@ export const defaultUiState = (): UiState => ({
   openFilesByWorktree: {},
   markdownPreview: true,
   stepsTaken: 0,
+  activeWorktree: null,
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */

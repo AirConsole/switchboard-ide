@@ -173,6 +173,7 @@ export const uiShape = z
      * and not a negative one.
      */
     stepsTaken: z.number().int().min(0),
+    activeWorktree: z.string().nullable(),
   })
   .partial()
 

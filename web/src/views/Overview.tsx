@@ -1893,15 +1893,19 @@ export const Overview = ({
    * the tile is a render behind.
    */
   const answered = useRef<number | null>(null)
+  /* The unit the row is at, or headed for -- see "Keep your place" below. */
+  const unitRef = useRef(0)
   /*
    * The row is gliding somewhere it was sent, rather than being swiped.
    *
    * A smooth scroll fires `scroll` like a swipe does, and a tab click that
    * crosses three windows would otherwise light each of them on the way --
    * the tab you clicked going dark and coming back. Cleared when the row comes
-   * to rest, and by a finger, which takes the row back from the glide.
+   * to rest, and by a finger or a wheel, which take the row back from the glide.
    */
   const steering = useRef(false)
+  /* Where the last glide was sent, in px; NaN once a hand has taken the row. */
+  const sentTo = useRef(Number.NaN)
   useEffect(() => {
     if (target === undefined || width === 0 || scrollTo === null) return
     if (answered.current === scrollTo.nonce) return
@@ -1920,8 +1924,42 @@ export const Overview = ({
     const tile = { at: target.at, units: target.units }
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, restRef.current)
+    const aim = offset * pitch
     steering.current = true
-    grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
+    sentTo.current = aim
+    /*
+     * Where the row is headed is where it is, as far as keeping your place
+     * across a resize goes. The page's first request lands in the same commit
+     * as the row's first width, and "Keep your place" below runs after this
+     * and put the row back at the unit it had been at: measured, `two-terms`
+     * aimed at 1191px and the row stayed at 0.
+     */
+    unitRef.current = offset
+    grid.scrollTo({ left: aim, behavior: 'smooth' })
+    /*
+     * And again once the row is wide enough to get there, if it is not yet.
+     *
+     * A scroll cannot go past the row's width *at the moment it is sent*, and
+     * the page's first request -- back to the window you were in before a
+     * reload -- is made while the windows are still laying out. Measured: sent
+     * to 3176px with 1589px of row to scroll, it stopped at 1589, the machine's
+     * window lit and focused and off screen. A frame at a time for a second
+     * and a half at most, and not at all once a finger or a wheel has taken
+     * the row, or another request has sent it somewhere else.
+     */
+    if (grid.scrollWidth - grid.clientWidth < aim - 2) {
+      let frames = 0
+      const wait = (): void => {
+        if (sentTo.current !== aim) return
+        if (grid.scrollWidth - grid.clientWidth >= aim - 2) {
+          steering.current = true
+          grid.scrollTo({ left: aim, behavior: 'smooth' })
+          return
+        }
+        if (++frames < 90) requestAnimationFrame(wait)
+      }
+      requestAnimationFrame(wait)
+    }
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
   }, [scrollTo, target, pitch, width, units])
@@ -1962,7 +2000,15 @@ export const Overview = ({
     if (!grid || width === 0) return
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, rest)
+    /*
+     * Already on its way: the focus that fired this was handed over by a
+     * request that is still waiting for the row to be wide enough -- see the
+     * request above -- and cancelling that wait left `alpha` lit one pixel
+     * past the screen's edge after a reload.
+     */
+    if (offset * pitch === sentTo.current) return
     steering.current = true
+    sentTo.current = Number.NaN
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
   }
 
@@ -2153,7 +2199,15 @@ export const Overview = ({
     [pitch, width],
   )
   const settleActive = useCallback((): void => {
+    /*
+     * A glide something asked for has already said where you are. Reading it
+     * again off the row at rest second-guessed it: after a reload back to the
+     * machine's window, the row came to rest while still laying out with only
+     * `alpha` wholly on screen, and `alpha` took the keyboard.
+     */
+    const sent = steering.current
     steering.current = false
+    if (sent) return
     const grid = gridRef.current
     if (!grid || pitch <= 0) return
     /*
@@ -2390,7 +2444,6 @@ export const Overview = ({
    * tile without having scrolled there. The spot index is what survives; the
    * offset is recomputed from it.
    */
-  const unitRef = useRef(0)
   useEffect(() => {
     const grid = gridRef.current
     if (!grid || width === 0) return
@@ -2467,6 +2520,8 @@ export const Overview = ({
           ? (stops.find((at) => at > from + 0.01) ?? stops[stops.length - 1] ?? 0)
           : ([...stops].reverse().find((at) => at < from - 0.01) ?? stops[0] ?? 0)
       aim = to
+      steering.current = false
+      sentTo.current = Number.NaN
       grid.scrollTo({ left: to * pitch })
     }
     grid.addEventListener('wheel', onWheel, { passive: false })
@@ -2510,6 +2565,7 @@ export const Overview = ({
         onScrollEnd={settleActive}
         onTouchStart={() => {
           steering.current = false
+          sentTo.current = Number.NaN
         }}
       >
         {/*
