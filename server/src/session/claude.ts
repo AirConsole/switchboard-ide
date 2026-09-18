@@ -191,6 +191,20 @@ const INJECTED = /^\s*<[a-z][a-z0-9-]*>/i
 const PLAN_FEEDBACK =
   /^The user doesn['\u2019]t want to proceed with this tool use\.[\s\S]*?\bthe user said:\s*([\s\S]+)$/i
 
+/**
+ * The wrapper Claude Code puts around a paste, which is not something anyone
+ * typed.
+ *
+ * A pasted prompt is recorded as `<pasted_content id="7b6d">` ... `</pasted_content
+ * id="7b6d">` -- the closing tag carries the id too -- while its `last-prompt`
+ * beside it is the bare text. The user record is what this reads, so a window
+ * showed the tags around the words; measured in the worktree the fix was
+ * written in. Only the tags go: the paste is the prompt, and anything typed
+ * around it is part of it. `INJECTED` would not have caught it either way,
+ * because `_` and the attribute are both outside the shape it tests.
+ */
+const PASTE_TAG = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g
+
 const readCommand = (content: string): string | null => {
   const name = COMMAND.exec(content)
   if (!name) return null
@@ -256,11 +270,13 @@ const markOf = (line: string): Mark => {
     }
     return null
   }
-  if (typeof content !== 'string' || content.trim() === '') return null
-  const command = readCommand(content)
+  if (typeof content !== 'string') return null
+  const said = content.replace(PASTE_TAG, '')
+  if (said.trim() === '') return null
+  const command = readCommand(said)
   if (command !== null) return { kind: 'prompt', text: command }
-  if (INJECTED.test(content)) return null
-  return { kind: 'prompt', text: content }
+  if (INJECTED.test(said)) return null
+  return { kind: 'prompt', text: said }
 }
 
 /**

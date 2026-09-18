@@ -148,6 +148,26 @@ describe('lastPrompt', () => {
     expect(await lastPrompt(cwd)).toBe('/clear')
   })
 
+  it('reads a paste without the tags Claude Code wraps it in', async () => {
+    /*
+     * The user record carries `<pasted_content id="…">` around the paste, with
+     * the id on the closing tag too; a window showed the tags. Verbatim from a
+     * live transcript, and a second paste with words typed around it.
+     */
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays(
+        '\n\n<pasted_content id="7b6d">\nPressing on the top bar should collapse the panels\n</pasted_content id="7b6d">\n',
+      ),
+    ])
+    expect(await lastPrompt(cwd)).toBe('Pressing on the top bar should collapse the panels')
+    const typed = freshCwd()
+    await writeTranscript(typed, 'a.jsonl', [
+      userSays('fix this: <pasted_content id="a1">TypeError: x</pasted_content id="a1"> please'),
+    ])
+    expect(await lastPrompt(typed)).toBe('fix this: TypeError: x please')
+  })
+
   it('skips the machinery the harness records as user records', async () => {
     /*
      * A `<task-notification>` was read as a prompt, so a worktree's bar showed
