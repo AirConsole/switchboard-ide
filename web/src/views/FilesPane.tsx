@@ -1,5 +1,11 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { mediaTypeOf, type FileEntry, type FileHit, type FilesMode } from '@switchboard/shared'
+import {
+  mediaKindOf,
+  mediaTypeOf,
+  type FileEntry,
+  type FileHit,
+  type FilesMode,
+} from '@switchboard/shared'
 import {
   ChangesList,
   CommitsList,
@@ -568,43 +574,193 @@ const fileSize = (bytes: number): string => {
 }
 
 /**
- * A file the browser draws itself, fitted to the pane.
+ * A length a person reads, for the line under something that plays.
  *
- * Scaled down and never up: `max-width`/`max-height` at 100% with
- * `object-fit: contain` leaves a 16×16 favicon at 16×16 and brings a 4000px
- * screenshot down to the pane, which is the rule the reader would state --
- * blowing an icon up to fill a column would be inventing detail that is not in
- * the file.
+ * Guarded rather than trusted: `duration` is `NaN` until the metadata lands and
+ * `Infinity` for anything open-ended, and a caption reading `Infinity:NaN` is
+ * how you find that out the hard way.
+ */
+const playLength = (seconds: number): string | null => {
+  if (!Number.isFinite(seconds) || seconds < 0) return null
+  const whole = Math.round(seconds)
+  const minutes = Math.floor(whole / 60) % 60
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  if (whole >= 3600) return `${Math.floor(whole / 3600)}:${pad(minutes)}:${pad(whole % 60)}`
+  return `${minutes}:${pad(whole % 60)}`
+}
+
+/**
+ * One player at a time, across the whole row.
  *
- * The line underneath is the part a picture cannot say: its real dimensions,
- * which is how you know whether what you are looking at is the whole of it, and
- * how big the file is. It is the interface talking, so it is in the interface's
- * own face and the dim grey the tree's notes use.
+ * Two windows both playing is two soundtracks over each other, and the row is
+ * built to have several windows open at once -- so starting one pauses the
+ * other, the way every media player on a desktop behaves. A module-level ref
+ * rather than anything in the store: it is about two DOM elements, not about
+ * state anyone reloads.
+ */
+let playing: HTMLMediaElement | null = null
+
+const soleParticipant = (element: HTMLMediaElement): void => {
+  if (playing !== null && playing !== element) playing.pause()
+  playing = element
+}
+
+/**
+ * A file the browser shows itself, fitted to the pane.
+ *
+ * Four kinds, one component, because what they share is everything except the
+ * element: the URL with its rev in it, the caption underneath, the failure
+ * sentence, and the rule that this pane is a place you look rather than type.
+ *
+ * A picture and a video are scaled down and never up -- `max-width`/`max-height`
+ * at 100% with `object-fit: contain` leaves a 16×16 favicon at 16×16 and brings
+ * a 4000px screenshot down to the pane, which is the rule the reader would
+ * state; blowing an icon up to fill a column would be inventing detail that is
+ * not in the file. A PDF is the exception and takes the whole pane: it is a
+ * document, not a picture of one.
+ *
+ * The line underneath is the part the file cannot say about itself: its real
+ * dimensions, how long it runs, and how big it is. It is the interface talking,
+ * so it is in the interface's own face and the dim grey the tree's notes use.
  */
 const MediaView = ({ media }: { media: MediaFile }): React.ReactElement => {
+  const kind = mediaKindOf(media.path) ?? 'image'
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
-  const [failed, setFailed] = useState(false)
-  // A new file, or the same one rewritten: both arrive as a new URL, and both
-  // mean the dimensions on screen belong to the picture that is going away.
+  const [seconds, setSeconds] = useState<number | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
+  /*
+   * The file the element is actually on, which is not always the newest URL.
+   *
+   * The rev is in the URL and the poll swaps it whenever the file changes,
+   * which for a picture is the documented repaint -- it is how an image an
+   * agent regenerates comes right on screen. For something that is *playing*
+   * the same swap is unusable: every touch of the file restarts it from zero.
+   * So a player keeps the URL it started, and takes the new one when it is back
+   * at the beginning and paused.
+   *
+   * **The path is held with it, and that is not decoration.** The hold is about
+   * one file being rewritten under you; a *different* file is always adopted at
+   * once, however busy the element is. Keyed on the URL alone it was not:
+   * clicking another video while one played left the first on screen, captioned
+   * with the first one's dimensions and the second one's name, saying the file
+   * had changed on disk when nothing had.
+   */
+  const [shown, setShown] = useState({ url: media.url, path: media.path })
+  /*
+   * One ref for either element: a `<video>` and an `<audio>` are both
+   * `HTMLMediaElement`, and everything this asks of them -- paused, position,
+   * pause() -- is on that half of the interface.
+   */
+  const player = useRef<HTMLVideoElement & HTMLAudioElement | null>(null)
+  const plays = kind === 'video' || kind === 'audio'
+  const stale = shown.url !== media.url
+  /*
+   * Bumped when the player stops, because nothing else would ask again.
+   *
+   * The effect below is the only thing that adopts a new URL, and its inputs
+   * are all props -- so a file rewritten *during* playback was held, correctly,
+   * and then held for ever: pausing changes no prop, the poll has already
+   * settled on the new URL, and there is no render to re-run the check. The
+   * element's own `pause` and `ended` are the missing signal.
+   */
+  const [settled, setSettled] = useState(0)
+  const restAgain = (): void => setSettled((n) => n + 1)
   useEffect(() => {
+    const element = player.current
+    /*
+     * Held while it is being watched, and let go when it is not: paused at the
+     * beginning, or played to the end. A pause in the middle is somebody
+     * looking at a frame, and swapping the file under them would take it away.
+     */
+    const resting = element === null || (element.paused && (element.currentTime === 0 || element.ended))
+    const busy = plays && shown.path === media.path && !resting
+    if (busy) return
+    setShown({ url: media.url, path: media.path })
     setNatural(null)
-    setFailed(false)
-  }, [media.url])
+    setSeconds(null)
+    setFailed(null)
+  }, [media.url, media.path, plays, shown.path, settled])
+
+  /*
+   * What a player says when it cannot play something. `.mov` is in the table on
+   * these terms: QuickTime holding H.264 plays and holding ProRes does not, and
+   * the difference has to be sayable rather than a black rectangle.
+   */
+  const unplayable = (element: HTMLMediaElement): void =>
+    setFailed(
+      element.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? 'This format cannot be played here.'
+        : 'This file could not be played.',
+    )
+
+  const caption = [
+    natural === null ? null : `${natural.w} × ${natural.h}`,
+    seconds === null ? null : playLength(seconds),
+    fileSize(media.size),
+  ].filter((part) => part !== null)
 
   return (
-    <div className="files__media">
-      {failed ? (
+    <div className={kind === 'pdf' ? 'files__media files__media--page' : 'files__media'}>
+      {failed !== null ? (
         /*
-         * The extension said the browser could draw this and it could not:
-         * a `.png` that is not one, or a truncated download. Said plainly,
-         * because the alternative is the browser's own broken-image glyph,
-         * which reads as the panel being broken.
+         * The extension said the browser could show this and it could not: a
+         * `.png` that is not one, a truncated download, a codec this build does
+         * not carry. Said plainly, because the alternative is the browser's own
+         * broken-image glyph, which reads as the panel being broken.
          */
-        <p className="files__note">This file could not be shown.</p>
+        <p className="files__note">{failed}</p>
+      ) : kind === 'video' ? (
+        <video
+          className="files__video"
+          ref={player}
+          src={shown.url}
+          /*
+           * `metadata` and never `auto`: opening a file is not asking to
+           * download all of it. It is also the first thing that proves the
+           * range handler works -- an MP4 that is not "faststart" keeps its
+           * index at the end, so the opening move is a request for the tail.
+           */
+          preload="metadata"
+          controls
+          playsInline
+          onPlay={(event) => soleParticipant(event.currentTarget)}
+          onPause={restAgain}
+          onEnded={restAgain}
+          onLoadedMetadata={(event) => {
+            setNatural({
+              w: event.currentTarget.videoWidth,
+              h: event.currentTarget.videoHeight,
+            })
+            setSeconds(event.currentTarget.duration)
+          }}
+          onError={(event) => unplayable(event.currentTarget)}
+        />
+      ) : kind === 'audio' ? (
+        <audio
+          className="files__audio"
+          ref={player}
+          src={shown.url}
+          preload="metadata"
+          controls
+          onPlay={(event) => soleParticipant(event.currentTarget)}
+          onPause={restAgain}
+          onEnded={restAgain}
+          onLoadedMetadata={(event) => setSeconds(event.currentTarget.duration)}
+          onError={(event) => unplayable(event.currentTarget)}
+        />
+      ) : kind === 'pdf' ? (
+        /*
+         * A frame, because the page's own policy says `object-src 'none'` and
+         * an `<embed>` is exactly that. It carries no error event of any kind
+         * -- `onLoad` fires on a blank frame just as happily -- so a PDF that
+         * will not render is silently an empty box, which is why the line
+         * underneath always offers to open it in a tab.
+         */
+        <iframe className="files__pdf" src={shown.url} title={media.path} />
       ) : (
         <img
           className="files__image"
-          src={media.url}
+          src={shown.url}
           alt={media.path}
           onLoad={(event) =>
             setNatural({
@@ -612,12 +768,22 @@ const MediaView = ({ media }: { media: MediaFile }): React.ReactElement => {
               h: event.currentTarget.naturalHeight,
             })
           }
-          onError={() => setFailed(true)}
+          onError={() => setFailed('This file could not be shown.')}
         />
       )}
       <p className="files__media-note">
-        {natural === null ? '' : `${natural.w} × ${natural.h} · `}
-        {fileSize(media.size)}
+        {caption.join(' · ')}
+        {kind === 'pdf' && (
+          <>
+            {' · '}
+            <a className="files__open" href={shown.url} target="_blank" rel="noreferrer noopener">
+              Open in a new tab
+            </a>
+          </>
+        )}
+        {/* The file moved while you were watching it, and the pane deliberately
+            did not follow. Said, rather than left to be wondered about. */}
+        {stale && ' · this file has changed on disk'}
       </p>
     </div>
   )
@@ -1124,10 +1290,23 @@ export const FilesPane = ({
    * fetch would let the search box take the keyboard, you start typing, and the
    * editor mount a beat later and take it back mid-word.
    *
-   * If the target refuses -- a binary file, or one too large to open -- focus
-   * stays where it was. That is survivable because the stepper listens on the
-   * document: a pane that fails to take the keyboard never traps you, and the
-   * next Cmd+arrow still steps.
+   * **Something has to take it, whatever is showing.** This used to say that a
+   * target which refuses -- a binary file, or one too large to open -- leaves
+   * the keyboard where it was, and that the stepper listening on the document
+   * made that survivable. It does not: the stepper starts from where the
+   * keyboard *is*, so a step that lands nowhere computes the same step again on
+   * the next press, for ever. Measured on a window showing a 3320 KB file --
+   * Cmd+Right into it worked, and then did nothing at all however often it was
+   * pressed, while Cmd+Left still walked away: a wall in one direction, which
+   * is the report this fixed. At 390px, where the tree is not drawn, a picture
+   * did the same one press later -- the row moved and the keyboard stayed in
+   * the window it had left.
+   *
+   * So the panel always answers: the editor or the rendered page where there is
+   * one, the file's own row in the tree where there is not, and the content box
+   * itself where there is no tree either. The box is `tabIndex={-1}` for it,
+   * exactly as `.md` is, and draws no ring of its own -- the pane already
+   * underlines where you are.
    */
   const wantsEditorRef = useRef(false)
   /*
@@ -1143,7 +1322,9 @@ export const FilesPane = ({
    * shown rendered, has nothing to type into, and handing it the keyboard took
    * the keyboard off the one thing in the panel that does something with keys:
    * the tree. So arriving at one lands on its row instead, where ↑ and ↓ go on
-   * to the next file -- and where the tree is not drawn, on nothing at all.
+   * to the next file -- and where the tree is not drawn, on the content box,
+   * which is then the only thing in the panel and cannot be taking the keys
+   * from anything.
    *
    * Decided from the path, like the rest of this, and not from what the read
    * answered: `mediaTypeOf` is the server's own table, in shared/, so the
@@ -1151,14 +1332,14 @@ export const FilesPane = ({
    */
   const viewOnly = (path: string): boolean =>
     path !== '' && (mediaTypeOf(path) !== undefined || (markdownPreview && isMarkdown(path)))
-  const arrivalRef = useRef<'editor' | 'tree' | 'search' | 'none'>('search')
+  const arrivalRef = useRef<'editor' | 'tree' | 'search' | 'box'>('search')
   arrivalRef.current = !wantsEditorRef.current
     ? 'search'
     : !viewOnly(files.path)
       ? 'editor'
       : sideShown
         ? 'tree'
-        : 'none'
+        : 'box'
   useEffect(() => {
     if (focus === null) return
     const bump = (n: number | null): number => (n ?? 0) + 1
@@ -1173,10 +1354,38 @@ export const FilesPane = ({
         setCursor(files.path)
         setKeyFocus((n) => n + 1)
         return
-      case 'none':
+      case 'box':
+        fileRef.current?.focus()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
+
+  /*
+   * A request for the file that nothing will ever answer.
+   *
+   * Arrival is decided from the path, before the read has come back -- which is
+   * what stops the search box taking the keyboard and the editor snatching it
+   * back a beat later. But *refused* is not something a path can say: it is the
+   * read's answer, and by then the editor the request was addressed to will
+   * never mount. The request stayed outstanding and the keyboard never moved,
+   * which is the wall described above.
+   *
+   * It can be answered from the fetch without re-creating the race it was
+   * written against, because there is nothing left to race: a refusal means no
+   * editor and no page is coming. So the panel lands it itself -- on the file's
+   * row, or on the box where no tree is drawn.
+   */
+  useEffect(() => {
+    if (editorFocusNow === null || files.refusal === null) return
+    if (sideShown) {
+      setCursor(files.path)
+      setKeyFocus((n) => n + 1)
+      return
+    }
+    fileRef.current?.focus()
+    settleEditorFocus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorFocusNow, files.refusal, sideShown])
 
   useEffect(() => {
     if (searchFocus === null) return
@@ -1582,8 +1791,19 @@ export const FilesPane = ({
       return <p className="files__note">No uncommitted changes to this file.</p>
     }
     if (changes.patch === null) return <></>
-    // A commit touches any number of files and the hunks never say which.
-    return <Diff patch={changes.patch} showFiles={mode === 'commits'} />
+    /*
+     * A commit touches any number of files and the hunks never say which.
+     *
+     * The scroller is the panel's, like `.files__cm` and `.files__media`: a
+     * patch is as long as it is, and every other thing this slot holds brings
+     * its own -- CodeMirror's, and `.md`'s -- which is how this one came to have
+     * none. See `.files__diff`.
+     */
+    return (
+      <div className="files__diff">
+        <Diff patch={changes.patch} showFiles={mode === 'commits'} />
+      </div>
+    )
   }
 
   return (
@@ -1721,6 +1941,14 @@ export const FilesPane = ({
         <div
           className="files__file"
           ref={fileRef}
+          /*
+           * The landing of last resort, so a step into this panel always has
+           * somewhere to arrive -- see the arrival rule above. `-1` for the
+           * reason `.md` uses it: reachable when the row hands over the
+           * keyboard, and not a stop on the Tab walk, since what is worth
+           * tabbing to is inside it.
+           */
+          tabIndex={-1}
           onKeyDown={(event) => {
             /*
              * Escape leaves the file for its row in the list. Only if nothing

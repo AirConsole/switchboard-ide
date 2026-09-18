@@ -49,7 +49,9 @@ describe('talking to a peer', () => {
     const peer = new PeerClient(urlOf(redirecting), 'LINKTOKEN')
     await expect(peer.request('GET', '/api/snapshot')).rejects.toBeInstanceOf(PeerUnreachable)
     await expect(peer.login('hunter2')).rejects.toBeInstanceOf(PeerUnreachable)
-    await expect(peer.requestRaw('/api/worktrees/w/raw')).rejects.toBeInstanceOf(PeerUnreachable)
+    await expect(peer.streamRaw('/api/worktrees/w/raw', undefined)).rejects.toBeInstanceOf(
+      PeerUnreachable,
+    )
     expect(seen).toEqual([])
   })
 

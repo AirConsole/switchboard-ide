@@ -12,7 +12,7 @@ import type {
   FileSaved,
   FileUnchanged,
 } from '@switchboard/shared'
-import { mediaTypeOf } from '@switchboard/shared'
+import { mediaKindOf, mediaTypeOf } from '@switchboard/shared'
 import { config } from './config.js'
 import { HttpError } from './http-error.js'
 import { parseStatus } from './git/changes.js'
@@ -501,8 +501,10 @@ const decodeText = (buffer: Buffer): string | null => {
 
 // `mediaTypeOf` and its table live in shared/, because the browser has to know
 // the same answer before the read comes back -- see media.ts there. Re-exported
-// so what this module answers for does not change shape.
-export { mediaTypeOf }
+// so what this module answers for does not change shape. `mediaKindOf` rides
+// along for the tests that hold the two to each other; nothing here asks it,
+// because which element shows a file is the panel's question.
+export { mediaTypeOf, mediaKindOf }
 
 /**
  * Where a media file is on disk, and what to serve it as.

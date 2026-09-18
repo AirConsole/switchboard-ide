@@ -31,6 +31,32 @@ peer.all('/api/*', async (request, reply) => {
   }
   return { worktreeId: 'wt-peer', id: 'wt-peer' }
 })
+/*
+ * The peer's own `/raw`, honouring Range the way the real one does. Registered
+ * before the wildcard above so the specific path wins.
+ */
+const BYTES = 'abcdefghij'
+peer.get('/api/worktrees/:id/raw', async (request, reply) => {
+  asked.push({ method: request.method, url: request.url, body: request.headers.range ?? null })
+  const range = /^bytes=(\d+)-(\d*)$/.exec(String(request.headers.range ?? ''))
+  void reply
+    .type('video/mp4')
+    .header('accept-ranges', 'bytes')
+    .header('content-security-policy', "default-src 'none'; sandbox")
+    .header('cache-control', 'no-store')
+  if (range === null) return reply.header('content-length', BYTES.length).send(BYTES)
+  const start = Number(range[1])
+  if (start >= BYTES.length) {
+    return reply.code(416).header('content-range', `bytes */${BYTES.length}`).send()
+  }
+  const end = range[2] === '' ? BYTES.length - 1 : Number(range[2])
+  return reply
+    .code(206)
+    .header('content-range', `bytes ${start}-${end}/${BYTES.length}`)
+    .header('content-length', end - start + 1)
+    .send(BYTES.slice(start, end + 1))
+})
+
 await peer.listen({ host: '127.0.0.1', port: 0 })
 const peerUrl = `http://127.0.0.1:${(peer.server.address() as AddressInfo).port}`
 const key = hostKeyFor(peerUrl)
@@ -59,6 +85,9 @@ beforeAll(async () => {
   registerProxy(app, workspace)
   // Stand-ins for the real routes, so "handled locally" is observable.
   app.get('/api/worktrees/:id/tree', async () => ({ here: true }))
+  // The raw route has to exist here too, or the hook never learns which route
+  // this is and a remote file is answered as if it were JSON.
+  app.get('/api/worktrees/:id/raw', async () => ({ here: true }))
   app.post('/api/worktrees', async () => ({ here: true }))
   app.get('/api/snapshot', async () => ({ here: true }))
   app.get('/api/browse', async () => ({ here: true }))
@@ -244,6 +273,53 @@ describe('which machine a request goes to', () => {
     const servers = await call('/api/servers', 'POST', { id: `${key}~anything`, baseUrl: 'http://x' })
     expect(servers.asked).toEqual([])
     expect(servers.body).toEqual({ here: true })
+  })
+
+  /*
+   * A file on a linked machine is the same file, and that used to be false for
+   * anything big: the reply was buffered whole under a 32MB ceiling, so a video
+   * would not play and -- worse -- a file past the cap could not even be
+   * downloaded, answering "that server sent too much" for exactly the files
+   * worth fetching. It streams now, and the browser's Range goes with it.
+   */
+  it('carries a range to the peer and its answer back', async () => {
+    asked.length = 0
+    const res = await app.inject({
+      url: `/api/worktrees/${key}~wt-peer/raw?path=clip.mp4`,
+      headers: { range: 'bytes=2-4' },
+    })
+    expect(asked[0]?.body).toBe('bytes=2-4')
+    expect(res.statusCode).toBe(206)
+    expect(res.body).toBe('cde')
+    expect(res.headers['content-range']).toBe('bytes 2-4/10')
+    expect(res.headers['content-length']).toBe('3')
+  })
+
+  it('forwards the peer’s own headers, policy included', async () => {
+    /*
+     * A proxied raw reply set no policy of its own, so `headers.ts` gave it the
+     * *page* CSP -- remote file bytes served looser than local ones, for as
+     * long as linking has existed. The peer states it per file (a PDF is not an
+     * image), so the peer's answer is the one that travels.
+     */
+    const res = await app.inject({ url: `/api/worktrees/${key}~wt-peer/raw?path=clip.mp4` })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe('abcdefghij')
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; sandbox")
+    expect(res.headers['accept-ranges']).toBe('bytes')
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.headers['content-type']).toContain('video/mp4')
+  })
+
+  it('passes a 416 through as an answer rather than an error', async () => {
+    // A range past the end is a fact about the range, not a broken machine --
+    // and it carries the length the player needs to recover.
+    const res = await app.inject({
+      url: `/api/worktrees/${key}~wt-peer/raw?path=clip.mp4`,
+      headers: { range: 'bytes=99-' },
+    })
+    expect(res.statusCode).toBe(416)
+    expect(res.headers['content-range']).toBe('bytes */10')
   })
 
   it('says which machine did not answer, not that this one broke', async () => {

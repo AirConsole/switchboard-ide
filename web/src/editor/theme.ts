@@ -131,7 +131,7 @@ export const editorTheme = EditorView.theme(
       fontFamily: 'inherit',
       lineHeight: '1.35',
       overflow: 'auto',
-      // A content scroller, so it shows a thin scrollbar like `.git__diff`.
+      // A content scroller, so it shows a thin scrollbar like `.files__diff`.
       scrollbarWidth: 'thin',
     },
     '.cm-content': { padding: '0', caretColor: '#8ab4f8' },

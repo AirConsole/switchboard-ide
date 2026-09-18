@@ -944,6 +944,38 @@ line under it carries the real dimensions and the file size, which is the one
 thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
 table: it is text, it decodes, and editing it is the reason to open it.
 
+**And what plays, plays: a video, a sound file, a PDF.** Same route, same table,
+same rule about the size cap — and `mediaKindOf` says which element, derived
+from the type so there is never a second table to disagree. What let them in was
+`Range`, which the table's own comment had named as the blocker years before it
+existed: a 200 with the whole file plays from the start and cannot be seeked,
+and worse, an MP4 that is not "faststart" keeps its index at the *end*, so the
+browser's opening move is a suffix range and a server that cannot answer one
+shows no picture at all. `server/src/range.ts` is that handler.
+
+Four things in the panel are the difference between showing a file and playing
+one:
+
+- **A player is not restarted under you.** The rev in the URL changes whenever
+  the file does, and swapping `src` mid-playback jumps back to zero — so a
+  `<video>` or `<audio>` keeps the URL it started on until it is paused at the
+  beginning, and the caption says *this file has changed on disk* meanwhile. For
+  a picture the swap is still the documented repaint.
+- **One player at a time**, across the whole row, because several windows are
+  open at once by design and two soundtracks over each other is nobody's
+  intention.
+- **`preload="metadata"`, never `auto`.** Opening a file is not asking to
+  download all of it; it is also what fills the caption's dimensions and length.
+- **A PDF is a frame, and a frame cannot report failure** — no error event, and
+  `onLoad` fires on a blank one just as happily. So the line underneath always
+  offers *Open in a new tab*, which is the way out of a viewer that did not
+  render and the answer for a browser without one.
+
+A PDF also costs the keyboard while it has focus: the viewer swallows every key,
+so Cmd+arrow and Escape do not reach the row until you click out of it. Arrival
+never lands there (`viewOnly` covers every media type), so it only happens if
+you click into the page — the bargain any embedded viewer makes.
+
 **A Markdown file can be read rather than edited.** `Preview` in the bar swaps
 the editor for `views/Markdown`, and the switch is `ui.markdownPreview` -- one
 boolean for the whole IDE, not one per file or per worktree, because what it
@@ -1058,6 +1090,23 @@ Six things in it are load-bearing:
   downward wheel a pane did not want, so scrolling a file slid the windows
   sideways. The row no longer answers to a downward wheel at all -- see below --
   but the flex column is still what makes the file scroll.)
+- **Everything that column holds brings its own scroller, and the patch had
+  none.** `.files__file` bounds its children and clips nothing itself, so each
+  thing shown in it scrolls itself: CodeMirror's `.cm-scroller`, `.md` for a
+  rendered page, and now `.files__diff` for a patch. That last one was missing
+  for as long as the two panels have been one -- the box that used to hold it,
+  `.git__diff`, stayed in the stylesheet when the git panel went and nothing
+  rendered it again. Measured at a 898px pane: a 10,563px patch, with
+  `.files__file` and `.files` at `overflow: visible` and `.tile__pane--files` at
+  `hidden`, so 600 changed lines were drawn and 22 could be read, the rest
+  clipped away with nothing in the chain able to scroll. Both modes had it, and
+  both are fixed by the one box. The scroller cannot be `.diff` itself: that
+  carries `min-width: max-content` so long lines scroll rather than wrap, and a
+  box as wide as its content cannot clip it -- so the scroller is the wrapper
+  and the max-content box is what it scrolls. Measured after: 898 over 10,569
+  vertically and 678 over 3,334 with a 425-character line, the end of the patch
+  reachable in both modes, and `.grid` unmoved at 358 throughout -- and at
+  390px, 722 over 5,325 with the row still where the swipe left it.
 - **The tree must stay a scroller** (`overflow-y: auto`), which is what lets a
   wheel over it scroll the tree rather than falling through to nothing.
 - **The error notice is in the sidebar, not in the content pane.** A tree that
@@ -2052,9 +2101,43 @@ the pane that had it no longer exists. `FilesPane` decides between the
 editor and its search box from **`files.path`**, which is UI state and true this
 instant, not from `files.file`, which is a fetch result: keying it on the fetch
 lets the search box take the keyboard, you start typing, and the editor mount a
-beat later and take it back mid-word. A pane that refuses focus — a binary file,
-a Claude that is not running — traps nobody, because the stepper listens on the
-document and the next step still works.
+beat later and take it back mid-word.
+
+**A pane the row hands the keyboard to must take it**, and the sentence that
+used to stand here said the opposite: that a pane refusing focus traps nobody,
+since the stepper listens on the document and the next step still works. It does
+not. `stepRow` starts from where the keyboard **is** — deliberately, because
+React's record can be a press behind — so a step that lands nowhere leaves the
+keyboard in the pane you started from, and the next press computes the identical
+step. The window becomes a wall. Measured: with a file too large to open,
+Cmd+Right into that window worked and then did nothing however often it was
+pressed, while Cmd+Left still walked away; at 390px a picture did the same one
+press later, the row moving while the keyboard stayed behind, and the project
+pane did it again the window after that.
+
+Three panes had to answer for it, and each lands on the most useful thing it
+actually has:
+
+- **A refused file** — too large, or no text in it — asked the *editor* for the
+  keyboard, because arrival is decided from the path before the read answers and
+  a refusal is only knowable afterwards. No editor ever mounts, so the request
+  sat outstanding for ever. The panel now answers it itself once the refusal is
+  in: the file's own row in the tree, or the content box where no tree is drawn.
+  It is safe to decide that one from the fetch, unlike arrival itself, because a
+  refusal means nothing is coming that could race it.
+- **A view-only file with no tree beside it** — a phone — used to land on
+  nothing at all, which was written down as a deliberate choice and was only
+  ever half of one: the argument for it is that a picture must not take the keys
+  off the tree, and there is no tree. `.files__file` is `tabIndex={-1}` and
+  takes it.
+- **The project pane on a phone** refuses the *caret*, and should: a caret there
+  is the on-screen keyboard over half a pane you asked only to look at. But
+  refusing the caret is not refusing the keyboard — `caret` now says which, and
+  the pane focuses its own box instead, which summons nothing.
+
+None of the three draws a focus ring, which is the rule `.md` already kept: the
+pane underlines where you are, and a ring around a whole pane would say it
+twice.
 
 `onActivate` reports the **pane**, read off the nearest `data-pane`, which both
 the bar segments and the pane bodies carry — so a terminal tab reports

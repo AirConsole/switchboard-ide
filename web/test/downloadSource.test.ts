@@ -50,6 +50,26 @@ describe('where a download comes from', () => {
     expect(downloadSource(media)).toEqual({ url: '/api/raw?x=1' })
   })
 
+  it('does the same for anything else the browser shows itself', () => {
+    /*
+     * A video, a sound file and a PDF are the same case as the image and must
+     * not fall through to the text arm, which would hand over an empty blob
+     * named after a 700 MB file.
+     */
+    for (const [path, type] of [
+      ['clip.mp4', 'video/mp4'],
+      ['tone.mp3', 'audio/mpeg'],
+      ['spec.pdf', 'application/pdf'],
+    ]) {
+      const shown = {
+        ...nothing,
+        path: path as string,
+        media: { path: path as string, type: type as string, url: `/api/raw?p=${path}`, size: 9 },
+      }
+      expect(downloadSource(shown)).toEqual({ url: `/api/raw?p=${path}` })
+    }
+  })
+
   it('offers nothing while there is nothing', () => {
     // Nothing open, and a file whose read has not come back yet. Without the
     // second, the button would hand over an empty file as the file.
