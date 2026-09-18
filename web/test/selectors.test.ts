@@ -17,6 +17,7 @@ import {
   stateLabel,
   summarySignal,
   terminalSessions,
+  titleFor,
   worktreeStatus,
   worktreeTodos,
 } from '../src/selectors.js'
@@ -410,6 +411,22 @@ describe('summarySignal', () => {
     expect(summarySignal([])).toBeNull()
     expect(summarySignal(['working'])).toBeNull()
     expect(summarySignal(['off', 'working', 'off'])).toBeNull()
+  })
+})
+
+describe('titleFor', () => {
+  it('follows the name with the circle for the state the row is scanned for', () => {
+    // After the name, not before: Chrome shows an installed app's title as-is
+    // only when it starts with the app's short name, and a leading circle came
+    // out "Switchboard - 🟠 Switchboard".
+    expect(titleFor(['working', 'needs-you', 'idle'])).toBe('Switchboard 🟠')
+    expect(titleFor(['working', 'idle'])).toBe('Switchboard 🟢')
+  })
+
+  it('is the bare name when nothing is worth saying', () => {
+    // Grey has no circle: working and not running are the silence.
+    expect(titleFor([])).toBe('Switchboard')
+    expect(titleFor(['working', 'off'])).toBe('Switchboard')
   })
 })
 

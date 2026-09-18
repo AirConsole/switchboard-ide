@@ -77,6 +77,34 @@ export const summarySignal = (
   statuses.includes('needs-you') ? 'needs-you' : statuses.includes('idle') ? 'idle' : null
 
 /**
+ * The page's title, carrying `summarySignal` over every worktree there is.
+ *
+ * The title is the one place the state can reach outside the page on every
+ * platform: the browser tab, and the installed app's own window -- whose dock
+ * icon comes from the manifest and cannot change, and where the favicon is not
+ * drawn at all. A title is plain text, so the colour has to be a character that
+ * carries its own, which is an emoji: 🟠 and 🟢 are the only two of the circles
+ * that can pass for `--signal` and `--done`, though the system chooses the exact
+ * shade.
+ *
+ * Grey says nothing, and not for want of a character. There is no grey circle
+ * emoji, but the reason is the rule above: working and not running are the
+ * silence that makes the other two worth scanning for, so the quiet title is
+ * the bare name.
+ *
+ * **The circle goes after the name**, and in the installed app it has to:
+ * Chrome rewrites an app window's title, showing one that starts with the
+ * app's short name as it is and anything else as `<name> - <title>`
+ * (`WebAppBrowserController::GetTitle`), so a leading circle came out as
+ * `Switchboard - 🟠 Switchboard`. A browser tab is the same order, since the
+ * name is short enough that the circle survives truncation there too.
+ */
+export const titleFor = (statuses: WorktreeStatus[]): string => {
+  const signal = summarySignal(statuses)
+  return signal === 'needs-you' ? 'Switchboard 🟠' : signal === 'idle' ? 'Switchboard 🟢' : 'Switchboard'
+}
+
+/**
  * Main worktree first, then alphabetical, within one project.
  *
  * A stable order is the point: a tile is where you last saw it, which is what

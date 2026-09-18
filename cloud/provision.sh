@@ -31,7 +31,7 @@
 #     process that turns it into a key and forgets it.
 set -eu
 
-DIR=$(cd "$(dirname "$0")" && pwd)
+DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || DIR=.
 ZONE=${SWB_ZONE:-europe-west6-b}
 MACHINE=e2-standard-4
 DISK_SIZE=100
@@ -46,6 +46,7 @@ FROM_SNAPSHOT=""
 ALERT_EMAIL=""
 DOMAIN=""
 DOMAIN_GIVEN=0
+PASSWORD_STDIN=0
 DOMAIN_ASKED=0
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
@@ -81,6 +82,8 @@ Options
   --alert-email <a>   who to mail when someone else touches the machine
   --domain <name>     also answer to this name; it tells you the DNS record
                       (--domain "" takes one away again)
+  --password-stdin    read the machine's password from stdin, for scripts;
+                      otherwise you are asked for one, or given one
   --repo <url>        which checkout the machine builds from
   --repo-ref <ref>    which branch or tag of it (default master)
   --in-org            allow a project inside an organisation (see above)
@@ -107,6 +110,7 @@ while [ $# -gt 0 ]; do
     --disk-size) DISK_SIZE=$2; shift ;;
     --alert-email) ALERT_EMAIL=$2; shift ;;
     --domain) DOMAIN=$2; DOMAIN_GIVEN=1; DOMAIN_ASKED=1; shift ;;
+    --password-stdin) PASSWORD_STDIN=1 ;;
     --repo) REPO_URL=$2; shift ;;
     --repo-ref) REPO_REF=$2; shift ;;
     --from-snapshot) FROM_SNAPSHOT=$2; shift ;;
@@ -132,6 +136,7 @@ gcloud auth print-access-token >/dev/null 2>&1 \
   || die "gcloud has no usable credentials right now -- run:  gcloud auth login"
 [ -n "$PROJECT" ] || die "--project is required (a project of your own; see --in-org)"
 
+PASSWORD_MIN=12   # `MIN_LENGTH` in cli/src/password.js; the IDE refuses less
 REGION=$(printf '%s' "$ZONE" | sed 's/-[a-z]$//')
 VM="switchboard-$NAME"
 NET="switchboard-$NAME"
@@ -351,6 +356,23 @@ ensure_data_disk() {
     --resource-policies="$SCHEDULE" --quiet >/dev/null 2>&1 || true
 }
 
+# The machine is defined by two files next to this one. Under `curl | sh` there
+# is no "next to this one" -- $0 is the shell's own name and $DIR is wherever
+# you happened to be standing -- so they are fetched, from the same repository
+# and ref the machine will build from. In a checkout they are already there and
+# nothing is downloaded.
+ensure_machine_files() {
+  [ -f "$DIR/setup.sh" ] && [ -f "$DIR/cloud-config.yaml" ] && return 0
+  have curl || die "this needs curl, or a checkout: git clone $REPO_URL"
+  raw=$(printf '%s' "$REPO_URL" | sed 's|^https://github.com/|https://raw.githubusercontent.com/|; s|\.git$||')
+  DIR=$(mktemp -d)
+  trap 'rm -rf "$DIR"' EXIT INT TERM
+  for f in setup.sh cloud-config.yaml; do
+    curl -fsSL "$raw/$REPO_REF/cloud/$f" -o "$DIR/$f" \
+      || die "could not fetch cloud/$f from $raw/$REPO_REF -- is --repo-ref right?"
+  done
+}
+
 # cloud-init, with setup.sh carried inside it. One metadata key, no secrets,
 # and the machine can be rebuilt from this file alone.
 render_user_data() {
@@ -440,8 +462,69 @@ wait_for() {
   return 1
 }
 
+# --- the password -----------------------------------------------------------
+# It is the login *and* the key to the disk, so it is worth choosing rather
+# than being handed: a password you picked is one you will still have next
+# week, and this is the one secret here that cannot be reset from outside.
+#
+# **Not a flag.** A value on the command line is in `ps` for every user on your
+# machine and in your shell history afterwards, and this one opens a shell on
+# the machine it belongs to. Typed here, or piped with --password-stdin, or
+# generated -- three ways in, none of which writes it down.
+read_secret() {
+  # No echo, and restored however this exits -- a terminal left with echo off
+  # is a terminal that looks broken.
+  printf '%s' "$1" >/dev/tty
+  stty -echo </dev/tty 2>/dev/null || true
+  trap 'stty echo </dev/tty 2>/dev/null || true' EXIT INT TERM
+  read -r secret </dev/tty || secret=""
+  stty echo </dev/tty 2>/dev/null || true
+  trap - EXIT INT TERM
+  printf '\n' >/dev/tty
+  printf '%s' "$secret"
+}
+
+choose_password() {
+  if [ "$PASSWORD_STDIN" -eq 1 ]; then
+    PASSWORD=$(cat)
+    PASSWORD=$(printf '%s' "$PASSWORD" | tr -d '\n')
+    CHOSEN=1
+  elif have_tty; then
+    say ""
+    say "A password for this machine. It is the login, and it is the key to the disk --"
+    say "nothing else opens either, and it is asked for once per browser."
+    while :; do
+      PASSWORD=$(read_secret "  password (at least $PASSWORD_MIN characters, enter to have one made): ")
+      [ -z "$PASSWORD" ] && break
+      if [ "$(printf '%s' "$PASSWORD" | wc -c)" -lt "$PASSWORD_MIN" ]; then
+        say "  too short -- this is the whole boundary in front of a program that runs shells."
+        continue
+      fi
+      again=$(read_secret "  again: ")
+      [ "$PASSWORD" = "$again" ] && break
+      say "  those did not match."
+    done
+    [ -n "$PASSWORD" ] && CHOSEN=1
+  fi
+
+  # Nothing typed and nothing piped: one is made, which is the old behaviour and
+  # the right default for a machine built by a script with no terminal.
+  if [ -z "${PASSWORD:-}" ]; then
+    PASSWORD=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24)
+    CHOSEN=0
+  fi
+
+  if [ "$(printf '%s' "$PASSWORD" | wc -c)" -lt "$PASSWORD_MIN" ]; then
+    die "that password is shorter than $PASSWORD_MIN characters; nothing was changed"
+  fi
+}
+
 # --- create ------------------------------------------------------------------
 cmd_create() {
+  # Before anything is built, so a ref that does not exist costs nothing: the
+  # machine's two files are what the VM is made of, and finding out they cannot
+  # be fetched after creating a network and a disk is finding out too late.
+  ensure_machine_files
   check_org
   # Run again on a machine that exists, this updates it -- which is how a
   # domain is added, changed or removed, and the reason `create` has no sibling
@@ -486,7 +569,7 @@ cmd_create() {
   # is the answer to "am I building or updating": it refuses to reformat the
   # disk holding everything you have, so the password and the data below it are
   # left exactly alone and only the domain is applied.
-  PASSWORD=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24)
+  choose_password
   say "formatting the data volume"
   #
   # `tail` is applied *after*, not in the pipeline: sh has no PIPESTATUS, so
@@ -549,12 +632,16 @@ cmd_create() {
     return 0
   fi
   say ""
-  say "  password   $PASSWORD"
+  if [ "${CHOSEN:-0}" -eq 1 ]; then
+    say "  password   the one you chose"
+  else
+    say "  password   $PASSWORD"
+  fi
   say "  recovery   $RECOVERY"
   say ""
-  say "Both are shown once and stored nowhere. The password is the login *and* the"
-  say "key to the disk; the recovery passphrase opens the disk if the password is"
-  say "lost. Put them in your password manager now."
+  say "The recovery passphrase is shown once and stored nowhere. It opens the disk if"
+  say "the password is lost, which nothing else does -- put it in your password"
+  say "manager now. The password is the login and the key to the disk alike."
   say ""
   say "Test services: listen on 127.0.0.1:8000-8099 and they are at https://$IP:<port>,"
   say "public, with no password."
@@ -603,6 +690,7 @@ cmd_status() {
 # happens, how a broken machine is fixed, and -- with --from-snapshot -- how a
 # backup is restored.
 cmd_recreate() {
+  ensure_machine_files
   gq compute instances describe "$VM" --zone="$ZONE" || die "no machine called $NAME in $PROJECT"
   say "This deletes the VM and its boot disk. The data disk and the address stay."
   [ -n "$FROM_SNAPSHOT" ] && say "The data disk will be REPLACED by snapshot $FROM_SNAPSHOT."

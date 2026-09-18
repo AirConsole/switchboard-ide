@@ -259,6 +259,32 @@ export interface TmuxSessionInfo {
 }
 
 /**
+ * The field separator asked of tmux, and the one that comes back.
+ *
+ * Asked for as the unit separator, 0x1f -- a byte that cannot be in a path, a
+ * command name or a number. **tmux 3.4 does not return it.** It escapes
+ * non-printable characters in format output, so the same session arrives as
+ * `odtest\037bash`: four ordinary characters where one byte went in.
+ *
+ * Measured, one session, the same command on each:
+ *   tmux 3.3a (Debian 12)  o d t e s t 037 b a s h
+ *   tmux 3.4  (Ubuntu 24)  o d t e s t  \  0  3  7  b a s h
+ *
+ * Splitting on the byte alone therefore yields **one field** on 3.4: every
+ * session name read as the whole line, so `pollPanes` matched none of them,
+ * marked all of them dead and reaped them within two seconds. A terminal
+ * appeared and vanished; Claude sessions did too, and a restarted server could
+ * adopt nothing. It cost nothing on Debian and broke every cloud machine,
+ * which is Ubuntu.
+ *
+ * So the split accepts either spelling. Both are sent as one byte and neither
+ * can be produced by a field's own contents -- a path holding the literal text
+ * `\037` would have to be built to break this on purpose.
+ */
+const SEP = '\x1f'
+const SPLIT = /\x1f|\\037/
+
+/**
  * List every session on our socket with its metadata in one call. The unit
  * separator is used as the field delimiter because paths and titles may contain
  * anything a filesystem allows, including tabs.
@@ -269,17 +295,22 @@ export const listSessions = async (): Promise<TmuxSessionInfo[]> => {
     ;({ stdout } = await tmux(
       'list-sessions',
       '-F',
-      ['#{session_name}', `#{${META_OPTION}}`, '#{pane_current_path}', '#{window_width}', '#{window_height}'].join('\x1f'),
+      ['#{session_name}', `#{${META_OPTION}}`, '#{pane_current_path}', '#{window_width}', '#{window_height}'].join(SEP),
     ))
   } catch {
     // No server running yet means no sessions, which is not an error.
     return []
   }
-  return stdout
+  return parseSessions(stdout)
+}
+
+/** Pure, and exported for the test that pins both tmux spellings. */
+export const parseSessions = (stdout: string): TmuxSessionInfo[] =>
+  stdout
     .split('\n')
     .filter((line) => line.trim() !== '')
     .map((line) => {
-      const [name = '', meta = '', cwd = '', cols = '0', rows = '0'] = line.split('\x1f')
+      const [name = '', meta = '', cwd = '', cols = '0', rows = '0'] = line.split(SPLIT)
       return {
         name,
         meta: parseMeta(meta),
@@ -288,7 +319,6 @@ export const listSessions = async (): Promise<TmuxSessionInfo[]> => {
         rows: Number(rows) || 0,
       }
     })
-}
 
 /**
  * The escape hatch we show in the UI so the user can take a session over from a
@@ -341,7 +371,7 @@ export const listPanes = async (): Promise<PaneInfo[] | null> => {
         '#{pane_dead}',
         '#{pane_dead_status}',
         '#{session_activity}',
-      ].join('\x1f'),
+      ].join(SEP),
     ))
   } catch (err) {
     /*
@@ -362,11 +392,16 @@ export const listPanes = async (): Promise<PaneInfo[] | null> => {
     if (/no server running|no such file or directory/i.test(text)) return []
     return null
   }
-  return stdout
+  return parsePanes(stdout)
+}
+
+/** Pure, and exported for the test that pins both tmux spellings. */
+export const parsePanes = (stdout: string): PaneInfo[] =>
+  stdout
     .split('\n')
     .filter((line) => line.trim() !== '')
     .map((line) => {
-      const f = line.split('\x1f')
+      const f = line.split(SPLIT)
       return {
         sessionName: f[0] ?? '',
         cwd: f[1] ?? '',
@@ -378,7 +413,6 @@ export const listPanes = async (): Promise<PaneInfo[] | null> => {
         activity: Number(f[7]) || 0,
       }
     })
-}
 
 /**
  * tmux writes this line into a dead pane itself, from `remain-on-exit-format`.
