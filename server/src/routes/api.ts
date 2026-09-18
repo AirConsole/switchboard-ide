@@ -14,6 +14,7 @@ import { sendRaw } from '../raw.js'
 import { hostKeyFor } from '../remote/scope.js'
 import { PEER_READ_HEADER } from '../remote/peer.js'
 import { usage } from '../usage.js'
+import { startUpdate, updateStatus } from '../update.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -242,6 +243,21 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    */
   app.get('/api/usage', async () => usage())
 
+  /*
+   * Whether this machine's Switchboard is behind origin, and updating it.
+   *
+   * Local by construction: no id in the path, so the proxy never forwards it,
+   * and a linked machine is updated on that machine. The POST answers before
+   * the work starts, since the work ends by replacing this process; the page
+   * learns the outcome by asking the GET until a different instance answers.
+   * See server/src/update.ts.
+   */
+  app.get('/api/update', async () => updateStatus())
+  app.post('/api/update', async (_request, reply) => {
+    await startUpdate()
+    return reply.status(202).send({ ok: true })
+  })
+
   app.get('/api/browse', async (request) => {
     const { path } = browseQuery.parse(request.query)
     return workspace.browse(path)
@@ -304,6 +320,21 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     // Other tabs, and this tab's own relay, have to learn there is a machine.
     broadcastInvalidate()
     return { key: hostKeyFor(server.baseUrl), baseUrl: server.baseUrl, name: server.name }
+  })
+
+  /*
+   * Update a linked machine: `pnpm pull` there, asked from here.
+   *
+   * By key, the one the snapshot's scoped ids carry, and answered here rather
+   * than proxied (see `ALWAYS_LOCAL`): the proxy checks the peer's protocol on
+   * every reply, and a machine out of step with this one is the reason to ask.
+   */
+  app.post('/api/servers/:key/update', async (request, reply) => {
+    const { key } = z.object({ key: z.string().min(1) }).parse(request.params)
+    const peer = workspace.peerFor(key)
+    if (peer === null) throw new HttpError(404, 'no such server')
+    await peer.startUpdate()
+    return reply.status(202).send({ ok: true })
   })
 
   app.delete('/api/servers', async (request) => {

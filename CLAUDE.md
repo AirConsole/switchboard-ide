@@ -95,6 +95,17 @@ the one checked out: `restart` stamps `server/dist/.swb-commit` when it builds,
 and `start` records that stamp in `run.json` -- not HEAD, which after a `git
 pull` by hand names code that was never built.
 
+**The page offers the pull itself.** The machine's instance -- the process
+`run.json` names, and nothing else, so never a scratch one -- fetches origin at
+most every ten minutes while a browser is asking, and a banner says how many
+commits the running *build* is behind. Update runs `swb pull` detached, since it
+ends by stopping the server that started it, and the page reloads once a
+different instance answers. A pull that would refuse says so in the banner
+instead of offering the button; one that fails shows the tail of its output,
+and what is running stays running. A linked machine out of step offers the same
+from its windows, through `POST /api/servers/:key/update`. See
+`server/src/update.ts`.
+
 Each is an alias for one command, `cli/bin/swb.js`; `pnpm swb` prints its usage.
 It is plain JavaScript with no build step,
 because `postinstall` runs it before anything has been built and because a

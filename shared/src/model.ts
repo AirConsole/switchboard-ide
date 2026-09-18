@@ -632,3 +632,48 @@ export interface Usage {
   fetchedAt: number
   error?: string
 }
+
+/** A commit the running build does not have yet. */
+export interface UpdateCommit {
+  sha: string
+  subject: string
+}
+
+/**
+ * Whether this machine's Switchboard is behind origin, and what `pnpm pull` is
+ * doing about it.
+ *
+ * `updatable` false is the common answer for anything that is not the
+ * machine's own instance -- a scratch one, a dev server, a checkout on a
+ * branch -- and then nothing else here was asked of git.
+ */
+export interface UpdateStatus {
+  /**
+   * Changes per start, so a page can tell the server it loaded from has been
+   * replaced. Not `instanceId`, which is what `/api/server` calls the same
+   * value: a field ending in `Id` is scoped at the peer boundary as if it
+   * named something to route to, and this names nothing.
+   */
+  instance: string
+  /** The commit this server was built from, or null when the build was not stamped. */
+  running: string | null
+  updatable: boolean
+  /** The branch updates come from, as origin names it. */
+  branch: string | null
+  /** Commits on that branch the running build does not have, newest first; capped. */
+  commits: UpdateCommit[]
+  /** How many there are in all, which `commits` may not list. */
+  behind: number
+  /**
+   * Why `pnpm pull` would refuse, said before the click rather than after:
+   * uncommitted changes, another branch, history of its own.
+   */
+  blocked: string | null
+  /** `pnpm pull` is running, or the last one failed and this is how it ended. */
+  state: 'idle' | 'updating' | 'failed'
+  failure: string | null
+  /** The fetch that found this, or null before the first one. */
+  checkedAt: number | null
+  /** The fetch failed; `commits` is what the last one that worked found. */
+  error?: string
+}
