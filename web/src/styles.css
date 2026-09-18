@@ -2688,6 +2688,47 @@ button {
   line-height: 1.6;
 }
 
+/*
+ * An action that failed, inside the window it was about.
+ *
+ * The banner's colours, said at a window's scale: it is the same voice, and the
+ * reader should not have to learn a second one. Under the bar and above the
+ * body, in the flow -- a message drawn over the pane would hide the thing it is
+ * about, and this one stays until it is dismissed.
+ */
+.tile__failure {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 7px 12px;
+  background: #2a1d1f;
+  border-bottom: 1px solid #4a2c30;
+  color: #f0c7cb;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.tile__failure-text {
+  min-width: 0;
+  /* A protocol mismatch names two machines and two numbers; it wraps rather
+     than being cut off in the middle of the one that matters. */
+  overflow-wrap: anywhere;
+}
+
+.tile__failure-dismiss {
+  margin-left: auto;
+  flex: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tile__failure-dismiss:hover {
+  opacity: 1;
+}
+
 .banner {
   display: flex;
   align-items: center;

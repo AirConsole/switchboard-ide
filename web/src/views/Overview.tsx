@@ -526,6 +526,30 @@ const useExitOutput = (session: Session | undefined): string[] => {
   return lines
 }
 
+/**
+ * An action that failed, said inside the window it was about.
+ *
+ * Under that window's own bar rather than across the app, because what it says
+ * is about *this* worktree -- a machine that answers with a protocol this build
+ * does not speak is a fact about its windows, and a banner over everything told
+ * you less. It stays until dismissed: a refresh arrives every time any agent
+ * anywhere changes, and this message used to go with the first one.
+ */
+export const TileFailure = ({
+  message,
+  onDismiss,
+}: {
+  message: string
+  onDismiss: () => void
+}): React.ReactElement => (
+  <div className="tile__failure">
+    <span className="tile__failure-text">{message}</span>
+    <button className="tile__failure-dismiss" onClick={onDismiss} aria-label="Dismiss">
+      ×
+    </button>
+  </div>
+)
+
 /** Why Claude is not on screen, in the interface's own voice. */
 const idleReason = (session: Session | undefined): string => {
   if (!session) return 'Claude is not running in this worktree.'
@@ -589,6 +613,9 @@ const IdleClaude = ({
 }
 
 interface WorktreeTileProps {
+  /** An action about *this* worktree that failed, if there is one. */
+  failure: string | null
+  onDismissFailure: () => void
   worktree: Worktree
   /**
    * The project it belongs to.
@@ -733,6 +760,8 @@ interface WorktreeTileProps {
  * belong.
  */
 const WorktreeTile = ({
+  failure,
+  onDismissFailure,
   worktree,
   project,
   todos,
@@ -1124,6 +1153,7 @@ const WorktreeTile = ({
         ))}
       </div>
 
+      {failure !== null && <TileFailure message={failure} onDismiss={onDismissFailure} />}
       <div className="tile__body" style={{ gridTemplateColumns: columns }}>
         {panes.map((pane) => (
           <div
@@ -1333,6 +1363,12 @@ export interface OverviewProps {
   active: { id: string; pane: PaneKind } | null
   /** Anything in this pane took focus, so this is where you are now. */
   onActivate: (worktreeId: string, pane: PaneKind) => void
+  /**
+   * An action of yours that failed, and which window it was about -- drawn
+   * inside that window, because that is where it means something.
+   */
+  failure: { message: string; where: string | null } | null
+  onDismissFailure: () => void
   /** Start the machine's own terminal; it has none. */
   onMachineTerminal: () => void
   /** The open-project dialog, for the welcome window's button. */
@@ -1401,6 +1437,8 @@ export const Overview = ({
   scrollTo,
   active,
   onActivate,
+  failure,
+  onDismissFailure,
   onMachineTerminal,
   onOpenProject,
   onCreated,
@@ -2477,6 +2515,8 @@ export const Overview = ({
                         hintFor(slot.key),
                       )}
                       <MachineTile
+                        failure={failure?.where === MACHINE_KEY ? failure.message : null}
+                        onDismissFailure={onDismissFailure}
                         session={machineSession(sessions)}
                         fontSize={TERMINAL_FONT_SIZE}
                         scroller={gridRef}
@@ -2551,6 +2591,8 @@ export const Overview = ({
                     </div>
                   ) : (
                     <WorktreeTile
+                      failure={failure?.where === worktree.id ? failure.message : null}
+                      onDismissFailure={onDismissFailure}
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}

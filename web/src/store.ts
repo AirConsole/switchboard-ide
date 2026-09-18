@@ -104,6 +104,22 @@ interface AppState extends AppSnapshot {
   /** Whether the server's stored UI state has been taken; see refresh(). */
   adopted: boolean
   error: string | null
+  /**
+   * An action of yours that failed, and the window it was about.
+   *
+   * Kept apart from `error` because the two have opposite lives. `error` is the
+   * snapshot read failing -- it says the page is out of touch, and a read that
+   * works again is the whole of the answer, so it clears itself. This is a
+   * thing you *did*: a terminal that would not start, a machine that answered
+   * with a protocol this one does not speak. It has to survive a refresh, and
+   * refreshes are constant -- every attention change on any agent brings one --
+   * which is why such a message used to vanish before it could be read.
+   *
+   * `where` is the row key of the window it belongs to, so it can be said
+   * inside that window rather than across the whole app. Null for what belongs
+   * to no window.
+   */
+  failure: { message: string; where: string | null } | null
   refresh: () => Promise<void>
   setUi: (patch: Partial<UiState>) => void
   applySessionState: (
@@ -117,6 +133,7 @@ interface AppState extends AppSnapshot {
     },
   ) => void
   setError: (message: string | null) => void
+  setFailure: (failure: { message: string; where: string | null } | null) => void
 }
 
 let uiSaveTimer: number | null = null
@@ -159,6 +176,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
   error: null,
+  failure: null,
 
   refresh: async () => {
     try {
@@ -231,6 +249,7 @@ export const useStore = create<AppState>((set, get) => ({
     })),
 
   setError: (message) => set({ error: message }),
+  setFailure: (failure) => set({ failure }),
 }))
 
 /** Wire push updates from the server into the store. Called once at startup. */

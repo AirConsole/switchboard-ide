@@ -3,8 +3,12 @@ import type { Session } from '@switchboard/shared'
 import { PanelIcon } from '../components/PanelIcon.js'
 import { TerminalView } from '../terminal/TerminalView.js'
 import { useNearViewport } from './useNearViewport.js'
+import { TileFailure } from './Overview.js'
 
 export interface MachineTileProps {
+  /** An action about this window that failed, if there is one. */
+  failure: string | null
+  onDismissFailure: () => void
   /** The machine's one terminal, while it is running. */
   session: Session | undefined
   fontSize: number
@@ -34,6 +38,8 @@ export interface MachineTileProps {
  * end comes and went would be a row you cannot learn.
  */
 export const MachineTile = ({
+  failure,
+  onDismissFailure,
   session,
   fontSize,
   scroller,
@@ -81,6 +87,7 @@ export const MachineTile = ({
           <span className="tile__prompt">a terminal in your home directory</span>
         </div>
       </div>
+      {failure !== null && <TileFailure message={failure} onDismiss={onDismissFailure} />}
       <div className="tile__body">
         <div className="tile__pane" data-pane="machine:machine">
           {session === undefined ? (

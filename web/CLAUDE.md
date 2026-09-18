@@ -1932,6 +1932,31 @@ them up. Two other ways of emptying it still close nothing — taking a todo out
 of the queue leaves it in the list, and deleting one by hand is a click that
 says you are still working in here.
 
+## An action that failed is said where it happened
+
+Two different things used to share one banner across the top of the app, and
+one of them was unreadable because of it.
+
+**`error` is the snapshot read failing.** The page is out of touch; a read that
+works again is the whole answer, so it clears itself on the next success. That
+is right for what it is.
+
+**`failure` is a thing you did.** A terminal that would not start, a linked
+machine that answered with a protocol this build does not speak. It survives a
+refresh, because refreshes are constant -- every attention change on any agent
+brings one -- and that is what used to wipe the message before anybody could
+read it: reported from a real instance as *"the error disappears right away, I
+do not have time to read it"*, and not reproducible on a quiet one, where
+nothing was refreshing.
+
+It also carries `where`, the row key of the window it was about, and is drawn
+*in that window* under its own bar (`TileFailure`): a machine that needs
+updating is a fact about its windows, and a banner across everything said less,
+not more. `failIn(id)` is what the callers use; `fail` is the same thing for
+what belongs to no window, and that still goes to the banner. A message pinned
+to a window that leaves the row is dropped, or it would be kept for ever and
+shown again if that worktree came back.
+
 ## UI state
 
 `ui` lives on the server but **belongs to the client**: it is adopted on first

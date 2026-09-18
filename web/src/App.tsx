@@ -41,7 +41,7 @@ export interface ProjectGroup {
 }
 
 export const App = (): React.ReactElement => {
-  const { projects, worktrees, sessions, todos, ui, loaded, error, authed, signedIn, refresh, setUi, setError } =
+  const { projects, worktrees, sessions, todos, ui, loaded, error, failure, authed, signedIn, refresh, setUi, setError, setFailure } =
     useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
@@ -174,13 +174,39 @@ export const App = (): React.ReactElement => {
     if (active !== null) reveal(active.id, active.pane)
   }
 
+  /*
+   * A message pinned to a window that is no longer in the row.
+   *
+   * It would be kept for ever and shown again if that worktree came back --
+   * about something you did to it minutes or days ago. Closing a project or
+   * removing a worktree is the common way in.
+   */
+  useEffect(() => {
+    const where = failure?.where
+    if (where === undefined || where === null || where === MACHINE_KEY) return
+    if (!worktrees.some((worktree) => worktree.id === where)) setFailure(null)
+  }, [failure, worktrees, setFailure])
+
   useEffect(() => {
     const unbind = bindSocketToStore()
     void refresh()
     return unbind
   }, [refresh])
 
-  const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
+  /**
+   * An action of yours failed: say so, and say it where it happened.
+   *
+   * `where` is the row key of the window it was about, so the message is drawn
+   * inside that window -- a linked machine that needs updating is a fact about
+   * *its* worktrees, and saying it across the whole app told you less, not
+   * more. It stays until dismissed: refreshes arrive constantly, and this used
+   * to be cleared by the next one before anybody could read it.
+   */
+  const failIn =
+    (where: string | null) =>
+    (err: unknown): void =>
+      setFailure({ message: err instanceof Error ? err.message : String(err), where })
+  const fail = failIn(null)
 
   /*
    * The current UI state, for callbacks that must keep one identity across
@@ -420,7 +446,7 @@ export const App = (): React.ReactElement => {
     if (existing && existing.liveness !== 'dead') return
     // Through wake either way, so a restart continues the conversation for the
     // same reason waking does.
-    void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
+    void api.wakeWorktree(worktreeId).then(refresh).catch(failIn(worktreeId))
   }
 
   /**
@@ -436,7 +462,7 @@ export const App = (): React.ReactElement => {
     void api
       .createSession({ worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
       .then(refresh)
-      .catch(fail)
+      .catch(failIn(MACHINE_KEY))
   }
 
   const newTerminal = (worktreeId: string): void => {
@@ -456,7 +482,7 @@ export const App = (): React.ReactElement => {
         })
         return refresh()
       })
-      .catch(fail)
+      .catch(failIn(worktreeId))
   }
 
   /**
@@ -481,7 +507,7 @@ export const App = (): React.ReactElement => {
       })
       reveal(worktreeId)
     }
-    void api.killSession(sessionId).then(refresh).catch(fail)
+    void api.killSession(sessionId).then(refresh).catch(failIn(worktreeId))
   }
 
   /**
@@ -931,10 +957,20 @@ export const App = (): React.ReactElement => {
     <div className="app" data-narrow={narrow ? '' : undefined}>
       {topBar}
 
-      {error && (
+      {/*
+        * The page being out of touch, or an action that belongs to no window.
+        * Everything that *is* about a window is said in it -- see `failure`.
+        */}
+      {(error ?? (failure?.where === null ? failure.message : null)) !== null && (
         <div className="banner">
-          {error}
-          <button className="banner__dismiss" onClick={() => setError(null)}>
+          {error ?? failure?.message}
+          <button
+            className="banner__dismiss"
+            onClick={() => {
+              setError(null)
+              setFailure(null)
+            }}
+          >
             Dismiss
           </button>
         </div>
@@ -942,6 +978,9 @@ export const App = (): React.ReactElement => {
 
       <Overview
         narrow={narrow}
+        /* Said in the window it is about, and kept until dismissed. */
+        failure={failure?.where === null ? null : (failure ?? null)}
+        onDismissFailure={() => setFailure(null)}
         onMachineTerminal={machineTerminal}
         onOpenProject={() => setShowOpenProject(true)}
         worktrees={rowWorktrees}
