@@ -2,6 +2,8 @@
 
 **A web IDE for running several Claude Code agents at once, one per git worktree.**
 
+https://github.com/user-attachments/assets/e5392ac8-21a2-4a9d-934e-2a51f8003c6d
+
 Run one agent and you watch it. Run five and you lose them: which one is waiting
 on a question, which one finished ten minutes ago, which one has been stuck on a
 permission prompt since you went for coffee. Terminal tabs do not tell you, and
