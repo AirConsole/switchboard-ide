@@ -24,7 +24,6 @@
 set -euo pipefail
 
 IDE_DIR=/opt/switchboard
-SWB_USER=switchboard
 DATA_DEV=${SWB_DATA_DEV:-/dev/disk/by-id/google-switchboard-data}
 MAPPER=switchboard-data
 IDE_PORT=7999
@@ -41,6 +40,21 @@ if [ -f /etc/switchboard/env ]; then
 fi
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
+
+# The person this machine is for. Named after them rather than after the
+# program, because it is their shell, their files and their prompt -- `/opt`,
+# `/etc/switchboard` and `switchboard.service` name the software, and keep that
+# name. It arrives from provision.sh, which keeps it as a label on the data disk
+# so a rebuilt machine is always the same person's. A machine built before there
+# was a name, or by hand, is `switchboard`, which is what those always were.
+SWB_USER=${SWB_USER:-switchboard}
+# Pinned, because ownership on the encrypted volume is a *number*: a user who
+# comes back with a different uid after `recreate` owns none of their own home.
+# It used to be whatever useradd picked next -- 1001 on Ubuntu, because the
+# image's own `ubuntu` holds 1000 -- which is luck, and a future image that adds
+# an account would have spent it. Empty on the older machines, which keep
+# useradd's choice rather than being moved under a volume that expects it.
+SWB_UID=${SWB_UID:-}
 
 log() { printf '[setup] %s\n' "$*"; }
 
@@ -235,7 +249,17 @@ fi
 # user owns the repos, the Claude credentials and the gh token. The VM holds no
 # cloud credentials, and the firewall is enforced outside it.
 if ! id "$SWB_USER" >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$SWB_USER"
+  if [ -n "$SWB_UID" ]; then
+    groupadd -g "$SWB_UID" "$SWB_USER"
+    useradd -m -u "$SWB_UID" -g "$SWB_UID" -s /bin/bash "$SWB_USER"
+  else
+    useradd -m -s /bin/bash "$SWB_USER"
+  fi
+elif [ -n "$SWB_UID" ] && [ "$(id -u "$SWB_USER")" != "$SWB_UID" ]; then
+  # An account by that name the image already had. Taking it over would hand
+  # the person's files to whatever it was for; stop and say so instead.
+  log "refusing: $SWB_USER already exists here with uid $(id -u "$SWB_USER"), not $SWB_UID"
+  exit 1
 fi
 if [ "${SWB_NO_SUDO:-0}" = 1 ]; then
   rm -f /etc/sudoers.d/switchboard
@@ -297,14 +321,16 @@ cat > /etc/switchboard/record-packages.sh <<'EOF'
 # What an agent has installed, so `provision.sh recreate` can put it back.
 set -eu
 mountpoint -q /home || exit 0
-DIR=/home/switchboard/.switchboard
-install -d -o switchboard -g switchboard "$DIR"
+[ -f /etc/switchboard/env ] && . /etc/switchboard/env
+U=${SWB_USER:-switchboard}
+DIR=/home/$U/.switchboard
+install -d -o "$U" -g "$U" "$DIR"
 # A tmp file of its own per run: two captures can overlap -- apt installing
 # several things in a row schedules several -- and with one shared name the
 # second run moves the first one's file out from under it and fails.
 TMP=$(mktemp "$DIR/packages.XXXXXX")
 apt-mark showmanual > "$TMP"
-chown switchboard:switchboard "$TMP"
+chown "$U:$U" "$TMP"
 mv "$TMP" "$DIR/packages"
 EOF
 chmod 0755 /etc/switchboard/record-packages.sh

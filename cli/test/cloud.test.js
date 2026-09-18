@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -149,6 +150,115 @@ describe('running it straight from the internet', () => {
     const create = script.slice(script.indexOf('cmd_create() {'))
     expect(create.indexOf('ensure_machine_files')).toBeLessThan(create.indexOf('ensure_network'))
   })
+})
+
+describe('the machine is named after its person', () => {
+  const provision = () => readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
+
+  /** @param {string} name */
+  const validUser = (name) => {
+    try {
+      execFileSync('sh', ['-c', `${provision().match(/^valid_user\(\) \{[\s\S]*?^\}/m)?.[0]}\nvalid_user "$1"`, '_', name])
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  it.each([
+    ['andrin', true],
+    ['andrin-v', true],
+    ['a_b', true],
+    // An account the image already has: taking it over would hand the
+    // person's files to whatever the account was for.
+    ['ubuntu', false],
+    ['root', false],
+    ['systemd-resolve', false],
+    ['docker', false],
+    // Not a Linux login at all.
+    ['Andrin', false],
+    ['1abc', false],
+    ['-x', false],
+    ['', false],
+    ["an'drin", false],
+    ['a'.repeat(33), false],
+  ])('%s is %s', (name, ok) => {
+    expect(validUser(name)).toBe(ok)
+  })
+
+  it('reads who the machine is for off the disk before a restore deletes the disk', () => {
+    // A snapshot restore replaces the data disk with one that has no labels.
+    // Read after the delete, the name would be gone and the restored machine
+    // would belong to whoever ran recreate -- and own none of the files.
+    const script = provision()
+    const recreate = script.slice(script.indexOf('cmd_recreate() {'))
+    expect(recreate.indexOf('resolve_user')).toBeGreaterThan(-1)
+    expect(recreate.indexOf('resolve_user')).toBeLessThan(recreate.indexOf('disks delete'))
+  })
+
+  it('decides who before building anything', () => {
+    const script = provision()
+    const create = script.slice(script.indexOf('cmd_create() {'))
+    expect(create.indexOf('resolve_user')).toBeLessThan(create.indexOf('ensure_network'))
+  })
+
+  it('names the person nowhere by hand', () => {
+    // Six places said `switchboard` where they meant the person, and each is a
+    // place the name could go stale in. The software keeps its own name --
+    // /opt/switchboard, /etc/switchboard, switchboard.service -- which is a
+    // different thing, and is not what this looks for.
+    for (const file of ['provision.sh', 'setup.sh', 'unlocked.sh']) {
+      const text = readFileSync(join(CLOUD, file), 'utf8')
+      expect(text, file).not.toMatch(/\/home\/switchboard|sudo -u switchboard|switchboard:switchboard|-o switchboard/)
+    }
+  })
+})
+
+describe('a password piped in is the password used', () => {
+  /*
+   * The real script against a stand-in gcloud that behaves like the real one
+   * where it matters: `compute ssh` forwards stdin to the far end, exactly as
+   * ssh does. It records what the format step is handed, which is the password
+   * that becomes the key to the disk.
+   *
+   * Measured before the fix: the wait-for-install loop is an ssh, it swallowed
+   * the pipe, and the format step was handed a *generated* password -- which
+   * `create` then printed as though it were the one asked for.
+   */
+  it('reaches the disk, not the first ssh that happens to run', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'swb-shim-'))
+    try {
+      writeFileSync(
+        join(dir, 'gcloud'),
+        `#!/bin/sh
+case "$*" in
+  *"addresses describe"*"value(address)"*) echo 203.0.113.9 ;;
+  *"disks describe"*"switchboard-user"*) echo andrin ;;
+  *"config get-value account"*) echo me@example.com ;;
+  *"compute ssh"*format.js*) cat > "${dir}/format-stdin"; echo rec-over-y ;;
+  *"compute ssh"*) cat > /dev/null ;;
+esac
+exit 0
+`,
+      )
+      writeFileSync(join(dir, 'curl'), '#!/bin/sh\nexit 0\n')
+      chmodSync(join(dir, 'gcloud'), 0o755)
+      chmodSync(join(dir, 'curl'), 0o755)
+      try {
+        execFileSync(
+          'sh',
+          [join(CLOUD, 'provision.sh'), 'create', 'x', '--project', 'p', '--yes', '--in-org', '--password-stdin'],
+          { input: 'the-piped-password', env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, stdio: ['pipe', 'ignore', 'ignore'] },
+        )
+      } catch {
+        // Where the stand-in stops being convincing is past the point this is
+        // about; what matters is what the format step was handed.
+      }
+      expect(readFileSync(join(dir, 'format-stdin'), 'utf8')).toBe('the-piped-password')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
 })
 
 describe('a domain, when one is associated', () => {

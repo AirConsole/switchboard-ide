@@ -47,6 +47,9 @@ ALERT_EMAIL=""
 DOMAIN=""
 DOMAIN_GIVEN=0
 PASSWORD_STDIN=0
+USER_FLAG=""
+MACHINE_USER=""
+MACHINE_UID=""
 DOMAIN_ASKED=0
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
@@ -54,6 +57,22 @@ REPO_REF=${SWB_REPO_REF:-master}
 say() { printf '%s\n' "$*"; }
 die() { printf 'provision: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# A Linux user name, and one the image does not already use for something else:
+# setup.sh would refuse to take over `syslog` or `ubuntu` -- that would hand the
+# person's files to whatever the account was for -- and saying so here, before
+# a VM exists, is cheaper than a machine that stops at its first boot.
+valid_user() {
+  case "$1" in
+    ''|*[!a-z0-9_-]*) return 1 ;;
+    [!a-z_]*) return 1 ;;
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|\
+    list|irc|gnats|nobody|ubuntu|admin|syslog|messagebus|sshd|lxd|docker|caddy|\
+    _apt|tss|uuidd|tcpdump|landscape|pollinate|polkitd|systemd-*|google-sudoers)
+      return 1 ;;
+  esac
+  [ "${#1}" -le 32 ]
+}
 
 # A name, and nothing else. This value is interpolated into a command that runs
 # on the machine over ssh, so a quote in it would end the string it sits in --
@@ -69,7 +88,6 @@ valid_domain() {
   esac
 }
 
-
 usage() {
   sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
@@ -82,6 +100,8 @@ Options
   --alert-email <a>   who to mail when someone else touches the machine
   --domain <name>     also answer to this name; it tells you the DNS record
                       (--domain "" takes one away again)
+  --user <name>       who the machine is for: your login on it, and /home/<name>
+                      (default: your user name here; fixed once the disk exists)
   --password-stdin    read the machine's password from stdin, for scripts;
                       otherwise you are asked for one, or given one
   --repo <url>        which checkout the machine builds from
@@ -111,6 +131,7 @@ while [ $# -gt 0 ]; do
     --alert-email) ALERT_EMAIL=$2; shift ;;
     --domain) DOMAIN=$2; DOMAIN_GIVEN=1; DOMAIN_ASKED=1; shift ;;
     --password-stdin) PASSWORD_STDIN=1 ;;
+    --user) USER_FLAG=$2; shift ;;
     --repo) REPO_URL=$2; shift ;;
     --repo-ref) REPO_REF=$2; shift ;;
     --from-snapshot) FROM_SNAPSHOT=$2; shift ;;
@@ -124,7 +145,22 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Read the piped password **now**, before any other command can touch stdin.
+# `gcloud compute ssh` forwards stdin to the far end exactly as ssh does, so the
+# first ssh -- the loop that waits for the machine to finish installing --
+# swallowed the pipe, and choose_password, reading it minutes later, found
+# nothing and quietly made a password up. Measured with a gcloud shim that eats
+# stdin the way ssh does: the format step was handed a generated password, and
+# `create` printed it as though that were what had been asked for.
+PIPED_PASSWORD=""
+if [ "$PASSWORD_STDIN" -eq 1 ]; then
+  PIPED_PASSWORD=$(cat | tr -d '\n')
+  [ -n "$PIPED_PASSWORD" ] || die "--password-stdin: nothing arrived on stdin"
+fi
+
 valid_domain "$DOMAIN" || die "--domain takes a name like ide.example.com"
+[ -z "$USER_FLAG" ] || valid_user "$USER_FLAG" \
+  || die "--user takes a lowercase login name that is not a system account's"
 have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/docs/install"
 
 # Asked once, plainly, because every lookup below hides its own stderr -- and a
@@ -335,6 +371,40 @@ ensure_address() {
   IP=$(g compute addresses describe "$ADDRESS" --region="$REGION" --format='value(address)')
 }
 
+# --- who the machine is for --------------------------------------------------
+# Decided once, when the data disk is made, and kept **on that disk** as a label
+# -- never worked out again. The disk is what holds /home/<name>, owned by that
+# user; if `recreate` derived the name afresh, a rebuild run from another
+# laptop, or by somebody else, would make a user who owns none of the data.
+# That is the same kind of mistake the key's salt was, when it lived on the boot
+# disk: state a rebuild depends on has to survive the rebuild, and the thing
+# that survives it here is the disk.
+#
+# The uid goes with it, for the same reason: ownership on the volume is a
+# number. A disk from before either label existed is `switchboard`, with
+# whatever uid it already has, which is what those machines always were.
+resolve_user() {
+  if gq compute disks describe "$DATA_DISK" --zone="$ZONE"; then
+    MACHINE_USER=$(g compute disks describe "$DATA_DISK" --zone="$ZONE" \
+      --format='value(labels.switchboard-user)' 2>/dev/null)
+    MACHINE_UID=$(g compute disks describe "$DATA_DISK" --zone="$ZONE" \
+      --format='value(labels.switchboard-uid)' 2>/dev/null)
+    [ -n "$MACHINE_USER" ] || MACHINE_USER=switchboard
+    if [ -n "$USER_FLAG" ] && [ "$USER_FLAG" != "$MACHINE_USER" ]; then
+      die "this machine's disk belongs to $MACHINE_USER; --user cannot change who a disk is for"
+    fi
+    return 0
+  fi
+  if [ -n "$USER_FLAG" ]; then
+    MACHINE_USER=$USER_FLAG
+  else
+    MACHINE_USER=$(id -un 2>/dev/null | tr 'A-Z' 'a-z')
+    valid_user "$MACHINE_USER" \
+      || die "\"$MACHINE_USER\" cannot be a user on the machine; choose one with --user <name>"
+  fi
+  MACHINE_UID=2000
+}
+
 ensure_data_disk() {
   gq compute disks describe "$DATA_DISK" --zone="$ZONE" || {
     say "data disk $DATA_DISK (${DISK_SIZE}GB)"
@@ -346,6 +416,12 @@ ensure_data_disk() {
         --type=pd-balanced --quiet >/dev/null
     fi
   }
+  # Written every time, not only on creation: a disk made from a snapshot comes
+  # without its labels, and this is what makes the restored machine the same
+  # person's again.
+  labels="switchboard-user=$MACHINE_USER"
+  [ -n "$MACHINE_UID" ] && labels="$labels,switchboard-uid=$MACHINE_UID"
+  g compute disks add-labels "$DATA_DISK" --zone="$ZONE" --labels="$labels" --quiet >/dev/null 2>&1 || true
   gq compute resource-policies describe "$SCHEDULE" --region="$REGION" || {
     say "daily snapshots, kept 14 days"
     g compute resource-policies create snapshot-schedule "$SCHEDULE" --region="$REGION" \
@@ -380,7 +456,9 @@ render_user_data() {
   sed -e "s|PLACEHOLDER_SETUP_B64|$b64|" \
       -e "s|PLACEHOLDER_REPO_URL|$REPO_URL|" \
       -e "s|PLACEHOLDER_REPO_REF|$REPO_REF|" \
-      -e "s|PLACEHOLDER_NO_SUDO|$NO_SUDO|" "$DIR/cloud-config.yaml"
+      -e "s|PLACEHOLDER_NO_SUDO|$NO_SUDO|" \
+      -e "s|PLACEHOLDER_USER|$MACHINE_USER|" \
+      -e "s|PLACEHOLDER_UID|$MACHINE_UID|" "$DIR/cloud-config.yaml"
 }
 
 ensure_vm() {
@@ -453,7 +531,7 @@ wait_for() {
   printf 'waiting for %s' "$what"
   i=0
   while [ "$i" -lt "$limit" ]; do
-    if "$@" >/dev/null 2>&1; then printf ' ok\n'; return 0; fi
+    if "$@" </dev/null >/dev/null 2>&1; then printf ' ok\n'; return 0; fi
     printf '.'
     sleep 5
     i=$((i + 1))
@@ -486,8 +564,7 @@ read_secret() {
 
 choose_password() {
   if [ "$PASSWORD_STDIN" -eq 1 ]; then
-    PASSWORD=$(cat)
-    PASSWORD=$(printf '%s' "$PASSWORD" | tr -d '\n')
+    PASSWORD=$PIPED_PASSWORD
     CHOSEN=1
   elif have_tty; then
     say ""
@@ -526,6 +603,9 @@ cmd_create() {
   # be fetched after creating a network and a disk is finding out too late.
   ensure_machine_files
   check_org
+  # Before anything is built, so a name that cannot be a user costs nothing --
+  # it only reads the data disk, if there is one.
+  resolve_user
   # Run again on a machine that exists, this updates it -- which is how a
   # domain is added, changed or removed, and the reason `create` has no sibling
   # verb for doing that.
@@ -540,6 +620,7 @@ cmd_create() {
   [ "$EXISTING" -eq 1 ] || say "About to create, in $PROJECT ($ZONE):"
   if [ "$EXISTING" -eq 0 ]; then
     say "  VM $VM            $MACHINE, Ubuntu 24.04, no service account"
+    say "  for               $MACHINE_USER -- your login there, and /home/$MACHINE_USER"
     say "  data disk         ${DISK_SIZE}GB, encrypted, daily snapshots kept 14 days"
     say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
     say "  a static address"
@@ -600,7 +681,7 @@ cmd_create() {
   #   and only then the IDE, which refuses to start without a password.
   ssh_vm --command 'sudo mount /dev/mapper/switchboard-data /home && sudo systemctl start switchboard-unlocked.service' >/dev/null 2>&1 \
     || die "the volume was formatted but the machine did not come up; ssh in and look at switchboard-unlocked.service"
-  printf '%s' "$PASSWORD" | ssh_vm --command 'sudo -u switchboard env HOME=/home/switchboard /opt/switchboard/cli/bin/swb.js password --stdin --reset' >/dev/null 2>&1 \
+  printf '%s' "$PASSWORD" | ssh_vm --command "sudo -u $MACHINE_USER env HOME=/home/$MACHINE_USER /opt/switchboard/cli/bin/swb.js password --stdin --reset" >/dev/null 2>&1 \
     || die "the password could not be set; nothing is serving yet"
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
@@ -653,6 +734,9 @@ cmd_status() {
   IP=$(g compute instances describe "$VM" --zone="$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
   state=$(g compute instances describe "$VM" --zone="$ZONE" --format='value(status)')
   say "$VM  $state  https://$IP"
+  who=$(g compute disks describe "$DATA_DISK" --zone="$ZONE" \
+    --format='value(labels.switchboard-user)' 2>/dev/null || true)
+  say "  for ${who:-switchboard}"
 
   if curl -fsS --max-time 5 -o /dev/null "https://$IP/api/health" 2>/dev/null; then
     say "  unlocked, IDE answering"
@@ -692,6 +776,10 @@ cmd_status() {
 cmd_recreate() {
   ensure_machine_files
   gq compute instances describe "$VM" --zone="$ZONE" || die "no machine called $NAME in $PROJECT"
+  # Read off the disk *before* a snapshot restore deletes it: the replacement is
+  # made from a snapshot and arrives with no labels, and ensure_data_disk puts
+  # these back on it.
+  resolve_user
   say "This deletes the VM and its boot disk. The data disk and the address stay."
   [ -n "$FROM_SNAPSHOT" ] && say "The data disk will be REPLACED by snapshot $FROM_SNAPSHOT."
   ask "Recreate $VM?"
