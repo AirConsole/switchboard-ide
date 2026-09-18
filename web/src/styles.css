@@ -4215,6 +4215,30 @@ button {
 }
 
 /*
+ * The folder a dropped file would land in.
+ *
+ * `--legend`, and it is the same argument the keyboard legend makes for
+ * borrowing that colour: this says *where a thing you are doing will go*, which
+ * is what the blue means everywhere else in the chrome, and it is on screen
+ * only while your hand is on the mouse holding a file. It can never be mistaken
+ * for a state -- amber and green are read across a room, and this one is gone
+ * the instant you let go.
+ *
+ * An inset rather than a border: a border would move the name 2px sideways as
+ * the pointer crossed rows, and the whole row is the target.
+ */
+.files__row--drop {
+  color: var(--bone);
+  background: var(--level-lit);
+  box-shadow: inset 2px 0 0 var(--legend);
+}
+
+/* The tree's own empty space is the worktree root, and says so the same way. */
+.files__tree--drop {
+  box-shadow: inset 0 0 0 1px var(--legend);
+}
+
+/*
  * Changed in this worktree, or a directory holding something that is. The one
  * thing the tree is scanned for, and it is said by going bright against its
  * siblings -- no new colour, because a changed file is not a state that has to
@@ -4449,6 +4473,13 @@ button {
   border-left: 2px solid var(--rule-bright);
   background: var(--level-panel);
   color: var(--bone);
+}
+
+/* A notice that is not a problem -- an upload on its way -- so it keeps the
+   shape and gives up the emphasis. */
+.files__notice--quiet {
+  border-left-color: var(--rule);
+  color: var(--graphite);
 }
 
 .files__notice-actions {

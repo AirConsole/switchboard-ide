@@ -1,5 +1,9 @@
 import { execFile } from 'node:child_process'
-import { readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { createWriteStream } from 'node:fs'
+import type { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import type { BigIntStats, Dirent } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
@@ -658,6 +662,77 @@ export const writeTextFile = async (
   invalidateStatus(worktreePath)
   return {
     path: rel,
+    rev: revOf(after),
+    mtimeMs: Number(after.mtimeMs),
+    size: Number(after.size),
+  }
+}
+
+/**
+ * A file dropped into a directory of the worktree.
+ *
+ * Streamed to disk and never held: the whole point of dropping something in is
+ * that it is the kind of file the editor cannot open -- a screen recording, a
+ * sample, a PDF -- and those are exactly the sizes a buffer is wrong for. There
+ * is deliberately **no size cap**. `maxFileBytes` is a cap on text going
+ * through JSON and has nothing to say here, and any number picked for this
+ * would be the wrong one for somebody dropping a video; the caller already has
+ * a shell on this machine through every terminal in the row, so a cap protects
+ * nothing it could not walk around.
+ *
+ * Written to a temp file beside the target and renamed on, which is the
+ * opposite of what `writeTextFile` does one door up -- and the reasoning there
+ * says why: a save is to a file under git that is still in the editor's buffer,
+ * where a rename would change the inode and drop the mode. This is a file that
+ * does not exist yet, arriving over a network that can stop halfway, and a
+ * half-written one appearing in the tree under its final name is the thing to
+ * avoid. The rename is atomic within the directory.
+ *
+ * It refuses to overwrite. Dropping a file whose name is already taken is far
+ * more often a mistake than an intention, and the reader can see what is there
+ * and decide -- where a silent overwrite is not recoverable and not even
+ * noticed.
+ */
+export const uploadFile = async (
+  worktreePath: string,
+  dir: string,
+  name: string,
+  body: Readable,
+): Promise<FileSaved> => {
+  /*
+   * The *directory* is contained -- the file itself cannot be, since it does
+   * not exist and `containedPath` requires it to. The name is then held to a
+   * single ordinary segment, which is what closes the gap that opens: a `name`
+   * of `../../x` would otherwise be joined onto a path that passed the check.
+   */
+  if (name === '' || name === '.' || name === '..') throw new HttpError(400, 'that is not a name')
+  if (/[/\\\0]/.test(name)) throw new HttpError(400, `a file name cannot contain a path: ${name}`)
+  const root = await containedPath(worktreePath, dir)
+  const into = await stat(root)
+  if (!into.isDirectory()) throw new HttpError(400, `${dir} is not a directory`)
+  const target = join(root, name)
+  // Belt and braces: the name test above already makes this true, and a second
+  // reading costs nothing on a path that is about to receive bytes.
+  if (relative(root, target) !== name) throw new HttpError(403, `${name} is outside ${dir}`)
+
+  const exists = await stat(target).catch(() => null)
+  if (exists !== null) {
+    throw new HttpError(409, `there is already a file called ${name} here`, 'file-exists')
+  }
+
+  const temp = join(root, `.swb-upload-${randomUUID()}`)
+  try {
+    await pipeline(body, createWriteStream(temp))
+    await rename(temp, target)
+  } catch (err) {
+    await rm(temp, { force: true })
+    throw err
+  }
+  const after = await stat(target, { bigint: true })
+  // The marks beside these files in the browser are about to be wrong otherwise.
+  invalidateStatus(worktreePath)
+  return {
+    path: dir === '' ? name : `${dir}/${name}`,
     rev: revOf(after),
     mtimeMs: Number(after.mtimeMs),
     size: Number(after.size),

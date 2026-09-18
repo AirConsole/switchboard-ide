@@ -531,6 +531,38 @@ export class PeerClient {
     }
   }
 
+  /**
+   * A file on its way *to* a peer, streamed like `streamRaw` streams one back.
+   *
+   * `duplex: 'half'` is required for a request whose body is a stream rather
+   * than a buffer -- without it `fetch` refuses the body outright -- and a Node
+   * `Readable` is accepted as one because it is an async iterable.
+   *
+   * No timeout, for the reason `streamRaw`'s covers only the head: the clock
+   * elsewhere in this class bounds how long this process can be made to
+   * accumulate, and nothing accumulates here. A 200MB file takes as long as it
+   * takes, and the browser hanging up is what cancels it.
+   */
+  async uploadRaw(path: string, body: Readable): Promise<unknown> {
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: 'POST',
+        // Never followed; see `request`.
+        redirect: 'error',
+        headers: { ...this.headers(), 'content-type': 'application/octet-stream' },
+        body: Readable.toWeb(body) as ReadableStream,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' })
+      await this.checkProtocol(response)
+      const text = await readCapped(response)
+      if (!response.ok) throw peerError(response.status, text)
+      return text === '' ? {} : (JSON.parse(text) as unknown)
+    } catch (err) {
+      if (err instanceof HttpError) throw err
+      throw new PeerUnreachable(this.baseUrl, err instanceof Error ? err.message : String(err))
+    }
+  }
+
   /** What a socket to this peer must carry; see gate.ts on the peer's side. */
   socketHeaders(): Record<string, string> {
     return {

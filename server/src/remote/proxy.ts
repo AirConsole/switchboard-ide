@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import type { Readable } from 'node:stream'
 import type { Workspace } from '../workspace.js'
 import { HttpError } from '../http-error.js'
 import { ID_FIELDS, unscopeId } from './scope.js'
@@ -148,6 +149,16 @@ const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
  */
 const RAW_ROUTES: ReadonlySet<string> = new Set(['/api/worktrees/:id/raw'])
 
+/**
+ * And the one whose *request* is bytes rather than JSON.
+ *
+ * Separate from `RAW_ROUTES` because the two are different directions with
+ * different problems: a reply is streamed back and can be cancelled by the
+ * browser hanging up, while a request is streamed on and has no reply to
+ * forward until it has finished arriving.
+ */
+const UPLOAD_ROUTES: ReadonlySet<string> = new Set(['/api/worktrees/:id/upload'])
+
 const HOST_STEERABLE: ReadonlySet<string> = new Set([
   '/api/browse',
   '/api/recents',
@@ -268,6 +279,14 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
           if (!reply.raw.writableEnded) raw.abort()
         })
         await reply.send(raw.body ?? '')
+        return
+      }
+      if (UPLOAD_ROUTES.has(route)) {
+        // The body is the raw request, and it travels as one -- a dropped file
+        // on a linked machine is the same file, and buffering it here to hand
+        // it on would make a 200MB drop this process's problem.
+        const saved = await peer.uploadRaw(unscopeUrl(request.url), request.body as Readable)
+        await reply.code(201).send(saved ?? {})
         return
       }
       const reads = request.method === 'GET'

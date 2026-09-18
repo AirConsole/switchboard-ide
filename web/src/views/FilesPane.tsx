@@ -107,6 +107,8 @@ export interface FilesState {
   open: (path: string) => void
   toggleDir: (dir: string) => void
   expandDir: (dir: string) => void
+  /** Read the tree again now, rather than at the next poll. See `TREE_POLL_MS`. */
+  reread: () => void
   edited: (text: string) => void
   draft: () => string | null
   save: () => void
@@ -558,6 +560,7 @@ export const useFilesState = (opts: {
     open: onOpen,
     toggleDir: onToggleDir,
     expandDir: onExpandDir,
+    reread: () => setTreeNonce((n) => n + 1),
     edited,
     draft,
     save,
@@ -1403,6 +1406,73 @@ export const FilesPane = ({
   }
 
   /*
+   * Dropping files onto a directory in the tree.
+   *
+   * `dropInto` is the directory under the pointer, and `''` is the worktree
+   * root -- which is why it is a `string | null` rather than a string: the root
+   * is a real target and `''` cannot mean "none".
+   *
+   * A drop on a **file** row takes its directory. Rows are 20px and a file is
+   * what the pointer crosses on the way to the folder holding it, so refusing
+   * would make the common miss do nothing at all; every file manager reads it
+   * the same way.
+   */
+  const [dropInto, setDropInto] = useState<string | null>(null)
+  const [dropping, setDropping] = useState(0)
+  /*
+   * An upload's own failure, kept apart from the tree's `error`, which the
+   * read clears on its next success -- and this is about something you did
+   * rather than about the panel being out of touch, so it stays until the next
+   * drop says otherwise. The same distinction the row draws between `error`
+   * and `failure`.
+   */
+  const [dropError, setDropError] = useState<string | null>(null)
+
+  /** Whether a drag is carrying files, rather than a selection or a tab. */
+  const carriesFiles = (event: React.DragEvent): boolean =>
+    event.dataTransfer.types.includes('Files')
+
+  const dirOf = (row: TreeRow): string => (row.kind === 'dir' ? row.path : parentOf(row.path))
+
+  const dropOn = async (dir: string, event: React.DragEvent): Promise<void> => {
+    setDropInto(null)
+    const dropped = [...event.dataTransfer.files]
+    if (dropped.length === 0) return
+    /*
+     * A folder arrives as an entry with no bytes: `File.size` is 0 and reading
+     * it fails with a DOM error rather than producing anything. Said plainly
+     * here, because the alternative is an empty file appearing in the tree
+     * under the folder's name.
+     */
+    const folders = [...event.dataTransfer.items].filter(
+      (item) => item.webkitGetAsEntry()?.isDirectory === true,
+    )
+    if (folders.length > 0) {
+      setDropError('A folder cannot be dropped here — drop the files inside it.')
+      return
+    }
+    setDropping((n) => n + 1)
+    try {
+      // One at a time: the server writes each to a temp file and renames, and
+      // a browser that is streaming four bodies at once to the same directory
+      // is four stalled uploads rather than one that finishes.
+      for (const file of dropped) {
+        await api.uploadFile(files.worktreeId, dir, file)
+      }
+      setDropError(null)
+      // Show it where it landed rather than waiting up to three seconds for the
+      // poll -- and open the directory it went into, since dropping into a
+      // folder you cannot see inside is a file you have to go looking for.
+      if (dir !== '') expandDir(dir)
+      files.reread()
+    } catch (err) {
+      setDropError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDropping((n) => n - 1)
+    }
+  }
+
+  /*
    * Into the file, from the tree: open it if it is not already, and hand the
    * keyboard to it. Escape in the file comes back (see `backToList`).
    */
@@ -1652,7 +1722,33 @@ export const FilesPane = ({
     }
     if (mode === 'files') {
       return (
-        <div className="files__tree" ref={treeRef} onKeyDown={onKeyDown}>
+        <div
+          className={dropInto === '' ? 'files__tree files__tree--drop' : 'files__tree'}
+          ref={treeRef}
+          onKeyDown={onKeyDown}
+          /*
+           * The tree itself is the worktree root as a drop target, which is
+           * what the space below the last row is. `dragover` has to be taken
+           * for a drop to be allowed at all -- the default is to refuse -- and
+           * taking it here also stops the browser from navigating the tab to
+           * the file, which is what an unhandled drop does and which would take
+           * the IDE off the screen.
+           */
+          onDragOver={(event) => {
+            if (!carriesFiles(event)) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'copy'
+            if (event.target === event.currentTarget) setDropInto('')
+          }}
+          onDragLeave={(event) => {
+            if (event.target === event.currentTarget) setDropInto(null)
+          }}
+          onDrop={(event) => {
+            if (!carriesFiles(event)) return
+            event.preventDefault()
+            if (event.target === event.currentTarget) void dropOn('', event)
+          }}
+        >
           {!files.loading && rows.length === 0 && <p className="files__note">Nothing here.</p>}
           {rows.map((row, index) => {
             const isOpenFile = row.kind === 'file' && row.path === files.path
@@ -1665,11 +1761,33 @@ export const FilesPane = ({
                   'files__row',
                   isOpenFile ? 'files__row--on' : '',
                   row.changed ? 'files__row--changed' : '',
+                  row.kind === 'dir' && row.path === dropInto ? 'files__row--drop' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
                 style={{ paddingLeft: 6 + row.depth * INDENT }}
                 tabIndex={onCursor ? 0 : -1}
+                /*
+                 * Every row is a drop target and a file's is its directory, so
+                 * the mark goes on the *folder* row -- hovering a file lights
+                 * the folder above it, which answers the question the reader is
+                 * actually asking while holding something. Marking every row
+                 * that shares the destination was the first cut and lit a
+                 * folder's whole contents at once, which reads like a warning
+                 * about the files already there rather than a destination.
+                 */
+                onDragOver={(event) => {
+                  if (!carriesFiles(event)) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'copy'
+                  setDropInto(dirOf(row))
+                }}
+                onDragLeave={() => setDropInto(null)}
+                onDrop={(event) => {
+                  if (!carriesFiles(event)) return
+                  event.preventDefault()
+                  void dropOn(dirOf(row), event)
+                }}
                 onClick={() => {
                   pick(row)
                   /*
@@ -1883,6 +2001,14 @@ export const FilesPane = ({
            */
           <div className="files__notice">{files.error ?? changes.error}</div>
         )}
+        {/*
+          * A drop in progress, and a drop that failed. Both belong up here with
+          * the other notice rather than over the tree: a line that appeared
+          * among the rows would move the row under the pointer, which on a
+          * second drop is the wrong folder.
+          */}
+        {dropping > 0 && <div className="files__notice files__notice--quiet">Copying…</div>}
+        {dropError !== null && <div className="files__notice">{dropError}</div>}
         {sidebar()}
         <div className="files__find">
           <input
