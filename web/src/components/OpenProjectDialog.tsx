@@ -542,7 +542,8 @@ export const OpenProjectDialog = ({
             />
             <span className="field__hint">
               Any directory inside a repository works; it resolves to the repository root. A path
-              that does not exist, or is not a repository yet, can be set up as one.
+              that does not exist is created and made into a repository — which is how you start
+              one from nothing — and a directory that is not a repository yet can be made into one.
             </span>
           </div>
 
