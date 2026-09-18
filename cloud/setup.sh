@@ -269,7 +269,10 @@ if [ ! -d "$IDE_DIR/.git" ]; then
   as_swb git clone --branch "$REPO_REF" "$REPO_URL" "$IDE_DIR"
 fi
 if [ ! -f "$IDE_DIR/server/dist/index.js" ] || [ ! -f "$IDE_DIR/web/dist/index.html" ]; then
-  log "building the IDE (several minutes: node-pty compiles here)"
+  # Fast, and worth saying so because the first version of this line promised
+  # several minutes: node-pty ships prebuilt binaries, so nothing is compiled
+  # here. Measured at 40 seconds for install and build together.
+  log "building the IDE"
   as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
 fi
 
