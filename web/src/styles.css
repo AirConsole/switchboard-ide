@@ -2083,6 +2083,8 @@ button {
   font-family: var(--font-ui);
   font-size: 12px;
   line-height: 1.5;
+  /* Italic, because all of it is quoted: your words, not the interface's. */
+  font-style: italic;
 }
 
 .taskstrip__task {

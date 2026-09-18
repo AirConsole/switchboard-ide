@@ -126,7 +126,8 @@ const readTail = async (path: string): Promise<string | null> => {
  * something.
  */
 type Mark =
-  | { kind: 'prompt'; text: string }
+  /* `steer`: said mid-turn, so it follows the task and never replaces it. */
+  | { kind: 'prompt'; text: string; steer?: true }
   | { kind: 'recorded-prompt'; text: string }
   | { kind: 'turn-end' }
   | null
@@ -223,7 +224,7 @@ const readCommand = (content: string): string | null => {
  * fixture written by anything else, which is a poor way to find out that a
  * pre-filter is really a parser.
  */
-const INTERESTING = /"(?:last-prompt|turn_duration)"|"type"\s*:\s*"user"/
+const INTERESTING = /"(?:last-prompt|turn_duration|queued_command)"|"type"\s*:\s*"user"/
 
 const markOf = (line: string): Mark => {
   if (!INTERESTING.test(line)) return null
@@ -237,6 +238,7 @@ const markOf = (line: string): Mark => {
   if (typeof row !== 'object' || row === null) return null
   const record = row as {
     type?: unknown
+    attachment?: { type?: unknown; commandMode?: unknown; prompt?: unknown }
     subtype?: unknown
     lastPrompt?: unknown
     isMeta?: unknown
@@ -247,6 +249,29 @@ const markOf = (line: string): Mark => {
   if (record.type === 'last-prompt') {
     if (typeof record.lastPrompt !== 'string' || record.lastPrompt === '') return null
     return { kind: 'recorded-prompt', text: record.lastPrompt }
+  }
+  /*
+   * A message sent while Claude was working.
+   *
+   * It is not a `user` record at all: Claude folds it into the running turn
+   * and records it as a `queued_command` attachment, so every "also make it
+   * italic" said mid-turn was missing from under the task -- measured in the
+   * worktree this was written in. Surveyed over every local transcript: 289 of
+   * these in `prompt` mode, none of them also written as a user record, so
+   * reading both cannot count one twice. `task-notification` is the other
+   * mode, and is machinery like its tag below.
+   *
+   * Never a task, however long: it was said about the work already running,
+   * so it steers that task rather than setting a new one. By the word count
+   * alone "the last prompt display should strip the text so newlines at the
+   * end are ignored" would have replaced the task it was a remark on.
+   */
+  if (record.type === 'attachment') {
+    const queued = record.attachment
+    if (record.isSidechain === true || queued?.type !== 'queued_command') return null
+    if (queued.commandMode !== 'prompt' || typeof queued.prompt !== 'string') return null
+    const said = queued.prompt.replace(PASTE_TAG, '')
+    return said.trim() === '' ? null : { kind: 'prompt', text: said, steer: true }
   }
   if (record.type !== 'user') return null
   // A subagent's own transcript, or something the harness injected.
@@ -399,14 +424,24 @@ const tidy = (text: string): string => {
  * `last-prompt` for. So a real record wins whenever there is one, and the
  * bookkeeping is the fallback for a session that has none in reach.
  */
-const promptsIn = (text: string): { real: string[]; recorded?: string } => {
-  const found: { real: string[]; recorded?: string } = { real: [] }
+/** A prompt, and whether it was said mid-turn -- see `Mark`. */
+interface Said {
+  text: string
+  steer?: true
+}
+
+const setsTask = (said: Said): boolean => said.steer !== true && isTask(said.text)
+
+const promptsIn = (text: string): { real: Said[]; recorded?: string } => {
+  const found: { real: Said[]; recorded?: string } = { real: [] }
   for (const line of text.split('\n')) {
     const mark = markOf(line)
     if (mark === null || mark.kind === 'turn-end') continue
     const prompt = tidy(mark.text)
     if (prompt === '') continue
-    if (mark.kind === 'prompt') found.real.push(prompt)
+    if (mark.kind === 'prompt') {
+      found.real.push(mark.steer ? { text: prompt, steer: true } : { text: prompt })
+    }
     else found.recorded = prompt
   }
   return found
@@ -420,18 +455,18 @@ const promptsIn = (text: string): { real: string[]; recorded?: string } => {
  * for one, so a session that opened with `merge origin master` still has a
  * line saying so.
  */
-const fold = (into: PromptSummary, real: string[]): PromptSummary => {
+const fold = (into: PromptSummary, real: Said[]): PromptSummary => {
   let { task, followUps } = into
-  for (const prompt of real) {
-    if (task === undefined || isTask(prompt)) {
-      task = prompt
+  for (const said of real) {
+    if (task === undefined || setsTask(said)) {
+      task = said.text
       followUps = []
     } else {
-      followUps = [...followUps, prompt]
+      followUps = [...followUps, said.text]
     }
   }
   return {
-    prompt: real.at(-1) ?? into.prompt,
+    prompt: real.at(-1)?.text ?? into.prompt,
     task,
     followUps: followUps.slice(-FOLLOW_UPS_MAX),
   }
@@ -489,7 +524,7 @@ export const promptSummary = async (cwd: string): Promise<PromptSummary | undefi
     const text = from > 0 ? read.text.slice(read.text.indexOf('\n') + 1) : read.text
     const found = promptsIn(text)
     next = { ...next, ...fold({ followUps: [] }, found.real), size: read.end, recorded: found.recorded }
-    if (found.real.some(isTask) || from === 0 || window >= SEED_MAX_BYTES) break
+    if (found.real.some(setsTask) || from === 0 || window >= SEED_MAX_BYTES) break
   }
   prompts.set(cwd, next)
   return summaryOf(next)
