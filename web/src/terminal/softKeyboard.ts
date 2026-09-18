@@ -60,3 +60,13 @@ export const useSoftKeyboard = (): boolean => {
   }, [])
   return shown
 }
+
+/**
+ * Is the keyboard in front of the reader drawn on the glass?
+ *
+ * A coarse pointer is the honest test available: nothing reports whether a
+ * physical keyboard is attached, and `(pointer: coarse)` is true of exactly the
+ * devices whose keyboard takes half the screen when it appears. Read at the
+ * moment it is needed rather than once, since a tablet gains and loses a mouse.
+ */
+export const softKeys = (): boolean => window.matchMedia('(pointer: coarse)').matches

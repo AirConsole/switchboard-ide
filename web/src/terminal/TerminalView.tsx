@@ -7,7 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
-import { useSoftKeyboard } from './softKeyboard.js'
+import { softKeys, useSoftKeyboard } from './softKeyboard.js'
 import { RowStep } from '../views/rowStep.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
@@ -89,6 +89,16 @@ export interface TerminalViewProps {
   focus?: number | null
   className?: string
   onFocusCapture?: () => void
+  /**
+   * The last screen this terminal had, handed over as it goes.
+   *
+   * What a Claude prints on its way out is the only account of why it stopped,
+   * and the pane that replaces this one asks the *server* for it -- which works
+   * only while the server still has the dead session. A linked machine running
+   * an older version drops it within a poll, and then nothing anywhere can say
+   * what happened. This browser watched it happen, so it keeps the screen.
+   */
+  onFarewell?: (lines: string[]) => void
 }
 
 const THEME = {
@@ -114,7 +124,15 @@ export const TerminalView = ({
   focus = null,
   className,
   onFocusCapture,
+  onFarewell,
 }: TerminalViewProps): React.ReactElement => {
+  /*
+   * Read in the cleanup below, which runs long after this component last
+   * rendered -- a ref, so it is the current callback rather than the one that
+   * happened to be in scope when the terminal was built.
+   */
+  const farewell = useRef(onFarewell)
+  farewell.current = onFarewell
   const hostRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   /*
@@ -586,6 +604,14 @@ export const TerminalView = ({
       host.removeEventListener('touchcancel', onTouchEnd)
       unsubscribe()
       termRef.current = null
+      /*
+       * The screen, before it goes: the last lines with anything on them, from
+       * the bottom up. Taken on every unmount rather than only on a death --
+       * this view cannot tell one from the other, and a live terminal's last
+       * screen is simply the same screen -- and it is the *reader* of this who
+       * decides whether it is worth showing (see `IdleClaude`).
+       */
+      farewell.current?.(lastLines(term, FAREWELL_LINES))
       term.dispose()
     }
     // session.cols/rows are intentionally excluded: a primary terminal drives
@@ -701,7 +727,7 @@ export const TerminalView = ({
         * resized to what is left. Drawn over the bottom rows it would hide the
         * prompt, which is the one line you are typing at.
         */}
-      {holdsKeyboard && keyboardUp && touchKeyboard() && (
+      {holdsKeyboard && keyboardUp && softKeys() && (
         <div className="keybar">
           {BAR_KEYS.map((key) => (
             <span
@@ -746,13 +772,35 @@ export const TerminalView = ({
   )
 }
 
+/** How much of a dying terminal's screen is worth keeping. */
+const FAREWELL_LINES = 60
+
 /**
- * Is the keyboard in front of the reader a soft one?
+ * The bottom of a terminal's screen, as text.
  *
- * A coarse pointer is the honest test available: there is no way to ask whether
- * a physical keyboard is attached, and `(pointer: coarse)` is true of exactly
- * the devices whose keyboard is drawn on the glass. A tablet with a keyboard
- * case gets the bar it does not need, which costs 44px; a phone without the bar
- * cannot answer an agent at all.
+ * Trailing blank lines are dropped -- a screen is 24 or 40 rows whatever is on
+ * it, and an error four lines long would otherwise arrive followed by thirty
+ * blanks. Leading ones are kept: a gap between two paragraphs of a stack trace
+ * is part of what it says.
+ *
+ * So is tmux's own `Pane is dead (status 3, ...)`, which `remain-on-exit`
+ * writes over the screen it kept -- measured, it arrived as the last line of
+ * the farewell. It is furniture, and the placeholder says the status itself in
+ * the interface's own words.
  */
-const touchKeyboard = (): boolean => window.matchMedia('(pointer: coarse)').matches
+const lastLines = (term: Terminal, most: number): string[] => {
+  const buffer = term.buffer.active
+  const lines: string[] = []
+  for (let row = buffer.baseY + term.rows - 1; row >= 0 && lines.length < most; row -= 1) {
+    const text = buffer.getLine(row)?.translateToString(true) ?? ''
+    if (lines.length === 0 && (text.trim() === '' || TMUX_DEAD.test(text))) continue
+    lines.unshift(text)
+  }
+  return lines
+}
+
+/** tmux's notice on a pane whose command has exited, kept on screen by
+    `remain-on-exit on` -- see `server/tmux.conf`. */
+const TMUX_DEAD = /^\s*Pane is dead\b/
+
+
