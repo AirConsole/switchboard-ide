@@ -753,7 +753,7 @@ interface WorktreeTileProps {
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
-  /** Bring this worktree wholly into view. */
+  /** Bring this worktree wholly into view, back to Claude alone. */
   onReveal: () => void
   onTogglePanel: (panel: PanelName) => void
   /** Put this worktree away: the sleep dialog, where deleting also lives. */
@@ -976,7 +976,10 @@ const WorktreeTile = ({
 
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
-  const revealHint = `Click to bring ${worktree.name}'s window into view`
+  const panelOpen = panes.some((pane) => pane.kind !== 'claude')
+  const revealHint = panelOpen
+    ? `Click to close the panel and go back to ${worktree.name}'s Claude`
+    : `Click to bring ${worktree.name}'s window into view`
 
 
   const identity = (
@@ -1128,9 +1131,12 @@ const WorktreeTile = ({
         onClick={(event) => {
           /*
            * Clicking the bar brings the worktree's window to the front, which
-           * is how you get to one you can only see part of. Never through
-           * something that already does its own job -- a panel toggle, sleep,
-           * remove, or a panel's own controls in the bar.
+           * is how you get to one you can only see part of -- and shuts
+           * whatever panel is open beside Claude, since the bar is the biggest
+           * target a window has and "just Claude again" otherwise meant finding
+           * the lit toggle. Never through something that already does its own
+           * job -- a panel toggle, sleep, remove, or a panel's own controls in
+           * the bar.
            */
           if (
             (event.target as HTMLElement).closest(
@@ -1408,6 +1414,12 @@ export interface OverviewProps {
   onStart: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
+  /**
+   * The same, but back to Claude alone: any open panel is shut first. What a
+   * click on a window's bar does, and not the Cmd+arrow walk, which steps
+   * *through* the panels and could never land on one that shut as it arrived.
+   */
+  onRevealClaude: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** A worktree's queue emptied itself into Claude; close its todo panel. */
   onQueueDrained: (worktreeId: string) => void
@@ -1473,6 +1485,7 @@ export const Overview = ({
   onCloseProject,
   onStart,
   onReveal,
+  onRevealClaude,
   onTogglePanel,
   onQueueDrained,
   onSelectTerminal,
@@ -2710,7 +2723,7 @@ export const Overview = ({
                       commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
-                      onReveal={() => onReveal(worktree.id)}
+                      onReveal={() => onRevealClaude(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onSleep={() => onSleep(worktree.id)}
                       onQueueDrained={() => onQueueDrained(worktree.id)}
