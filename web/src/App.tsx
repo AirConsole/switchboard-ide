@@ -1070,6 +1070,7 @@ export const App = (): React.ReactElement => {
         onActivate={activate}
         onStart={startClaude}
         onReveal={reveal}
+        onRevealClaude={revealClaude}
         onTogglePanel={togglePanel}
         onQueueDrained={queueDrained}
         onCreated={(worktreeId) => {
