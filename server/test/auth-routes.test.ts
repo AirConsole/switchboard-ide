@@ -69,7 +69,7 @@ describe('login', () => {
       method: 'POST',
       url: '/api/login',
       payload: { password: PASSWORD },
-      headers: { 'sec-fetch-site': 'same-origin', host: '127.0.0.1:8083' },
+      headers: { 'sec-fetch-site': 'same-origin', host: '127.0.0.1:7999' },
     })
     expect(String(browser.headers['set-cookie'])).toContain('HttpOnly')
     expect(browser.json().token).toBeUndefined()

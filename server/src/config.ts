@@ -10,7 +10,7 @@ const int = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback
 }
 
-const port = int(env.SWB_PORT, 8083)
+const port = int(env.SWB_PORT, 7999)
 const isDev = env.NODE_ENV !== 'production'
 
 /**
@@ -104,7 +104,7 @@ const publicOrigins = (): ReadonlySet<string> => {
          * so that is what has to be in here.
          *
          * The scheme is checked, and not as a formality: a name that is itself
-         * scheme-shaped (`box.local:8083`) parses as the *scheme*
+         * scheme-shaped (`box.local:7999`) parses as the *scheme*
          * `box.local:`, and `.origin` for any non-special scheme is the
          * literal string `"null"` -- which would land in this set and blow up
          * `new URL` downstream.

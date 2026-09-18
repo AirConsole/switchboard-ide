@@ -44,12 +44,30 @@ NO_SUDO=0
 DELETE_DATA=0
 FROM_SNAPSHOT=""
 ALERT_EMAIL=""
+DOMAIN=""
+DOMAIN_GIVEN=0
+DOMAIN_ASKED=0
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'provision: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# A name, and nothing else. This value is interpolated into a command that runs
+# on the machine over ssh, so a quote in it would end the string it sits in --
+# the flag is typed by the person who already has ssh, but a typo should not
+# become a shell.
+valid_domain() {
+  case "$1" in
+    '') return 0 ;;
+    *[!A-Za-z0-9.-]*) return 1 ;;
+    -*|.*|*-|*.) return 1 ;;
+    *.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 
 usage() {
   sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
@@ -61,6 +79,8 @@ Options
   --machine <type>    default e2-standard-4
   --disk-size <GB>    data disk, default 100
   --alert-email <a>   who to mail when someone else touches the machine
+  --domain <name>     also answer to this name; it tells you the DNS record
+                      (--domain "" takes one away again)
   --repo <url>        which checkout the machine builds from
   --repo-ref <ref>    which branch or tag of it (default master)
   --in-org            allow a project inside an organisation (see above)
@@ -86,6 +106,7 @@ while [ $# -gt 0 ]; do
     --machine) MACHINE=$2; shift ;;
     --disk-size) DISK_SIZE=$2; shift ;;
     --alert-email) ALERT_EMAIL=$2; shift ;;
+    --domain) DOMAIN=$2; DOMAIN_GIVEN=1; DOMAIN_ASKED=1; shift ;;
     --repo) REPO_URL=$2; shift ;;
     --repo-ref) REPO_REF=$2; shift ;;
     --from-snapshot) FROM_SNAPSHOT=$2; shift ;;
@@ -99,7 +120,16 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+valid_domain "$DOMAIN" || die "--domain takes a name like ide.example.com"
 have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/docs/install"
+
+# Asked once, plainly, because every lookup below hides its own stderr -- and a
+# `describe` that fails because the credentials expired is indistinguishable
+# from one that fails because the machine is not there. Measured: `status` on a
+# running machine said "no machine called dom in n-dream-workspace", which sent
+# the reader looking in the wrong place entirely.
+gcloud auth print-access-token >/dev/null 2>&1 \
+  || die "gcloud has no usable credentials right now -- run:  gcloud auth login"
 [ -n "$PROJECT" ] || die "--project is required (a project of your own; see --in-org)"
 
 REGION=$(printf '%s' "$ZONE" | sed 's/-[a-z]$//')
@@ -160,6 +190,110 @@ check_org() {
     exit 1
   fi
   ask "Continue anyway?"
+}
+
+# --- a name for the address --------------------------------------------------
+# The machine is reachable by its IP whatever happens; a domain is an addition,
+# never a replacement. That is on purpose: the address is the one name that
+# cannot be wrong, and it is what you fall back to the day the DNS is.
+# Answers yes / no / unknown, and the third is not the second: a machine with
+# none of these tools has not told us the name is wrong, and treating it as
+# wrong would mean five minutes of dots on every such machine.
+#
+# Compared field by field with awk rather than grepped: `grep 34.65.1.2` also
+# matches 134.65.1.20, and a word-boundary escape that works in GNU grep is not
+# the one BSD grep wants.
+resolves_to() {
+  name=$1; want=$2
+  # dig and host first, because they list *every* A record. getent answers with
+  # whichever address the resolver felt like returning -- measured:
+  # one.one.one.one came back as 1.0.0.1 alone, so a check for 1.1.1.1 said the
+  # name pointed somewhere else. It stays as the fallback because a Linux box
+  # without bind-utils has nothing else, and a machine has one A record.
+  if have dig; then
+    dig +short "$name" A 2>/dev/null | awk -v w="$want" '$1 == w { f = 1 } END { exit !f }'
+  elif have host; then
+    host -t A "$name" 2>/dev/null | awk -v w="$want" '$NF == w { f = 1 } END { exit !f }'
+  elif have getent; then
+    # `ahostsv4`, not `hosts`: the latter answers with AAAA records where a name
+    # has them, and the A record is what is being checked.
+    getent ahostsv4 "$name" 2>/dev/null | awk -v w="$want" '$1 == w { f = 1 } END { exit !f }'
+  elif have nslookup; then
+    nslookup "$name" 2>/dev/null | awk -v w="$want" '$1 == "Address:" && $2 == w { f = 1 } END { exit !f }'
+  else
+    return 2
+  fi
+}
+
+# `$?` after an `if` whose condition failed is **zero**, not the condition's
+# status -- POSIX says an `if` with no else that does not run its then-branch
+# exits 0. So the status is taken in the `else`, where it is still the
+# condition's. Read as `$?` after the `fi`, "cannot tell" was indistinguishable
+# from "does not resolve".
+dns_says() {
+  if resolves_to "$1" "$2"; then echo yes; return 0; else rc=$?; fi
+  if [ "$rc" -eq 2 ]; then echo unknown; else echo no; fi
+}
+
+ask_domain() {
+  [ "$DOMAIN_ASKED" -eq 1 ] && return 0
+  DOMAIN_ASKED=1
+  [ "$ASSUME_YES" -eq 1 ] && return 0
+  have_tty || return 0
+  say ""
+  say "A domain is optional: the machine works at https://$IP either way."
+  printf 'Also answer to a domain? Type it, or press enter for none: '
+  read -r reply </dev/tty || reply=""
+  DOMAIN=$(printf '%s' "$reply" | tr -d ' ')
+  valid_domain "$DOMAIN" || die "\"$DOMAIN\" is not a domain name; nothing was changed"
+  [ -n "$DOMAIN" ] && DOMAIN_GIVEN=1
+  return 0
+}
+
+# What to go and do, printed as early as the address exists -- which is before
+# the ten minutes the machine spends building itself, so the record has time to
+# propagate while you wait rather than after.
+say_dns_record() {
+  [ -n "$DOMAIN" ] || return 0
+  say ""
+  say "  Point $DOMAIN at this machine, at whoever runs its DNS:"
+  say ""
+  say "      type   A"
+  say "      name   $DOMAIN"
+  say "      value  $IP"
+  say ""
+  say "  (A record, not CNAME: this is an address, and a CNAME cannot point at one.)"
+}
+
+wait_for_dns() {
+  [ -n "$DOMAIN" ] || return 0
+  case "$(dns_says "$DOMAIN" "$IP")" in
+    yes) say "$DOMAIN points here already"; return 0 ;;
+    unknown) say "note: nothing on this machine can check DNS; carrying on."; return 0 ;;
+  esac
+  printf 'waiting for %s to resolve to %s' "$DOMAIN" "$IP"
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if [ "$(dns_says "$DOMAIN" "$IP")" = yes ]; then printf ' ok\n'; return 0; fi
+    printf '.'
+    sleep 5
+    i=$((i + 1))
+  done
+  printf '\n'
+  say "note: $DOMAIN does not point here yet. The machine is set up for it anyway --"
+  say "  Caddy gets the certificate on its own once the record exists. Until then,"
+  say "  https://$IP works."
+}
+
+# Applied over ssh rather than baked into the machine's first boot, so that
+# adding, changing or removing a domain later is the same code path as setting
+# one up -- `create` again, with a different --domain.
+apply_domain() {
+  ssh_vm --command "sudo sed -i '/^SWB_DOMAIN=/d' /etc/switchboard/env && \
+    printf 'SWB_DOMAIN=%s\\n' '$DOMAIN' | sudo tee -a /etc/switchboard/env >/dev/null && \
+    sudo /etc/switchboard/setup.sh >/dev/null 2>&1 && \
+    sudo systemctl try-restart switchboard.service" >/dev/null 2>&1 \
+    || die "the domain could not be applied; the machine is otherwise fine at https://$IP"
 }
 
 # --- the pieces, each looked up before it is made ---------------------------
@@ -309,19 +443,34 @@ wait_for() {
 # --- create ------------------------------------------------------------------
 cmd_create() {
   check_org
-  say ""
-  say "About to create, in $PROJECT ($ZONE):"
-  say "  VM $VM            $MACHINE, Ubuntu 24.04, no service account"
-  say "  data disk         ${DISK_SIZE}GB, encrypted, daily snapshots kept 14 days"
-  say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
-  say "  a static address"
-  say ""
-  say "Roughly \$110-130 a month for e2-standard-4 plus disks, less if you stop it."
-  say ""
-  ask "Create it?"
+  # Run again on a machine that exists, this updates it -- which is how a
+  # domain is added, changed or removed, and the reason `create` has no sibling
+  # verb for doing that.
+  if gq compute instances describe "$VM" --zone="$ZONE"; then
+    EXISTING=1
+    say ""
+    say "$VM exists; this will update it, not build a second one."
+  else
+    EXISTING=0
+  fi
+  [ "$EXISTING" -eq 1 ] || say ""
+  [ "$EXISTING" -eq 1 ] || say "About to create, in $PROJECT ($ZONE):"
+  if [ "$EXISTING" -eq 0 ]; then
+    say "  VM $VM            $MACHINE, Ubuntu 24.04, no service account"
+    say "  data disk         ${DISK_SIZE}GB, encrypted, daily snapshots kept 14 days"
+    say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
+    say "  a static address"
+    say ""
+    say "Roughly \$110-130 a month for an e2-standard-4 plus disks, less for $MACHINE,"
+    say "and less again if you stop it."
+    say ""
+    ask "Create it?"
+  fi
 
   ensure_network
   ensure_address
+  ask_domain
+  say_dns_record
   ensure_data_disk
   ensure_vm
   ensure_alert
@@ -333,11 +482,33 @@ cmd_create() {
   # The password is generated here and travels once, over the tunnel, into a
   # process that turns it into a key. It is never in metadata, never in a file,
   # and never in this script's own output except at the end, for the human.
+  # `format.js` exits 2 on a device that already holds a LUKS volume, and that
+  # is the answer to "am I building or updating": it refuses to reformat the
+  # disk holding everything you have, so the password and the data below it are
+  # left exactly alone and only the domain is applied.
   PASSWORD=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24)
   say "formatting the data volume"
-  RECOVERY=$(printf '%s' "$PASSWORD" | ssh_vm --command 'sudo SWB_DATA_DEV=/dev/disk/by-id/google-switchboard-data node /opt/switchboard/cloud/unlock/format.js' 2>/dev/null | tail -1)
-  [ -n "$RECOVERY" ] || die "the volume was not formatted; nothing else was changed"
+  #
+  # `tail` is applied *after*, not in the pipeline: sh has no PIPESTATUS, so
+  # `x=$(a | b | tail -1); rc=$?` reports tail's status -- always 0 -- and the
+  # refusal above read as an empty answer. Measured: re-running `create` on a
+  # machine that exists died with "the volume was not formatted", which is the
+  # one thing it had carefully not done.
+  set +e
+  format_out=$(printf '%s' "$PASSWORD" | ssh_vm --command 'sudo SWB_DATA_DEV=/dev/disk/by-id/google-switchboard-data node /opt/switchboard/cloud/unlock/format.js' 2>/dev/null)
+  formatted=$?
+  set -e
+  RECOVERY=$(printf '%s' "$format_out" | tail -1)
+  if [ "$formatted" -eq 2 ]; then
+    say "  the volume is already set up; leaving it and the password alone"
+    FRESH=0
+  elif [ "$formatted" -ne 0 ] || [ -z "$RECOVERY" ]; then
+    die "the volume was not formatted; nothing else was changed"
+  else
+    FRESH=1
+  fi
 
+  if [ "$FRESH" -eq 1 ]; then
   # Order matters, and each step needs the one before it:
   #   mount, so the user has a home at all;
   #   unlocked, which makes that home and the IDE's settings in it;
@@ -350,12 +521,33 @@ cmd_create() {
     || die "the password could not be set; nothing is serving yet"
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
+  fi
+
+  # Applied whenever --domain was *given* at all, including as "": that is how
+  # a domain is taken away again, through the same code path that adds one.
+  # Keyed on the flag rather than on "we have asked", which under --yes is true
+  # of every machine and would have made each one ssh in to remove a domain it
+  # never had.
+  if [ -n "$DOMAIN" ]; then
+    wait_for_dns
+    say "teaching the machine its name"
+    apply_domain
+  elif [ "$DOMAIN_GIVEN" -eq 1 ]; then
+    say "removing any domain this machine had"
+    apply_domain
+  fi
 
   wait_for "the IDE" 60 curl -fsS --max-time 5 -o /dev/null "https://$IP/api/health" || \
     say "note: the IDE did not answer yet; it may still be starting"
 
   say ""
   say "  https://$IP"
+  [ -n "$DOMAIN" ] && say "  https://$DOMAIN"
+  if [ "$FRESH" -eq 0 ]; then
+    say ""
+    say "Updated. The password is the one you already have."
+    return 0
+  fi
   say ""
   say "  password   $PASSWORD"
   say "  recovery   $RECOVERY"
@@ -381,6 +573,15 @@ cmd_status() {
     say "  locked -- open https://$IP and enter the password"
   else
     say "  not answering"
+  fi
+
+  domain=$(ssh_vm --command 'sed -n "s/^SWB_DOMAIN=//p" /etc/switchboard/env' 2>/dev/null | tr -d "\r" | tail -1)
+  if [ -n "${domain:-}" ]; then
+    case "$(dns_says "$domain" "$IP")" in
+      yes) say "  also https://$domain" ;;
+      unknown) say "  also $domain (nothing here can check whether it points at $IP)" ;;
+      *) say "  also $domain -- which does NOT point here; add an A record to $IP" ;;
+    esac
   fi
 
   snap=$(g compute snapshots list --filter="sourceDisk~$DATA_DISK" --sort-by=~creationTimestamp \

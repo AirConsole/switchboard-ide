@@ -86,13 +86,13 @@ describe('what the hook does with the routes that are not the API', () => {
       method: 'GET',
       url: '/ws',
       remoteAddress: '10.0.0.7',
-      headers: { host: '127.0.0.1:8083' },
+      headers: { host: '127.0.0.1:7999' },
     })
     expect(res.statusCode).toBe(200)
   })
 
   it('serves a peer\u2019s page to its own machine only', async () => {
-    const fromHere = await app.inject({ method: 'GET', url: '/anything', headers: { host: '127.0.0.1:8083' } })
+    const fromHere = await app.inject({ method: 'GET', url: '/anything', headers: { host: '127.0.0.1:7999' } })
     expect(fromHere.statusCode).toBe(200)
     // Including a path that matches no route at all, which reaches the SPA
     // catch-all and so had no `routeOptions.url` to be gated on.
@@ -100,7 +100,7 @@ describe('what the hook does with the routes that are not the API', () => {
       method: 'GET',
       url: '/anything',
       remoteAddress: '10.0.0.7',
-      headers: { host: '127.0.0.1:8083' },
+      headers: { host: '127.0.0.1:7999' },
     })
     // Served, and deliberately: this was keyed on the address, which behind a
     // reverse proxy is every caller on earth -- so the restriction described

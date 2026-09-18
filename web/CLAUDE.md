@@ -2214,7 +2214,7 @@ from a desktop.
 
 Drive a real browser against a scratch instance (`pnpm scratch start`),
 never the user's instance on
-:8083, and close the tab when you finish — a second viewer competes for terminal
+:7999, and close the tab when you finish — a second viewer competes for terminal
 geometry. Then:
 
 - **Ask `document.elementFromPoint()`.** Presence in the DOM is not visibility,
