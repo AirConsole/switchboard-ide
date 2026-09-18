@@ -2072,11 +2072,12 @@ button {
   /*
    * Full bleed: out through the pane's 8px padding to both edges and the bar,
    * so it reads as a band of its own between the bar and the terminal rather
-   * than as text that landed on the terminal's ground. 10px in, which is where
-   * the window's name starts in the bar above, so the two read as one column.
+   * than as text that landed on the terminal's ground. 20px in from either
+   * side: lined up with the bar's name at 10px it read as cramped against the
+   * window's edges, and prose wants a wider margin than a label does.
    */
   margin: -8px -8px 10px;
-  padding: 11px 10px 12px;
+  padding: 12px 20px 13px;
   background: var(--level-panel);
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-ui);
