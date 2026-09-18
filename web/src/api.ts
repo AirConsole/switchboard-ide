@@ -270,6 +270,17 @@ export const api = {
     (rev === undefined ? '' : `&rev=${encodeURIComponent(rev)}`),
 
   /**
+   * The same bytes, to keep rather than to draw.
+   *
+   * `download=1` is what takes the media table off the answer, and it is the
+   * only way the bytes of a file the panel would not open -- one past the size
+   * cap, or one with no text in it -- ever leave the IDE. No rev: nothing
+   * caches an attachment, and there is no element here to repaint.
+   */
+  downloadFileUrl: (worktreeId: string, path: string) =>
+    `/api/worktrees/${worktreeId}/raw?path=${encodeURIComponent(path)}&download=1`,
+
+  /**
    * Save a file, refused with 409 `stale-file` if it moved since it was read.
    *
    * There is no force flag: the refusal carries the file's current rev, so

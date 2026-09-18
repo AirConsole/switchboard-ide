@@ -518,10 +518,41 @@ export const mediaFile = async (
 ): Promise<{ file: string; type: string; size: number }> => {
   const type = mediaTypeOf(rel)
   if (type === undefined) throw new HttpError(415, `${rel} is not something to show here`)
+  return { ...(await streamable(worktreePath, rel)), type }
+}
+
+/**
+ * The same, for a file being handed over rather than drawn.
+ *
+ * There is no table to pass here, and that is the point: the panel refusing to
+ * *show* a file -- past the size cap, or holding no text at all -- is the whole
+ * reason anybody asks for it this way, so a gate on what the browser can draw
+ * would refuse exactly the files this exists for. A file over the cap is still
+ * streamed, because the cap is about text going through JSON and says nothing
+ * about handing bytes over.
+ *
+ * What it gives up instead is naming the format. Anything the table does not
+ * know is `application/octet-stream` -- bytes, which is the one type that
+ * renders nowhere and runs nothing, rather than a guess at a file we have not
+ * read. Containment is untouched and is still the whole boundary.
+ */
+export const takeableFile = async (
+  worktreePath: string,
+  rel: string,
+): Promise<{ file: string; type: string; size: number }> => ({
+  ...(await streamable(worktreePath, rel)),
+  type: mediaTypeOf(rel) ?? 'application/octet-stream',
+})
+
+/** Where a file is and how big, for a route that streams it rather than reads it. */
+const streamable = async (
+  worktreePath: string,
+  rel: string,
+): Promise<{ file: string; size: number }> => {
   const file = await containedPath(worktreePath, rel)
   const stats = await stat(file)
   if (!stats.isFile()) throw new HttpError(400, `not a regular file: ${rel}`)
-  return { file, type, size: stats.size }
+  return { file, size: stats.size }
 }
 
 /**

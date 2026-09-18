@@ -290,6 +290,18 @@ things in it are load-bearing:
   stale for no reason the reader could see. The rev is nanosecond mtime, size
   and inode -- `mtimeMs` is a double that rounds away exactly the sub-millisecond
   precision a write guard needs, and the inode catches a temp-file-and-rename.
+- **`/raw` streams bytes for two different reasons, and only one of them has a
+  table.** Drawing a file needs an entry in `mediaTypeOf` -- the browser is
+  handed that type verbatim, so the table is the only thing that decides what a
+  file is served as. Handing one over (`?download=1`, `takeableFile`) needs
+  nothing but containment: the files it exists for are exactly the ones the
+  panel refuses to open, so a gate on what the browser can draw would refuse
+  every one of them. They differ in three headers and nothing else -- the type
+  (`application/octet-stream` for anything unnamed, which renders nowhere and
+  runs nothing), the disposition (`attachment` rather than `inline`), and no
+  filename in either, because the client's anchor supplies the name. The
+  `maxFileBytes` cap does not reach here and must not be brought in: it is a cap
+  on text going through JSON, and a file over it is the main thing this is for.
 
 ## Is there anything of yours left in this worktree
 

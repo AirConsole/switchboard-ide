@@ -650,37 +650,75 @@ const DownloadIcon = (): React.ReactElement => (
 )
 
 /**
- * Hand the open file to the browser.
+ * Where the bytes of a download come from, and null when there are none yet.
  *
- * Two sources, because a file here is one of two things. An **image** is
- * already a URL the server serves (`/raw`, carrying the file's rev), so the
- * link is that; **text** is in the browser already, so it is handed over as a
- * blob rather than asked for a second time.
+ * Three answers, because a file in this panel is one of three things:
  *
- * What is downloaded is **what is on screen**: the draft while there is one,
- * the file on disk otherwise. That is the rule Preview already keeps, and the
- * alternative -- downloading what you can see is not what you get -- is the
- * kind of surprise a download cannot be taken back from.
+ * - **Text** is in the browser already, so it is handed over as a blob rather
+ *   than asked for a second time -- and the blob holds **what is on screen**:
+ *   the draft while there is one, the file on disk otherwise. That is the rule
+ *   Preview keeps, and the alternative -- downloading what you can see is not
+ *   what you get -- is the kind of surprise a download cannot be taken back
+ *   from.
+ * - An **image** is already a URL the server serves, so the link is that one.
+ * - A file the panel **would not open at all** has nothing in the browser to
+ *   hand over, so the server is asked for it: `?download=1`, which streams from
+ *   disk and is therefore the one route the size cap has nothing to say about.
+ *   That is the case this function was extracted for -- a file too large to
+ *   show, or one with no text in it, was the one kind with no way out of the
+ *   IDE at all, reported as a size and nothing else.
+ *
+ * It is also what the bar asks whether to draw the button, rather than
+ * re-deriving the same three cases as a condition: two derivations of one fact
+ * agree best when there is one of them.
  */
-const downloadOpenFile = (files: FilesState): void => {
-  const name = files.path.slice(files.path.lastIndexOf('/') + 1)
-  const blob =
-    files.media !== null
-      ? null
-      : new Blob([(files.dirty ? files.draft() : null) ?? files.file?.text ?? ''], {
-          type: 'text/plain;charset=utf-8',
-        })
-  const url = blob === null ? (files.media?.url ?? '') : URL.createObjectURL(blob)
-  if (url === '') return
+export const downloadSource = (files: {
+  worktreeId: string
+  path: string
+  file: EditorFile | null
+  media: MediaFile | null
+  refusal: string | null
+  dirty: boolean
+  draft: () => string | null
+}): { text: string } | { url: string } | null => {
+  if (files.path === '') return null
+  if (files.media !== null) return { url: files.media.url }
+  if (files.refusal !== null) return { url: api.downloadFileUrl(files.worktreeId, files.path) }
+  // Still being read. Without this the button would offer an empty file as the
+  // file, which is a download that cannot be taken back.
+  const text = (files.dirty ? files.draft() : null) ?? files.file?.text
+  return text === undefined ? null : { text }
+}
+
+/** Hand a URL to the browser as a file to keep, named `name`. */
+const handOver = (url: string, name: string): void => {
   const link = document.createElement('a')
   link.href = url
+  /*
+   * The name is the anchor's, not the response's: the route sends no filename
+   * in its disposition header, which is what lets this one win -- and is one
+   * less thing to have to escape correctly. See the `/raw` route.
+   */
   link.download = name
   document.body.append(link)
   link.click()
   link.remove()
+}
+
+/** Hand the open file to the browser, from whichever of the three sources it has. */
+const downloadOpenFile = (files: FilesState): void => {
+  const source = downloadSource(files)
+  if (source === null) return
+  const name = files.path.slice(files.path.lastIndexOf('/') + 1)
+  if ('url' in source) {
+    handOver(source.url, name)
+    return
+  }
+  const url = URL.createObjectURL(new Blob([source.text], { type: 'text/plain;charset=utf-8' }))
+  handOver(url, name)
   // The object URL holds the blob alive until it is let go; the click has
   // already taken what it needs by the time this runs.
-  if (blob !== null) setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 /**
@@ -769,13 +807,16 @@ export const FilesBar = ({
         </button>
       )}
       {/*
-       * The file itself, out of the IDE -- an image, or the text as you see it.
+       * The file itself, out of the IDE -- the text as you see it, an image, or
+       * a file this panel would not open, which is the one that has no other
+       * way of reaching you. See `downloadSource`, which is also what decides
+       * whether there is anything to offer.
        *
        * Next to Save because it is the other thing you do to the file you have
        * open, and after it for the reason Save is before Preview: the bar clips
        * from the end, and the control that can lose work stays longest.
        */}
-      {mode === 'files' && open !== null && (files.file !== null || files.media !== null) && (
+      {mode === 'files' && open !== null && downloadSource(files) !== null && (
         <button
           className="files__download"
           onClick={() => downloadOpenFile(files)}

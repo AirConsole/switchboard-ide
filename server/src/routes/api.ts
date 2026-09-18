@@ -123,8 +123,15 @@ const fileQuery = z.object({
 /**
  * `/raw`'s query. `rev` is accepted and ignored -- it is a cache key the client
  * puts in the URL, not something the server reads; see the route.
+ *
+ * `download` asks for the bytes to be handed over rather than drawn, which is
+ * the only thing that reaches a file the panel would not open at all.
  */
-const rawQuery = z.object({ path: filePath.min(1), rev: z.string().optional() })
+const rawQuery = z.object({
+  path: filePath.min(1),
+  rev: z.string().optional(),
+  download: z.literal('1').optional(),
+})
 const saveFileBody = z.object({
   path: filePath.min(1),
   /** No `.min(1)`: saving a file empty is a legitimate edit. */
@@ -437,19 +444,30 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * - a `default-src 'none'; sandbox` CSP, which is what makes navigating
    *   straight to this URL inert. An `<img>` cannot run script in any case, but
    *   a person pasting the link into the address bar is a different renderer.
-   * - `inline` disposition without a filename, since nothing here is a download
-   *   and a filename header is one more thing to have to escape correctly.
+   * - a disposition with no filename in it, ever. `inline` for a file being
+   *   drawn, `attachment` for one being taken away, and in both cases the name
+   *   comes from the `download` attribute on the client's own anchor -- which
+   *   wins precisely because this header carries no filename, and is one less
+   *   thing to have to escape correctly.
+   *
+   * `?download=1` is the second of those, and the difference is *which* files
+   * may be asked for: drawing one needs an entry in the media table, taking one
+   * away needs nothing but containment, since a file the panel refuses to show
+   * is the whole reason the button exists. See `takeableFile`.
    */
   app.get('/api/worktrees/:id/raw', async (request, reply) => {
     const { id } = request.params as { id: string }
-    const { path } = rawQuery.parse(request.query)
-    const { file, type, size } = await workspace.mediaFile(id, path)
+    const { path, download } = rawQuery.parse(request.query)
+    const taking = download === '1'
+    const { file, type, size } = taking
+      ? await workspace.takeableFile(id, path)
+      : await workspace.mediaFile(id, path)
     return reply
       .type(type)
       .header('content-length', size)
       .header('x-content-type-options', 'nosniff')
       .header('content-security-policy', "default-src 'none'; sandbox")
-      .header('content-disposition', 'inline')
+      .header('content-disposition', taking ? 'attachment' : 'inline')
       /*
        * Never stored. The URL already changes whenever the file does, so a
        * cache buys one fetch per image per edit -- and the thing it would be
