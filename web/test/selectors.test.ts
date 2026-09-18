@@ -415,15 +415,22 @@ describe('summarySignal', () => {
 })
 
 describe('titleFor', () => {
-  it('leads with the circle for the state the row is scanned for', () => {
-    expect(titleFor(['working', 'needs-you', 'idle'])).toBe('🟠 Switchboard')
-    expect(titleFor(['working', 'idle'])).toBe('🟢 Switchboard')
+  it('leads with the circle in a browser tab, which truncates from the end', () => {
+    expect(titleFor(['working', 'needs-you', 'idle'], false)).toBe('🟠 Switchboard')
+    expect(titleFor(['working', 'idle'], false)).toBe('🟢 Switchboard')
+  })
+
+  it('starts with the name in the installed app, or Chrome prefixes it again', () => {
+    // Chrome shows an app window's title as-is only when it starts with the
+    // app's short name; a leading circle came out "Switchboard - 🟠 Switchboard".
+    expect(titleFor(['needs-you'], true)).toBe('Switchboard 🟠')
+    expect(titleFor(['idle'], true)).toBe('Switchboard 🟢')
   })
 
   it('is the bare name when nothing is worth saying', () => {
     // Grey has no circle: working and not running are the silence.
-    expect(titleFor([])).toBe('Switchboard')
-    expect(titleFor(['working', 'off'])).toBe('Switchboard')
+    expect(titleFor([], false)).toBe('Switchboard')
+    expect(titleFor(['working', 'off'], true)).toBe('Switchboard')
   })
 })
 

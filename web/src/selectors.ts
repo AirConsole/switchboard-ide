@@ -90,11 +90,20 @@ export const summarySignal = (
  * Grey says nothing, and not for want of a character. There is no grey circle
  * emoji, but the reason is the rule above: working and not running are the
  * silence that makes the other two worth scanning for, so the quiet title is
- * the bare name. The circle goes *first* because a tab truncates from the end.
+ * the bare name.
+ *
+ * **Where the circle goes depends on where the title is shown.** In a browser
+ * tab it goes first, because a tab truncates from the end. In the installed
+ * app it goes last, because Chrome rewrites an app window's title: one that
+ * starts with the app's short name is shown as it is, and anything else as
+ * `<name> - <title>` (`WebAppBrowserController::GetTitle`). A leading circle
+ * came out as `Switchboard - 🟠 Switchboard`.
  */
-export const titleFor = (statuses: WorktreeStatus[]): string => {
+export const titleFor = (statuses: WorktreeStatus[], installed: boolean): string => {
   const signal = summarySignal(statuses)
-  return signal === 'needs-you' ? '🟠 Switchboard' : signal === 'idle' ? '🟢 Switchboard' : 'Switchboard'
+  const circle = signal === 'needs-you' ? '🟠' : signal === 'idle' ? '🟢' : null
+  if (circle === null) return 'Switchboard'
+  return installed ? `Switchboard ${circle}` : `${circle} Switchboard`
 }
 
 /**
