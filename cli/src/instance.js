@@ -36,7 +36,7 @@ export const configPath = () => join(stateDir(), 'config.json')
 /**
  * The port an instance serves on when nothing says otherwise.
  *
- * 7999 and not 8083, which it was: a cloud machine (`cloud/provision.sh`)
+ * 7999 and not 8083, which it was: a cloud machine (`cloud/provision-gcp.sh`)
  * publishes **8000-8099** as the ports you run the things you are building on,
  * and 8083 sits inside that range -- so the IDE and a test service wanted the
  * same port, and the one that lost is whichever started second. The IDE sits

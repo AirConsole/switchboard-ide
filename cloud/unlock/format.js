@@ -1,5 +1,5 @@
 /**
- * Format the data volume, once, from `provision.sh create`.
+ * Format the data volume, once, from `provision-gcp.sh create`.
  *
  * Reads the IDE password on stdin and prints the recovery passphrase on
  * stdout. Neither is ever written to disk here -- the password becomes a key

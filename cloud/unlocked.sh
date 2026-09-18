@@ -103,7 +103,7 @@ MD
 fi
 
 # Packages an agent installed since the machine was built. apt writes to the
-# boot disk, which `provision.sh recreate` throws away, so the list lives on
+# boot disk, which `provision-gcp.sh recreate` throws away, so the list lives on
 # the volume and is replayed here. Without this a rebuild silently forgets
 # every tool the work depends on -- the same weakness a container has.
 PKG_LIST=$HOME_DIR/.switchboard/packages
@@ -128,7 +128,7 @@ fi
 install -d -o "$SWB_USER" -g "$SWB_USER" "$HOME_DIR/.docker-data"
 systemctl restart docker 2>/dev/null || true
 
-# On a machine being built there is no password yet -- provision.sh sets it
+# On a machine being built there is no password yet -- provision-gcp.sh sets it
 # next, as the user, and starts the IDE itself. The IDE refuses to start
 # without one, so starting it here would only be a failed unit for the first
 # minute of every machine's life.

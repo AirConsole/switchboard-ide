@@ -9,7 +9,7 @@
  *
  * **The salt is the volume's own LUKS UUID, and nothing is stored on the boot
  * disk.** That is not a shortcut, it is the fix for a real bug: the salt used
- * to live in /etc, which `provision.sh recreate` throws away with the rest of
+ * to live in /etc, which `provision-gcp.sh recreate` throws away with the rest of
  * the boot disk, so a rebuilt machine could never open the disk it was
  * rebuilt around. A UUID is 128 random bits, per volume, generated when the
  * volume is made -- which is what a salt has to be -- and it travels with the
