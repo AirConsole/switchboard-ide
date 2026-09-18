@@ -31,7 +31,7 @@
 #     process that turns it into a key and forgets it.
 set -eu
 
-DIR=$(cd "$(dirname "$0")" && pwd)
+DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || DIR=.
 ZONE=${SWB_ZONE:-europe-west6-b}
 MACHINE=e2-standard-4
 DISK_SIZE=100
@@ -351,6 +351,23 @@ ensure_data_disk() {
     --resource-policies="$SCHEDULE" --quiet >/dev/null 2>&1 || true
 }
 
+# The machine is defined by two files next to this one. Under `curl | sh` there
+# is no "next to this one" -- $0 is the shell's own name and $DIR is wherever
+# you happened to be standing -- so they are fetched, from the same repository
+# and ref the machine will build from. In a checkout they are already there and
+# nothing is downloaded.
+ensure_machine_files() {
+  [ -f "$DIR/setup.sh" ] && [ -f "$DIR/cloud-config.yaml" ] && return 0
+  have curl || die "this needs curl, or a checkout: git clone $REPO_URL"
+  raw=$(printf '%s' "$REPO_URL" | sed 's|^https://github.com/|https://raw.githubusercontent.com/|; s|\.git$||')
+  DIR=$(mktemp -d)
+  trap 'rm -rf "$DIR"' EXIT INT TERM
+  for f in setup.sh cloud-config.yaml; do
+    curl -fsSL "$raw/$REPO_REF/cloud/$f" -o "$DIR/$f" \
+      || die "could not fetch cloud/$f from $raw/$REPO_REF -- is --repo-ref right?"
+  done
+}
+
 # cloud-init, with setup.sh carried inside it. One metadata key, no secrets,
 # and the machine can be rebuilt from this file alone.
 render_user_data() {
@@ -442,6 +459,10 @@ wait_for() {
 
 # --- create ------------------------------------------------------------------
 cmd_create() {
+  # Before anything is built, so a ref that does not exist costs nothing: the
+  # machine's two files are what the VM is made of, and finding out they cannot
+  # be fetched after creating a network and a disk is finding out too late.
+  ensure_machine_files
   check_org
   # Run again on a machine that exists, this updates it -- which is how a
   # domain is added, changed or removed, and the reason `create` has no sibling
@@ -603,6 +624,7 @@ cmd_status() {
 # happens, how a broken machine is fixed, and -- with --from-snapshot -- how a
 # backup is restored.
 cmd_recreate() {
+  ensure_machine_files
   gq compute instances describe "$VM" --zone="$ZONE" || die "no machine called $NAME in $PROJECT"
   say "This deletes the VM and its boot disk. The data disk and the address stay."
   [ -n "$FROM_SNAPSHOT" ] && say "The data disk will be REPLACED by snapshot $FROM_SNAPSHOT."
