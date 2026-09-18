@@ -293,8 +293,22 @@ export const password = async (opts = {}) => {
     return
   }
 
+  /*
+   * On a cloud machine this password is also the key to /home, so changing one
+   * has to change the other (`luks.js`). With no password set yet there is
+   * nothing to re-key *from*: that is a machine being built, where
+   * `provision.sh` has just formatted the volume with the password it is about
+   * to set here. Imported lazily, because a laptop has no volume and this
+   * reaches for cryptsetup.
+   */
+  const { volumeState, rekey } = await import('./luks.js')
+  const volume = existing === null ? 'none' : volumeState()
+  const encrypted = volume === 'encrypted'
+
   /** @type {string} */
   let next
+  /** The current password, kept only where the volume has to be re-keyed. */
+  let current = null
   if (opts.stdin) {
     // `--stdin` implies a reset: scripting a change *is* a reset, and asking
     // for two lines on stdin is a shape people get wrong silently.
@@ -309,6 +323,7 @@ export const password = async (opts = {}) => {
     if (existing !== null && opts.reset !== true) {
       const old = await askSecret('Current password: ')
       if (old === null) fail('cancelled; nothing was changed')
+      current = old
       if (!matches(dir, old)) {
         /*
          * Asked for, and the reason is specific to this program rather than
@@ -344,11 +359,46 @@ export const password = async (opts = {}) => {
   // Still here for `--stdin`, which never passes through the prompt above.
   if (tooShort(next)) fail(SHORT)
 
+  /*
+   * On a cloud machine this password is also the key to /home, and a key slot
+   * can only be replaced by something that already opens the volume. So the
+   * two routes that skip the current password -- `--reset` and `--stdin` --
+   * are refused here rather than quietly leaving a machine that logs in and
+   * cannot open its own disk. The recovery passphrase is the way back in.
+   */
+  if (volume === 'unknown') {
+    fail(
+      'this machine has a data volume and there is no way to tell whether it is encrypted\n' +
+        '  with this password, because cryptsetup cannot be run. Changing the password now\n' +
+        '  could leave a machine that logs in and cannot open its own disk. Run it with sudo.',
+    )
+  }
+
+  if (encrypted) {
+    if (current === null) {
+      fail(
+        'this machine\'s disk is encrypted with the current password, so changing it needs\n' +
+          '  the current one. Run `pnpm password` without --reset or --stdin. If it is lost,\n' +
+          '  unlock with the recovery passphrase and start a machine from a snapshot.',
+      )
+    }
+    try {
+      await rekey(current, next)
+    } catch (err) {
+      fail(
+        `the disk's key could not be changed, so the password was not changed either:\n  ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
   // The generation carries over: changing the password already invalidates
   // every token, because the signing key is derived from the hash.
   writeRecord(dir, recordFor(next, existing === null ? 1 : existing.generation))
   console.log('password set.')
   console.log('')
+  if (encrypted) console.log('  the disk it opens has been re-keyed to match')
   console.log('  every browser session is signed out, everywhere')
   console.log('  any linked machine must be linked again with the new password')
   console.log(`  ${passwordFileFor(dir)}   0600`)

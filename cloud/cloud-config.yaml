@@ -1,0 +1,40 @@
+#cloud-config
+# The machine, in the one format every cloud takes.
+#
+# GCP reads this from the `user-data` metadata key, and so do Hetzner,
+# DigitalOcean, AWS, Azure, OpenStack and a local VM -- which is why the machine
+# is defined here rather than as a GCE image: a second provider needs its own
+# `create`, never a second definition to keep in step.
+#
+# It stays thin on purpose. Everything the machine actually does is in
+# `setup.sh`, because that can be re-run by hand over ssh while you watch it,
+# and cloud-config cannot.
+#
+# Ubuntu, not Debian: Ubuntu's GCP images ship cloud-init, Debian's do not.
+
+package_update: true
+packages:
+  - git
+  - tmux
+  - build-essential
+  - python3
+  - cryptsetup
+  - curl
+  - ca-certificates
+  - gnupg
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/switchboard/env
+    permissions: '0644'
+    content: |
+      SWB_REPO_URL=PLACEHOLDER_REPO_URL
+      SWB_REPO_REF=PLACEHOLDER_REPO_REF
+      SWB_NO_SUDO=PLACEHOLDER_NO_SUDO
+  - path: /etc/switchboard/setup.sh
+    permissions: '0755'
+    encoding: b64
+    content: PLACEHOLDER_SETUP_B64
+
+runcmd:
+  - [ /etc/switchboard/setup.sh ]

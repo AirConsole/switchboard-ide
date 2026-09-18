@@ -448,14 +448,40 @@ pnpm scratch start peer        # the machine to link; prints its password
 pnpm scratch stop peer         # each one goes down by name
 ```
 
+## A machine in the cloud
+
+`cloud/provision.sh create <name>` builds a GCP machine running this IDE and
+prints a URL. The reasoning lives where this repository keeps it — in the
+headers of `cloud/provision.sh` and `cloud/setup.sh`, each measurement beside
+the line it justifies. Four of them cross into the rest of the repository:
+
+- **The machine's address is its name.** Let's Encrypt issues certificates for
+  bare IP addresses, so there is no domain and no DNS. Only under the
+  `shortlived` profile, and `default_sni` is required or every handshake fails
+  with a valid certificate in hand — a browser sends no SNI for an IP.
+- **`/home` is encrypted and the IDE password is the key**, so the boot disk
+  holds nothing of the user's and a snapshot is ciphertext. An unlock page
+  answers `https://<ip>` while the volume is shut — Caddy's 502 falling
+  through, so unlocking needs no second URL. Root on the *running* machine
+  still reads everything, which is why `create` refuses a project inside an
+  organisation.
+- **Ports 8000–8099 are public, over TLS, with no password.** A test service
+  listens on loopback and Caddy, which holds the public side of all 100 ports,
+  publishes it. That is also what stops one publishing itself: `0.0.0.0` is
+  taken. The sibling-port rules in `server/CLAUDE.md` are what make it safe for
+  one of those pages to be a stranger's.
+- **systemd starts the IDE at boot there, and only there.** The unit carries an
+  explicit `PATH`, which is the thing that made systemd unusable before.
+  `pnpm pull` and `pnpm restart` go on owning the process exactly as on a
+  laptop.
+
 ## Not built yet
 
-- Installing and updating: a peer is still a checkout someone built by hand.
-  `pnpm start` and `pnpm restart` now run one wherever it is, but nothing puts
-  it on a fresh box, and nothing brings it back after a reboot — `swb` owns the
-  process directly rather than registering a systemd unit or a launchd agent,
-  which is what keeps it inheriting the shell's `PATH` and therefore able to
-  find `claude`.
+- Installing a peer on a machine you already have: `cloud/` builds one in the
+  cloud from nothing, but a box you own is still a checkout someone built by
+  hand, and on a laptop `swb` still owns the process rather than registering a
+  launchd agent — which is what keeps it inheriting the shell's `PATH` and
+  therefore able to find `claude`.
 - Telling you *why* a machine is quiet: an unreachable peer's project keeps its
   tab and shows the worktrees it last had, but nothing yet says which of those
   it is.
