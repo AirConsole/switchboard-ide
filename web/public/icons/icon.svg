@@ -1,51 +1,38 @@
 <!--
-  Switchboard's mark: a patch panel with one jack lit.
+  Switchboard's mark: the three states an agent can be in, as one slab.
 
-  The whole thesis in one image. Eight sockets sit empty; one is patched through
-  and amber, which is the single thing this interface spends colour on, meaning
-  an agent is blocked on you. It is the rule the row obeys, drawn at icon size.
+  Amber is blocked on you, green is done, and grey between them is everything
+  else. Those are the only colours this interface spends, and here they are
+  drawn the way the tab strip draws a project: square segments inside one
+  rounded shell, seamed in the ground colour. Square segments in one shell are
+  one object divided, which is the strongest grouping there is without colour,
+  and it is also what stops three vertical stripes reading as a national flag.
 
-  Three tokens, no invented colours: the ground is the `ink` custom property
-  (#10141a) that the row sits on, the empty sockets are `tab-on` (#333c4b),
-  which is the lightest thing on the tab strip, and the lit one is `signal`
-  (#ffb454). The values are literal because an SVG served as a file has no
-  stylesheet to read them from, so they have to be kept in step with :root in
-  web/src/styles.css by hand.
+  Grey is in the middle so the two state colours sit apart at the edges. At a
+  16px favicon the grey and its two seams nearly close up, and the mark reads
+  as amber and green with a dark gap: that is expected, and it is still the
+  most legible thing in a tab strip of the alternatives drawn.
+
+  The icon is the same at all times. What a worktree is doing is said in the
+  document title instead (see `titleFor` in web/src/selectors.ts), because an
+  installed app's dock icon comes from the manifest and never changes.
+
+  The values are literal because an SVG served as a file has no stylesheet to
+  read them from, so they have to be kept in step with :root in
+  web/src/styles.css by hand. The ground is `ink` (#10141a), amber is `signal`
+  (#ffb454) and green is `done` (#4ade80). The grey (#4a5566) is the one
+  value that is not a token: `level-lit` measured 1.93:1 against the seams and
+  merged into them at small sizes, and this is 2.45:1.
 
   (Written without the leading double hyphen those properties really carry: an
-  XML comment may not contain two hyphens in a row, which also rules out this
-  codebase's usual dashes throughout this file.)
-
-  The lit jack is dead centre on purpose. Everything but the amber disappears
-  below roughly 20px, so the favicon becomes one warm dot on a dark square,
-  which is the right thing to recognise in a tab strip and is only true if it
-  is centred. Centring also survives Android's circular crop and iOS's squircle
-  without the mark drifting.
-
-  Sockets are rings rather than discs so they read as empty. The lit one is
-  solid, because something is in it.
+  XML comment may not contain two hyphens in a row.)
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" rx="112" fill="#10141a" />
-  <g fill="#333c4b">
-    <circle cx="140" cy="140" r="38" />
-    <circle cx="256" cy="140" r="38" />
-    <circle cx="372" cy="140" r="38" />
-    <circle cx="140" cy="256" r="38" />
-    <circle cx="372" cy="256" r="38" />
-    <circle cx="140" cy="372" r="38" />
-    <circle cx="256" cy="372" r="38" />
-    <circle cx="372" cy="372" r="38" />
+  <clipPath id="shell"><rect width="512" height="512" rx="112" /></clipPath>
+  <g clip-path="url(#shell)">
+    <rect width="512" height="512" fill="#10141a" />
+    <rect width="160" height="512" fill="#ffb454" />
+    <rect x="176" width="160" height="512" fill="#4a5566" />
+    <rect x="352" width="160" height="512" fill="#4ade80" />
   </g>
-  <g fill="#10141a">
-    <circle cx="140" cy="140" r="17" />
-    <circle cx="256" cy="140" r="17" />
-    <circle cx="372" cy="140" r="17" />
-    <circle cx="140" cy="256" r="17" />
-    <circle cx="372" cy="256" r="17" />
-    <circle cx="140" cy="372" r="17" />
-    <circle cx="256" cy="372" r="17" />
-    <circle cx="372" cy="372" r="17" />
-  </g>
-  <circle cx="256" cy="256" r="38" fill="#ffb454" />
 </svg>
