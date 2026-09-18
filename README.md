@@ -2,7 +2,7 @@
 
 **A web IDE for running several Claude Code agents at once, one per git worktree.**
 
-https://github.com/user-attachments/assets/e5392ac8-21a2-4a9d-934e-2a51f8003c6d
+https://github.com/user-attachments/assets/2f200694-d258-4473-95fa-08aef88d7e32
 
 Run one agent and you watch it. Run five and you lose them: which one is waiting
 on a question, which one finished ten minutes ago, which one has been stuck on a
@@ -12,11 +12,20 @@ neither does anything that only shows you the one you are looking at.
 Switchboard's job is to tell you **which agent is blocked and get you into that
 worktree fast** — a dispatcher, not a dashboard.
 
-Each worktree is a window in a row you scroll along. A window shows that
-worktree's Claude, its terminals, its files and changes, or its queued prompts.
-The two colours in the interface are the two questions you scan a row of agents
-for: **amber** means an agent is blocked on you, **green** means one has
-finished. Everything else is grey, because everything else can wait.
+Every worktree gets its own Claude, and every worktree is a window in one row
+you scroll along. The interface is grey except for the two things you scan that
+row for: **amber**, an agent is blocked on you, and **green**, one has finished.
+Everything else is grey, because everything else can wait.
+
+When one goes amber, you click its tab, the row lands on that window, and you
+answer Claude where it is stuck. Without leaving the row you can also:
+
+- **read the code it is changing** — its files and its diff, beside the agent;
+- **queue what it does next** — a todo that is typed into Claude the moment it
+  comes to rest;
+- **open a terminal** in its checkout;
+- **start another worktree** — its own branch, its own Claude — from the
+  project it belongs to.
 
 Sessions live in tmux, not in the browser. You can close the tab, restart the
 server, or lose the network, and the agents keep working. A queued prompt is
