@@ -261,6 +261,42 @@ exit 0
   }, 30_000)
 })
 
+describe('who touched the machine', () => {
+  const filter = () =>
+    execFileSync(
+      'sh',
+      ['-c', `${readFileSync(join(CLOUD, 'provision-gcp.sh'), 'utf8').match(/^touched_filter\(\) \{[\s\S]*?^\}/m)?.[0]}\ntouched_filter me@example.com`],
+      { encoding: 'utf8', env: { ...process.env, PROJECT: 'p', ZONE: 'z', VM: 'switchboard-box', DATA_DISK: 'switchboard-box-data' } },
+    )
+
+  it('asks by name, so a rebuilt machine is still the one asked about', () => {
+    // It held the VM's instance id, which `recreate` replaces -- after one
+    // rebuild it listed nothing, about a machine that no longer existed.
+    expect(filter()).not.toContain('instance_id')
+    expect(filter()).toContain('protoPayload.resourceName="projects/p/zones/z/instances/switchboard-box"')
+  })
+
+  it('sees the data disk wherever it turns up', () => {
+    // Measured: a snapshot is logged against the disk and carries no instance
+    // id; an attach is logged against the *other* VM, with ours only in the
+    // request. The old filter could see neither.
+    expect(filter()).toContain('protoPayload.resourceName="projects/p/zones/z/disks/switchboard-box-data"')
+    expect(filter()).toContain('protoPayload.request.source:"disks/switchboard-box-data"')
+  })
+
+  it('leaves out the one reading it, and Google taking the scheduled snapshots', () => {
+    expect(filter()).toContain('principalEmail!="me@example.com"')
+    expect(filter()).toContain('NOT protoPayload.authenticationInfo.principalEmail:"compute-system.iam.gserviceaccount.com"')
+  })
+
+  it('is not an alert any more', () => {
+    // It was, and it caught almost none of what it named. A promise to mail
+    // you is worse than no promise when the mail never comes.
+    const script = readFileSync(join(CLOUD, 'provision-gcp.sh'), 'utf8')
+    expect(script).not.toMatch(/monitoring policies create|--alert-email/)
+  })
+})
+
 describe('a domain, when one is associated', () => {
   const rendered = renderCaddyfile('203.0.113.7', '10.10.0.2', 'ide.example.com')
 

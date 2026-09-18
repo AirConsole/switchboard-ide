@@ -54,7 +54,6 @@ IN_ORG=0
 NO_SUDO=0
 DELETE_DATA=0
 FROM_SNAPSHOT=""
-ALERT_EMAIL=""
 DOMAIN=""
 DOMAIN_GIVEN=0
 PASSWORD_STDIN=0
@@ -123,7 +122,6 @@ Options
   --zone <zone>       default europe-west6-b
   --machine <type>    default e2-standard-4
   --disk-size <GB>    data disk, default 100
-  --alert-email <a>   who to mail when someone else touches the machine
   --domain <name>     also answer to this name; it tells you the DNS record
                       (--domain "" takes one away again)
   --user <name>       who the machine is for: your login on it, and /home/<name>
@@ -154,7 +152,6 @@ while [ $# -gt 0 ]; do
     --zone) ZONE=$2; shift ;;
     --machine) MACHINE=$2; shift ;;
     --disk-size) DISK_SIZE=$2; shift ;;
-    --alert-email) ALERT_EMAIL=$2; shift ;;
     --domain) DOMAIN=$2; DOMAIN_GIVEN=1; DOMAIN_ASKED=1; shift ;;
     --password-stdin) PASSWORD_STDIN=1 ;;
     --user) USER_FLAG=$2; shift ;;
@@ -508,45 +505,6 @@ ensure_vm() {
   rm -f "$tmp"
 }
 
-ensure_alert() {
-  [ -n "$ALERT_EMAIL" ] || ALERT_EMAIL=$(gcloud config get-value account 2>/dev/null || true)
-  [ -n "$ALERT_EMAIL" ] || return 0
-  instance_id=$(g compute instances describe "$VM" --zone="$ZONE" --format='value(id)')
-  channel=$(g beta monitoring channels list --filter="labels.email_address='$ALERT_EMAIL' AND type='email'" \
-    --format='value(name)' 2>/dev/null | head -1)
-  if [ -z "$channel" ]; then
-    channel=$(g beta monitoring channels create --display-name="Switchboard alerts" \
-      --type=email --channel-labels="email_address=$ALERT_EMAIL" --format='value(name)' 2>/dev/null || true)
-  fi
-  [ -n "$channel" ] || { say "note: could not create a notification channel; skipping the alert"; return 0; }
-  g alpha monitoring policies list --filter="displayName='$POLICY_NAME'" --format='value(name)' 2>/dev/null \
-    | grep -q . && return 0
-  me=$(gcloud config get-value account 2>/dev/null)
-  tmp=$(mktemp)
-  # Admin Activity logging is always on and cannot be switched off, so a
-  # takeover of this VM lands here whatever else happens. The alert is the
-  # convenience; `status` reading the same log is the part that cannot be
-  # deleted out from under you.
-  cat > "$tmp" <<EOF
-{
-  "displayName": "$POLICY_NAME",
-  "combiner": "OR",
-  "conditions": [{
-    "displayName": "someone else touched $VM",
-    "conditionMatchedLog": {
-      "filter": "logName:\"cloudaudit.googleapis.com%2Factivity\" AND resource.labels.instance_id=\"$instance_id\" AND protoPayload.authenticationInfo.principalEmail!=\"$me\" AND protoPayload.methodName:(\"instances.setMetadata\" OR \"instances.reset\" OR \"instances.start\" OR \"disks.createSnapshot\" OR \"instances.attachDisk\" OR \"instances.setIamPolicy\")"
-    }
-  }],
-  "alertStrategy": { "notificationRateLimit": { "period": "300s" } },
-  "notificationChannels": ["$channel"]
-}
-EOF
-  g alpha monitoring policies create --policy-from-file="$tmp" --quiet >/dev/null 2>&1 \
-    && say "alert: mail to $ALERT_EMAIL when anyone else touches $VM" \
-    || say "note: the alert could not be created (is the Monitoring API on?); status still reads the log"
-  rm -f "$tmp"
-}
-
 ssh_vm() {
   g compute ssh "$VM" --zone="$ZONE" --tunnel-through-iap --quiet "$@"
 }
@@ -663,7 +621,6 @@ cmd_create() {
   say_dns_record
   ensure_data_disk
   ensure_vm
-  ensure_alert
 
   wait_for "the machine to finish installing itself (5-10 minutes)" 180 \
     ssh_vm --command 'test -f /opt/switchboard/server/dist/index.js && systemctl is-active switchboard-unlock.service' \
@@ -754,6 +711,39 @@ cmd_create() {
   say "public, with no password."
 }
 
+# What counts as someone else touching this machine, as an audit-log filter.
+#
+# **By name, never by the VM's instance id**, which is what it was and why it
+# missed most of what it was for. Measured against real audit entries:
+#   - a snapshot of the data disk is logged against the *disk* (`gce_disk`,
+#     `disk_id`) and carries no instance id at all;
+#   - the data disk attached to somebody else's VM is logged against *their*
+#     VM, and ours appears only in `request.source`;
+#   - and `recreate` gives the VM a new instance id, so a filter holding the
+#     old one watched a machine that no longer existed.
+# Names survive a rebuild and name the disk wherever it turns up. No list of
+# methods either: whatever anyone else does to these is worth listing, and a
+# list is a guess about which verbs an attacker will use.
+#
+# A permission change on the project is included because that is how somebody
+# gives themselves ssh -- osAdminLogin is granted on the project, not the VM.
+# Google's own compute-system account is left out: it is what takes the
+# scheduled snapshots, and nobody can act as it. And an operation's closing
+# entry is dropped, since a long one is logged when it starts and again when it
+# ends -- every snapshot and attach came out twice -- while `operation.last`
+# rather than `operation.first` keeps the entries that have no operation at all,
+# which a permission change is.
+touched_filter() {
+  printf '%s' "logName:\"cloudaudit.googleapis.com%2Factivity\" \
+AND protoPayload.authenticationInfo.principalEmail!=\"$1\" \
+AND NOT protoPayload.authenticationInfo.principalEmail:\"compute-system.iam.gserviceaccount.com\" \
+AND NOT operation.last=true \
+AND (protoPayload.resourceName=\"projects/$PROJECT/zones/$ZONE/instances/$VM\" \
+OR protoPayload.resourceName=\"projects/$PROJECT/zones/$ZONE/disks/$DATA_DISK\" \
+OR protoPayload.request.source:\"disks/$DATA_DISK\" \
+OR (resource.type=\"project\" AND protoPayload.methodName=\"SetIamPolicy\"))"
+}
+
 # --- status ------------------------------------------------------------------
 cmd_status() {
   gq compute instances describe "$VM" --zone="$ZONE" || die "no machine called $NAME in $PROJECT"
@@ -789,9 +779,9 @@ cmd_status() {
   # and kept 400 days, and this reads it from here rather than from the machine.
   me=$(gcloud config get-value account 2>/dev/null)
   say "  touched by others, last 30 days:"
-  g logging read \
-    "logName:\"cloudaudit.googleapis.com%2Factivity\" AND resource.labels.instance_id=\"$(g compute instances describe "$VM" --zone="$ZONE" --format='value(id)')\" AND protoPayload.authenticationInfo.principalEmail!=\"$me\"" \
-    --freshness=30d --limit=20 --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName)' 2>/dev/null \
+  g logging read "$(touched_filter "$me")" \
+    --freshness=30d --limit=20 \
+    --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)' 2>/dev/null \
     | sed 's/^/    /' | grep . || say "    nothing"
 }
 
@@ -868,6 +858,8 @@ cmd_destroy() {
   gq compute networks subnets delete "$NET" --region="$REGION" --quiet && say "deleted subnet"
   gq compute networks delete "$NET" --quiet && say "deleted network"
   gq compute addresses delete "$ADDRESS" --region="$REGION" --quiet && say "deleted address"
+  # There is no alert any more, but a machine built before that change carries
+  # one, and destroy is the only thing that would ever take it away.
   for p in $(g alpha monitoring policies list --filter="displayName='$POLICY_NAME'" --format='value(name)' 2>/dev/null); do
     gq alpha monitoring policies delete "$p" --quiet && say "deleted alert policy"
   done
