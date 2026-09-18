@@ -151,6 +151,68 @@ describe('running it straight from the internet', () => {
   })
 })
 
+describe('the machine is named after its person', () => {
+  const provision = () => readFileSync(join(CLOUD, 'provision.sh'), 'utf8')
+
+  /** @param {string} name */
+  const validUser = (name) => {
+    try {
+      execFileSync('sh', ['-c', `${provision().match(/^valid_user\(\) \{[\s\S]*?^\}/m)?.[0]}\nvalid_user "$1"`, '_', name])
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  it.each([
+    ['andrin', true],
+    ['andrin-v', true],
+    ['a_b', true],
+    // An account the image already has: taking it over would hand the
+    // person's files to whatever the account was for.
+    ['ubuntu', false],
+    ['root', false],
+    ['systemd-resolve', false],
+    ['docker', false],
+    // Not a Linux login at all.
+    ['Andrin', false],
+    ['1abc', false],
+    ['-x', false],
+    ['', false],
+    ["an'drin", false],
+    ['a'.repeat(33), false],
+  ])('%s is %s', (name, ok) => {
+    expect(validUser(name)).toBe(ok)
+  })
+
+  it('reads who the machine is for off the disk before a restore deletes the disk', () => {
+    // A snapshot restore replaces the data disk with one that has no labels.
+    // Read after the delete, the name would be gone and the restored machine
+    // would belong to whoever ran recreate -- and own none of the files.
+    const script = provision()
+    const recreate = script.slice(script.indexOf('cmd_recreate() {'))
+    expect(recreate.indexOf('resolve_user')).toBeGreaterThan(-1)
+    expect(recreate.indexOf('resolve_user')).toBeLessThan(recreate.indexOf('disks delete'))
+  })
+
+  it('decides who before building anything', () => {
+    const script = provision()
+    const create = script.slice(script.indexOf('cmd_create() {'))
+    expect(create.indexOf('resolve_user')).toBeLessThan(create.indexOf('ensure_network'))
+  })
+
+  it('names the person nowhere by hand', () => {
+    // Six places said `switchboard` where they meant the person, and each is a
+    // place the name could go stale in. The software keeps its own name --
+    // /opt/switchboard, /etc/switchboard, switchboard.service -- which is a
+    // different thing, and is not what this looks for.
+    for (const file of ['provision.sh', 'setup.sh', 'unlocked.sh']) {
+      const text = readFileSync(join(CLOUD, file), 'utf8')
+      expect(text, file).not.toMatch(/\/home\/switchboard|sudo -u switchboard|switchboard:switchboard|-o switchboard/)
+    }
+  })
+})
+
 describe('a domain, when one is associated', () => {
   const rendered = renderCaddyfile('203.0.113.7', '10.10.0.2', 'ide.example.com')
 
