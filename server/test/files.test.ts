@@ -6,6 +6,7 @@ import { basename, join, resolve } from 'node:path'
 import {
   containedPath,
   findFiles,
+  grepFiles,
   invalidateStatus,
   listDirectory,
   mediaFile,
@@ -235,6 +236,81 @@ describe('find', () => {
   it('inherits the ignore rules from ls-files', async () => {
     const { hits } = await findFiles(repo.path, 'FilesPane')
     expect(hits.map((hit) => hit.path)).not.toContain('dist/FilesPane.js')
+  })
+})
+
+describe('grep', () => {
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('src/a.ts', 'const one = 1\n  // Needle: here\nconst two = 2\n')
+    await repo.write('src/b:c.ts', 'x\nneedle: with a colon\n')
+    await repo.write('dist/out.js', 'needle\n')
+    await repo.write('.gitignore', 'dist/\n')
+    await repo.commit('add src')
+    // Written after the commit, so it is untracked: an agent's new file.
+    await repo.write('src/new.ts', 'NEEDLE fresh\n')
+    await writeFile(join(repo.path, 'blob.bin'), Buffer.from([0, 110, 101, 101, 100, 108, 101]))
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('asks git nothing for an empty query', async () => {
+    expect(await grepFiles(repo.path, '  ')).toEqual({ hits: [] })
+  })
+
+  it('finds the line, case-insensitively, trimmed, and numbered from 1', async () => {
+    const { hits } = await grepFiles(repo.path, 'needle:')
+    expect(hits).toContainEqual({ path: 'src/a.ts', line: 2, text: '// Needle: here' })
+  })
+
+  it('reads a colon in the path as part of it', async () => {
+    // `-z`: a colon-separated parse would split `src/b:c.ts` in two.
+    const { hits } = await grepFiles(repo.path, 'colon')
+    expect(hits).toEqual([{ path: 'src/b:c.ts', line: 2, text: 'needle: with a colon' }])
+  })
+
+  it('searches untracked files, but not ignored or binary ones', async () => {
+    const paths = (await grepFiles(repo.path, 'needle')).hits.map((hit) => hit.path)
+    expect(paths).toContain('src/new.ts')
+    expect(paths).not.toContain('dist/out.js')
+    expect(paths).not.toContain('blob.bin')
+  })
+
+  it('takes the query as a fixed string, even one that looks like an option', async () => {
+    expect((await grepFiles(repo.path, 'const .* =')).hits).toEqual([])
+    await repo.write('src/dash.ts', '--version is a flag\n')
+    const { hits } = await grepFiles(repo.path, '--version')
+    expect(hits.map((hit) => hit.path)).toEqual(['src/dash.ts'])
+  })
+
+  it('stops at a screenful, and says so', async () => {
+    await repo.write('src/many.ts', 'hit\n'.repeat(5))
+    for (let index = 0; index < 20; index++) {
+      await repo.write(`src/many-${index}.ts`, 'hit\n'.repeat(30))
+    }
+    const { hits, truncated } = await grepFiles(repo.path, 'hit')
+    expect(hits).toHaveLength(200)
+    expect(truncated).toBe(true)
+    // No one file is the whole answer.
+    expect(hits.filter((hit) => hit.path === 'src/many-0.ts').length).toBeLessThanOrEqual(20)
+  })
+
+  it('keeps the spaces in a query, which in a file mean something', async () => {
+    await repo.write('src/lines.ts', 'line 7 here\nline 70 here\n')
+    const { hits } = await grepFiles(repo.path, 'line 7 ')
+    expect(hits.map((hit) => hit.text)).toEqual(['line 7 here'])
+  })
+
+  it('names a file it cut short, and only one that was', async () => {
+    await repo.write('src/twenty.ts', 'hit\n'.repeat(20))
+    await repo.write('src/thirty.ts', 'hit\n'.repeat(30))
+    const { hits, more } = await grepFiles(repo.path, 'hit')
+    expect(hits.filter((hit) => hit.path === 'src/thirty.ts')).toHaveLength(20)
+    expect(hits.filter((hit) => hit.path === 'src/twenty.ts')).toHaveLength(20)
+    expect(more).toEqual(['src/thirty.ts'])
   })
 })
 

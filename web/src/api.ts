@@ -1,6 +1,7 @@
 import type {
   AppSnapshot,
   FileContent,
+  ContentHit,
   FileHit,
   FileListing,
   FileSaved,
@@ -244,6 +245,12 @@ export const api = {
   find: (worktreeId: string, q: string) =>
     request<{ hits: FileHit[]; truncated?: boolean }>(
       `/api/worktrees/${worktreeId}/find?q=${encodeURIComponent(q)}`,
+    ),
+
+  /** Lines that contain `q`, for the finder's content switch. */
+  grep: (worktreeId: string, q: string) =>
+    request<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }>(
+      `/api/worktrees/${worktreeId}/grep?q=${encodeURIComponent(q)}`,
     ),
 
   /**

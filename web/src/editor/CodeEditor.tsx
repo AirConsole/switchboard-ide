@@ -48,6 +48,13 @@ export interface CodeEditorProps {
    * it in an effect is what closes both gaps.
    */
   focus?: number | null
+  /**
+   * Put the cursor on this line of this file, once per nonce, and scroll it to
+   * the middle -- a content search hit being opened. Carries the path because
+   * the request arrives before the file does, and must not land on the file
+   * that was showing while it loaded.
+   */
+  goto?: { path: string; line: number; nonce: number } | null
 }
 
 /**
@@ -148,6 +155,7 @@ export const CodeEditor = ({
   onChange,
   onSave,
   focus = null,
+  goto = null,
 }: CodeEditorProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -321,6 +329,23 @@ export const CodeEditor = ({
       view.dispatch({ effects: language.reconfigure(support) })
     })
   }, [file.path, language])
+
+  /*
+   * After the effect that swaps documents, so the line is looked for in the
+   * file it names rather than the one it replaced.
+   */
+  const wentTo = useRef<number | null>(null)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || goto === null || goto.path !== file.path || wentTo.current === goto.nonce) return
+    wentTo.current = goto.nonce
+    const doc = view.state.doc
+    const line = doc.line(Math.min(Math.max(goto.line, 1), doc.lines))
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    })
+  }, [goto, file])
 
   /*
    * Declared after the effect that builds the view, so on a fresh mount there

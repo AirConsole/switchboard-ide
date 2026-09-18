@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import {
   mediaKindOf,
   mediaTypeOf,
+  type ContentHit,
   type FileEntry,
   type FileHit,
   type FilesMode,
@@ -191,6 +192,44 @@ const hitRows = (hits: FileHit[]): HitRow[] => {
       open: kind === 'dir' && paths.some((other) => other.startsWith(`${path}/`)),
     }
   })
+}
+
+/** A content search's hits, one list per file, in the order git gave them. */
+const linesByFile = (hits: ContentHit[]): Map<string, ContentHit[]> => {
+  const byFile = new Map<string, ContentHit[]>()
+  for (const hit of hits) {
+    const lines = byFile.get(hit.path)
+    if (lines) lines.push(hit)
+    else byFile.set(hit.path, [hit])
+  }
+  return byFile
+}
+
+/**
+ * A line with what was searched for picked out.
+ *
+ * Brightness, not colour -- the tree's own way of saying "this one" -- since a
+ * search hit is not a state and amber and green are spoken for.
+ */
+const Marked = ({ text, query }: { text: string; query: string }): React.ReactElement => {
+  const needle = query.toLowerCase()
+  if (needle.trim() === '') return <>{text}</>
+  const lower = text.toLowerCase()
+  const parts: React.ReactNode[] = []
+  let from = 0
+  let at = lower.indexOf(needle)
+  while (at !== -1) {
+    if (at > from) parts.push(text.slice(from, at))
+    parts.push(
+      <b className="files__match" key={at}>
+        {text.slice(at, at + needle.length)}
+      </b>,
+    )
+    from = at + needle.length
+    at = lower.indexOf(needle, from)
+  }
+  parts.push(text.slice(from))
+  return <>{parts}</>
 }
 
 /**
@@ -1168,6 +1207,20 @@ export const FilesPane = ({
    */
   const [query, setQuery] = useState('')
   const [found, setFound] = useState<FileHit[]>([])
+  /*
+   * What the files search looks at: names, or what is in the files. The
+   * panel's for the same reason the query is, and kept across a mode switch
+   * with it.
+   */
+  const [findIn, setFindIn] = useState<'name' | 'text'>('name')
+  const [foundLines, setFoundLines] = useState<{
+    hits: ContentHit[]
+    truncated: boolean
+    /** Files with more matching lines than are listed. */
+    more: string[]
+  }>({ hits: [], truncated: false, more: [] })
+  /* A content hit being opened: the editor puts its cursor on this line. */
+  const [goto, setGoto] = useState<{ path: string; line: number; nonce: number } | null>(null)
   const searching = query.trim() !== ''
   /*
    * One nonce per thing the row can hand the keyboard to. Both are separate
@@ -1242,21 +1295,49 @@ export const FilesPane = ({
   useEffect(() => {
     if (mode !== 'files' || !searching) {
       setFound([])
+      setFoundLines({ hits: [], truncated: false, more: [] })
       return
     }
     let live = true
-    void api
-      .find(files.worktreeId, query)
-      .then((res) => {
-        if (live) setFound(res.hits)
-      })
-      .catch(() => {
-        if (live) setFound([])
-      })
+    if (findIn === 'name') {
+      void api
+        .find(files.worktreeId, query)
+        .then((res) => {
+          if (live) setFound(res.hits)
+        })
+        .catch(() => {
+          if (live) setFound([])
+        })
+      return () => {
+        live = false
+      }
+    }
+    /*
+     * A content search reads every file, where a name search reads one list
+     * git already had -- so it waits for a pause in the typing rather than
+     * running a `git grep` per keystroke.
+     */
+    const timer = window.setTimeout(() => {
+      void api
+        .grep(files.worktreeId, query)
+        .then((res) => {
+          if (live) {
+            setFoundLines({
+              hits: res.hits,
+              truncated: res.truncated === true,
+              more: res.more ?? [],
+            })
+          }
+        })
+        .catch(() => {
+          if (live) setFoundLines({ hits: [], truncated: false, more: [] })
+        })
+    }, 150)
     return () => {
       live = false
+      window.clearTimeout(timer)
     }
-  }, [files.worktreeId, mode, query, searching])
+  }, [files.worktreeId, mode, query, searching, findIn])
 
   /**
    * Whether there is a content pane at all.
@@ -1683,11 +1764,21 @@ export const FilesPane = ({
        * is the only thing you can have meant by picking a place rather than a
        * file.
        */
-      const rowsFound = hitRows(found)
+      /*
+       * By content, the files that have a hit are drawn as a name search draws
+       * its hits, and each one's matching lines sit under it -- line number,
+       * then the line -- so a hit says where it is before it says what it is.
+       * A line opens its file at that line; the file row opens it at the top.
+       */
+      const byText = findIn === 'text'
+      const lines = linesByFile(foundLines.hits)
+      const rowsFound = hitRows(
+        byText ? [...lines.keys()].map((path) => ({ path, kind: 'file' as const })) : found,
+      )
       return (
         <div className="files__tree" ref={treeRef}>
           {rowsFound.length === 0 && <p className="files__note">Nothing matches.</p>}
-          {rowsFound.map((row) => (
+          {rowsFound.flatMap((row) => [
             <button
               key={row.path}
               data-kind={row.kind}
@@ -1715,8 +1806,52 @@ export const FilesPane = ({
                 {row.kind === 'dir' ? (row.open ? '▾' : '▸') : ''}
               </span>
               <span className="files__name">{row.name}</span>
-            </button>
-          ))}
+            </button>,
+            ...(byText && row.kind === 'file' ? (lines.get(row.path) ?? []) : []).map((hit) => (
+              <button
+                key={`${hit.path}\0${hit.line}`}
+                data-kind="line"
+                className={[
+                  'files__row',
+                  'files__line',
+                  hit.path === files.path && goto?.path === hit.path && goto.line === hit.line
+                    ? 'files__row--on'
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                style={{ paddingLeft: 6 + (row.depth + 1) * INDENT }}
+                onClick={() => {
+                  if (hit.path !== files.path) open(hit.path)
+                  setGoto((previous) => ({
+                    path: hit.path,
+                    line: hit.line,
+                    nonce: (previous?.nonce ?? 0) + 1,
+                  }))
+                }}
+                title={`${hit.path}:${hit.line}`}
+              >
+                <span className="files__lineno">{hit.line}</span>
+                <span className="files__name">
+                  <Marked text={hit.text} query={query} />
+                </span>
+              </button>
+            )),
+            ...(byText && foundLines.more.includes(row.path)
+              ? [
+                  <p
+                    key={`${row.path}\0more`}
+                    className="files__note files__more"
+                    style={{ paddingLeft: 6 + (row.depth + 1) * INDENT }}
+                  >
+                    More in this file
+                  </p>,
+                ]
+              : []),
+          ])}
+          {byText && foundLines.truncated && (
+            <p className="files__note">The first {foundLines.hits.length} lines. Type more to narrow it.</p>
+          )}
         </div>
       )
     }
@@ -1894,6 +2029,7 @@ export const FilesPane = ({
             onChange={files.edited}
             onSave={files.save}
             focus={editorFocusNow}
+            goto={goto}
           />
         </Suspense>
       ) : (
@@ -2016,7 +2152,13 @@ export const FilesPane = ({
             className="files__search"
             value={query}
             spellCheck={false}
-            placeholder={mode === 'commits' ? 'Find a commit' : 'Find a file'}
+            placeholder={
+              mode === 'commits'
+                ? 'Find a commit'
+                : mode === 'files' && findIn === 'text'
+                  ? 'Find in files'
+                  : 'Find a file'
+            }
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               /*
@@ -2049,7 +2191,8 @@ export const FilesPane = ({
                  */
                 const target =
                   event.key === 'Enter'
-                    ? (list.querySelector<HTMLButtonElement>('button[data-kind="file"]') ??
+                    ? (list.querySelector<HTMLButtonElement>('button[data-kind="line"]') ??
+                      list.querySelector<HTMLButtonElement>('button[data-kind="file"]') ??
                       list.querySelector<HTMLButtonElement>('button'))
                     : list.querySelector<HTMLButtonElement>('button')
                 if (!target) return
@@ -2059,6 +2202,30 @@ export const FilesPane = ({
               }
             }}
           />
+          {/*
+            * Names or contents, at the right of the box it changes. Files mode
+            * only: Changes and Commits filter lists they already hold, and a
+            * commit has no contents to search. Clicking one hands the keyboard
+            * straight back to the box, since the next thing you do is type.
+            */}
+          {mode === 'files' && (
+            <div className="files__in" role="group" aria-label="Search in">
+              {(['name', 'text'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  className={findIn === kind ? 'files__in-opt files__in-opt--on' : 'files__in-opt'}
+                  aria-pressed={findIn === kind}
+                  title={kind === 'name' ? 'Search file names' : 'Search what is in the files'}
+                  onClick={() => {
+                    setFindIn(kind)
+                    searchRef.current?.focus()
+                  }}
+                >
+                  {kind === 'name' ? 'Name' : 'Text'}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       )}
