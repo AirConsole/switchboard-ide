@@ -45,6 +45,7 @@ DELETE_DATA=0
 FROM_SNAPSHOT=""
 ALERT_EMAIL=""
 DOMAIN=""
+DOMAIN_GIVEN=0
 DOMAIN_ASKED=0
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
@@ -52,6 +53,21 @@ REPO_REF=${SWB_REPO_REF:-master}
 say() { printf '%s\n' "$*"; }
 die() { printf 'provision: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# A name, and nothing else. This value is interpolated into a command that runs
+# on the machine over ssh, so a quote in it would end the string it sits in --
+# the flag is typed by the person who already has ssh, but a typo should not
+# become a shell.
+valid_domain() {
+  case "$1" in
+    '') return 0 ;;
+    *[!A-Za-z0-9.-]*) return 1 ;;
+    -*|.*|*-|*.) return 1 ;;
+    *.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 
 usage() {
   sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
@@ -90,7 +106,7 @@ while [ $# -gt 0 ]; do
     --machine) MACHINE=$2; shift ;;
     --disk-size) DISK_SIZE=$2; shift ;;
     --alert-email) ALERT_EMAIL=$2; shift ;;
-    --domain) DOMAIN=$2; DOMAIN_ASKED=1; shift ;;
+    --domain) DOMAIN=$2; DOMAIN_GIVEN=1; DOMAIN_ASKED=1; shift ;;
     --repo) REPO_URL=$2; shift ;;
     --repo-ref) REPO_REF=$2; shift ;;
     --from-snapshot) FROM_SNAPSHOT=$2; shift ;;
@@ -104,6 +120,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+valid_domain "$DOMAIN" || die "--domain takes a name like ide.example.com"
 have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/docs/install"
 [ -n "$PROJECT" ] || die "--project is required (a project of your own; see --in-org)"
 
@@ -220,6 +237,9 @@ ask_domain() {
   printf 'Also answer to a domain? Type it, or press enter for none: '
   read -r reply </dev/tty || reply=""
   DOMAIN=$(printf '%s' "$reply" | tr -d ' ')
+  valid_domain "$DOMAIN" || die "\"$DOMAIN\" is not a domain name; nothing was changed"
+  [ -n "$DOMAIN" ] && DOMAIN_GIVEN=1
+  return 0
 }
 
 # What to go and do, printed as early as the address exists -- which is before
@@ -459,13 +479,16 @@ cmd_create() {
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
 
-  # Applied whenever --domain was given at all, including as "": that is how a
-  # domain is taken away again, and the same code path either way.
+  # Applied whenever --domain was *given* at all, including as "": that is how
+  # a domain is taken away again, through the same code path that adds one.
+  # Keyed on the flag rather than on "we have asked", which under --yes is true
+  # of every machine and would have made each one ssh in to remove a domain it
+  # never had.
   if [ -n "$DOMAIN" ]; then
     wait_for_dns
     say "teaching the machine its name"
     apply_domain
-  elif [ "$DOMAIN_ASKED" -eq 1 ]; then
+  elif [ "$DOMAIN_GIVEN" -eq 1 ]; then
     say "removing any domain this machine had"
     apply_domain
   fi
