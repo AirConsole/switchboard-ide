@@ -944,6 +944,38 @@ line under it carries the real dimensions and the file size, which is the one
 thing a scaled picture cannot say for itself. `.svg` is deliberately not in the
 table: it is text, it decodes, and editing it is the reason to open it.
 
+**And what plays, plays: a video, a sound file, a PDF.** Same route, same table,
+same rule about the size cap — and `mediaKindOf` says which element, derived
+from the type so there is never a second table to disagree. What let them in was
+`Range`, which the table's own comment had named as the blocker years before it
+existed: a 200 with the whole file plays from the start and cannot be seeked,
+and worse, an MP4 that is not "faststart" keeps its index at the *end*, so the
+browser's opening move is a suffix range and a server that cannot answer one
+shows no picture at all. `server/src/range.ts` is that handler.
+
+Four things in the panel are the difference between showing a file and playing
+one:
+
+- **A player is not restarted under you.** The rev in the URL changes whenever
+  the file does, and swapping `src` mid-playback jumps back to zero — so a
+  `<video>` or `<audio>` keeps the URL it started on until it is paused at the
+  beginning, and the caption says *this file has changed on disk* meanwhile. For
+  a picture the swap is still the documented repaint.
+- **One player at a time**, across the whole row, because several windows are
+  open at once by design and two soundtracks over each other is nobody's
+  intention.
+- **`preload="metadata"`, never `auto`.** Opening a file is not asking to
+  download all of it; it is also what fills the caption's dimensions and length.
+- **A PDF is a frame, and a frame cannot report failure** — no error event, and
+  `onLoad` fires on a blank one just as happily. So the line underneath always
+  offers *Open in a new tab*, which is the way out of a viewer that did not
+  render and the answer for a browser without one.
+
+A PDF also costs the keyboard while it has focus: the viewer swallows every key,
+so Cmd+arrow and Escape do not reach the row until you click out of it. Arrival
+never lands there (`viewOnly` covers every media type), so it only happens if
+you click into the page — the bargain any embedded viewer makes.
+
 **A Markdown file can be read rather than edited.** `Preview` in the bar swaps
 the editor for `views/Markdown`, and the switch is `ui.markdownPreview` -- one
 boolean for the whole IDE, not one per file or per worktree, because what it

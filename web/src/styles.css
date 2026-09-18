@@ -4340,6 +4340,23 @@ button {
 }
 
 /*
+ * The same box, for something that fills it rather than sitting in it.
+ *
+ * A picture is centred in the pane with room around it; a page is read, so it
+ * takes the width and the height and keeps only the gutter its caption needs.
+ */
+.files__media--page {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  gap: 4px;
+}
+
+.files__media--page .files__media-note {
+  padding: 0 8px 6px;
+}
+
+/*
  * Scaled down to fit, never up.
  *
  * Both caps are needed: width alone leaves a tall image running out of the
@@ -4360,8 +4377,56 @@ button {
   background: var(--level-panel);
 }
 
-/* What the picture cannot say: its real size, and the file's. The interface's
-   own voice, so the mono face `.files__file` sets is restated away. */
+/*
+ * A video is a picture that moves, and is fitted the same way -- the rule above
+ * applies unchanged, including never scaling up: a 320px clip is drawn at
+ * 320px rather than stretched across a 1000px pane into mush.
+ *
+ * `background` matters more here than for an image: a player is letterboxed
+ * black by the browser before its first frame lands, and a bare element against
+ * the panel reads as something that failed to load.
+ */
+.files__video {
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  background: var(--level-panel);
+}
+
+/*
+ * A sound file has no picture, so what there is to show is a control strip, and
+ * a control strip centred in a tall pane reads as a mistake -- it belongs at
+ * the top, where the file's own content would have started. Capped rather than
+ * stretched: the browser's own player stops being legible much past this.
+ */
+.files__audio {
+  flex: none;
+  width: min(100%, 420px);
+  margin-top: 4px;
+}
+
+/*
+ * A PDF is a document, not a picture of one, so it takes the pane rather than
+ * being fitted into it -- and on a white ground, because a PDF page *is* white
+ * and a dark frame around it would only be a frame around a white rectangle.
+ */
+.files__pdf {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+/* The one way out of a frame that cannot report its own failure. */
+.files__open {
+  color: var(--legend);
+}
+
+/* What the file cannot say about itself: its real size, how long it runs, and
+   how big it is. The interface's own voice, so the mono face `.files__file`
+   sets is restated away. */
 .files__media-note {
   flex: none;
   margin: 0;

@@ -8,6 +8,7 @@ import {
   invalidateStatus,
   listDirectory,
   mediaFile,
+  mediaKindOf,
   mediaTypeOf,
   readTextFile,
   takeableFile,
@@ -367,6 +368,15 @@ describe('read and write', () => {
   })
 })
 
+/** One name per row of the table, plus files that are not in it at all. */
+const KNOWN = [
+  'a.png', 'a.apng', 'a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.avif', 'a.bmp', 'a.ico',
+  'a.mp4', 'a.m4v', 'a.webm', 'a.ogv', 'a.mov',
+  'a.mp3', 'a.m4a', 'a.aac', 'a.wav', 'a.flac', 'a.ogg', 'a.oga', 'a.opus',
+  'a.pdf',
+  'a.txt', 'a.svg', 'a.mkv', 'noextension', 'dir.d/README',
+]
+
 describe('media files', () => {
   let repo: TempRepo
 
@@ -388,6 +398,56 @@ describe('media files', () => {
     // `img.d/README` has a dot in it, and none of it is an extension.
     expect(mediaTypeOf('img.d/README')).toBe(undefined)
     expect(mediaTypeOf('noextension')).toBe(undefined)
+  })
+
+  it('names what a video, a sound file and a PDF are shown as', async () => {
+    expect(mediaTypeOf('clip.mp4')).toBe('video/mp4')
+    expect(mediaTypeOf('clip.webm')).toBe('video/webm')
+    expect(mediaTypeOf('Screen Recording.MOV')).toBe('video/quicktime')
+    expect(mediaTypeOf('take.mp3')).toBe('audio/mpeg')
+    // Opus travels in an Ogg container and has to be named as one: Chrome's
+    // media stack does not accept `audio/opus` for it.
+    expect(mediaTypeOf('take.opus')).toBe('audio/ogg')
+    expect(mediaTypeOf('spec.pdf')).toBe('application/pdf')
+  })
+
+  it('leaves out the containers no browser here can open', async () => {
+    /*
+     * The table is a list of renderers, not of formats. Chrome demuxes no
+     * Matroska whatever the codecs inside, and a black box with a broken
+     * control strip is worse than the note saying there is nothing to see.
+     * `.m3u8` needs Media Source Extensions and a player we do not have.
+     */
+    for (const name of ['film.mkv', 'film.avi', 'film.wmv', 'stream.m3u8', 'tune.mid']) {
+      expect(mediaTypeOf(name)).toBe(undefined)
+    }
+  })
+
+  it('says which element shows a file, for exactly the files it can show', async () => {
+    expect(mediaKindOf('logo.png')).toBe('image')
+    expect(mediaKindOf('clip.mp4')).toBe('video')
+    expect(mediaKindOf('take.mp3')).toBe('audio')
+    expect(mediaKindOf('spec.pdf')).toBe('pdf')
+    expect(mediaKindOf('notes.txt')).toBe(undefined)
+    /*
+     * The biconditional, over the whole table: a kind exists exactly when a
+     * type does. A row added later whose prefix `mediaKindOf` does not know
+     * would otherwise be a file the server happily serves and the panel cannot
+     * draw -- opened, blank, with nothing said about why.
+     */
+    for (const name of KNOWN) {
+      expect(mediaKindOf(name) === undefined).toBe(mediaTypeOf(name) === undefined)
+    }
+  })
+
+  it('plays a video over the size cap, for the reason an image is shown', async () => {
+    // The same check order as the image above, and it matters more here: a
+    // video is normally *far* over a cap that exists for text in JSON.
+    const big = Buffer.alloc(config.maxFileBytes + 1, 0x41)
+    await writeFile(join(repo.path, 'big.mp4'), big)
+    const content = await readTextFile(repo.path, 'big.mp4')
+    expect('media' in content && content.media).toBe('video/mp4')
+    expect('tooLarge' in content).toBe(false)
   })
 
   it('serves nothing it does not have a renderer for', async () => {

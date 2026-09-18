@@ -549,9 +549,9 @@ export interface FileContent {
    */
   binary?: boolean
   /**
-   * The media type to render it as, when `binary` and the browser draws this
-   * kind itself -- `image/png` and the rest of the image table in
-   * `server/src/files.ts`.
+   * The media type to render it as, when `binary` and the browser shows this
+   * kind itself -- `image/png`, `video/mp4`, `audio/mpeg`, `application/pdf`
+   * and the rest of the table in `shared/src/media.ts`.
    *
    * Set from the extension rather than from the bytes, and only for types the
    * browser has a renderer for: it says "fetch this from `/raw` and show it",

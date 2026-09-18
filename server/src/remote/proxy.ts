@@ -247,8 +247,27 @@ export const registerProxy = (app: FastifyInstance, workspace: Workspace): void 
       // killing its sessions and maybe deleting a branch -- the very shape the
       // long timeout exists for, and aborting it cancels nothing on the peer.
       if (RAW_ROUTES.has(route)) {
-        const raw = await peer.requestRaw(unscopeUrl(request.url))
-        await reply.status(raw.status).header('content-type', raw.contentType).send(raw.body)
+        const range = typeof request.headers.range === 'string' ? request.headers.range : undefined
+        const raw = await peer.streamRaw(unscopeUrl(request.url), range)
+        /*
+         * The peer's own answer, headers and all -- including the policy it
+         * chose for this file. See `RAW_HEADERS`.
+         */
+        void reply.status(raw.status)
+        for (const [name, value] of Object.entries(raw.headers)) void reply.header(name, value)
+        /*
+         * Let go of the peer when the browser does. Fastify destroys the reply
+         * stream, but the `fetch` upstream of it is not cancelled by that, and
+         * the peer goes on writing into a pipe nobody is reading.
+         *
+         * Not an edge case: **every seek in a video cancels the range request
+         * in flight**, so a minute of scrubbing is a minute of abandoned
+         * connections and a peer-side read per seek.
+         */
+        reply.raw.on('close', () => {
+          if (!reply.raw.writableEnded) raw.abort()
+        })
+        await reply.send(raw.body ?? '')
         return
       }
       const reads = request.method === 'GET'

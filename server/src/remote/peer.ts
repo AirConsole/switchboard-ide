@@ -1,3 +1,5 @@
+import { Readable } from 'node:stream'
+import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { PROTOCOL_VERSION, type AppSnapshot } from '@switchboard/shared'
 import { HttpError } from '../http-error.js'
 import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
@@ -411,37 +413,95 @@ export class PeerClient {
     }
   }
 
-  async requestRaw(
+  /**
+   * Headers a raw reply carries through unchanged.
+   *
+   * The first four are what makes a file seekable and nameable; the last four
+   * are the *peer's own* security posture, which it states per file -- a PDF
+   * is served under a different policy from everything else, and a gateway that
+   * substituted its own would decide that question for a machine it is only
+   * relaying. Forwarding them also fixes a quieter bug: a proxied raw reply set
+   * no policy at all, so `headers.ts` gave it the **page** CSP, and remote file
+   * bytes were served looser than local ones for as long as linking has
+   * existed.
+   */
+  private static readonly RAW_HEADERS = [
+    'content-type',
+    'content-length',
+    'content-range',
+    'accept-ranges',
+    'content-security-policy',
+    'content-disposition',
+    'x-content-type-options',
+    'cache-control',
+    'x-frame-options',
+  ]
+
+  /**
+   * A file on the peer, streamed rather than held.
+   *
+   * It used to buffer the whole reply under `MAX_REPLY_BYTES`, which made a
+   * linked machine's files a different thing from this machine's: a video would
+   * not play, and anything over 32MB could not even be *downloaded* -- the
+   * answer was "that server sent too much" for exactly the files worth fetching.
+   * Nothing here accumulates, so the cap has nothing to protect and its absence
+   * is the point; it still guards every other route, where a reply is JSON and
+   * a deep copy follows it.
+   *
+   * `range` is the browser's own, passed through, and the peer answers it the
+   * way we would. That is what makes seeking work across a link, and it is also
+   * how an interrupted download resumes.
+   */
+  async streamRaw(
     path: string,
-    timeoutMs = READ_TIMEOUT_MS,
-  ): Promise<{ status: number; contentType: string; body: Buffer }> {
+    range: string | undefined,
+  ): Promise<{ status: number; headers: Record<string, string>; body: Readable | null; abort: () => void }> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    /*
+     * The timeout covers the head and not the body, which is the opposite of
+     * `request`'s -- deliberately. There the clock bounds how long this process
+     * can be made to *accumulate*; here it would bound how long a file is
+     * allowed to be, and a 400MB video legitimately outlives any read budget.
+     * A stalled body is caught by the stream erroring and by the client going
+     * away, both of which abort this.
+     */
+    const timer = setTimeout(() => controller.abort(), READ_TIMEOUT_MS)
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         signal: controller.signal,
         // Never followed; see `request`.
         redirect: 'error',
-        headers: this.headers(),
+        headers: { ...this.headers(), ...(range === undefined ? {} : { range }) },
       })
+      clearTimeout(timer)
       await this.checkProtocol(response)
-      const length = Number(response.headers.get('content-length') ?? '0')
-      if (length > MAX_REPLY_BYTES) {
-        await discard(response)
-        throw new HttpError(502, 'that server sent too much')
+      /*
+       * An error still reads as an error, with the peer's own words: its body
+       * is a small JSON envelope, and this is what keeps a remote 404
+       * `path-missing` and a remote 401 `link-refused` telling the client what
+       * a local one would. 416 is not an error in that sense -- it is an answer
+       * about a range, and it carries no body.
+       */
+      if (response.status >= 400 && response.status !== 416) {
+        const text = await readCapped(response)
+        throw peerError(response.status, text)
       }
-      const body = Buffer.from(await response.arrayBuffer())
-      if (body.byteLength > MAX_REPLY_BYTES) throw new HttpError(502, 'that server sent too much')
+      const headers: Record<string, string> = {}
+      for (const name of PeerClient.RAW_HEADERS) {
+        const value = response.headers.get(name)
+        if (value !== null) headers[name] = value
+      }
       return {
         status: response.status,
-        contentType: response.headers.get('content-type') ?? 'application/octet-stream',
-        body,
+        headers,
+        // 416 and a HEAD have no body at all; `fromWeb` of null would throw.
+        body: response.body === null ? null : Readable.fromWeb(response.body as WebReadableStream),
+        abort: () => controller.abort(),
       }
     } catch (err) {
+      clearTimeout(timer)
       if (err instanceof HttpError) throw err
       throw new PeerUnreachable(this.baseUrl, err instanceof Error ? err.message : String(err))
-    } finally {
-      clearTimeout(timer)
     }
   }
 

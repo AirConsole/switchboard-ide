@@ -43,7 +43,17 @@ export const registerSecurityHeaders = (app: FastifyInstance): void => {
     if (reply.getHeader('content-security-policy') === undefined) {
       void reply.header('content-security-policy', policy(request.headers.host))
     }
-    void reply.header('x-frame-options', 'DENY')
+    /*
+     * The same rule, for the same reason: a route that answered for itself
+     * keeps its answer. `DENY` refuses *same-origin* framing too, so applied
+     * here without exception it is what stopped our own page showing a PDF --
+     * which is inert bytes under `default-src 'none'`, not a page anyone can
+     * be tricked into clicking. `/raw` sends `SAMEORIGIN` for that one type;
+     * every other response, this page included, is still `DENY`.
+     */
+    if (reply.getHeader('x-frame-options') === undefined) {
+      void reply.header('x-frame-options', 'DENY')
+    }
     void reply.header('x-content-type-options', 'nosniff')
     void reply.header('referrer-policy', 'same-origin')
     /*

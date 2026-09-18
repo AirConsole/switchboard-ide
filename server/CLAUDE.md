@@ -302,6 +302,35 @@ things in it are load-bearing:
   filename in either, because the client's anchor supplies the name. The
   `maxFileBytes` cap does not reach here and must not be brought in: it is a cap
   on text going through JSON, and a file over it is the main thing this is for.
+- **It answers `Range`, and that is what a video is.** A browser opens a media
+  file by asking for a slice; answer 200 with the whole thing and it plays from
+  the start and cannot be seeked. `range.ts` decides what a header asks for and
+  is written to fail *towards* sending the whole file, which is always legal --
+  the sole 416 is a range beginning past the end, because a 206 of nothing wedges
+  a player for ever. Two edges are worth knowing before touching it: `bytes=-500`
+  is a **suffix**, not a negative start (and it is the *first* request a
+  non-faststart MP4 provokes, so getting it wrong means no picture at all rather
+  than a slow one), and Node's `end` for `createReadStream` is inclusive like the
+  header's, so the only `+1` in any of it is `content-length`. A zero-byte file
+  is sent whole rather than 416, deliberately against the letter of the RFC: an
+  empty file is a legitimate file and a 416 reads to the browser as a broken
+  source. `accept-ranges` rides on every answer, the 416 included, because it is
+  what makes a player try at all.
+- **The file is opened once and measured through that handle.** `streamable()`
+  stats to find a file and the route then opens it; taking the length from the
+  stat means an agent rewriting the file in between makes us promise a
+  `content-length` the bytes do not keep, which the browser reports as a broken
+  connection. Invisible at the size of an icon, a real window at the size of a
+  video.
+- **A PDF is the one file this origin lets itself frame.** `frame-ancestors
+  'self'` on the response, plus `X-Frame-Options: SAMEORIGIN` for browsers that
+  read that instead -- which is why `headers.ts` now leaves a route's own
+  `X-Frame-Options` alone, exactly as it already left a route's own CSP alone.
+  The sandbox is **not** widened, and that was measured rather than assumed: the
+  obvious guess is that Chrome's PDF viewer needs `allow-scripts`, but the viewer
+  is a `chrome-extension://` frame inside the sandboxed document rather than
+  script belonging to it, and a plain `sandbox` renders the page in full. A PDF
+  on its way out as a download is never framed and keeps the strict policy.
 
 ## Is there anything of yours left in this worktree
 
@@ -651,6 +680,24 @@ translation is the ids:
   remote pane dead for the life of the page. A `detach` removes the record, or a
   pane closed while the peer was away is re-claimed when it returns and a stale
   primary goes on owning that session's geometry.
+
+  **A file is streamed, not held** (`streamRaw`). It used to be buffered whole
+  under `MAX_REPLY_BYTES`, which quietly made a linked machine's files a
+  different kind of thing from this machine's: no video played, and anything over
+  32MB could not even be *downloaded* -- the answer was "that server sent too
+  much" for precisely the files worth fetching. Nothing accumulates on this path,
+  so the cap has nothing to protect here and still guards every other route,
+  where a reply is JSON and `scopeTree` deep-copies it afterwards. Three details
+  are load-bearing: the browser's `Range` goes upstream and the peer's 206 comes
+  back, which is what makes seeking work across a link; the timeout covers the
+  head and **not** the body, because a 400MB file legitimately outlives any read
+  budget and there is no heap to bound; and the upstream fetch is aborted when
+  the browser goes away, which is not an edge case at all -- every seek in a
+  video cancels the request in flight, so without it a minute of scrubbing leaks
+  a connection per seek. The peer's own security headers travel with the bytes,
+  which also fixed a quieter bug: a proxied raw reply set no policy, so
+  `headers.ts` gave it the *page* CSP, and remote file bytes were served looser
+  than local ones for as long as linking has existed.
 
 Terminal bytes are forwarded with four header bytes rewritten and the payload
 untouched -- `streamId` is a `uint32` in a five-byte header, never a string id.

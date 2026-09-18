@@ -1,4 +1,3 @@
-import { createReadStream } from 'node:fs'
 import { homedir } from 'node:os'
 import type { FastifyInstance } from 'fastify'
 import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
@@ -10,6 +9,7 @@ import type { Workspace } from '../workspace.js'
 import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
+import { sendRaw } from '../raw.js'
 import { hostKeyFor } from '../remote/scope.js'
 import { PEER_READ_HEADER } from '../remote/peer.js'
 import { usage } from '../usage.js'
@@ -424,7 +424,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   })
 
   /*
-   * The bytes of a file the browser draws itself: an image, today.
+   * The bytes of a file the browser shows itself: a picture, a video, a sound
+   * file, a PDF.
    *
    * Separate from `/file` because it is the one response here that is not JSON
    * -- base64 through the snapshot would be a third larger and would sit in two
@@ -454,27 +455,22 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * may be asked for: drawing one needs an entry in the media table, taking one
    * away needs nothing but containment, since a file the panel refuses to show
    * is the whole reason the button exists. See `takeableFile`.
+   *
+   * **It answers `Range`**, which is what a video is: a browser opens one by
+   * asking for a slice, and a server that always sends the whole file gives you
+   * a clip that plays from the start and cannot be seeked. `accept-ranges` goes
+   * on every answer, including the 416 and the HEAD Fastify generates, because
+   * that header is what makes a player try at all. See `range.ts` for what each
+   * shape of the request means.
    */
   app.get('/api/worktrees/:id/raw', async (request, reply) => {
     const { id } = request.params as { id: string }
     const { path, download } = rawQuery.parse(request.query)
     const taking = download === '1'
-    const { file, type, size } = taking
+    const { file, type } = taking
       ? await workspace.takeableFile(id, path)
       : await workspace.mediaFile(id, path)
-    return reply
-      .type(type)
-      .header('content-length', size)
-      .header('x-content-type-options', 'nosniff')
-      .header('content-security-policy', "default-src 'none'; sandbox")
-      .header('content-disposition', taking ? 'attachment' : 'inline')
-      /*
-       * Never stored. The URL already changes whenever the file does, so a
-       * cache buys one fetch per image per edit -- and the thing it would be
-       * keeping on disk is the contents of someone's working tree.
-       */
-      .header('cache-control', 'no-store')
-      .send(createReadStream(file))
+    return sendRaw(reply, { file, type, taking, range: request.headers.range })
   })
 
   /*

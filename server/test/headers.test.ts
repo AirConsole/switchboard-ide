@@ -12,6 +12,10 @@ const app = async () => {
   server.get('/raw', async (_request, reply) =>
     reply.header('content-security-policy', "default-src 'none'; sandbox").send('bytes'),
   )
+  // A PDF from that same route: the one answer that frames, and says so itself.
+  server.get('/framed', async (_request, reply) =>
+    reply.header('x-frame-options', 'SAMEORIGIN').send('bytes'),
+  )
   await server.ready()
   return server
 }
@@ -34,6 +38,22 @@ describe('security headers', () => {
     const server = await app()
     const res = await server.inject({ url: '/raw', headers: { host: 'ide.example:83' } })
     expect(res.headers['content-security-policy']).toBe("default-src 'none'; sandbox")
+    await server.close()
+  })
+
+  /*
+   * The same rule for the same reason, and the one that let a PDF be shown at
+   * all: `DENY` refuses *same-origin* framing too, so applied without exception
+   * it stopped our own page framing inert bytes served under `default-src
+   * 'none'`. The page itself must still be `DENY` -- that is the clickjacking
+   * rule above, and this is the test that the exception did not reach it.
+   */
+  it('leaves a route’s own frame rule alone, and still denies the page', async () => {
+    const server = await app()
+    const framed = await server.inject({ url: '/framed', headers: { host: 'ide.example:83' } })
+    expect(framed.headers['x-frame-options']).toBe('SAMEORIGIN')
+    const page = await server.inject({ url: '/page', headers: { host: 'ide.example:83' } })
+    expect(page.headers['x-frame-options']).toBe('DENY')
     await server.close()
   })
 
