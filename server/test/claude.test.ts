@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appendFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { claudeArgs, hasTranscript, lastPrompt, transcriptDir, turnState } from '../src/session/claude.js'
+import {
+  claudeArgs,
+  hasTranscript,
+  promptSummary,
+  transcriptDir,
+  turnState,
+} from '../src/session/claude.js'
+
+/** The newest prompt, which is what most of these were written about. */
+const lastPrompt = async (cwd: string): Promise<string | undefined> =>
+  (await promptSummary(cwd))?.prompt
 
 /*
  * `transcriptDir` reads `homedir()`, which on POSIX is `$HOME`, so pointing
@@ -15,7 +25,7 @@ let realHome: string | undefined
 /**
  * A different working directory per test.
  *
- * `lastPrompt` and `turnState` both memoise by cwd for the life of the process,
+ * `promptSummary` and `turnState` both memoise by cwd for the life of the process,
  * which is the whole point of them -- a transcript only grows, so the next look
  * reads the new bytes and nothing else. Sharing a cwd between tests would mean
  * one test's cached answer deciding the next one's.
@@ -281,6 +291,100 @@ describe('lastPrompt', () => {
     const past = new Date(Date.now() - 60_000)
     await utimes(old, past, past)
     expect(await lastPrompt(cwd)).toBe('the new conversation')
+  })
+  it('keeps the newest task and what followed it apart', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      TURN_END,
+      userSays('yes'),
+      TURN_END,
+      userSays('merge and deploy'),
+    ])
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'merge and deploy',
+      task: 'the topbar of a worktree shows the last prompt but not the task it was given',
+      followUps: ['yes', 'merge and deploy'],
+    })
+  })
+
+  it('lets a new task clear the follow-ups of the last one as it is written', async () => {
+    // The incremental path, which folds onto what it had rather than rescanning.
+    const cwd = freshCwd()
+    const path = await writeTranscript(cwd, 'a.jsonl', [
+      userSays('make the usage bars in the top bar turn amber above seventy five percent'),
+      userSays('deploy'),
+    ])
+    expect((await promptSummary(cwd))?.followUps).toEqual(['deploy'])
+
+    await appendFile(
+      path,
+      `${JSON.stringify(userSays('hovering over a panel should not remove the status colour on the left'))}\n` +
+        `${JSON.stringify(userSays('commit'))}\n`,
+      'utf8',
+    )
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'commit',
+      task: 'hovering over a panel should not remove the status colour on the left',
+      followUps: ['commit'],
+    })
+  })
+
+  it('counts a follow-up once, however many looks it straddles', async () => {
+    /*
+     * The incremental read used to re-read a 64KB overlap, harmless while it
+     * kept one newest prompt and a duplicate in every list once it kept
+     * several. A line caught half-written is read whole on the next look.
+     */
+    const cwd = freshCwd()
+    const path = await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the files list seems to be broken when a directory is renamed underneath it'),
+      // Past the old overlap, so a re-read sees the follow-up and not the task.
+      ...Array.from({ length: 100 }, () => ({ type: 'assistant', message: { content: 'x'.repeat(1000) } })),
+      userSays('yes'),
+    ])
+    await promptSummary(cwd)
+    const line = JSON.stringify(userSays('try again'))
+    await appendFile(path, line.slice(0, 10), 'utf8')
+    expect((await promptSummary(cwd))?.followUps).toEqual(['yes'])
+    await appendFile(path, `${line.slice(10)}\n`, 'utf8')
+    expect((await promptSummary(cwd))?.followUps).toEqual(['yes', 'try again'])
+    expect((await promptSummary(cwd))?.followUps).toEqual(['yes', 'try again'])
+  })
+
+  it('makes the first prompt the task when none reads as one', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [userSays('merge origin master'), userSays('deploy')])
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'deploy',
+      task: 'merge origin master',
+      followUps: ['deploy'],
+    })
+  })
+
+  it('reads a planning answer as a follow-up to the plan', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays(
+        '<command-name>/plan</command-name><command-args>show the task above claude instead of in the bar</command-args>',
+      ),
+      {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              content:
+                "The user doesn't want to proceed with this tool use. The tool use was rejected. To tell you how to proceed, the user said: keep it greyscale",
+            },
+          ],
+        },
+      },
+    ])
+    expect(await promptSummary(cwd)).toMatchObject({
+      task: '/plan show the task above claude instead of in the bar',
+      followUps: ['keep it greyscale'],
+    })
   })
 })
 
