@@ -17,6 +17,7 @@ import {
   stateLabel,
   summarySignal,
   terminalSessions,
+  titleFor,
   worktreeStatus,
   worktreeTodos,
 } from '../src/selectors.js'
@@ -410,6 +411,19 @@ describe('summarySignal', () => {
     expect(summarySignal([])).toBeNull()
     expect(summarySignal(['working'])).toBeNull()
     expect(summarySignal(['off', 'working', 'off'])).toBeNull()
+  })
+})
+
+describe('titleFor', () => {
+  it('leads with the circle for the state the row is scanned for', () => {
+    expect(titleFor(['working', 'needs-you', 'idle'])).toBe('🟠 Switchboard')
+    expect(titleFor(['working', 'idle'])).toBe('🟢 Switchboard')
+  })
+
+  it('is the bare name when nothing is worth saying', () => {
+    // Grey has no circle: working and not running are the silence.
+    expect(titleFor([])).toBe('Switchboard')
+    expect(titleFor(['working', 'off'])).toBe('Switchboard')
   })
 })
 
