@@ -197,6 +197,33 @@ export const App = (): React.ReactElement => {
     document.title = titleFor(worktrees.map((worktree) => worktreeStatus(sessions, worktree.id)))
   }, [worktrees, sessions])
 
+  /*
+   * A file dropped anywhere but the files tree does nothing.
+   *
+   * The browser's own answer to a dropped file is to *navigate to it*, which
+   * here means the IDE is replaced by somebody's screen recording and every
+   * terminal on screen is gone -- the sessions survive, being tmux, but the
+   * page has to be loaded again. The tree accepts a drop on purpose (see
+   * `FilesPane`); this is what makes a near miss cost nothing instead.
+   *
+   * Taking `dragover` is what makes a drop *possible*, which reads backwards
+   * until you know the default: refusing the drag means the browser handles the
+   * drop itself, and handling it means we can decline to do anything.
+   */
+  useEffect(() => {
+    const swallow = (event: DragEvent): void => {
+      if (event.dataTransfer?.types.includes('Files') !== true) return
+      event.preventDefault()
+      if (event.type === 'dragover') event.dataTransfer.dropEffect = 'none'
+    }
+    window.addEventListener('dragover', swallow)
+    window.addEventListener('drop', swallow)
+    return () => {
+      window.removeEventListener('dragover', swallow)
+      window.removeEventListener('drop', swallow)
+    }
+  }, [])
+
   useEffect(() => {
     const unbind = bindSocketToStore()
     void refresh()

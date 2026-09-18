@@ -213,6 +213,36 @@ const discard = async (response: Response): Promise<void> => {
  * `details` is spread at the top level by the error handler, so what is left
  * after `error` and `code` is precisely what was put there.
  */
+/**
+ * Two machines on different versions, and what to do about it.
+ *
+ * The bare fact -- *speaks protocol 1, this one speaks 2* -- is true and
+ * useless: it names a number nobody chose and leaves the reader to work out
+ * that a linked machine is a checkout somebody has to go and update. So the
+ * sentence ends with the command, and the command names **which** machine to
+ * run it on.
+ *
+ * That last part is not padding. A peer is usually the one behind, because it
+ * is the machine you deploy to less often -- but the reverse happens the moment
+ * you link a machine you updated first, and then telling you to update *it*
+ * would send you to the newer one to make it newer still. The comparison is
+ * cheap and the wrong answer wastes a trip.
+ *
+ * A version that is not a number at all -- a proxy rewriting the header, a page
+ * that is not us -- is read as "older", which is the likelier accident and the
+ * harmless guess: `pnpm pull` on a machine that is already current does nothing.
+ */
+const protocolMismatch = (baseUrl: string, said: number | string): HttpError => {
+  const version = Number(said)
+  const older = !Number.isFinite(version) || version < PROTOCOL_VERSION
+  return new HttpError(
+    502,
+    `${baseUrl} speaks protocol ${said}, this one speaks ${PROTOCOL_VERSION}. ` +
+      `Run pnpm pull in the Switchboard directory ${older ? 'on that machine' : 'here'}.`,
+    'protocol-mismatch',
+  )
+}
+
 const peerError = (status: number, text: string): HttpError => {
   let message = text
   let code: string | undefined
@@ -374,11 +404,7 @@ export class PeerClient {
     // Released before we throw, or the connection is held until a finalizer
     // runs -- and this is the path a peer mid-upgrade takes on every read.
     await discard(response)
-    throw new HttpError(
-      502,
-      `${this.baseUrl} speaks protocol ${said}, this one speaks ${PROTOCOL_VERSION}`,
-      'protocol-mismatch',
-    )
+    throw protocolMismatch(this.baseUrl, said)
   }
 
   /**
@@ -505,6 +531,38 @@ export class PeerClient {
     }
   }
 
+  /**
+   * A file on its way *to* a peer, streamed like `streamRaw` streams one back.
+   *
+   * `duplex: 'half'` is required for a request whose body is a stream rather
+   * than a buffer -- without it `fetch` refuses the body outright -- and a Node
+   * `Readable` is accepted as one because it is an async iterable.
+   *
+   * No timeout, for the reason `streamRaw`'s covers only the head: the clock
+   * elsewhere in this class bounds how long this process can be made to
+   * accumulate, and nothing accumulates here. A 200MB file takes as long as it
+   * takes, and the browser hanging up is what cancels it.
+   */
+  async uploadRaw(path: string, body: Readable): Promise<unknown> {
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: 'POST',
+        // Never followed; see `request`.
+        redirect: 'error',
+        headers: { ...this.headers(), 'content-type': 'application/octet-stream' },
+        body: Readable.toWeb(body) as ReadableStream,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' })
+      await this.checkProtocol(response)
+      const text = await readCapped(response)
+      if (!response.ok) throw peerError(response.status, text)
+      return text === '' ? {} : (JSON.parse(text) as unknown)
+    } catch (err) {
+      if (err instanceof HttpError) throw err
+      throw new PeerUnreachable(this.baseUrl, err instanceof Error ? err.message : String(err))
+    }
+  }
+
   /** What a socket to this peer must carry; see gate.ts on the peer's side. */
   socketHeaders(): Record<string, string> {
     return {
@@ -557,11 +615,7 @@ export class PeerClient {
   async identify(): Promise<PeerIdentity> {
     const identity = await this.request<PeerIdentity>('GET', '/api/server', undefined, 5_000)
     if (identity.protocolVersion !== PROTOCOL_VERSION) {
-      throw new HttpError(
-        502,
-        `${this.baseUrl} speaks protocol ${identity.protocolVersion}, this one speaks ${PROTOCOL_VERSION}`,
-        'protocol-mismatch',
-      )
+      throw protocolMismatch(this.baseUrl, identity.protocolVersion)
     }
     return identity
   }

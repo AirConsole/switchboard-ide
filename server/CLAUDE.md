@@ -285,6 +285,21 @@ things in it are load-bearing:
   decides by stat'ing the path. Tracked files are never reported as ignored,
   which is what keeps a file the repo actually has from disappearing behind a
   stale rule.
+- **A dropped file is contained by its *directory*, and the name does the
+  rest.** `containedPath` requires the path to exist, and an upload's target
+  does not yet -- so the directory is checked and the name is then held to a
+  single ordinary segment. That split is the whole of the security of this
+  route: without the name test, `../../x` joined onto a directory that had just
+  passed the check. It is written to a temp file beside the target and renamed
+  on, which is the opposite of what `writeTextFile` does one door up and for the
+  reason that one gives: a save is to a file under git that is still in an
+  editor's buffer, while this is a file that does not exist yet arriving over a
+  network that can stop halfway. It **refuses to overwrite**, because a name
+  already taken is far more often a mistake than an intention and a silent
+  overwrite is neither recoverable nor noticed. And it has **no size cap**:
+  `maxFileBytes` is a cap on text going through JSON, any number picked here
+  would be the wrong one for somebody dropping a video, and the caller already
+  has a shell on this machine through every terminal in the row.
 - **A read is stat, read, stat.** If the file moved in between, the rev handed
   back would not describe the bytes sent, and the next save would be refused as
   stale for no reason the reader could see. The rev is nanosecond mtime, size
@@ -698,6 +713,14 @@ translation is the ids:
   which also fixed a quieter bug: a proxied raw reply set no policy, so
   `headers.ts` gave it the *page* CSP, and remote file bytes were served looser
   than local ones for as long as linking has existed.
+
+  **A file dropped onto a linked machine streams the other way** (`uploadRaw`),
+  and needs one thing said: `fetch` refuses a streamed request body without
+  `duplex: 'half'`, so a body that is a `Readable` rather than a buffer is
+  silently not sent without it. No timeout, for the reason `streamRaw`'s covers
+  only the head -- the clock elsewhere bounds what this process accumulates, and
+  a 200MB upload accumulates nothing. The peer's own refusals come back whole,
+  so a duplicate name on another machine reads exactly as it does here.
 
 Terminal bytes are forwarded with four header bytes rewritten and the payload
 untouched -- `streamId` is a `uint32` in a five-byte header, never a string id.

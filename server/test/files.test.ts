@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, symlink, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { Readable } from 'node:stream'
 import { basename, join, resolve } from 'node:path'
 import {
   containedPath,
@@ -12,6 +13,7 @@ import {
   mediaTypeOf,
   readTextFile,
   takeableFile,
+  uploadFile,
   writeTextFile,
 } from '../src/files.js'
 import { config } from '../src/config.js'
@@ -515,5 +517,82 @@ describe('files to take away', () => {
     // Taking the media gate off must not take the boundary off with it.
     expect(await statusOf(takeableFile(repo.path, '../../../etc/hosts'))).toBe(403)
     expect(await statusOf(takeableFile(repo.path, 'art'))).toBe(400)
+  })
+})
+
+describe('a file dropped into a directory', () => {
+  let repo: TempRepo
+
+  const drop = (dir: string, name: string, body: string): Promise<unknown> =>
+    uploadFile(repo.path, dir, name, Readable.from([Buffer.from(body)]))
+
+  beforeEach(async () => {
+    repo = await makeRepoWithCommit()
+    await repo.write('src/a.ts', 'a\n')
+    await repo.commit('add src')
+    invalidateStatus(repo.path)
+  })
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  it('writes the bytes where they were dropped', async () => {
+    const saved = await drop('src', 'clip.mp4', 'pretend bytes')
+    expect(saved).toMatchObject({ path: 'src/clip.mp4', size: 'pretend bytes'.length })
+    expect(await readFile(join(repo.path, 'src/clip.mp4'), 'utf8')).toBe('pretend bytes')
+  })
+
+  it('takes the worktree root, which is a directory like any other', async () => {
+    await drop('', 'top.bin', 'x')
+    expect(await readFile(join(repo.path, 'top.bin'), 'utf8')).toBe('x')
+  })
+
+  it('refuses to overwrite what is already there', async () => {
+    /*
+     * A name already taken is far more often a mistake than an intention, and a
+     * silent overwrite is neither recoverable nor noticed. The reader can see
+     * what is there and decide.
+     */
+    expect(await statusOf(drop('src', 'a.ts', 'clobbered'))).toBe(409)
+    expect(await readFile(join(repo.path, 'src/a.ts'), 'utf8')).toBe('a\n')
+  })
+
+  it('refuses a name that is a path', async () => {
+    /*
+     * The containment check is on the *directory*, because the file does not
+     * exist yet and `containedPath` requires existence -- so this is the half
+     * that closes it. `../` in a name would otherwise be joined onto a path
+     * that had just passed.
+     */
+    expect(await statusOf(drop('src', '../escaped.txt', 'x'))).toBe(400)
+    expect(await statusOf(drop('src', 'nested/deep.txt', 'x'))).toBe(400)
+    expect(await statusOf(drop('src', '..', 'x'))).toBe(400)
+    expect(await statusOf(drop('src', 'a\0b', 'x'))).toBe(400)
+  })
+
+  it('is contained like every other write', async () => {
+    expect(await statusOf(drop('../../../tmp', 'x.txt', 'x'))).toBe(403)
+    expect(await statusOf(drop('.git', 'config', 'x'))).toBe(403)
+  })
+
+  it('refuses a directory as the destination when it is a file', async () => {
+    expect(await statusOf(drop('src/a.ts', 'x.txt', 'x'))).toBe(400)
+  })
+
+  it('leaves nothing behind when the body fails halfway', async () => {
+    /*
+     * A temp file beside the target, renamed on, is what keeps a half-written
+     * file from appearing in the tree under its final name -- and if the body
+     * stops, neither name is left holding anything.
+     */
+    const broken = new Readable({
+      read() {
+        this.push(Buffer.from('half'))
+        this.destroy(new Error('the network went away'))
+      },
+    })
+    await expect(uploadFile(repo.path, 'src', 'big.bin', broken)).rejects.toThrow(/went away/)
+    const left = await readdir(join(repo.path, 'src'))
+    expect(left).toEqual(['a.ts'])
   })
 })

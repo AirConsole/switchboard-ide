@@ -122,6 +122,45 @@ describe('talking to a peer', () => {
     await expect(peer.request('GET', '/api/snapshot')).rejects.toThrow(/speaks protocol/)
   })
 
+  /*
+   * The version numbers are true and useless on their own: nobody chose them,
+   * and what the reader has to know is that a linked machine is a checkout
+   * somebody must go and update. Reported from a real pair of machines, where
+   * the message said only "speaks protocol 1, this one speaks 2".
+   */
+  it('says what to do about a skew, and on which machine', async () => {
+    const behind = await peerAt((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'x-swb-protocol': String(PROTOCOL_VERSION - 1),
+      })
+      res.end('{"projects":[],"worktrees":[],"sessions":[],"todos":[]}')
+    })
+    // The whole sentence, because the wording is the point of this one.
+    await expect(behind.request('GET', '/api/snapshot')).rejects.toThrow(
+      new RegExp(
+        `^http://[^ ]+ speaks protocol ${PROTOCOL_VERSION - 1}, this one speaks ` +
+          `${PROTOCOL_VERSION}\\. Run pnpm pull in the Switchboard directory on that machine\\.$`,
+      ),
+    )
+
+    /*
+     * And the other way round, which is the case a fixed sentence would get
+     * wrong: the peer is the *newer* one whenever you updated it first, and
+     * sending the reader there to update it again wastes the trip.
+     */
+    const ahead = await peerAt((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'x-swb-protocol': String(PROTOCOL_VERSION + 1),
+      })
+      res.end('{"projects":[],"worktrees":[],"sessions":[],"todos":[]}')
+    })
+    await expect(ahead.request('GET', '/api/snapshot')).rejects.toThrow(
+      /Run pnpm pull in the Switchboard directory here\./,
+    )
+  })
+
   it('accepts a peer speaking our own version', async () => {
     const peer = await peerAt((_req, res) => {
       res.writeHead(200, {

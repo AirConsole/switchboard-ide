@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import type { FastifyInstance } from 'fastify'
+import type { Readable } from 'node:stream'
 import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
@@ -132,6 +133,15 @@ const rawQuery = z.object({
   rev: z.string().optional(),
   download: z.literal('1').optional(),
 })
+/**
+ * Where a dropped file lands: a directory of the worktree, and a bare name.
+ *
+ * `dir` has no `.min(1)` -- the worktree root is a directory you can drop onto
+ * -- and neither is checked here beyond being a string, because whether a name
+ * is a name and whether a directory is inside the worktree are both questions
+ * about the filesystem rather than about a schema. See `uploadFile`.
+ */
+const uploadQuery = z.object({ dir: filePath.default(''), name: z.string().min(1) })
 const saveFileBody = z.object({
   path: filePath.min(1),
   /** No `.min(1)`: saving a file empty is a legitimate edit. */
@@ -497,6 +507,36 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       return saved
     },
   )
+
+  /*
+   * A file dropped onto a directory in the tree.
+   *
+   * The bytes are the body and the destination is the query, which is the
+   * shape that lets the body stay a **stream**: the kind of file you drop in is
+   * the kind the editor cannot open -- a recording, a sample, a PDF -- and those
+   * are the sizes that must not be assembled in this process's heap on the way
+   * to disk. `multipart/form-data` is the other way to do this and would want a
+   * parser dependency to take apart an envelope we have no other use for.
+   *
+   * The content type parser below is what keeps it a stream: Fastify buffers
+   * a body it knows how to parse, and refuses one it does not, so the raw
+   * request is handed through untouched. It is the only route that sends
+   * `application/octet-stream`, and `uploadFile` is where the path is checked.
+   */
+  app.addContentTypeParser('application/octet-stream', (_request, payload, done) => {
+    done(null, payload)
+  })
+
+  app.post('/api/worktrees/:id/upload', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { dir, name } = uploadQuery.parse(request.query)
+    const saved = await workspace.uploadFile(id, dir, name, request.body as Readable)
+    // A new file changes the worktree's dirty count and the marks beside its
+    // directories, and the poller would otherwise take up to four seconds to
+    // notice something the person is watching for.
+    broadcastInvalidate()
+    return reply.code(201).send(saved)
+  })
 
   /*
    * Put a worktree to sleep: record it, and stop what it is running.

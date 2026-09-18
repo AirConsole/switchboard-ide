@@ -292,6 +292,40 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /**
+   * A file dropped into a directory of the worktree.
+   *
+   * The `File` goes as the body verbatim, which is the whole reason the
+   * destination is in the query: a `Blob` body is streamed by the browser, so
+   * a 200MB recording is never assembled in the tab's memory -- and neither,
+   * on the other end, in the server's. `request()` is not used because it puts
+   * `content-type: application/json` on anything with a body.
+   */
+  uploadFile: async (
+    worktreeId: string,
+    dir: string,
+    file: File,
+  ): Promise<FileSaved> => {
+    const url =
+      `/api/worktrees/${worktreeId}/upload` +
+      `?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: file,
+    })
+    if (!response.ok) {
+      const body: unknown = await response.json().catch(() => null)
+      const said = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+      throw new ApiError(
+        typeof said.error === 'string' ? said.error : `${response.status}`,
+        response.status,
+        typeof said.code === 'string' ? said.code : undefined,
+      )
+    }
+    return (await response.json()) as FileSaved
+  },
+
   createSession: (body: { worktreeId: string; kind: 'claude' | 'shell'; title?: string }) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(body) }),
   killSession: (id: string) => request<{ ok: true }>(`/api/sessions/${id}`, { method: 'DELETE' }),

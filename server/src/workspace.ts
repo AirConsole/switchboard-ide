@@ -1,6 +1,7 @@
 import { access, mkdir, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
+import type { Readable } from 'node:stream'
 import { customAlphabet } from 'nanoid'
 import type {
   AppSnapshot,
@@ -26,6 +27,7 @@ import {
   mediaFile,
   readTextFile,
   takeableFile,
+  uploadFile,
   writeTextFile,
 } from './files.js'
 import type { StateStore } from './state.js'
@@ -1059,6 +1061,17 @@ export class Workspace {
   ): Promise<FileSaved> {
     const { worktree } = await this.resolve(worktreeId)
     return writeTextFile(worktree.path, path, text, ifRev)
+  }
+
+  /** A file dropped into one of this worktree's directories. See `uploadFile`. */
+  async uploadFile(
+    worktreeId: string,
+    dir: string,
+    name: string,
+    body: Readable,
+  ): Promise<FileSaved> {
+    const { worktree } = await this.resolve(worktreeId)
+    return uploadFile(worktree.path, dir, name, body)
   }
 
   /**

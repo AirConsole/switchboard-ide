@@ -976,6 +976,31 @@ so Cmd+arrow and Escape do not reach the row until you click out of it. Arrival
 never lands there (`viewOnly` covers every media type), so it only happens if
 you click into the page — the bargain any embedded viewer makes.
 
+**A file is put into the worktree by dropping it on a folder.** The tree's rows
+are drop targets and a *file's* target is its directory, so the mark always
+lands on the folder that would receive it -- hovering a file lights the folder
+above it, and hovering anything at the top level outlines the tree, which is
+the worktree root. Marking every row that shared the destination was the first
+cut and lit a folder's whole contents at once, which reads as a warning about
+the files already there rather than as a destination.
+
+The `File` goes to `POST /api/worktrees/:id/upload` as the body, which is why
+the destination is in the query: a `Blob` body is streamed by the browser, so a
+200MB recording is never assembled in the tab -- see `uploadFile` in
+`server/src/files.ts` for the other half. Several files go one at a time, since
+four bodies streaming into one directory is four stalled uploads rather than
+one that finishes. An upload's failure is kept apart from the tree's `error`,
+which clears itself on the next successful read: a refused drop is something
+you did, and it stays until the next drop says otherwise.
+
+**A drop anywhere else does nothing, and that needs saying out loud.** The
+browser's own answer to a dropped file is to *navigate to it* -- the IDE
+replaced by somebody's screen recording, every terminal on screen gone -- so
+`App` takes `dragover` and `drop` on the window and declines them. Taking
+`dragover` is what makes a drop *possible*, which reads backwards until you
+know the default: refusing the drag leaves the drop to the browser, and
+handling it is what lets us do nothing with it.
+
 **A Markdown file can be read rather than edited.** `Preview` in the bar swaps
 the editor for `views/Markdown`, and the switch is `ui.markdownPreview` -- one
 boolean for the whole IDE, not one per file or per worktree, because what it
