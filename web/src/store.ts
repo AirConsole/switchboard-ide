@@ -119,7 +119,7 @@ interface AppState extends AppSnapshot {
    * inside that window rather than across the whole app. Null for what belongs
    * to no window.
    */
-  failure: { message: string; where: string | null } | null
+  failure: Failure | null
   refresh: () => Promise<void>
   setUi: (patch: Partial<UiState>) => void
   applySessionState: (
@@ -133,7 +133,20 @@ interface AppState extends AppSnapshot {
     },
   ) => void
   setError: (message: string | null) => void
-  setFailure: (failure: { message: string; where: string | null } | null) => void
+  setFailure: (failure: Failure | null) => void
+}
+
+/**
+ * An action of yours that failed, and which window it was about.
+ *
+ * `update` is set when the failure is a version skew between this machine and
+ * a linked one: which of the two is behind, as the key `/api/servers/:key/update`
+ * takes, or null for this machine. The window saying so then offers to do it.
+ */
+export interface Failure {
+  message: string
+  where: string | null
+  update?: { host: string | null }
 }
 
 let uiSaveTimer: number | null = null

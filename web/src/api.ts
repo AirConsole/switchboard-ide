@@ -9,6 +9,7 @@ import type {
   RecentProject,
   Session,
   UiState,
+  UpdateStatus,
   Usage,
   Worktree,
   WorktreeChanges,
@@ -100,6 +101,13 @@ export const api = {
 
   /** Claude's usage limits. The server caches these for five minutes. */
   usage: () => request<Usage>('/api/usage'),
+  /** Whether this machine's Switchboard is behind origin. Fetched at most every ten minutes. */
+  updateStatus: () => request<UpdateStatus>('/api/update'),
+  /** Run `pnpm pull`, which restarts this server if there is anything to pull. */
+  startUpdate: () => request<{ ok: true }>('/api/update', { method: 'POST', body: '{}' }),
+  /** The same on a linked machine, by the key its ids are scoped with. */
+  updateServer: (key: string) =>
+    request<{ ok: true }>(`/api/servers/${encodeURIComponent(key)}/update`, { method: 'POST', body: '{}' }),
   /**
    * Closed projects, newest first; already filtered to ones still on disk.
    *

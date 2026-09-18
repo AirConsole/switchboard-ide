@@ -14,6 +14,8 @@ import {
 } from '../terminal/TerminalView.js'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
+import type { Failure } from '../store.js'
+import { requestUpdate } from '../components/UpdateBanner.js'
 import {
   claudeSession,
   isRunning,
@@ -536,19 +538,56 @@ const useExitOutput = (session: Session | undefined): string[] => {
  * anywhere changes, and this message used to go with the first one.
  */
 export const TileFailure = ({
-  message,
+  failure,
   onDismiss,
 }: {
-  message: string
+  failure: Failure
   onDismiss: () => void
-}): React.ReactElement => (
-  <div className="tile__failure">
-    <span className="tile__failure-text">{message}</span>
-    <button className="tile__failure-dismiss" onClick={onDismiss} aria-label="Dismiss">
-      ×
-    </button>
-  </div>
-)
+}): React.ReactElement => {
+  /*
+   * A version skew offers to end itself. This machine is updated through the
+   * banner's own path, which reloads the page when the new server is up; a
+   * linked one is asked through the gateway, and its windows come back on
+   * their own once it answers again.
+   */
+  const [asked, setAsked] = useState<'no' | 'asking' | 'asked'>('no')
+  const [refused, setRefused] = useState<string | null>(null)
+  const target = failure.update
+  const update = (): void => {
+    if (target === undefined) return
+    if (target.host === null) {
+      requestUpdate()
+      onDismiss()
+      return
+    }
+    setAsked('asking')
+    setRefused(null)
+    api
+      .updateServer(target.host)
+      .then(() => setAsked('asked'))
+      .catch((err: unknown) => {
+        setAsked('no')
+        setRefused(err instanceof Error ? err.message : String(err))
+      })
+  }
+  const text =
+    asked === 'asked'
+      ? 'That machine is updating: pulling, building, restarting. Its windows come back when it has.'
+      : (refused ?? failure.message)
+  return (
+    <div className="tile__failure">
+      <span className="tile__failure-text">{text}</span>
+      {target !== undefined && asked !== 'asked' && (
+        <button className="btn tile__failure-action" onClick={update} disabled={asked === 'asking'}>
+          {target.host === null ? 'Update this machine' : 'Update that machine'}
+        </button>
+      )}
+      <button className="tile__failure-dismiss" onClick={onDismiss} aria-label="Dismiss">
+        ×
+      </button>
+    </div>
+  )
+}
 
 /** Why Claude is not on screen, in the interface's own voice. */
 const idleReason = (session: Session | undefined): string => {
@@ -614,7 +653,7 @@ const IdleClaude = ({
 
 interface WorktreeTileProps {
   /** An action about *this* worktree that failed, if there is one. */
-  failure: string | null
+  failure: Failure | null
   onDismissFailure: () => void
   worktree: Worktree
   /**
@@ -1153,7 +1192,7 @@ const WorktreeTile = ({
         ))}
       </div>
 
-      {failure !== null && <TileFailure message={failure} onDismiss={onDismissFailure} />}
+      {failure !== null && <TileFailure failure={failure} onDismiss={onDismissFailure} />}
       <div className="tile__body" style={{ gridTemplateColumns: columns }}>
         {panes.map((pane) => (
           <div
@@ -1367,7 +1406,7 @@ export interface OverviewProps {
    * An action of yours that failed, and which window it was about -- drawn
    * inside that window, because that is where it means something.
    */
-  failure: { message: string; where: string | null } | null
+  failure: Failure | null
   onDismissFailure: () => void
   /** Start the machine's own terminal; it has none. */
   onMachineTerminal: () => void
@@ -2515,7 +2554,7 @@ export const Overview = ({
                         hintFor(slot.key),
                       )}
                       <MachineTile
-                        failure={failure?.where === MACHINE_KEY ? failure.message : null}
+                        failure={failure?.where === MACHINE_KEY ? failure : null}
                         onDismissFailure={onDismissFailure}
                         session={machineSession(sessions)}
                         fontSize={TERMINAL_FONT_SIZE}
@@ -2594,7 +2633,7 @@ export const Overview = ({
                     </div>
                   ) : (
                     <WorktreeTile
-                      failure={failure?.where === worktree.id ? failure.message : null}
+                      failure={failure?.where === worktree.id ? failure : null}
                       onDismissFailure={onDismissFailure}
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}

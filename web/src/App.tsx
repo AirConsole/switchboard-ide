@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api } from './api.js'
+import { api, ApiError } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
+import { UpdateBanner } from './components/UpdateBanner.js'
 import { useNarrow } from './components/useNarrow.js'
 import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
@@ -39,6 +40,20 @@ export interface ProjectGroup {
   project: Project
   awake: Worktree[]
   asleep: Worktree[]
+}
+
+
+/**
+ * Which machine a version skew says to update, from the error the gateway
+ * sent: `outdated` is `here` or `there`, and `host` is the linked machine's
+ * key. Anything else is not a skew and offers nothing.
+ */
+const skewOf = (err: unknown): { host: string | null } | undefined => {
+  if (!(err instanceof ApiError) || err.code !== 'protocol-mismatch') return undefined
+  const { outdated, host } = err.details
+  if (outdated === 'here') return { host: null }
+  if (outdated === 'there' && typeof host === 'string') return { host }
+  return undefined
 }
 
 export const App = (): React.ReactElement => {
@@ -242,7 +257,7 @@ export const App = (): React.ReactElement => {
   const failIn =
     (where: string | null) =>
     (err: unknown): void =>
-      setFailure({ message: err instanceof Error ? err.message : String(err), where })
+      setFailure({ message: err instanceof Error ? err.message : String(err), where, update: skewOf(err) })
   const fail = failIn(null)
 
   /*
@@ -995,23 +1010,36 @@ export const App = (): React.ReactElement => {
       {topBar}
 
       {/*
-        * The page being out of touch, or an action that belongs to no window.
-        * Everything that *is* about a window is said in it -- see `failure`.
+        * Everything said across the whole app, in one grid row of its own. The
+        * grid is the bar and then the row of windows; a banner placed straight
+        * in it took the windows' `1fr` track and pushed the row into an
+        * implicit one below the screen -- measured, a one-line banner drawn
+        * 373px tall with the windows under it and out of reach. Empty, this is
+        * a track of height zero.
         */}
-      {(error ?? (failure?.where === null ? failure.message : null)) !== null && (
-        <div className="banner">
-          {error ?? failure?.message}
-          <button
-            className="banner__dismiss"
-            onClick={() => {
-              setError(null)
-              setFailure(null)
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      <div className="app__notices">
+        {/* A newer Switchboard on origin, and the page reloaded onto it once it is running. */}
+        <UpdateBanner />
+
+        {/*
+          * The page being out of touch, or an action that belongs to no window.
+          * Everything that *is* about a window is said in it -- see `failure`.
+          */}
+        {(error ?? (failure?.where === null ? failure.message : null)) !== null && (
+          <div className="banner">
+            {error ?? failure?.message}
+            <button
+              className="banner__dismiss"
+              onClick={() => {
+                setError(null)
+                setFailure(null)
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
 
       <Overview
         narrow={narrow}

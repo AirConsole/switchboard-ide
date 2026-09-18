@@ -390,7 +390,7 @@ button {
 
 .app {
   display: grid;
-  grid-template-rows: var(--bar-h) 1fr;
+  grid-template-rows: var(--bar-h) auto 1fr;
   height: 100%;
   overflow: hidden;
 }
@@ -417,7 +417,7 @@ button {
 }
 
 .app:has(.keybar) {
-  grid-template-rows: 1fr;
+  grid-template-rows: auto 1fr;
 }
 
 /* ---------------------------------------------------------------- top bar -- */
@@ -2720,6 +2720,19 @@ button {
   overflow-wrap: anywhere;
 }
 
+.tile__failure-action {
+  margin-left: auto;
+  flex: none;
+  padding: 3px 10px;
+  color: inherit;
+  border-color: #6a3c42;
+  background: none;
+}
+
+.tile__failure-action + .tile__failure-dismiss {
+  margin-left: 0;
+}
+
 .tile__failure-dismiss {
   margin-left: auto;
   flex: none;
@@ -2748,6 +2761,42 @@ button {
   margin-left: auto;
   color: inherit;
   opacity: 0.7;
+}
+
+/*
+ * A newer version, which is news about the program rather than about any
+ * agent: greyscale, so it cannot be read as blocked or done while scanning the
+ * row. The raised level is the one the top bar's controls sit on.
+ */
+.banner--update {
+  background: var(--level-raised);
+  border-bottom-color: var(--rule-bright);
+  color: var(--bone);
+}
+
+.banner__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.banner__action {
+  margin-left: auto;
+  flex: none;
+  padding: 4px 12px;
+}
+
+.banner__action + .banner__dismiss {
+  margin-left: 0;
+}
+
+/* The tail of `pnpm pull`, which is what says why: git's refusal, the build's error. */
+.banner__output {
+  margin: 6px 0 0;
+  max-height: 11em;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 
 /* ---------------------------------------------------------------- buttons -- */
