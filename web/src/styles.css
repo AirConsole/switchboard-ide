@@ -4476,6 +4476,20 @@ button {
 }
 
 /* The actions keep their width; the labels above give way instead. */
+/* The glyph in the bar, at the weight the rest of the chrome is drawn in. */
+.files__download {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--graphite);
+}
+
+.files__download:hover {
+  color: var(--bone);
+  background: var(--level-hover);
+}
+
 .files__save,
 .files__reload {
   display: flex;
