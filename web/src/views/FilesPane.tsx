@@ -624,6 +624,66 @@ const MediaView = ({ media }: { media: MediaFile }): React.ReactElement => {
 }
 
 /**
+ * Download: an arrow coming down into a tray, the shape every platform uses.
+ *
+ * A glyph and no word, unlike Save and Preview beside it. Those two are about
+ * the file you are editing and are pressed often; this one leaves the IDE
+ * entirely, and the bar is budgeted to the pixel -- see the comment on Save's
+ * render order.
+ */
+const DownloadIcon = (): React.ReactElement => (
+  <svg
+    className="files__icon"
+    viewBox="0 0 16 16"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M8 2.6v6.6M5.4 6.6 8 9.2l2.6-2.6" />
+    <path d="M2.8 11.4v1.2a1.3 1.3 0 0 0 1.3 1.3h7.8a1.3 1.3 0 0 0 1.3-1.3v-1.2" />
+  </svg>
+)
+
+/**
+ * Hand the open file to the browser.
+ *
+ * Two sources, because a file here is one of two things. An **image** is
+ * already a URL the server serves (`/raw`, carrying the file's rev), so the
+ * link is that; **text** is in the browser already, so it is handed over as a
+ * blob rather than asked for a second time.
+ *
+ * What is downloaded is **what is on screen**: the draft while there is one,
+ * the file on disk otherwise. That is the rule Preview already keeps, and the
+ * alternative -- downloading what you can see is not what you get -- is the
+ * kind of surprise a download cannot be taken back from.
+ */
+const downloadOpenFile = (files: FilesState): void => {
+  const name = files.path.slice(files.path.lastIndexOf('/') + 1)
+  const blob =
+    files.media !== null
+      ? null
+      : new Blob([(files.dirty ? files.draft() : null) ?? files.file?.text ?? ''], {
+          type: 'text/plain;charset=utf-8',
+        })
+  const url = blob === null ? (files.media?.url ?? '') : URL.createObjectURL(blob)
+  if (url === '') return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.append(link)
+  link.click()
+  link.remove()
+  // The object URL holds the blob alive until it is let go; the click has
+  // already taken what it needs by the time this runs.
+  if (blob !== null) setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+/**
  * The panel's controls, for the worktree's bar.
  *
  * What it says depends on the mode -- where you are in Files, what the commits
@@ -706,6 +766,23 @@ export const FilesBar = ({
           title="Save (⌘S)"
         >
           Save
+        </button>
+      )}
+      {/*
+       * The file itself, out of the IDE -- an image, or the text as you see it.
+       *
+       * Next to Save because it is the other thing you do to the file you have
+       * open, and after it for the reason Save is before Preview: the bar clips
+       * from the end, and the control that can lose work stays longest.
+       */}
+      {mode === 'files' && open !== null && (files.file !== null || files.media !== null) && (
+        <button
+          className="files__download"
+          onClick={() => downloadOpenFile(files)}
+          title={`Download ${open.slice(open.lastIndexOf('/') + 1)}`}
+          aria-label={`Download ${open.slice(open.lastIndexOf('/') + 1)}`}
+        >
+          <DownloadIcon />
         </button>
       )}
       {/*

@@ -1013,6 +1013,16 @@ Six things in it are load-bearing:
   every fetch effect and must stay there**: that is what makes switching back
   re-read within a render instead of showing the last poll's answer for three
   more seconds.
+- **The open file can be taken out of the IDE**, by a glyph next to Save. Two
+  sources, because a file here is one of two things: an image is already a URL
+  the server serves (`/raw`, carrying the file's rev) so the link is that, and
+  text is in the browser already so it is handed over as a blob rather than
+  asked for twice. What arrives is **what is on screen** -- the draft while
+  there is one, the file on disk otherwise -- which is the rule Preview keeps,
+  and the alternative is a surprise a download cannot be taken back from. A
+  glyph and no word because the bar is budgeted to the pixel and this is the
+  one control there you press rarely; it is after Save for the same reason Save
+  is before Preview, since the bar clips from the end.
 - **Save is in the bar in every mode, whenever there are unsaved edits.** The
   buffer lives in the hook, which stays mounted across a switch, so scoping Save
   to Files mode would keep an edit while removing every way to save it.
