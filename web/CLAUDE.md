@@ -515,6 +515,32 @@ unit", and both are chrome rather than something you read code in: the floor of
 two exists to keep the 80-column promise, and that promise is about panes you
 read *code* in — a terminal, a diff, the editor.
 
+**The row ends with the machine's own window**, and begins with an invitation
+when nothing is open. Both are cells with no worktree and no group, keyed by a
+literal (`MACHINE_KEY`, `WELCOME_KEY`) -- everything geometric was already
+generic, so each is one `push` and one branch in the render.
+
+`MachineTile` is one terminal in your home directory and no tab strip: a
+worktree's terminals are a place you work and you want several, this is a place
+you go to do one thing and leave. The window stays when the shell exits and
+offers to start another, because the row's far end is a shape you learn, and a
+window that came and went would not be one. The dead-shell reaper takes the
+session away; nothing in the engine has a special case for this.
+
+`WelcomeTile` replaced a full-screen empty state that said *No project open* --
+a statement of absence where an instruction belongs, and the first sentence this
+interface said to anybody. It is a window rather than a screen because the
+second way out of it is the machine's terminal, which is the window immediately
+to the right: a sentence can only point at that if it is true, and on a phone
+"to the right" is the swipe you would make anyway. The link takes `--legend`,
+the colour of where a step would go.
+
+**The machine button sits in the far corner beside sign-out**, which is the one
+region the ladder never takes anything from, and lights while you are in that
+window. That is not decoration: no project is current when the window you are in
+belongs to none, so without it the bar would say nothing at all about where you
+are.
+
 **A project's pane is the head of its run of windows** — see `ProjectPane`. It
 holds that project's awake worktrees, its sleeping ones, the form for a new one
 and the button that closes it: everything that is about the *project* rather
@@ -1905,6 +1931,31 @@ closed the panel with four todos still written down, in the middle of lining
 them up. Two other ways of emptying it still close nothing — taking a todo out
 of the queue leaves it in the list, and deleting one by hand is a click that
 says you are still working in here.
+
+## An action that failed is said where it happened
+
+Two different things used to share one banner across the top of the app, and
+one of them was unreadable because of it.
+
+**`error` is the snapshot read failing.** The page is out of touch; a read that
+works again is the whole answer, so it clears itself on the next success. That
+is right for what it is.
+
+**`failure` is a thing you did.** A terminal that would not start, a linked
+machine that answered with a protocol this build does not speak. It survives a
+refresh, because refreshes are constant -- every attention change on any agent
+brings one -- and that is what used to wipe the message before anybody could
+read it: reported from a real instance as *"the error disappears right away, I
+do not have time to read it"*, and not reproducible on a quiet one, where
+nothing was refreshing.
+
+It also carries `where`, the row key of the window it was about, and is drawn
+*in that window* under its own bar (`TileFailure`): a machine that needs
+updating is a fact about its windows, and a banner across everything said less,
+not more. `failIn(id)` is what the callers use; `fail` is the same thing for
+what belongs to no window, and that still goes to the banner. A message pinned
+to a window that leaves the row is dropped, or it would be kept for ever and
+shown again if that worktree came back.
 
 ## UI state
 

@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs'
+import { homedir } from 'node:os'
 import type { FastifyInstance } from 'fastify'
-import { PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
+import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -610,6 +611,29 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.post('/api/sessions', async (request) => {
     const body = createSessionBody.parse(request.body)
+    /*
+     * The machine's own terminal, which has no worktree to resolve and takes
+     * its cwd from the one place that is always there.
+     *
+     * A branch here rather than a route of its own: what is being asked for is
+     * a session, the engine never looks a worktree up anyway, and a second
+     * route would be a second thing for the proxy, the gate and the client to
+     * know about. `projectId` is empty on purpose -- it is what `killForProject`
+     * matches on, and no project may take this terminal down with it.
+     */
+    if (body.worktreeId === MACHINE_WORKTREE_ID) {
+      const session = await engine.create({
+        worktreeId: MACHINE_WORKTREE_ID,
+        projectId: '',
+        kind: 'shell',
+        cwd: homedir(),
+        title: body.title,
+        cols: body.cols,
+        rows: body.rows,
+      })
+      broadcastInvalidate()
+      return session
+    }
     const { worktree } = await workspace.resolve(body.worktreeId)
     const session = await engine.create({
       worktreeId: worktree.id,

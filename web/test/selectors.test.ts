@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import { MACHINE_WORKTREE_ID, type Project, type Session, type Worktree, type WorktreeTodo } from '@switchboard/shared'
 import {
   worktreeToWakeOnOpen,
   machineHasProjects,
   claudeSession,
   drainTakesKeyboard,
+  machineSession,
   isRunning,
   mostUrgentStatus,
   orderWorktrees,
@@ -485,5 +486,31 @@ describe('machineHasProjects', () => {
     // A local project never counts, whatever its path: the machine just linked
     // is by definition not this one.
     expect(machineHasProjects([projects[0]!], 'https://box.example:83')).toBe(false)
+  })
+})
+
+/*
+ * The machine's own terminal is found the way every other session is, by the
+ * worktree id it recorded -- which is why that id is a reserved literal rather
+ * than nothing. The two directions both matter: the machine's window must not
+ * show a worktree's terminal, and a worktree's terminals panel must not show
+ * the machine's.
+ */
+describe('machineSession', () => {
+  const machine = session({ id: 'm1', worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
+  const theirs = session({ id: 's1', worktreeId: 'wt-abc', kind: 'shell' })
+  const claude = session({ id: 'c1', worktreeId: 'wt-abc', kind: 'claude' })
+
+  it('finds the machine shell and nothing else', () => {
+    expect(machineSession([theirs, claude, machine])?.id).toBe('m1')
+  })
+
+  it('answers nothing where there is none', () => {
+    expect(machineSession([theirs, claude])).toBeUndefined()
+  })
+
+  it('is not a worktree terminal, and a worktree does not see it', () => {
+    expect(terminalSessions([theirs, machine], 'wt-abc').map((s) => s.id)).toEqual(['s1'])
+    expect(terminalSessions([theirs, machine], MACHINE_WORKTREE_ID).map((s) => s.id)).toEqual(['m1'])
   })
 })

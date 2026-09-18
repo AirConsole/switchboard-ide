@@ -228,7 +228,16 @@ export const readMeta = async (name: string): Promise<SessionMeta | null> => {
   }
 }
 
-const parseMeta = (raw: string): SessionMeta | null => {
+/**
+ * The metadata a running tmux session is adopted by, or null.
+ *
+ * Exported for one test, and it is the right one to have: this is the gate that
+ * decides whether a session survives a restart at all. A session it refuses is
+ * skipped by `reconcile`, and its tmux session then runs on with nothing able
+ * to reach it -- which is why the machine terminal carries a reserved worktree
+ * id rather than none.
+ */
+export const parseMeta = (raw: string): SessionMeta | null => {
   if (!raw) return null
   try {
     const parsed: unknown = JSON.parse(raw)

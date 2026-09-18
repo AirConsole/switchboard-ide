@@ -906,6 +906,19 @@ button {
 }
 
 /*
+ * The machine button, lit while you are in that window.
+ *
+ * It is the only mark the strip can make then: the window you are in belongs to
+ * no project, so no tab and no head is current, and without this the bar would
+ * say nothing at all about where you are. The surface is the lit tab's own, so
+ * "you are here" is said in one colour everywhere it is said.
+ */
+.topbar__machine--on {
+  color: var(--bone);
+  background: var(--level-lit);
+}
+
+/*
  * A phone's window is the screen, so the pane stops insetting its text.
  *
  * 8px either side is 16px of a 390px window -- two columns of terminal out of
@@ -2108,6 +2121,90 @@ button {
   border-style: dashed;
 }
 
+/*
+ * The two windows that are not a worktree: the machine's own terminal at the
+ * end of the row, and the invitation shown while nothing is open.
+ *
+ * They wear the project pane's dashed border for the same reason it does --
+ * this is about the row rather than one thing in it -- and the wrapper the row
+ * puts them in is a flex column so the terminal inside can take what the bar
+ * leaves, exactly as a worktree's tile does.
+ */
+.slot__machine {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+
+.tile--machine,
+.tile--welcome {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-style: dashed;
+}
+
+/*
+ * The machine window's bar is one row, not a grid of panes.
+ *
+ * Every other bar is `grid-template-columns` handed down by the row, one track
+ * per pane, because a worktree's bar is several controls over several panes.
+ * This window is one pane and one sentence, so it says so here rather than
+ * being given a grid of one track it does not use.
+ */
+.tile--machine .tile__bar,
+.tile--welcome .tile__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.tile--machine .tile__seg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The name at a bar's own size -- a worktree's 15px is the row's loudest word
+   and belongs to the thing you are working in, which this is not. */
+.tile--machine .tile__name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The glyph before the name, in the bar's quiet grey. */
+.tile__machine-icon {
+  display: flex;
+  align-items: center;
+  color: var(--graphite);
+}
+
+/*
+ * A word in a sentence that goes somewhere -- the welcome window's "the
+ * terminal to the right".
+ *
+ * `--legend`, the one colour in the chrome that is not a state: it is the
+ * colour of where a step would take you, which is exactly what this says. A
+ * button, because it does something rather than addressing a document; it is
+ * drawn as the prose it sits in.
+ */
+.link {
+  padding: 0;
+  font: inherit;
+  color: var(--legend);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--bone);
+}
+
 .projpane {
   display: flex;
   flex-direction: column;
@@ -2589,6 +2686,47 @@ button {
   margin: 0;
   color: var(--graphite);
   line-height: 1.6;
+}
+
+/*
+ * An action that failed, inside the window it was about.
+ *
+ * The banner's colours, said at a window's scale: it is the same voice, and the
+ * reader should not have to learn a second one. Under the bar and above the
+ * body, in the flow -- a message drawn over the pane would hide the thing it is
+ * about, and this one stays until it is dismissed.
+ */
+.tile__failure {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 7px 12px;
+  background: #2a1d1f;
+  border-bottom: 1px solid #4a2c30;
+  color: #f0c7cb;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.tile__failure-text {
+  min-width: 0;
+  /* A protocol mismatch names two machines and two numbers; it wraps rather
+     than being cut off in the middle of the one that matters. */
+  overflow-wrap: anywhere;
+}
+
+.tile__failure-dismiss {
+  margin-left: auto;
+  flex: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tile__failure-dismiss:hover {
+  opacity: 1;
 }
 
 .banner {

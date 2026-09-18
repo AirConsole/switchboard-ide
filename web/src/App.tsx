@@ -7,7 +7,7 @@ import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { Overview, projectKey, type PaneKind } from './views/Overview.js'
+import { MACHINE_KEY, Overview, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -24,7 +24,14 @@ import {
 } from './selectors.js'
 import type { MoveTarget } from './views/TodoPane.js'
 import { softKeys, useSoftKeyboard } from './terminal/softKeyboard.js'
-import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
+import {
+  MACHINE_WORKTREE_ID,
+  type FilesMode,
+  type PanelName,
+  type Project,
+  type UiState,
+  type Worktree,
+} from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
 export interface ProjectGroup {
@@ -34,7 +41,7 @@ export interface ProjectGroup {
 }
 
 export const App = (): React.ReactElement => {
-  const { projects, worktrees, sessions, todos, ui, loaded, error, authed, signedIn, refresh, setUi, setError } =
+  const { projects, worktrees, sessions, todos, ui, loaded, error, failure, authed, signedIn, refresh, setUi, setError, setFailure } =
     useStore()
 
   const [showOpenProject, setShowOpenProject] = useState(false)
@@ -167,13 +174,39 @@ export const App = (): React.ReactElement => {
     if (active !== null) reveal(active.id, active.pane)
   }
 
+  /*
+   * A message pinned to a window that is no longer in the row.
+   *
+   * It would be kept for ever and shown again if that worktree came back --
+   * about something you did to it minutes or days ago. Closing a project or
+   * removing a worktree is the common way in.
+   */
+  useEffect(() => {
+    const where = failure?.where
+    if (where === undefined || where === null || where === MACHINE_KEY) return
+    if (!worktrees.some((worktree) => worktree.id === where)) setFailure(null)
+  }, [failure, worktrees, setFailure])
+
   useEffect(() => {
     const unbind = bindSocketToStore()
     void refresh()
     return unbind
   }, [refresh])
 
-  const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
+  /**
+   * An action of yours failed: say so, and say it where it happened.
+   *
+   * `where` is the row key of the window it was about, so the message is drawn
+   * inside that window -- a linked machine that needs updating is a fact about
+   * *its* worktrees, and saying it across the whole app told you less, not
+   * more. It stays until dismissed: refreshes arrive constantly, and this used
+   * to be cleared by the next one before anybody could read it.
+   */
+  const failIn =
+    (where: string | null) =>
+    (err: unknown): void =>
+      setFailure({ message: err instanceof Error ? err.message : String(err), where })
+  const fail = failIn(null)
 
   /*
    * The current UI state, for callbacks that must keep one identity across
@@ -413,7 +446,23 @@ export const App = (): React.ReactElement => {
     if (existing && existing.liveness !== 'dead') return
     // Through wake either way, so a restart continues the conversation for the
     // same reason waking does.
-    void api.wakeWorktree(worktreeId).then(refresh).catch(fail)
+    void api.wakeWorktree(worktreeId).then(refresh).catch(failIn(worktreeId))
+  }
+
+  /**
+   * The machine's own terminal: one shell, in your home directory.
+   *
+   * The same route every other terminal is made through, with the reserved
+   * worktree id the server answers by skipping the worktree lookup entirely
+   * (`MACHINE_WORKTREE_ID`). Nothing about it is stored in `ui`: there is one,
+   * so there is no selection to remember, and the layout pruner has nothing of
+   * it to throw away when the worktrees change.
+   */
+  const machineTerminal = (): void => {
+    void api
+      .createSession({ worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
+      .then(refresh)
+      .catch(failIn(MACHINE_KEY))
   }
 
   const newTerminal = (worktreeId: string): void => {
@@ -433,7 +482,7 @@ export const App = (): React.ReactElement => {
         })
         return refresh()
       })
-      .catch(fail)
+      .catch(failIn(worktreeId))
   }
 
   /**
@@ -458,7 +507,7 @@ export const App = (): React.ReactElement => {
       })
       reveal(worktreeId)
     }
-    void api.killSession(sessionId).then(refresh).catch(fail)
+    void api.killSession(sessionId).then(refresh).catch(failIn(worktreeId))
   }
 
   /**
@@ -772,6 +821,7 @@ export const App = (): React.ReactElement => {
        * project is in that pane now rather than on a × up here.
        */
       onRevealProject={(project) => reveal(projectKey(project.id), 'project')}
+      onRevealMachine={() => reveal(MACHINE_KEY, 'machine')}
       onWake={wake}
       onReveal={revealClaude}
       activeId={active?.id ?? null}
@@ -892,33 +942,35 @@ export const App = (): React.ReactElement => {
     </>
   )
 
-  if (projects.length === 0) {
-    return (
-      <div className="app" data-narrow={narrow ? '' : undefined}>
-        {topBar}
-        <div className="empty">
-          <h1 className="empty__title">No project open</h1>
-          <p className="empty__body">
-            Choose a git repository. Every branch you work on becomes a worktree with Claude running
-            in it, and they all keep running whether or not this page is open.
-          </p>
-          <button className="btn" onClick={() => setShowOpenProject(true)}>
-            Open project
-          </button>
-        </div>
-        {dialogs}
-      </div>
-    )
-  }
+  /*
+   * No early return for "nothing open" any more.
+   *
+   * It used to replace the row with a screen that said *No project open*, and
+   * that screen had nowhere to go: the way to get a repository onto a machine
+   * that has none is a terminal, and every terminal here belonged to a
+   * worktree. The row now carries the invitation as its first window and the
+   * machine's own terminal as the next one, so the sentence "clone it in the
+   * terminal to the right" is literally true -- see `WelcomeTile`.
+   */
 
   return (
     <div className="app" data-narrow={narrow ? '' : undefined}>
       {topBar}
 
-      {error && (
+      {/*
+        * The page being out of touch, or an action that belongs to no window.
+        * Everything that *is* about a window is said in it -- see `failure`.
+        */}
+      {(error ?? (failure?.where === null ? failure.message : null)) !== null && (
         <div className="banner">
-          {error}
-          <button className="banner__dismiss" onClick={() => setError(null)}>
+          {error ?? failure?.message}
+          <button
+            className="banner__dismiss"
+            onClick={() => {
+              setError(null)
+              setFailure(null)
+            }}
+          >
             Dismiss
           </button>
         </div>
@@ -926,6 +978,11 @@ export const App = (): React.ReactElement => {
 
       <Overview
         narrow={narrow}
+        /* Said in the window it is about, and kept until dismissed. */
+        failure={failure?.where === null ? null : (failure ?? null)}
+        onDismissFailure={() => setFailure(null)}
+        onMachineTerminal={machineTerminal}
+        onOpenProject={() => setShowOpenProject(true)}
         worktrees={rowWorktrees}
         projects={projects}
         todos={todos}

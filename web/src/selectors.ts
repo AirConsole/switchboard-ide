@@ -1,4 +1,4 @@
-import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import { MACHINE_WORKTREE_ID, type Project, type Session, type Worktree, type WorktreeTodo } from '@switchboard/shared'
 
 /** The Claude session for a worktree. There is at most one. */
 export const claudeSession = (sessions: Session[], worktreeId: string): Session | undefined =>
@@ -13,6 +13,17 @@ export const claudeSession = (sessions: Session[], worktreeId: string): Session 
  */
 export const terminalSessions = (sessions: Session[], worktreeId: string): Session[] =>
   sessions.filter((s) => s.worktreeId === worktreeId && s.kind === 'shell')
+
+/**
+ * The machine's own terminal: the one shell that belongs to no worktree.
+ *
+ * It is found the way every other session is, by the worktree id it recorded --
+ * `MACHINE_WORKTREE_ID` is a reserved literal precisely so that this stays one
+ * `find` rather than a second shape of session. At most one: the window offers
+ * to start another only when this answers nothing.
+ */
+export const machineSession = (sessions: Session[]): Session | undefined =>
+  sessions.find((s) => s.worktreeId === MACHINE_WORKTREE_ID && s.kind === 'shell')
 
 /**
  * What a worktree's Claude is doing, as one value.

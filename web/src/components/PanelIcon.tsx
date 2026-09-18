@@ -14,9 +14,21 @@ import type { PanelName } from '@switchboard/shared'
  * the glyph without a second rule. 16px rather than the fork's 12: these stand
  * where a word stood, not beside one.
  */
-export const PanelIcon = ({ panel }: { panel: PanelName }): React.ReactElement => (
+export const PanelIcon = ({
+  panel,
+  className = 'tile__glyph',
+}: {
+  panel: PanelName
+  /**
+   * Whose glyph this is. The default is a window bar's toggle, which is drawn
+   * only where the bar is compact -- so anything else using these shapes (the
+   * top bar's machine button, the machine window's own bar) has to say so, or
+   * it inherits a rule that hides it.
+   */
+  className?: string
+}): React.ReactElement => (
   <svg
-    className="tile__glyph"
+    className={className}
     viewBox="0 0 16 16"
     width="16"
     height="16"
