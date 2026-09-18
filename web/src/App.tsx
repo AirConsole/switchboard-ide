@@ -23,6 +23,7 @@ import {
   worktreeStatus,
 } from './selectors.js'
 import type { MoveTarget } from './views/TodoPane.js'
+import { softKeys, useSoftKeyboard } from './terminal/softKeyboard.js'
 import type { FilesMode, PanelName, Project, UiState, Worktree } from '@switchboard/shared'
 
 /** A project and its worktrees, split into the awake ones and the sleeping. */
@@ -61,6 +62,14 @@ export const App = (): React.ReactElement => {
     /** Which pane of it to hand the keyboard to. */
     pane: PaneKind
     nonce: number
+    /**
+     * Whether to hand it the keyboard at all.
+     *
+     * False where the keyboard is drawn on the glass and is not up: taking it
+     * there *opens* it, over half the window you were going to look at. See
+     * `reveal`.
+     */
+    focus: boolean
   } | null>(null)
   /**
    * The worktree you are in.
@@ -95,15 +104,49 @@ export const App = (): React.ReactElement => {
    * to a result, tabbing along a tab strip. Without the guard each one
    * re-renders the whole row, and the row holds live terminals.
    */
+  /* Whether the soft keyboard is up. It decides one thing: see `reveal`. */
+  const keyboardUp = useSoftKeyboard()
+  /*
+   * The same answer for the callbacks that are memoised on purpose -- the two
+   * that write a scroll request without going through `reveal`, because both
+   * setters are stable and they must not be rebuilt every render. A closure
+   * over `keyboardUp` would be the value as it was when they were built.
+   */
+  const keyboardUpRef = useRef(keyboardUp)
+  keyboardUpRef.current = keyboardUp
+
   const activate = useCallback((id: string, pane: PaneKind): void => {
     setActive((previous) =>
       previous?.id === id && previous.pane === pane ? previous : { id, pane },
     )
   }, [])
 
+  /**
+   * Go to a pane: mark it, bring it on screen, and hand it the keyboard.
+   *
+   * **Except where the keyboard is drawn on the glass and is not up.** There,
+   * taking the keyboard *opens* it: arriving at a worktree would throw a
+   * keyboard over half the screen you had just swiped to, and on the one you
+   * came from it had been away. So on a coarse pointer with no soft keyboard
+   * showing, this arrives without focus -- the tab lights, the window bar
+   * lights, the row moves, and nothing pops up. Tap into the window and the
+   * keyboard comes back, which is the gesture that asks for it.
+   *
+   * A phone with a hardware keyboard attached is the case this gets wrong: the
+   * pointer is coarse and no soft keyboard is ever shown, so arriving never
+   * takes focus and Tab is the way in. There is no way to ask a browser whether
+   * a keyboard is attached, and the alternative -- opening the on-screen
+   * keyboard on every swipe -- is the complaint this fixes.
+   */
   const reveal = (id: string, pane: PaneKind = 'claude'): void => {
     setActive({ id, pane })
-    setScrollTo((previous) => ({ id, pane, nonce: (previous?.nonce ?? 0) + 1 }))
+    const takeKeyboard = !softKeys() || keyboardUp
+    setScrollTo((previous) => ({
+      id,
+      pane,
+      nonce: (previous?.nonce ?? 0) + 1,
+      focus: takeKeyboard,
+    }))
   }
 
   /**
@@ -503,6 +546,9 @@ export const App = (): React.ReactElement => {
         id: worktreeId,
         pane: 'claude',
         nonce: (previous?.nonce ?? 0) + 1,
+        // The same rule `reveal` keeps, read now rather than closed over: a
+        // soft keyboard that is down must not be opened by arriving.
+        focus: !softKeys() || keyboardUpRef.current,
       }))
     },
     [setUi],
@@ -544,6 +590,9 @@ export const App = (): React.ReactElement => {
         id: worktreeId,
         pane: 'claude',
         nonce: (previous?.nonce ?? 0) + 1,
+        // The same rule `reveal` keeps, read now rather than closed over: a
+        // soft keyboard that is down must not be opened by arriving.
+        focus: !softKeys() || keyboardUpRef.current,
       }))
     },
     [ui.panels, setUi],

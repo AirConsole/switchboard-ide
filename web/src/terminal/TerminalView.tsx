@@ -7,7 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
-import { useSoftKeyboard } from './softKeyboard.js'
+import { softKeys, useSoftKeyboard } from './softKeyboard.js'
 import { RowStep } from '../views/rowStep.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
@@ -727,7 +727,7 @@ export const TerminalView = ({
         * resized to what is left. Drawn over the bottom rows it would hide the
         * prompt, which is the one line you are typing at.
         */}
-      {holdsKeyboard && keyboardUp && touchKeyboard() && (
+      {holdsKeyboard && keyboardUp && softKeys() && (
         <div className="keybar">
           {BAR_KEYS.map((key) => (
             <span
@@ -803,13 +803,4 @@ const lastLines = (term: Terminal, most: number): string[] => {
     `remain-on-exit on` -- see `server/tmux.conf`. */
 const TMUX_DEAD = /^\s*Pane is dead\b/
 
-/**
- * Is the keyboard in front of the reader a soft one?
- *
- * A coarse pointer is the honest test available: there is no way to ask whether
- * a physical keyboard is attached, and `(pointer: coarse)` is true of exactly
- * the devices whose keyboard is drawn on the glass. A tablet with a keyboard
- * case gets the bar it does not need, which costs 44px; a phone without the bar
- * cannot answer an agent at all.
- */
-const touchKeyboard = (): boolean => window.matchMedia('(pointer: coarse)').matches
+

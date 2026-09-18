@@ -1291,7 +1291,7 @@ export interface OverviewProps {
    * that asking twice for the same one is two requests. Set when you click a
    * worktree in the top bar, step to one, wake one, or open one of its panels.
    */
-  scrollTo: { id: string; pane: PaneKind; nonce: number } | null
+  scrollTo: { id: string; pane: PaneKind; nonce: number; focus: boolean } | null
   /**
    * The pane you are in, which is where a Cmd+arrow step counts from. It
    * follows focus, not only navigation, so clicking into a window makes the
@@ -2461,7 +2461,15 @@ export const Overview = ({
                        * fresh number each time it is asked for, so going back
                        * to one you were on hands the keyboard over again.
                        */
-                      focus={scrollTo?.id === worktree.id ? scrollTo.nonce : null}
+                      /*
+                       * `focus` on the request says whether arriving takes the
+                       * keyboard -- it does not where the keyboard is drawn on
+                       * the glass and is not up, since taking it would open it.
+                       * See `reveal` in App.tsx.
+                       */
+                      focus={
+                        scrollTo?.id === worktree.id && scrollTo.focus ? scrollTo.nonce : null
+                      }
                       focusPane={scrollTo?.id === worktree.id ? scrollTo.pane : null}
                       session={claudeSession(sessions, worktree.id)}
                       current={active?.id === worktree.id}

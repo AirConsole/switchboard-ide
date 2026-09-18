@@ -723,7 +723,21 @@ covers the middle of the screen -- which cannot be ambiguous and cannot round
 away.
 
 **And it arrives rather than merely marking**: `onReveal`, the same arrival a
-tab click makes, so the window you scrolled to is the one you can type into.
+tab click makes, so the window you scrolled to is the one you can type into --
+*where there is a keyboard to give it*. Arriving takes the keyboard, and where
+the keyboard is drawn on the glass, taking it **opens** it: a swipe threw a
+keyboard over half the window you had just swiped to, on a worktree where it had
+been away. So `reveal` hands over focus only when the pointer is not coarse or
+the soft keyboard is already up (`softKeys`, `useSoftKeyboard`). Everything else
+about arriving is unchanged -- the tab lights, the window bar lights, the row
+moves -- and tapping into the window brings the keyboard, which is the gesture
+that asks for it. The same rule governs a tab or a project pill in the top bar,
+because it is the same `reveal`.
+
+A phone with a hardware keyboard attached is what this gets wrong: the pointer
+is coarse and no soft keyboard is ever shown, so arriving never takes focus and
+Tab is the way in. Nothing reports whether a keyboard is attached, and the
+alternative is the complaint this fixes.
 That was `onActivate` -- the mark alone -- on the argument that a swipe must not
 open a keyboard; it does not, because a programmatic focus is not the gesture
 Android opens one for (measured: after a scroll the key row stays away, which is
