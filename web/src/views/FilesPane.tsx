@@ -1124,10 +1124,23 @@ export const FilesPane = ({
    * fetch would let the search box take the keyboard, you start typing, and the
    * editor mount a beat later and take it back mid-word.
    *
-   * If the target refuses -- a binary file, or one too large to open -- focus
-   * stays where it was. That is survivable because the stepper listens on the
-   * document: a pane that fails to take the keyboard never traps you, and the
-   * next Cmd+arrow still steps.
+   * **Something has to take it, whatever is showing.** This used to say that a
+   * target which refuses -- a binary file, or one too large to open -- leaves
+   * the keyboard where it was, and that the stepper listening on the document
+   * made that survivable. It does not: the stepper starts from where the
+   * keyboard *is*, so a step that lands nowhere computes the same step again on
+   * the next press, for ever. Measured on a window showing a 3320 KB file --
+   * Cmd+Right into it worked, and then did nothing at all however often it was
+   * pressed, while Cmd+Left still walked away: a wall in one direction, which
+   * is the report this fixed. At 390px, where the tree is not drawn, a picture
+   * did the same one press later -- the row moved and the keyboard stayed in
+   * the window it had left.
+   *
+   * So the panel always answers: the editor or the rendered page where there is
+   * one, the file's own row in the tree where there is not, and the content box
+   * itself where there is no tree either. The box is `tabIndex={-1}` for it,
+   * exactly as `.md` is, and draws no ring of its own -- the pane already
+   * underlines where you are.
    */
   const wantsEditorRef = useRef(false)
   /*
@@ -1143,7 +1156,9 @@ export const FilesPane = ({
    * shown rendered, has nothing to type into, and handing it the keyboard took
    * the keyboard off the one thing in the panel that does something with keys:
    * the tree. So arriving at one lands on its row instead, where ↑ and ↓ go on
-   * to the next file -- and where the tree is not drawn, on nothing at all.
+   * to the next file -- and where the tree is not drawn, on the content box,
+   * which is then the only thing in the panel and cannot be taking the keys
+   * from anything.
    *
    * Decided from the path, like the rest of this, and not from what the read
    * answered: `mediaTypeOf` is the server's own table, in shared/, so the
@@ -1151,14 +1166,14 @@ export const FilesPane = ({
    */
   const viewOnly = (path: string): boolean =>
     path !== '' && (mediaTypeOf(path) !== undefined || (markdownPreview && isMarkdown(path)))
-  const arrivalRef = useRef<'editor' | 'tree' | 'search' | 'none'>('search')
+  const arrivalRef = useRef<'editor' | 'tree' | 'search' | 'box'>('search')
   arrivalRef.current = !wantsEditorRef.current
     ? 'search'
     : !viewOnly(files.path)
       ? 'editor'
       : sideShown
         ? 'tree'
-        : 'none'
+        : 'box'
   useEffect(() => {
     if (focus === null) return
     const bump = (n: number | null): number => (n ?? 0) + 1
@@ -1173,10 +1188,38 @@ export const FilesPane = ({
         setCursor(files.path)
         setKeyFocus((n) => n + 1)
         return
-      case 'none':
+      case 'box':
+        fileRef.current?.focus()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
+
+  /*
+   * A request for the file that nothing will ever answer.
+   *
+   * Arrival is decided from the path, before the read has come back -- which is
+   * what stops the search box taking the keyboard and the editor snatching it
+   * back a beat later. But *refused* is not something a path can say: it is the
+   * read's answer, and by then the editor the request was addressed to will
+   * never mount. The request stayed outstanding and the keyboard never moved,
+   * which is the wall described above.
+   *
+   * It can be answered from the fetch without re-creating the race it was
+   * written against, because there is nothing left to race: a refusal means no
+   * editor and no page is coming. So the panel lands it itself -- on the file's
+   * row, or on the box where no tree is drawn.
+   */
+  useEffect(() => {
+    if (editorFocusNow === null || files.refusal === null) return
+    if (sideShown) {
+      setCursor(files.path)
+      setKeyFocus((n) => n + 1)
+      return
+    }
+    fileRef.current?.focus()
+    settleEditorFocus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorFocusNow, files.refusal, sideShown])
 
   useEffect(() => {
     if (searchFocus === null) return
@@ -1732,6 +1775,14 @@ export const FilesPane = ({
         <div
           className="files__file"
           ref={fileRef}
+          /*
+           * The landing of last resort, so a step into this panel always has
+           * somewhere to arrive -- see the arrival rule above. `-1` for the
+           * reason `.md` uses it: reachable when the row hands over the
+           * keyboard, and not a stop on the Tab walk, since what is worth
+           * tabbing to is inside it.
+           */
+          tabIndex={-1}
           onKeyDown={(event) => {
             /*
              * Escape leaves the file for its row in the list. Only if nothing

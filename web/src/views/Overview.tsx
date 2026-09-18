@@ -2569,18 +2569,21 @@ export const Overview = ({
                           todos={todos}
                           activeId={active?.id ?? null}
                           /*
-                           * Never on a phone, where a caret is a keyboard.
+                           * Arriving always hands the keyboard over; `caret`
+                           * says whether it goes as far as the branch box.
                            *
-                           * Arriving here puts it in the branch box, because on
-                           * a desktop naming the next worktree is what you came
-                           * for. On a phone that is the on-screen keyboard over
-                           * half the pane before you have seen it -- and you
-                           * got here by tapping the project's name in the menu,
-                           * which is a request to *look*. Tap the box and the
-                           * keyboard comes, which is the phone's own rule for
-                           * when a keyboard is wanted.
+                           * On a desktop it does, because naming the next
+                           * worktree is what you came for. On a phone a caret
+                           * *is* the on-screen keyboard, over half the pane
+                           * before you have seen it, and you got here by asking
+                           * to look -- so the pane takes it on its own box
+                           * instead. It used to take nothing at all there, and
+                           * that is a pane the walk cannot get past: the
+                           * stepper reads where the keyboard is, so a step that
+                           * lands nowhere repeats itself. See `caret`.
                            */
-                          focus={!narrow && scrollTo?.id === slot.key ? scrollTo.nonce : null}
+                          focus={scrollTo?.id === slot.key ? scrollTo.nonce : null}
+                          caret={!narrow}
                           onWake={onWake}
                           onReveal={onReveal}
                           onSleep={onSleep}

@@ -2069,9 +2069,43 @@ the pane that had it no longer exists. `FilesPane` decides between the
 editor and its search box from **`files.path`**, which is UI state and true this
 instant, not from `files.file`, which is a fetch result: keying it on the fetch
 lets the search box take the keyboard, you start typing, and the editor mount a
-beat later and take it back mid-word. A pane that refuses focus — a binary file,
-a Claude that is not running — traps nobody, because the stepper listens on the
-document and the next step still works.
+beat later and take it back mid-word.
+
+**A pane the row hands the keyboard to must take it**, and the sentence that
+used to stand here said the opposite: that a pane refusing focus traps nobody,
+since the stepper listens on the document and the next step still works. It does
+not. `stepRow` starts from where the keyboard **is** — deliberately, because
+React's record can be a press behind — so a step that lands nowhere leaves the
+keyboard in the pane you started from, and the next press computes the identical
+step. The window becomes a wall. Measured: with a file too large to open,
+Cmd+Right into that window worked and then did nothing however often it was
+pressed, while Cmd+Left still walked away; at 390px a picture did the same one
+press later, the row moving while the keyboard stayed behind, and the project
+pane did it again the window after that.
+
+Three panes had to answer for it, and each lands on the most useful thing it
+actually has:
+
+- **A refused file** — too large, or no text in it — asked the *editor* for the
+  keyboard, because arrival is decided from the path before the read answers and
+  a refusal is only knowable afterwards. No editor ever mounts, so the request
+  sat outstanding for ever. The panel now answers it itself once the refusal is
+  in: the file's own row in the tree, or the content box where no tree is drawn.
+  It is safe to decide that one from the fetch, unlike arrival itself, because a
+  refusal means nothing is coming that could race it.
+- **A view-only file with no tree beside it** — a phone — used to land on
+  nothing at all, which was written down as a deliberate choice and was only
+  ever half of one: the argument for it is that a picture must not take the keys
+  off the tree, and there is no tree. `.files__file` is `tabIndex={-1}` and
+  takes it.
+- **The project pane on a phone** refuses the *caret*, and should: a caret there
+  is the on-screen keyboard over half a pane you asked only to look at. But
+  refusing the caret is not refusing the keyboard — `caret` now says which, and
+  the pane focuses its own box instead, which summons nothing.
+
+None of the three draws a focus ring, which is the rule `.md` already kept: the
+pane underlines where you are, and a ring around a whole pane would say it
+twice.
 
 `onActivate` reports the **pane**, read off the nearest `data-pane`, which both
 the bar segments and the pane bodies carry — so a terminal tab reports

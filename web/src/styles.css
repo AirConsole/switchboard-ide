@@ -2210,6 +2210,10 @@ button {
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* It takes the keyboard itself where a caret would open a keyboard nobody
+     asked for -- see `caret` in ProjectPane. No ring of its own, the rule `.md`
+     and `.files__file` keep: the pane already underlines where you are. */
+  outline: none;
 }
 
 /*
@@ -4304,6 +4308,10 @@ button {
   flex-direction: column;
   font-family: var(--font-mono);
   font-size: 13px;
+  /* It takes the keyboard when nothing inside it can -- a file too large to
+     open, a picture with no tree beside it. No ring of its own, the rule `.md`
+     keeps for the same job: the pane already underlines where you are. */
+  outline: none;
 }
 
 .files__cm {

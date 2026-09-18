@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import { NewWorktreeForm } from './NewWorktreeForm.js'
 import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
@@ -13,8 +13,21 @@ export interface ProjectPaneProps {
   sessions: Session[]
   todos: WorktreeTodo[]
   activeId: string | null
-  /** Bumped when the row navigates here, to hand the caret to the branch box. */
+  /** Bumped when the row navigates here, to hand the keyboard over. */
   focus: number | null
+  /**
+   * Whether the keyboard goes into the branch box, or onto the pane itself.
+   *
+   * False on a phone, where a caret *is* the on-screen keyboard: arriving here
+   * would throw it over half the pane before you had seen it, and you got here
+   * by asking to look. But the pane still has to take the keyboard, because the
+   * row's walk reads where the keyboard is -- a pane that takes none is a pane
+   * the walk cannot get past, measured at 390px as a step right that moved the
+   * row and then stopped answering. A box is not a caret: focusing it summons
+   * no keyboard, and tapping the field still does, which is the phone's own
+   * rule for when one is wanted.
+   */
+  caret: boolean
   onWake: (worktreeId: string) => void
   onReveal: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
@@ -49,6 +62,7 @@ export const ProjectPane = ({
   todos,
   activeId,
   focus,
+  caret,
   onWake,
   onReveal,
   onSleep,
@@ -66,8 +80,13 @@ export const ProjectPane = ({
     cells: '.tab__body, .tab__close',
     line: '.tab',
   })
+  // Where the caret is not wanted, the pane itself answers -- see `caret`.
+  useEffect(() => {
+    if (focus === null || caret) return
+    box.current?.focus()
+  }, [focus, caret])
   return (
-  <div className="projpane" ref={box}>
+  <div className="projpane" ref={box} tabIndex={-1}>
     <div className="projpane__bar">
       <span className="projpane__name" title={project.root}>
         {project.name}
@@ -152,7 +171,7 @@ export const ProjectPane = ({
       */}
     <div className="projpane__foot">
       <span className="projpane__footlabel">New worktree</span>
-      <NewWorktreeForm project={project} focus={focus} onCreated={onCreated} />
+      <NewWorktreeForm project={project} focus={caret ? focus : null} onCreated={onCreated} />
       <button className="projpane__close" onClick={() => onCloseProject(project.id)}>
         Close project
       </button>
