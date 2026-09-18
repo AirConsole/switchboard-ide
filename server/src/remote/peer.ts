@@ -213,6 +213,36 @@ const discard = async (response: Response): Promise<void> => {
  * `details` is spread at the top level by the error handler, so what is left
  * after `error` and `code` is precisely what was put there.
  */
+/**
+ * Two machines on different versions, and what to do about it.
+ *
+ * The bare fact -- *speaks protocol 1, this one speaks 2* -- is true and
+ * useless: it names a number nobody chose and leaves the reader to work out
+ * that a linked machine is a checkout somebody has to go and update. So the
+ * sentence ends with the command, and the command names **which** machine to
+ * run it on.
+ *
+ * That last part is not padding. A peer is usually the one behind, because it
+ * is the machine you deploy to less often -- but the reverse happens the moment
+ * you link a machine you updated first, and then telling you to update *it*
+ * would send you to the newer one to make it newer still. The comparison is
+ * cheap and the wrong answer wastes a trip.
+ *
+ * A version that is not a number at all -- a proxy rewriting the header, a page
+ * that is not us -- is read as "older", which is the likelier accident and the
+ * harmless guess: `pnpm pull` on a machine that is already current does nothing.
+ */
+const protocolMismatch = (baseUrl: string, said: number | string): HttpError => {
+  const version = Number(said)
+  const older = !Number.isFinite(version) || version < PROTOCOL_VERSION
+  return new HttpError(
+    502,
+    `${baseUrl} speaks protocol ${said}, this one speaks ${PROTOCOL_VERSION}. ` +
+      `Run pnpm pull in the Switchboard directory ${older ? 'on that machine' : 'here'}.`,
+    'protocol-mismatch',
+  )
+}
+
 const peerError = (status: number, text: string): HttpError => {
   let message = text
   let code: string | undefined
@@ -374,11 +404,7 @@ export class PeerClient {
     // Released before we throw, or the connection is held until a finalizer
     // runs -- and this is the path a peer mid-upgrade takes on every read.
     await discard(response)
-    throw new HttpError(
-      502,
-      `${this.baseUrl} speaks protocol ${said}, this one speaks ${PROTOCOL_VERSION}`,
-      'protocol-mismatch',
-    )
+    throw protocolMismatch(this.baseUrl, said)
   }
 
   /**
@@ -557,11 +583,7 @@ export class PeerClient {
   async identify(): Promise<PeerIdentity> {
     const identity = await this.request<PeerIdentity>('GET', '/api/server', undefined, 5_000)
     if (identity.protocolVersion !== PROTOCOL_VERSION) {
-      throw new HttpError(
-        502,
-        `${this.baseUrl} speaks protocol ${identity.protocolVersion}, this one speaks ${PROTOCOL_VERSION}`,
-        'protocol-mismatch',
-      )
+      throw protocolMismatch(this.baseUrl, identity.protocolVersion)
     }
     return identity
   }
