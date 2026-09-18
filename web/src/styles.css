@@ -2069,12 +2069,19 @@ button {
  */
 .taskstrip {
   flex: none;
-  margin: -2px 0 8px;
-  padding-bottom: 8px;
+  /*
+   * Full bleed: out through the pane's 8px padding to both edges and the bar,
+   * so it reads as a band of its own between the bar and the terminal rather
+   * than as text that landed on the terminal's ground. 10px in, which is where
+   * the window's name starts in the bar above, so the two read as one column.
+   */
+  margin: -8px -8px 10px;
+  padding: 11px 10px 12px;
+  background: var(--level-panel);
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-ui);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .taskstrip__task {
@@ -2091,8 +2098,8 @@ button {
 .taskstrip__followups {
   display: flex;
   flex-wrap: wrap;
-  column-gap: 10px;
-  margin: 2px 0 0;
+  gap: 2px 16px;
+  margin: 6px 0 0;
   padding: 0;
   list-style: none;
   color: var(--graphite-dim);
@@ -2107,7 +2114,8 @@ button {
 }
 
 .taskstrip__followup::before {
-  content: '\2192\00a0';
+  content: '\2192';
+  margin-right: 6px;
 }
 
 /*
