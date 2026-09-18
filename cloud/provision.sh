@@ -122,6 +122,14 @@ done
 
 valid_domain "$DOMAIN" || die "--domain takes a name like ide.example.com"
 have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/docs/install"
+
+# Asked once, plainly, because every lookup below hides its own stderr -- and a
+# `describe` that fails because the credentials expired is indistinguishable
+# from one that fails because the machine is not there. Measured: `status` on a
+# running machine said "no machine called dom in n-dream-workspace", which sent
+# the reader looking in the wrong place entirely.
+gcloud auth print-access-token >/dev/null 2>&1 \
+  || die "gcloud has no usable credentials right now -- run:  gcloud auth login"
 [ -n "$PROJECT" ] || die "--project is required (a project of your own; see --in-org)"
 
 REGION=$(printf '%s' "$ZONE" | sed 's/-[a-z]$//')
@@ -435,16 +443,29 @@ wait_for() {
 # --- create ------------------------------------------------------------------
 cmd_create() {
   check_org
-  say ""
-  say "About to create, in $PROJECT ($ZONE):"
-  say "  VM $VM            $MACHINE, Ubuntu 24.04, no service account"
-  say "  data disk         ${DISK_SIZE}GB, encrypted, daily snapshots kept 14 days"
-  say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
-  say "  a static address"
-  say ""
-  say "Roughly \$110-130 a month for e2-standard-4 plus disks, less if you stop it."
-  say ""
-  ask "Create it?"
+  # Run again on a machine that exists, this updates it -- which is how a
+  # domain is added, changed or removed, and the reason `create` has no sibling
+  # verb for doing that.
+  if gq compute instances describe "$VM" --zone="$ZONE"; then
+    EXISTING=1
+    say ""
+    say "$VM exists; this will update it, not build a second one."
+  else
+    EXISTING=0
+  fi
+  [ "$EXISTING" -eq 1 ] || say ""
+  [ "$EXISTING" -eq 1 ] || say "About to create, in $PROJECT ($ZONE):"
+  if [ "$EXISTING" -eq 0 ]; then
+    say "  VM $VM            $MACHINE, Ubuntu 24.04, no service account"
+    say "  data disk         ${DISK_SIZE}GB, encrypted, daily snapshots kept 14 days"
+    say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
+    say "  a static address"
+    say ""
+    say "Roughly \$110-130 a month for an e2-standard-4 plus disks, less for $MACHINE,"
+    say "and less again if you stop it."
+    say ""
+    ask "Create it?"
+  fi
 
   ensure_network
   ensure_address
@@ -461,11 +482,33 @@ cmd_create() {
   # The password is generated here and travels once, over the tunnel, into a
   # process that turns it into a key. It is never in metadata, never in a file,
   # and never in this script's own output except at the end, for the human.
+  # `format.js` exits 2 on a device that already holds a LUKS volume, and that
+  # is the answer to "am I building or updating": it refuses to reformat the
+  # disk holding everything you have, so the password and the data below it are
+  # left exactly alone and only the domain is applied.
   PASSWORD=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24)
   say "formatting the data volume"
-  RECOVERY=$(printf '%s' "$PASSWORD" | ssh_vm --command 'sudo SWB_DATA_DEV=/dev/disk/by-id/google-switchboard-data node /opt/switchboard/cloud/unlock/format.js' 2>/dev/null | tail -1)
-  [ -n "$RECOVERY" ] || die "the volume was not formatted; nothing else was changed"
+  #
+  # `tail` is applied *after*, not in the pipeline: sh has no PIPESTATUS, so
+  # `x=$(a | b | tail -1); rc=$?` reports tail's status -- always 0 -- and the
+  # refusal above read as an empty answer. Measured: re-running `create` on a
+  # machine that exists died with "the volume was not formatted", which is the
+  # one thing it had carefully not done.
+  set +e
+  format_out=$(printf '%s' "$PASSWORD" | ssh_vm --command 'sudo SWB_DATA_DEV=/dev/disk/by-id/google-switchboard-data node /opt/switchboard/cloud/unlock/format.js' 2>/dev/null)
+  formatted=$?
+  set -e
+  RECOVERY=$(printf '%s' "$format_out" | tail -1)
+  if [ "$formatted" -eq 2 ]; then
+    say "  the volume is already set up; leaving it and the password alone"
+    FRESH=0
+  elif [ "$formatted" -ne 0 ] || [ -z "$RECOVERY" ]; then
+    die "the volume was not formatted; nothing else was changed"
+  else
+    FRESH=1
+  fi
 
+  if [ "$FRESH" -eq 1 ]; then
   # Order matters, and each step needs the one before it:
   #   mount, so the user has a home at all;
   #   unlocked, which makes that home and the IDE's settings in it;
@@ -478,6 +521,7 @@ cmd_create() {
     || die "the password could not be set; nothing is serving yet"
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
+  fi
 
   # Applied whenever --domain was *given* at all, including as "": that is how
   # a domain is taken away again, through the same code path that adds one.
@@ -499,6 +543,11 @@ cmd_create() {
   say ""
   say "  https://$IP"
   [ -n "$DOMAIN" ] && say "  https://$DOMAIN"
+  if [ "$FRESH" -eq 0 ]; then
+    say ""
+    say "Updated. The password is the one you already have."
+    return 0
+  fi
   say ""
   say "  password   $PASSWORD"
   say "  recovery   $RECOVERY"
