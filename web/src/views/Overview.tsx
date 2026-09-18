@@ -1880,6 +1880,15 @@ export const Overview = ({
    * the tile is a render behind.
    */
   const answered = useRef<number | null>(null)
+  /*
+   * The row is gliding somewhere it was sent, rather than being swiped.
+   *
+   * A smooth scroll fires `scroll` like a swipe does, and a tab click that
+   * crosses three windows would otherwise light each of them on the way --
+   * the tab you clicked going dark and coming back. Cleared when the row comes
+   * to rest, and by a finger, which takes the row back from the glide.
+   */
+  const steering = useRef(false)
   useEffect(() => {
     if (target === undefined || width === 0 || scrollTo === null) return
     if (answered.current === scrollTo.nonce) return
@@ -1898,6 +1907,7 @@ export const Overview = ({
     const tile = { at: target.at, units: target.units }
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, restRef.current)
+    steering.current = true
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
@@ -1939,6 +1949,7 @@ export const Overview = ({
     if (!grid || width === 0) return
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, rest)
+    steering.current = true
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
   }
 
@@ -2119,7 +2130,17 @@ export const Overview = ({
    * phone, are in the body.
    */
   const settled = useRef<string | null>(null)
+  /* Whichever window covers the middle of the screen. */
+  const middleCell = useCallback(
+    (scrollLeft: number): Cell | undefined => {
+      if (pitch <= 0) return undefined
+      const middle = (scrollLeft + width / 2) / pitch
+      return cellsRef.current.find((cell) => middle >= cell.at && middle < cell.at + cell.units)
+    },
+    [pitch, width],
+  )
   const settleActive = useCallback((): void => {
+    steering.current = false
     const grid = gridRef.current
     if (!grid || pitch <= 0) return
     /*
@@ -2138,12 +2159,11 @@ export const Overview = ({
      */
     const cells = cellsRef.current
     const onePane = units <= 2
-    const middle = (grid.scrollLeft + width / 2) / pitch
     const seen = cells.filter((cell) =>
       wholeOnScreen({ at: cell.at, units: cell.units }, grid.scrollLeft, pitch, width, gap),
     )
     const showing = onePane
-      ? cells.find((cell) => middle >= cell.at && middle < cell.at + cell.units)
+      ? middleCell(grid.scrollLeft)
       : seen.length === 1
         ? seen[0]
         : undefined
@@ -2170,7 +2190,33 @@ export const Overview = ({
      * yes and nothing moves.
      */
     onReveal(showing.key, first.kind === 'project' ? 'project' : first.kind)
-  }, [pitch, width, gap, units, onReveal])
+  }, [pitch, width, gap, units, onReveal, middleCell])
+
+  /*
+   * The mark alone, while the row is still moving -- on a phone only.
+   *
+   * Waiting for the row to come to rest before lighting the tab was the
+   * arrival done right and the answer given late: a swipe's momentum and the
+   * snap after it are most of a second, and all that time the strip went on
+   * naming the window you had already left. So the tab follows the middle of
+   * the screen as it crosses from one window into the next, and the arrival --
+   * the keyboard, `onReveal` -- still waits for `settleActive`.
+   *
+   * `onActivate` and not `onReveal`, because it is the only one of the two
+   * that is cheap enough to answer mid-swipe: it writes no `ui`, sends no
+   * scroll request and takes no focus, and it bails when the mark would not
+   * change -- which, since it is asked only when the middle crosses into a
+   * different window, is every scroll event but a handful. A desktop does not
+   * get it: there a scroll is you looking around, as above.
+   */
+  const markMiddle = (): void => {
+    const grid = gridRef.current
+    if (!grid || units > 2 || steering.current) return
+    const cell = middleCell(grid.scrollLeft)
+    const first = cell?.panes[0]
+    if (cell === undefined || first === undefined || active?.id === cell.key) return
+    onActivate(cell.key, first.kind === 'project' ? 'project' : first.kind)
+  }
 
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
@@ -2436,11 +2482,12 @@ export const Overview = ({
         onScroll={(event) => {
           const el = event.currentTarget
           if (pitch > 0) unitRef.current = Math.round(el.scrollLeft / pitch)
+          markMiddle()
           /*
-           * When it stops, not while it moves: a swipe crosses every window
-           * between here and where it lands, and marking each one in turn would
-           * light three tabs on the way to the fourth -- and each is a write of
-           * `ui`. `scrollend` is the honest signal and Chrome has it; the
+           * The arrival when it stops, not while it moves: a swipe crosses
+           * every window between here and where it lands, and handing each one
+           * the keyboard in turn is a write of `ui` apiece. (The mark alone
+           * does follow it -- see `markMiddle`.) `scrollend` is the honest signal and Chrome has it; the
            * timeout is for the browsers that do not, and is harmless where both
            * fire because `activate` bails when nothing changed.
            */
@@ -2448,6 +2495,9 @@ export const Overview = ({
           restTimer.current = window.setTimeout(settleActive, 140)
         }}
         onScrollEnd={settleActive}
+        onTouchStart={() => {
+          steering.current = false
+        }}
       >
         {/*
           * One marker per place the row may rest -- see `rest`: each pane's
