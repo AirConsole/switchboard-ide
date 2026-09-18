@@ -64,6 +64,7 @@ Options
   --disk-size <GB>    data disk, default 100
   --alert-email <a>   who to mail when someone else touches the machine
   --domain <name>     also answer to this name; it tells you the DNS record
+                      (--domain "" takes one away again)
   --repo <url>        which checkout the machine builds from
   --repo-ref <ref>    which branch or tag of it (default master)
   --in-org            allow a project inside an organisation (see above)
@@ -170,19 +171,43 @@ check_org() {
 # The machine is reachable by its IP whatever happens; a domain is an addition,
 # never a replacement. That is on purpose: the address is the one name that
 # cannot be wrong, and it is what you fall back to the day the DNS is.
+# Answers yes / no / unknown, and the third is not the second: a machine with
+# none of these tools has not told us the name is wrong, and treating it as
+# wrong would mean five minutes of dots on every such machine.
+#
+# Compared field by field with awk rather than grepped: `grep 34.65.1.2` also
+# matches 134.65.1.20, and a word-boundary escape that works in GNU grep is not
+# the one BSD grep wants.
 resolves_to() {
-  # name, address. Whichever of these the machine has -- getent on Linux, dig
-  # and host on macOS, nslookup nearly everywhere. A machine with none of them
-  # is not an error: the check is a convenience, and Caddy asks the real
-  # question anyway when it tries to get the certificate.
   name=$1; want=$2
-  if have getent; then getent hosts "$name" 2>/dev/null | grep -q "^$want\b" && return 0
-  elif have dig; then dig +short "$name" A 2>/dev/null | grep -qx "$want" && return 0
-  elif have host; then host -t A "$name" 2>/dev/null | grep -q " $want$" && return 0
-  elif have nslookup; then nslookup "$name" 2>/dev/null | grep -q "Address: $want$" && return 0
-  else return 2
+  # dig and host first, because they list *every* A record. getent answers with
+  # whichever address the resolver felt like returning -- measured:
+  # one.one.one.one came back as 1.0.0.1 alone, so a check for 1.1.1.1 said the
+  # name pointed somewhere else. It stays as the fallback because a Linux box
+  # without bind-utils has nothing else, and a machine has one A record.
+  if have dig; then
+    dig +short "$name" A 2>/dev/null | awk -v w="$want" '$1 == w { f = 1 } END { exit !f }'
+  elif have host; then
+    host -t A "$name" 2>/dev/null | awk -v w="$want" '$NF == w { f = 1 } END { exit !f }'
+  elif have getent; then
+    # `ahostsv4`, not `hosts`: the latter answers with AAAA records where a name
+    # has them, and the A record is what is being checked.
+    getent ahostsv4 "$name" 2>/dev/null | awk -v w="$want" '$1 == w { f = 1 } END { exit !f }'
+  elif have nslookup; then
+    nslookup "$name" 2>/dev/null | awk -v w="$want" '$1 == "Address:" && $2 == w { f = 1 } END { exit !f }'
+  else
+    return 2
   fi
-  return 1
+}
+
+# `$?` after an `if` whose condition failed is **zero**, not the condition's
+# status -- POSIX says an `if` with no else that does not run its then-branch
+# exits 0. So the status is taken in the `else`, where it is still the
+# condition's. Read as `$?` after the `fi`, "cannot tell" was indistinguishable
+# from "does not resolve".
+dns_says() {
+  if resolves_to "$1" "$2"; then echo yes; return 0; else rc=$?; fi
+  if [ "$rc" -eq 2 ]; then echo unknown; else echo no; fi
 }
 
 ask_domain() {
@@ -214,14 +239,14 @@ say_dns_record() {
 
 wait_for_dns() {
   [ -n "$DOMAIN" ] || return 0
-  if resolves_to "$DOMAIN" "$IP"; then say "$DOMAIN resolves here already"; return 0; fi
-  case $? in
-    2) say "note: no way to check DNS on this machine; carrying on."; return 0 ;;
+  case "$(dns_says "$DOMAIN" "$IP")" in
+    yes) say "$DOMAIN points here already"; return 0 ;;
+    unknown) say "note: nothing on this machine can check DNS; carrying on."; return 0 ;;
   esac
   printf 'waiting for %s to resolve to %s' "$DOMAIN" "$IP"
   i=0
   while [ "$i" -lt 60 ]; do
-    if resolves_to "$DOMAIN" "$IP"; then printf ' ok\n'; return 0; fi
+    if [ "$(dns_says "$DOMAIN" "$IP")" = yes ]; then printf ' ok\n'; return 0; fi
     printf '.'
     sleep 5
     i=$((i + 1))
@@ -434,9 +459,14 @@ cmd_create() {
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
 
+  # Applied whenever --domain was given at all, including as "": that is how a
+  # domain is taken away again, and the same code path either way.
   if [ -n "$DOMAIN" ]; then
     wait_for_dns
     say "teaching the machine its name"
+    apply_domain
+  elif [ "$DOMAIN_ASKED" -eq 1 ]; then
+    say "removing any domain this machine had"
     apply_domain
   fi
 
@@ -475,11 +505,11 @@ cmd_status() {
 
   domain=$(ssh_vm --command 'sed -n "s/^SWB_DOMAIN=//p" /etc/switchboard/env' 2>/dev/null | tr -d "\r" | tail -1)
   if [ -n "${domain:-}" ]; then
-    if resolves_to "$domain" "$IP"; then
-      say "  also https://$domain"
-    else
-      say "  also $domain -- which does NOT point here; add an A record to $IP"
-    fi
+    case "$(dns_says "$domain" "$IP")" in
+      yes) say "  also https://$domain" ;;
+      unknown) say "  also $domain (nothing here can check whether it points at $IP)" ;;
+      *) say "  also $domain -- which does NOT point here; add an A record to $IP" ;;
+    esac
   fi
 
   snap=$(g compute snapshots list --filter="sourceDisk~$DATA_DISK" --sort-by=~creationTimestamp \
