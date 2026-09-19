@@ -379,11 +379,13 @@ export interface PromptSummary {
 }
 
 /**
- * How many follow-ups are kept. Runs of them between two tasks, measured over
- * 1,151 prompts: none 318 times, one 155, two 61, three 22, four or more 26. So
- * six is every ordinary run whole, and a bound on the snapshot for the rest.
+ * How many follow-ups are kept: the newest three. Runs of them between two
+ * tasks, measured over 1,151 prompts: none 318 times, one 155, two 61, three
+ * 22, four or more 26. It was six, every ordinary run whole -- but the strip
+ * is a reminder of where the work is, not its history, and past three the
+ * older ones were only pushing the line onto a second row.
  */
-const FOLLOW_UPS_MAX = 6
+const FOLLOW_UPS_MAX = 3
 
 interface Seen extends PromptSummary {
   path: string
