@@ -357,6 +357,15 @@ describe('lastPrompt', () => {
     })
   })
 
+  it('keeps the newest three follow-ups', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      ...['one', 'two', 'three', 'four', 'five'].map(userSays),
+    ])
+    expect((await promptSummary(cwd))?.followUps).toEqual(['three', 'four', 'five'])
+  })
+
   it('lets a new task clear the follow-ups of the last one as it is written', async () => {
     // The incremental path, which folds onto what it had rather than rescanning.
     const cwd = freshCwd()
