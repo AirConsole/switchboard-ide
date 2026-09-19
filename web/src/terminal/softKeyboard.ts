@@ -70,3 +70,19 @@ export const useSoftKeyboard = (): boolean => {
  * moment it is needed rather than once, since a tablet gains and loses a mouse.
  */
 export const softKeys = (): boolean => window.matchMedia('(pointer: coarse)').matches
+
+/**
+ * Should sending this put the on-screen keyboard away?
+ *
+ * Enter in Claude is *sending* -- the prompt is done and what comes next is
+ * reading the answer, which the keyboard covers half of. So on a device whose
+ * keyboard is drawn on the glass, a lone Enter into a Claude lets go of it; tap
+ * the window to bring it back. Not in a terminal, where Enter runs one command
+ * of several and the next is typed straight after. Only a lone `\r`: a paste
+ * that happens to end in a newline is not you pressing Enter.
+ */
+export const enterPutsKeyboardAway = (
+  data: string,
+  kind: 'claude' | 'shell',
+  soft: boolean,
+): boolean => soft && kind === 'claude' && data === '\r'

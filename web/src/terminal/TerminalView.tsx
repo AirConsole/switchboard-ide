@@ -7,7 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import type { Session } from '@switchboard/shared'
 import { terminalSocket, type ConsumerOptions } from '../socket.js'
 import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
-import { softKeys, useSoftKeyboard } from './softKeyboard.js'
+import { enterPutsKeyboardAway, softKeys, useSoftKeyboard } from './softKeyboard.js'
 import { RowStep } from '../views/rowStep.js'
 import { isHoverReport } from './mouseReports.js'
 import '@xterm/xterm/css/xterm.css'
@@ -364,6 +364,8 @@ export const TerminalView = ({
       if (data.startsWith('\x1b[M')) return
       if (isHoverReport(data)) return
       terminalSocket.input(session.id, data)
+      // After it is sent, so the prompt goes whatever the blur does.
+      if (enterPutsKeyboardAway(data, session.kind, softKeys())) term.blur()
     }
     term.onData(send)
     term.onBinary(send)
