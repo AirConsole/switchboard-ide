@@ -8,7 +8,7 @@ import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { MACHINE_KEY, Overview, projectKey, type PaneKind } from './views/Overview.js'
+import { MACHINE_KEY, Overview, WELCOME_KEY, projectKey, type PaneKind } from './views/Overview.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -367,6 +367,17 @@ export const App = (): React.ReactElement => {
   /** Every awake worktree, in the order the row shows them. */
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
 
+  /*
+   * Where you are, remembered as you move -- see the arrival below, which reads
+   * it back. Not until that arrival has happened, or the first window to take
+   * focus on load would overwrite the one it is about to go back to.
+   */
+  useEffect(() => {
+    if (!started.current || active === null || active.id === WELCOME_KEY) return
+    if (uiRef.current.activeWorktree === active.id) return
+    setUi({ activeWorktree: active.id })
+  }, [active, setUi])
+
   /**
    * Where a todo can be moved to, per project: that project's own worktrees, in
    * the top bar's own order.
@@ -421,23 +432,41 @@ export const App = (): React.ReactElement => {
   }
 
   /*
-   * On arrival, the first worktree is the active one and its Claude has the
-   * keyboard.
+   * On arrival, the window you were in when you left, and otherwise the first
+   * worktree -- and its Claude has the keyboard.
+   *
+   * The remembered one only if the row still has it: a worktree put to sleep
+   * or removed since, on this machine or another, is somewhere you cannot be.
+   * It was only ever the first worktree, and a reload in the middle of the row
+   * dropped you back at its start with the window you had been in off screen.
    *
    * Once, and only once there is something to point at -- the first render
-   * happens before the snapshot lands. After that the active worktree is
+   * happens before the snapshot lands. After that the active window is
    * whatever you last navigated to, and this must not keep dragging it back.
    */
   const started = useRef(false)
   useEffect(() => {
-    if (started.current) return
+    if (started.current || !loaded) return
+    // Absent in a `ui` stored before this was remembered.
+    const id = ui.activeWorktree ?? null
+    const pane: PaneKind | null =
+      id === null
+        ? null
+        : id === MACHINE_KEY
+          ? 'machine'
+          : groups.some((group) => projectKey(group.project.id) === id)
+            ? 'project'
+            : rowWorktrees.some((worktree) => worktree.id === id)
+              ? 'claude'
+              : null
     const first = rowWorktrees[0]
-    if (first === undefined) return
+    if (pane === null && first === undefined) return
     started.current = true
-    reveal(first.id)
+    if (id !== null && pane !== null) reveal(id, pane)
+    else if (first !== undefined) reveal(first.id)
     // `reveal` is rebuilt every render and this fires once, so it is not a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowWorktrees])
+  }, [loaded, rowWorktrees])
 
   /**
    * Wake a worktree: bring back its tile and its agent.

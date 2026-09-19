@@ -7,11 +7,11 @@ describe('defaultUiState', () => {
     // is what `refresh()` spreads these under the server's stored copy for.
     const ui = defaultUiState()
     for (const [key, value] of Object.entries(ui)) {
-      // The two that are not per-worktree maps, named rather than detected by
+      // The ones that are not per-worktree maps, named rather than detected by
       // their type: `markdownPreview` and `stepsTaken` are both about the
-      // reader rather than about any worktree. A third has to be added here on
-      // purpose.
-      if (key === 'markdownPreview' || key === 'stepsTaken') continue
+      // reader rather than about any worktree, and `activeWorktree` is where
+      // the reader is. Another has to be added here on purpose.
+      if (key === 'markdownPreview' || key === 'stepsTaken' || key === 'activeWorktree') continue
       expect(value, key).toEqual({})
     }
   })
