@@ -376,6 +376,12 @@ export interface PromptSummary {
   task?: string
   /** The prompts since `task`, oldest first. */
   followUps: string[]
+  /**
+   * Whether `followUps` had older ones dropped from its front. Always written
+   * by `fold`, false included: the incremental read spreads a fold over what
+   * it had, and a key left out kept the old `true` after a new task.
+   */
+  earlierFollowUps?: boolean
 }
 
 /**
@@ -459,17 +465,22 @@ const promptsIn = (text: string): { real: Said[]; recorded?: string } => {
  */
 const fold = (into: PromptSummary, real: Said[]): PromptSummary => {
   let { task, followUps } = into
+  // Carried across folds, since what was dropped last time is not in `into`.
+  let earlier = into.earlierFollowUps === true
   for (const said of real) {
     if (task === undefined || setsTask(said)) {
       task = said.text
       followUps = []
+      earlier = false
     } else {
       followUps = [...followUps, said.text]
     }
   }
+  if (followUps.length > FOLLOW_UPS_MAX) earlier = true
   return {
     prompt: real.at(-1)?.text ?? into.prompt,
     task,
+    earlierFollowUps: earlier,
     followUps: followUps.slice(-FOLLOW_UPS_MAX),
   }
 }
@@ -478,6 +489,8 @@ const summaryOf = (seen: Seen): PromptSummary => ({
   prompt: seen.prompt ?? seen.recorded,
   task: seen.task ?? seen.recorded,
   followUps: seen.followUps,
+  // Only when true, so a worktree without any says nothing on the wire.
+  ...(seen.earlierFollowUps === true ? { earlierFollowUps: true } : {}),
 })
 
 /**

@@ -2135,6 +2135,11 @@ button {
   margin-right: 6px;
 }
 
+/* The ones before these: a mark with no arrow, since it is not something said. */
+.taskstrip__followup--earlier::before {
+  content: none;
+}
+
 /*
  * Gone while the soft keys are up, by the same `:has()` the top bar uses and
  * for the same reason: a phone with its keyboard open has about 380px of

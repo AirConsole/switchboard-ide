@@ -171,7 +171,8 @@ export class Workspace {
           // A branch appearing on or vanishing from a remote changes what the
           // removal dialog asks, so it is part of "something changed here".
           `${w.remoteBranch ?? ''}:${w.remoteBranchMerged === true ? 'm' : ''}:` +
-          `${w.missing === true}:${w.prompt ?? ''}:${w.task ?? ''}:${(w.followUps ?? []).join('\u0000')}`,
+          `${w.missing === true}:${w.prompt ?? ''}:${w.task ?? ''}:${(w.followUps ?? []).join('\u0000')}:` +
+          `${w.earlierFollowUps === true}`,
       )
       .join('|')
   }
