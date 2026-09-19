@@ -2101,6 +2101,8 @@ button {
   line-clamp: 3;
   overflow: hidden;
   overflow-wrap: anywhere;
+  /* Room for the italic's lean -- see `.taskstrip__followup`. */
+  padding-right: 0.25em;
 }
 
 .taskstrip__followups {
@@ -2119,6 +2121,13 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /*
+   * An italic leans past its own advance, so the last letter's top-right ink
+   * is outside the box, and `overflow: hidden` -- there for the ellipsis --
+   * cut it off: the final letter of every follow-up read clipped. A quarter
+   * of an em is more than the lean at this size.
+   */
+  padding-right: 0.25em;
 }
 
 .taskstrip__followup::before {
