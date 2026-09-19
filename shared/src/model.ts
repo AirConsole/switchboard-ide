@@ -171,6 +171,8 @@ export interface Worktree {
    * that steered it. Only the newest few are kept.
    */
   followUps?: string[]
+  /** More follow-ups came before these, and were dropped; the strip says `…`. */
+  earlierFollowUps?: boolean
   /**
    * Whether this worktree has a window in the row.
    *

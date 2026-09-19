@@ -31,6 +31,12 @@ export const TaskStrip = ({ worktree }: { worktree: Worktree }) => {
       </p>
       {followUps.length > 0 && (
         <ol className="taskstrip__followups">
+          {/* Only the newest few travel, so say when there were more before them. */}
+          {worktree.earlierFollowUps === true && (
+            <li className="taskstrip__followup taskstrip__followup--earlier" title="Earlier follow-ups">
+              …
+            </li>
+          )}
           {followUps.map((followUp, index) => (
             <li key={index} className="taskstrip__followup" title={followUp}>
               {followUp}

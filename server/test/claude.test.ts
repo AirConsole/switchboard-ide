@@ -363,7 +363,45 @@ describe('lastPrompt', () => {
       userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
       ...['one', 'two', 'three', 'four', 'five'].map(userSays),
     ])
-    expect((await promptSummary(cwd))?.followUps).toEqual(['three', 'four', 'five'])
+    const summary = await promptSummary(cwd)
+    expect(summary?.followUps).toEqual(['three', 'four', 'five'])
+    // And says that it dropped some, so the strip can put `…` in front.
+    expect(summary?.earlierFollowUps).toBe(true)
+  })
+
+  it('says it dropped follow-ups across reads, and forgets once a task clears them', async () => {
+    const cwd = freshCwd()
+    const path = await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      ...['one', 'two', 'three', 'four'].map(userSays),
+    ])
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBe(true)
+    // A later read sees only the new line, and must still know.
+    await appendFile(path, JSON.stringify(userSays('five')) + '\n')
+    const later = await promptSummary(cwd)
+    expect(later?.followUps).toEqual(['three', 'four', 'five'])
+    expect(later?.earlierFollowUps).toBe(true)
+    // A read with no prompt in it at all -- Claude's reply -- has nothing to
+    // work it out from again, so the flag has to be carried.
+    await appendFile(
+      path,
+      JSON.stringify({ type: 'assistant', message: { content: 'done' } }) + '\n',
+    )
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBe(true)
+    await appendFile(
+      path,
+      JSON.stringify(userSays('now make the files pane remember which folders were expanded')) + '\n',
+    )
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBeUndefined()
+  })
+
+  it('says nothing about earlier follow-ups when none were dropped', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      ...['one', 'two', 'three'].map(userSays),
+    ])
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBeUndefined()
   })
 
   it('lets a new task clear the follow-ups of the last one as it is written', async () => {
