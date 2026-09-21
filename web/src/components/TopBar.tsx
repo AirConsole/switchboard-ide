@@ -175,12 +175,22 @@ const Group = ({
   const statusOf = (w: Worktree): WorktreeStatus => worktreeStatus(sessions, w.id)
   const openSignal = summaryClass(asleep.map(statusOf))
   /*
-   * Every worktree the project has, as shares of the head's own bar -- see
-   * `statusShares`. Drawn only once the tabs are gone, and rendered at every
-   * rung for the reason the aggregates above are: the rung is written on the
-   * DOM after React has run, so nothing rendered may depend on it.
+   * The project's **awake** worktrees as shares of the head's own bar -- see
+   * `statusShares`.
+   *
+   * Awake is the whole set it can describe: those are the windows in the row,
+   * and the strip is read as "how much of what is open here needs me". The
+   * sleepers were in it at first, which made the bands answer a question
+   * nobody asks of a row of windows -- a project with one window open and
+   * eight asleep drew an eighth of a band for the thing you were looking at.
+   * What a sleeper needs is still said, by the leading bar, which is exactly
+   * the job that bar keeps.
+   *
+   * Drawn only once the tabs are gone, and rendered at every rung for the
+   * reason the aggregate above is: the rung is written on the DOM after React
+   * has run, so nothing rendered may depend on it.
    */
-  const shares = statusShares([...awake, ...asleep].map(statusOf))
+  const shares = statusShares(awake.map(statusOf))
 
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
     const queued = queuedTodoCount(todos, worktree.id)
