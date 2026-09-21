@@ -1690,10 +1690,19 @@ export const Overview = ({
    * row's answer -- a pane that measured itself would be deciding from a number
    * it had caused.
    */
+  /*
+   * One advance more than the stylesheet's chrome, because that chrome is the
+   * three-digit gutter and a file of a thousand lines has four. Without it the
+   * row kept the tree over a band of pane widths where the two could not both
+   * be had: measured, panes of 837 to 841px held the tree at its 158px floor
+   * and wrapped an 80-character line at 79.3 columns. The tree is what gives
+   * way, so it gives way a few pixels earlier rather than the code losing a
+   * column -- and a five-digit file is past what this pane is for.
+   */
   const treeNeeds =
     FILES_TREE_MIN +
     FILES_EDITOR_CHROME +
-    MIN_PANE_COLUMNS * monoAdvance(EDITOR_FONT_SIZE, TERMINAL_FONT_FAMILY)
+    (MIN_PANE_COLUMNS + 1) * monoAdvance(EDITOR_FONT_SIZE, TERMINAL_FONT_FAMILY)
 
   /*
    * That, against the pixels this cell's files pane will actually get.

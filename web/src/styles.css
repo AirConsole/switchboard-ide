@@ -4195,7 +4195,20 @@ button {
  * half a spot at every width.
  */
 .files__side {
-  flex: 1 1 auto;
+  /*
+   * Its basis is the floor, not its content.
+   *
+   * `auto` measured the rows and the find box, and a basis wider than the
+   * floor is width the tree is *asking* for -- so once the two asks came to
+   * more than the pane, flex took the difference out of both in proportion and
+   * the file lost columns with room going spare beside it. Measured at a 900px
+   * window: a 873px pane, a file asking 685 and a tree asking well past its
+   * 158 floor, and the file came out 645 -- 74.91 columns, wrapping an
+   * 80-character line with the tree sitting at 228. From the floor, the file's
+   * ask is met first and the tree grows into what is left, which is what "the
+   * editor asks for exactly 80 columns and the tree has the rest" meant.
+   */
+  flex: 1 1 var(--files-tree-min);
   min-width: var(--files-tree-min);
   display: flex;
   flex-direction: column;
