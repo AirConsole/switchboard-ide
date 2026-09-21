@@ -81,7 +81,13 @@ export const PANE_CHROME = PANE_CHROME_WIDTH + XTERM_RULER_WIDTH
  * file, and it decides before either exists.
  */
 export const FILES_TREE_MIN = 158
-export const FILES_EDITOR_CHROME = 50
+/*
+ * The stylesheet's own `--files-editor-chrome` at three digits. The pane
+ * replaces it with the gutter it measures, which only ever asks for *more* --
+ * and the extra comes out of the tree, which is why this stays the number the
+ * row budgets the tree against.
+ */
+export const FILES_EDITOR_CHROME = 52
 
 /**
  * The narrowest bar segment that can still say its toggles in words, in px.

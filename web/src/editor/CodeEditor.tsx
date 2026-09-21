@@ -55,6 +55,17 @@ export interface CodeEditorProps {
    * that was showing while it loaded.
    */
   goto?: { path: string; line: number; nonce: number } | null
+  /**
+   * The line-number gutter's width, whenever it changes.
+   *
+   * The pane budgets 80 columns of code *plus* the editor's own chrome, and
+   * the gutter is most of that chrome -- it is as wide as the line count, so
+   * the number cannot be a constant: a thousand-line file's four digits took
+   * the eightieth column, measured at 79.19. Only this side of the layout can
+   * see the real width, so it hands it over and the pane takes the difference
+   * out of the tree beside it.
+   */
+  onGutterWidth?: (px: number) => void
 }
 
 /**
@@ -156,6 +167,7 @@ export const CodeEditor = ({
   onSave,
   focus = null,
   goto = null,
+  onGutterWidth,
 }: CodeEditorProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -346,6 +358,34 @@ export const CodeEditor = ({
       effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
     })
   }, [goto, file])
+
+  /*
+   * The gutter, measured rather than assumed -- see `onGutterWidth`.
+   *
+   * An observer, because it changes without React: a file's line count is the
+   * document's, so the gutter widens as a file grows past a thousand lines and
+   * narrows when another file is dispatched into the same view. `getBoundingClientRect`
+   * for the fractional width, since flooring here would cost the column this
+   * exists to protect.
+   */
+  const gutterRef = useRef(onGutterWidth)
+  gutterRef.current = onGutterWidth
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const gutters = host.querySelector('.cm-gutters')
+    if (!gutters) return
+    const report = (): void => gutterRef.current?.(gutters.getBoundingClientRect().width)
+    report()
+    // jsdom has no ResizeObserver, and a test that mounts an editor is not
+    // testing the gutter: the one measurement above still happens there.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(report)
+    observer.observe(gutters)
+    return () => observer.disconnect()
+    // The host holds one view for its lifetime, and the view keeps one gutters
+    // element across documents, so this subscribes once.
+  }, [file.path])
 
   /*
    * Declared after the effect that builds the view, so on a fresh mount there

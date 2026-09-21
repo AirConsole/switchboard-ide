@@ -1219,6 +1219,20 @@ export const FilesPane = ({
     /** Files with more matching lines than are listed. */
     more: string[]
   }>({ hits: [], truncated: false, more: [] })
+  /*
+   * What the editor's line-number gutter is actually costing, in px.
+   *
+   * The pane asks for 80 columns *plus* the editor's chrome, and that chrome
+   * was a constant wide enough for three digits -- so a file past a thousand
+   * lines paid for its fourth digit out of the code, 79.19 columns measured.
+   * The editor reports its gutter as it changes and the difference comes out
+   * of the tree beside it, which is a list of names and has it to give.
+   *
+   * Null until an editor has measured one: everything else the pane can show
+   * -- a diff, a picture, a rendered page -- keeps the stylesheet's own value.
+   */
+  const [gutter, setGutter] = useState<number | null>(null)
+
   /* A content hit being opened: the editor puts its cursor on this line. */
   const [goto, setGoto] = useState<{ path: string; line: number; nonce: number } | null>(null)
   const searching = query.trim() !== ''
@@ -2030,6 +2044,7 @@ export const FilesPane = ({
             onSave={files.save}
             focus={editorFocusNow}
             goto={goto}
+            onGutterWidth={setGutter}
           />
         </Suspense>
       ) : (
@@ -2063,6 +2078,13 @@ export const FilesPane = ({
   return (
     <div
       className="files"
+      /* The gutter's real width plus the 14px a line is inset by; see `gutter`.
+         Rounded up, because a fraction of a pixel short is a column short. */
+      style={
+        gutter === null
+          ? undefined
+          : ({ '--files-editor-chrome': `${Math.ceil(gutter + 14)}px` } as React.CSSProperties)
+      }
       onKeyDown={(event) => {
         /*
          * Cmd+S with the keyboard anywhere but the editor would otherwise open
