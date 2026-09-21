@@ -4153,15 +4153,21 @@ button {
   --files-tree-min: 158px;
   /*
    * What the editor spends on itself before any code: the line-number gutter
-   * (3ch plus 12px of padding and a 1px rule, 36.5px) and the 14px inset on
-   * each line. Asked for on top of the 80 columns rather than out of them.
+   * and the 14px inset on each line. Asked for on top of the 80 columns rather
+   * than out of them, so the tree beside it is what pays for a wider gutter.
    *
-   * 52 and not 50, which was half a pixel short and cost the column it was
-   * protecting: at 13px Menlo a character is 7.827px, so 80ch is 626.1 and the
-   * old sum left 625.6 of room -- 79.94 columns, which wraps at 79. A file of a
-   * thousand lines still loses one to a four-digit gutter; a constant 4ch
-   * gutter would fix that and cost every short file 8px, which is the worse
-   * trade.
+   * **Overwritten by the pane from the real gutter** while an editor is up --
+   * see `gutter` in `FilesPane`. This value is the three-digit case (3ch plus
+   * 12px of padding and a 1px rule, 36.5px) and is what a diff, a picture or a
+   * rendered page uses, none of which draw one. It was the only value, and a
+   * constant cannot be right: measured, a 1,399-line file's four-digit gutter
+   * is 44.3px, which left 79.19 columns and wrapped an 80-character line onto
+   * two rows. A constant 4ch gutter would fix that file and cost every short
+   * one 8px of code, which is the worse trade.
+   *
+   * 52 and not 50, which was half a pixel short even at three digits: at 13px
+   * Menlo a character is 7.827px, so 80ch is 626.1 and the old sum left 625.6
+   * of room -- 79.94 columns, which wraps at 79.
    */
   --files-editor-chrome: 52px;
   --files-row-h: 20px;
