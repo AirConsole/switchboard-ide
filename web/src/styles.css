@@ -1588,23 +1588,15 @@ button {
 }
 
 /*
- * Collapsed, the head stops summarising into one colour and draws the shares.
+ * Collapsed, the head grows the strip that says what its windows are doing.
  *
- * The leading bar is the right shape for a tab -- one window, one state -- and
- * the wrong one for a head standing for a project: it said "something in here
- * needs you" and could not say how much of it. The strip under the name says
- * both, so the bar goes rather than the two sitting on the same pill.
- *
- * `--tab-state` is still set by the sleepers' aggregate at the expanded rungs
- * above, where the awake ones have tabs of their own and the head speaks only
- * for what has none.
+ * The two marks on the pill answer different questions and are drawn in
+ * different places, which is what keeps them apart: the bar down the leading
+ * edge is the sleepers -- what has no window at all -- in amber or green, and
+ * the strip along the bottom is the awake ones, as shares. Neither can stand
+ * in for the other, and the strip is the one that could not exist at the
+ * expanded rungs, where every awake worktree has a tab already saying it.
  */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__pill,
-.topbar[data-stage='4'] .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup__pill {
-  background-image: none;
-}
-
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
 .topbar[data-stage='4'] .tabgroup__shares,
 .topbar[data-stage='5'] .tabgroup__shares {
