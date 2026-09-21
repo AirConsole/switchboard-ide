@@ -144,9 +144,20 @@ export const editorTheme = EditorView.theme(
     },
     '.cm-lineNumbers .cm-gutterElement': { padding: '0 4px 0 8px', minWidth: '3ch' },
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--graphite)' },
-    // One step off the ground and no more: it says where the cursor is without
-    // becoming a band that sweeps across the pane as you move.
-    '.cm-activeLine': { backgroundColor: '#141821' },
+    /*
+     * One step off the ground and no more: it says where the cursor is without
+     * becoming a band that sweeps across the pane as you move.
+     *
+     * Translucent rather than the #141821 it computes to, because it is drawn
+     * *over* the selection: `highlightActiveLine` marks the line at every
+     * range's head whether the range is empty or not, and the line's own
+     * background is content, where the selection is a layer at `z-index: -2`
+     * beneath it. Opaque, it hid the selection entirely -- measured, the
+     * pixels inside a 20-character selection and beside it were both #141821,
+     * which is the whole of "I cannot see the highlight". This lifts the
+     * ground by the same amount and lets the blue through.
+     */
+    '.cm-activeLine': { backgroundColor: 'rgba(140, 170, 230, 0.05)' },
     /*
      * The terminal's own cursor and selection colours, so a selection here and
      * a selection in the terminal beside it are visibly the same act. Not
@@ -156,7 +167,22 @@ export const editorTheme = EditorView.theme(
       borderLeftColor: '#8ab4f8',
       borderLeftWidth: '2px',
     },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
+    /*
+     * The selector is the base theme's own, character for character, because
+     * this is a specificity fight and it was being lost.
+     *
+     * `@codemirror/view`'s dark base theme paints the *focused* editor's
+     * selection `#233` through
+     * `&dark.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`
+     * -- five classes and two child combinators -- where this said
+     * `&.cm-focused .cm-selectionBackground`, which is three. So selecting
+     * text, which is a thing you do while focused, drew #223333 on the
+     * editor's #0e1116 ground: 1.4:1, and the report was "I cannot see the
+     * highlight, it seems to be the same colour". Unfocused already worked,
+     * which is why it looked like a colour problem rather than a losing rule.
+     */
+    '.cm-selectionBackground, ::selection': { backgroundColor: '#2d4f76' },
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
       backgroundColor: '#2d4f76',
     },
     '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
