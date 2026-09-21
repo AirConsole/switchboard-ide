@@ -15,6 +15,7 @@ import {
   removalQuestions,
   removalWarnings,
   stateLabel,
+  statusShares,
   summarySignal,
   terminalSessions,
   worktreeStatus,
@@ -386,6 +387,34 @@ describe('removalLanding', () => {
  * makes that the common shape rather than a rare one, since every collapsed
  * head then has awake worktrees in its set.
  */
+/*
+ * The collapsed project head draws its worktrees as shares of one bar, where
+ * the leading bar could only say the most urgent of them -- "something needs
+ * you", without whether it is one of two or one of nine.
+ */
+describe('statusShares', () => {
+  it('counts each state, in urgency order whatever order they arrive in', () => {
+    expect(statusShares(['idle', 'needs-you', 'working', 'needs-you'])).toEqual([
+      { status: 'needs-you', count: 2 },
+      { status: 'working', count: 1 },
+      { status: 'idle', count: 1 },
+    ])
+  })
+
+  it('leaves out a state nobody is in, rather than drawing it empty', () => {
+    expect(statusShares(['working', 'working'])).toEqual([{ status: 'working', count: 2 }])
+    expect(statusShares([])).toEqual([])
+  })
+
+  it('keeps the quiet states, since a share is a proportion of everything', () => {
+    // Three working and one blocked is a quarter amber, not all of it.
+    expect(statusShares(['working', 'working', 'working', 'needs-you'])).toEqual([
+      { status: 'needs-you', count: 1 },
+      { status: 'working', count: 3 },
+    ])
+  })
+})
+
 describe('summarySignal', () => {
   it('says amber when anything here needs you', () => {
     expect(summarySignal(['needs-you'])).toBe('needs-you')

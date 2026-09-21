@@ -587,6 +587,9 @@ button {
 .tabgroup__pill {
   display: flex;
   align-items: center;
+  /* The shares strip hangs off the bottom edge; see `.tabgroup__shares`. */
+  position: relative;
+  overflow: hidden;
   gap: 4px;
   flex: none;
   align-self: stretch;
@@ -1496,6 +1499,66 @@ button {
 }
 
 /*
+ * The collapsed head's own reading: its worktrees as shares of one bar.
+ *
+ * Hidden until the tabs are gone, because until then every worktree says its
+ * own state on its own tab and this would be the same sentence twice, in the
+ * one part of the interface that is meant to be scanned.
+ *
+ * Along the bottom edge and out of flow: a head must be no wider collapsed
+ * than the sweep measured it, and the bands read as a quantity under the name
+ * rather than as another thing in the row of names. 3px is the usage tracks'
+ * height, which is the other place here that draws a proportion.
+ */
+.tabgroup__shares {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  /*
+   * A seam between neighbours, so two bands never read as one wider one -- as
+   * a gap rather than a border, since the strip has no ground of its own and
+   * the gap shows the pill's: right on the lit head and the unlit ones alike,
+   * where a fixed border colour would be wrong on one of them.
+   */
+  gap: 1px;
+}
+
+.tabgroup__share {
+  flex-basis: 0;
+}
+
+/*
+ * The two states a row is scanned for keep their colours here; the other two
+ * are the greys they are everywhere else -- present, because a share is a
+ * proportion and leaving them out would make three agents working look like
+ * nothing at all, and quiet, because they are not what you are looking for.
+ */
+.tabgroup__share--needs-you {
+  background: var(--signal);
+}
+
+.tabgroup__share--idle {
+  background: var(--done);
+}
+
+.tabgroup__share--working {
+  background: var(--graphite-dim);
+}
+
+/*
+ * Not running is the quietest band and still has to be a band: at
+ * --rule-bright it was 1.17:1 on the pill and its share could not be read at
+ * all, which makes the whole bar a lie about proportions. Half way to the
+ * working grey, which keeps the two apart and both below the name.
+ */
+.tabgroup__share--off {
+  background: color-mix(in srgb, var(--graphite-dim) 50%, var(--level-object));
+}
+
+/*
  * Rungs 3 and 4: a project becomes its head.
  *
  * Three first, and the one you are in last, because the tabs worth keeping
@@ -1525,20 +1588,27 @@ button {
 }
 
 /*
- * Collapsed, the head speaks for every worktree it has rather than only its
- * sleepers -- the awake ones have no tab either now. Both aggregates are on the
- * pill at every rung and this is what chooses between them.
+ * Collapsed, the head stops summarising into one colour and draws the shares.
+ *
+ * The leading bar is the right shape for a tab -- one window, one state -- and
+ * the wrong one for a head standing for a project: it said "something in here
+ * needs you" and could not say how much of it. The strip under the name says
+ * both, so the bar goes rather than the two sitting on the same pill.
+ *
+ * `--tab-state` is still set by the sleepers' aggregate at the expanded rungs
+ * above, where the awake ones have tabs of their own and the head speaks only
+ * for what has none.
  */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--needs-shut,
-.topbar[data-stage='4'] .tab--needs-shut,
-.topbar[data-stage='5'] .tab--needs-shut {
-  --tab-state: var(--signal);
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__pill,
+.topbar[data-stage='4'] .tabgroup__pill,
+.topbar[data-stage='5'] .tabgroup__pill {
+  background-image: none;
 }
 
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--idle-shut,
-.topbar[data-stage='4'] .tab--idle-shut,
-.topbar[data-stage='5'] .tab--idle-shut {
-  --tab-state: var(--done);
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
+.topbar[data-stage='4'] .tabgroup__shares,
+.topbar[data-stage='5'] .tabgroup__shares {
+  display: flex;
 }
 
 /*

@@ -9,6 +9,7 @@ import { PanelIcon } from './PanelIcon.js'
 import { useStore } from '../store.js'
 import {
   queuedTodoCount,
+  statusShares,
   worktreeStatus,
   type WorktreeStatus,
 } from '../selectors.js'
@@ -162,21 +163,24 @@ const Group = ({
 >): React.ReactElement => {
   const { project, awake, asleep } = group
   /*
-   * What the head's state bar says, and only two states can say anything.
+   * What the head's leading bar says, and only two states can say anything.
    *
-   * It stands for the worktrees with no tab of their own. Expanded that is the
-   * sleeping ones -- sleeping does not mean stopped, Claude can be left
-   * running, so one of them being blocked on you still has to reach the top
-   * bar. Collapsed it is all of them, which is the same sentence with a wider
-   * subject: the awake ones have no tab either once the bar has taken them.
+   * It stands for the sleeping worktrees, which have no tab of their own --
+   * sleeping does not mean stopped, Claude can be left running, so one of them
+   * being blocked on you still has to reach the top bar.
    *
-   * Both are computed every render and both are on the pill, because which one
-   * is showing is a CSS question -- the rung is written on the header, and
-   * nothing React renders may depend on it.
+   * Collapsed, where nothing has a tab, the head says more than one colour can
+   * carry and the bar stands down for `shares` below.
    */
   const statusOf = (w: Worktree): WorktreeStatus => worktreeStatus(sessions, w.id)
-  const shutSignal = summaryClass([...asleep, ...awake].map(statusOf))
   const openSignal = summaryClass(asleep.map(statusOf))
+  /*
+   * Every worktree the project has, as shares of the head's own bar -- see
+   * `statusShares`. Drawn only once the tabs are gone, and rendered at every
+   * rung for the reason the aggregates above are: the rung is written on the
+   * DOM after React has run, so nothing rendered may depend on it.
+   */
+  const shares = statusShares([...awake, ...asleep].map(statusOf))
 
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
     const queued = queuedTodoCount(todos, worktree.id)
@@ -224,13 +228,13 @@ const Group = ({
         * tab used to do, and the one thing that could not be lost when it went.
         * Grey and dashed are left off deliberately: this is a summary, and the
         * two colours are the only states a row of agents is scanned for.
+        * Collapsed, all of that is replaced by the shares strip below.
         */}
       <button
         className={[
           'tabgroup__pill',
           activeId === projectKey(project.id) ? 'tabgroup__pill--on' : '',
           openSignal,
-          shutSignal === '' ? '' : `${shutSignal}-shut`,
         ]
           .filter(Boolean)
           .join(' ')}
@@ -274,6 +278,21 @@ const Group = ({
           * that fits.
           */}
         {awake.length > 0 && <span className="tabgroup__count">{awake.length}</span>}
+        {/*
+          * The project's worktrees as a bar under its name, one band per
+          * state. Out of flow, so a head is exactly as wide collapsed as the
+          * sweep measured it, and `aria-hidden` because the title above says
+          * the same thing in words.
+          */}
+        <span className="tabgroup__shares" aria-hidden="true">
+          {shares.map((share) => (
+            <i
+              key={share.status}
+              className={`tabgroup__share tabgroup__share--${share.status}`}
+              style={{ flexGrow: share.count }}
+            />
+          ))}
+        </span>
       </button>
 
       {/*

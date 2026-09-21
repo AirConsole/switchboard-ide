@@ -52,6 +52,30 @@ export const worktreeStatus = (sessions: Session[], worktreeId: string): Worktre
  */
 const URGENCY: WorktreeStatus[] = ['needs-you', 'working', 'idle', 'off']
 
+/**
+ * A group's statuses as shares of one bar, in a fixed order.
+ *
+ * What the collapsed head draws under the project's name: one band per state,
+ * as wide as that state's share of the project's worktrees, so a project with
+ * four agents and one blocked on you shows a quarter of its bar in amber. The
+ * bar down the pill's leading edge said only the most urgent of them, which is
+ * the right answer for a *tab* standing for one window and the wrong one for a
+ * head standing for a whole project -- "something needs you" without saying
+ * whether it is one of two or one of nine.
+ *
+ * Urgency order, not the row's: the bands are read as quantities, and a band
+ * that moves about as agents change state cannot be compared with the one
+ * beside it. States nobody has are left out rather than drawn empty, so the
+ * bar has no zero-width segments to hairline against each other.
+ */
+export const statusShares = (
+  statuses: WorktreeStatus[],
+): { status: WorktreeStatus; count: number }[] =>
+  URGENCY.map((status) => ({
+    status,
+    count: statuses.filter((each) => each === status).length,
+  })).filter((share) => share.count > 0)
+
 export const mostUrgentStatus = (statuses: WorktreeStatus[]): WorktreeStatus =>
   URGENCY.find((status) => statuses.includes(status)) ?? 'off'
 
