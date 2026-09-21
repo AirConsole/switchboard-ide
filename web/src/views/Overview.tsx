@@ -44,6 +44,7 @@ import {
   PANE_CHROME,
   EDITOR_FONT_SIZE,
   FILES_EDITOR_CHROME,
+  thinScrollbarWidth,
   FILES_TREE_MIN,
   TILE_CHROME,
   TOGGLE_WORDS_MIN,
@@ -1698,10 +1699,15 @@ export const Overview = ({
    * and wrapped an 80-character line at 79.3 columns. The tree is what gives
    * way, so it gives way a few pixels earlier rather than the code losing a
    * column -- and a five-digit file is past what this pane is for.
+   *
+   * And the scrollbar, for the same reason and with the same answer: it is
+   * nothing on a platform that draws them over the content and 10 to 17px on
+   * one that does not, which is a column and a half of code.
    */
   const treeNeeds =
     FILES_TREE_MIN +
     FILES_EDITOR_CHROME +
+    thinScrollbarWidth() +
     (MIN_PANE_COLUMNS + 1) * monoAdvance(EDITOR_FONT_SIZE, TERMINAL_FONT_FAMILY)
 
   /*

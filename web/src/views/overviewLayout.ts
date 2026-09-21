@@ -174,6 +174,29 @@ export const monoAdvance = (fontSize: number, fontFamily: string): number => {
   return width
 }
 
+/**
+ * What a thin scrollbar costs, in px: 0 where they are drawn over the content
+ * and 10 to 17 where they take room out of it.
+ *
+ * The platform's answer, measured once, because it is the difference between
+ * the editor fitting 80 columns and wrapping at 79 -- and it cannot be read
+ * off the editor here, since the row decides whether the tree fits beside a
+ * file before either exists. The editor measures its own on top of this; this
+ * is the row's allowance for it.
+ */
+let cachedScrollbar = -1
+
+export const thinScrollbarWidth = (): number => {
+  if (cachedScrollbar >= 0) return cachedScrollbar
+  if (typeof document === 'undefined') return 0
+  const probe = document.createElement('div')
+  probe.style.cssText =
+    'position:absolute;visibility:hidden;width:100px;height:100px;overflow-y:scroll;scrollbar-width:thin'
+  document.body.appendChild(probe)
+  cachedScrollbar = probe.offsetWidth - probe.clientWidth
+  probe.remove()
+  return cachedScrollbar
+}
 
 /**
  * Space between tiles and around the row, in px.
