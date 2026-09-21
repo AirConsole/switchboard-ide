@@ -56,16 +56,19 @@ export interface CodeEditorProps {
    */
   goto?: { path: string; line: number; nonce: number } | null
   /**
-   * The line-number gutter's width, whenever it changes.
+   * What the editor spends beside the code, whenever it changes: the
+   * line-number gutter and the scrollbar.
    *
-   * The pane budgets 80 columns of code *plus* the editor's own chrome, and
-   * the gutter is most of that chrome -- it is as wide as the line count, so
-   * the number cannot be a constant: a thousand-line file's four digits took
-   * the eightieth column, measured at 79.19. Only this side of the layout can
-   * see the real width, so it hands it over and the pane takes the difference
+   * The pane budgets 80 columns *plus* this, and neither part can be a
+   * constant. The gutter is as wide as the line count, so a thousand-line
+   * file's four digits took the eightieth column -- measured at 79.19. The
+   * scrollbar is the platform's: `scrollbar-width: thin` is an overlay of no
+   * width in some browsers and a real 11 to 15px in others, so a file that fit
+   * here wrapped on a machine whose scrollbars take room. Only this side of
+   * the layout can see either, so it hands the sum over and the pane takes it
    * out of the tree beside it.
    */
-  onGutterWidth?: (px: number) => void
+  onChromeWidth?: (px: number) => void
 }
 
 /**
@@ -167,7 +170,7 @@ export const CodeEditor = ({
   onSave,
   focus = null,
   goto = null,
-  onGutterWidth,
+  onChromeWidth,
 }: CodeEditorProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -360,31 +363,39 @@ export const CodeEditor = ({
   }, [goto, file])
 
   /*
-   * The gutter, measured rather than assumed -- see `onGutterWidth`.
+   * The gutter and the scrollbar, measured rather than assumed -- see
+   * `onChromeWidth`.
    *
-   * An observer, because it changes without React: a file's line count is the
-   * document's, so the gutter widens as a file grows past a thousand lines and
-   * narrows when another file is dispatched into the same view. `getBoundingClientRect`
-   * for the fractional width, since flooring here would cost the column this
-   * exists to protect.
+   * An observer, because both change without React: a file's line count is the
+   * document's, so the gutter widens past a thousand lines and narrows when
+   * another file is dispatched into the same view, and the scrollbar arrives
+   * the moment a document is taller than the pane. The scroller's content box
+   * is what a scrollbar takes room out of, which is why observing it catches
+   * one appearing; `getBoundingClientRect` for the gutter's fractional width,
+   * since flooring here would cost the column this exists to protect.
    */
-  const gutterRef = useRef(onGutterWidth)
-  gutterRef.current = onGutterWidth
+  const chromeRef = useRef(onChromeWidth)
+  chromeRef.current = onChromeWidth
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
     const gutters = host.querySelector('.cm-gutters')
-    if (!gutters) return
-    const report = (): void => gutterRef.current?.(gutters.getBoundingClientRect().width)
+    const scroller = host.querySelector<HTMLElement>('.cm-scroller')
+    if (!gutters || !scroller) return
+    const report = (): void =>
+      chromeRef.current?.(
+        gutters.getBoundingClientRect().width + (scroller.offsetWidth - scroller.clientWidth),
+      )
     report()
     // jsdom has no ResizeObserver, and a test that mounts an editor is not
-    // testing the gutter: the one measurement above still happens there.
+    // testing the layout: the one measurement above still happens there.
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(report)
     observer.observe(gutters)
+    observer.observe(scroller)
     return () => observer.disconnect()
     // The host holds one view for its lifetime, and the view keeps one gutters
-    // element across documents, so this subscribes once.
+    // and one scroller across documents, so this subscribes once.
   }, [file.path])
 
   /*
