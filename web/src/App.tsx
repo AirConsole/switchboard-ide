@@ -21,7 +21,6 @@ import {
   removalAsks,
   removalQuestions,
   terminalSessions,
-  titleFor,
   worktreeStatus,
 } from './selectors.js'
 import type { MoveTarget } from './views/TodoPane.js'
@@ -202,15 +201,6 @@ export const App = (): React.ReactElement => {
     if (where === undefined || where === null || where === MACHINE_KEY) return
     if (!worktrees.some((worktree) => worktree.id === where)) setFailure(null)
   }, [failure, worktrees, setFailure])
-
-  /**
-   * Amber or green in the title when any worktree anywhere is -- asleep and on
-   * a linked machine included, since an agent blocked on you is blocked on you
-   * wherever it is. That is `titleFor`; this only hands it every worktree.
-   */
-  useEffect(() => {
-    document.title = titleFor(worktrees.map((worktree) => worktreeStatus(sessions, worktree.id)))
-  }, [worktrees, sessions])
 
   /*
    * A file dropped anywhere but the files tree does nothing.
