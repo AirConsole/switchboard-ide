@@ -140,7 +140,7 @@ const run = async (engine: SessionEngine): Promise<ReturnType<typeof startDispat
     onChange: () => {},
     // No worktree path, so the transcript says `unknown` and the screen tests
     // in readiness.ts are what have to carry the decision.
-    pathFor: async () => undefined,
+    worktreeFor: async () => undefined,
   })
   stop = dispatcher.stop
   // Twice, so a worktree that sent on the first tick is reconsidered on the

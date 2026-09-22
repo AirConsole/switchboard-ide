@@ -10,6 +10,7 @@ import type {
 } from '@switchboard/shared'
 import { defaultUiState } from '@switchboard/shared'
 import { defaultWorktreeRoot } from './git/worktree.js'
+import { isProfileName } from './session/claude.js'
 import { stateFile } from './config.js'
 
 /**
@@ -145,8 +146,12 @@ const reviveProject = (value: unknown): Project | null => {
   const row = value as Partial<Project>
   if (typeof row.id !== 'string' || row.id === '') return null
   if (typeof row.root !== 'string' || row.root === '') return null
+  // Taken out and put back only if it is a name: it becomes a spawn's
+  // CLAUDE_CONFIG_DIR, and the spread would carry whatever the file said.
+  const { claudeProfile, ...rest } = row as Project
   return {
-    ...(row as Project),
+    ...rest,
+    ...(isProfileName(claudeProfile) ? { claudeProfile } : {}),
     /*
      * Always local, and this is the one place that says so.
      *
@@ -200,6 +205,7 @@ const reviveRecent = (value: unknown): RecentProject | null => {
     root: row.root,
     name: typeof row.name === 'string' && row.name !== '' ? row.name : basename(row.root),
     closedAt: typeof row.closedAt === 'number' && Number.isFinite(row.closedAt) ? row.closedAt : 0,
+    ...(isProfileName(row.claudeProfile) ? { claudeProfile: row.claudeProfile } : {}),
   }
 }
 
@@ -353,7 +359,12 @@ export class StateStore {
    */
   rememberRecent(project: Project): void {
     this.state.recents = [
-      { root: project.root, name: project.name, closedAt: Date.now() },
+      {
+        root: project.root,
+        name: project.name,
+        closedAt: Date.now(),
+        ...(project.claudeProfile === undefined ? {} : { claudeProfile: project.claudeProfile }),
+      },
       ...this.state.recents.filter((r) => r.root !== project.root),
     ].slice(0, RECENT_LIMIT)
     this.scheduleSave()

@@ -18,6 +18,7 @@ import type {
   RemoteServer,
   RemoteCache,
 } from '@switchboard/shared'
+import { DEFAULT_CLAUDE_PROFILE } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { config } from './config.js'
 import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl, plainHttpAllowed } from './remote/peer.js'
@@ -58,7 +59,7 @@ import {
   resolveDefaultBase,
   worktreePathFor,
 } from './git/worktree.js'
-import { promptSummary } from './session/claude.js'
+import { claudeProfiles, promptSummary } from './session/claude.js'
 
 /** Opaque, unlike a worktree id: nothing derives a todo from its path. */
 const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
@@ -234,7 +235,7 @@ export class Workspace {
             unmerged: await unmergedCount(worktree.path, defaultRef),
             remoteBranch: remote?.ref,
             remoteBranchMerged: remote?.merged,
-            ...(await promptSummary(worktree.path)),
+            ...(await promptSummary(worktree.path, project.claudeProfile)),
           })
         }
       } catch {
@@ -479,6 +480,8 @@ export class Workspace {
    * new worktree will branch from instead of describing it vaguely.
    */
   private async describeProjects(): Promise<Project[]> {
+    // The machine's, so once for all of them.
+    const profiles = await claudeProfiles()
     return Promise.all(
       // Local only: a remote project is represented in the snapshot by the
       // peer's own record, scoped, not by the pointer we keep to find it. Two
@@ -490,6 +493,7 @@ export class Workspace {
         .map(async (project) => ({
           ...project,
           defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
+          claudeProfiles: profiles,
         })),
     )
   }
@@ -534,6 +538,11 @@ export class Workspace {
     // Normalise to the repo root so opening a subdirectory (or a worktree of the
     // repo) registers the same project rather than a near-duplicate.
     const root = await repoRoot(target)
+    // Opening one already open, or one closed with its Claudes left running,
+    // must not change the account they run as.
+    const claudeProfile =
+      this.store.project(projectIdFor(root))?.claudeProfile ??
+      this.store.recents.find((recent) => recent.root === root)?.claudeProfile
     const project: Project = {
       id: projectIdFor(root),
       name: basename(root),
@@ -542,6 +551,7 @@ export class Workspace {
       host: { kind: 'local' },
       root,
       worktreeRoot: defaultWorktreeRoot(root),
+      ...(claudeProfile === undefined ? {} : { claudeProfile }),
       addedAt: Date.now(),
     }
     this.store.addProject(project)
@@ -676,6 +686,31 @@ export class Workspace {
     this.refused.delete(normalized)
     this.store.clearRemoteCache(normalized)
     this.invalidate()
+  }
+
+  /**
+   * Choose the Claude account a project runs as. Says whether it changed, so
+   * the caller restarts running agents only when there is something to switch.
+   *
+   * Only a profile this machine has: the name becomes a spawn's config
+   * directory, and one that is not there is a Claude asking to log in.
+   */
+  async setClaudeProfile(projectId: string, profile: string): Promise<{ project: Project; changed: boolean }> {
+    if (!this.store.project(projectId)) throw new HttpError(404, 'no such project')
+    if (!(await claudeProfiles()).includes(profile)) {
+      throw new HttpError(400, `there is no Claude account called ${profile} on this machine`, 'unknown-profile')
+    }
+    // Read again after the await: a close landing during it would otherwise be undone by addProject.
+    const project = this.store.project(projectId)
+    if (!project) throw new HttpError(404, 'no such project')
+    const current = project.claudeProfile ?? DEFAULT_CLAUDE_PROFILE
+    if (current === profile) return { project, changed: false }
+    // Absent is the default, so a project switched back reads as one never switched.
+    const { claudeProfile: _previous, ...rest } = project
+    const next: Project = profile === DEFAULT_CLAUDE_PROFILE ? rest : { ...rest, claudeProfile: profile }
+    this.store.addProject(next)
+    this.invalidate()
+    return { project: next, changed: true }
   }
 
   async closeProject(id: string, opts: { sleep?: boolean } = {}): Promise<void> {

@@ -54,10 +54,12 @@ export const startDispatcher = (opts: {
   store: StateStore
   engine: SessionEngine
   onChange: () => void
-  /** Absolute path of a worktree, for reading its transcript. */
-  pathFor: (worktreeId: string) => Promise<string | undefined>
+  /** A worktree's path and its project's Claude profile, for reading its transcript. */
+  worktreeFor: (
+    worktreeId: string,
+  ) => Promise<{ path: string; claudeProfile?: string } | undefined>
 }): Dispatcher => {
-  const { store, engine, onChange, pathFor } = opts
+  const { store, engine, onChange, worktreeFor } = opts
 
   /*
    * A todo that was in flight when the process died.
@@ -216,8 +218,8 @@ export const startDispatcher = (opts: {
         reasons.set(worktreeId, 'no-session')
         continue
       }
-      const path = await pathFor(worktreeId)
-      const turn = path === undefined ? 'unknown' : await turnState(path)
+      const where = await worktreeFor(worktreeId)
+      const turn = where === undefined ? 'unknown' : await turnState(where.path, where.claudeProfile)
       const verdict = readiness({
         ...state,
         turn,
