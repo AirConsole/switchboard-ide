@@ -311,6 +311,28 @@ describe('saving', () => {
     expect(reloaded.awake).toEqual(['wt-1'])
   })
 
+  it("keeps a project's Claude account across a save and a load", async () => {
+    // It decides which account a restarted server's agents bill to.
+    const store = await newStore()
+    store.addProject(project({ id: 'p-1', root: '/repo', claudeProfile: 'claude-work' }))
+    await store.flush()
+    expect((await newStore()).project('p-1')?.claudeProfile).toBe('claude-work')
+  })
+
+  it('drops a Claude account that is not a profile name', async () => {
+    // It becomes a spawn's CLAUDE_CONFIG_DIR, so a hand-edited path is not one.
+    const store = await loadedFrom(
+      JSON.stringify({
+        projects: [
+          project({ id: 'p-1', root: '/a', claudeProfile: 'claude-x/../../etc' }),
+          project({ id: 'p-2', root: '/b', claudeProfile: 'work' }),
+        ],
+      }),
+    )
+    expect(store.project('p-1')?.claudeProfile).toBeUndefined()
+    expect(store.project('p-2')?.claudeProfile).toBeUndefined()
+  })
+
   it('leaves no temp file behind, because the write is a rename', async () => {
     const store = await newStore()
     store.addTodo(todo({ id: 't-1' }))

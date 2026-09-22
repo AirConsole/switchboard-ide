@@ -158,6 +158,15 @@ export const api = {
   /** Close a project. `sleep` stops every session it is running on the way out. */
   closeProject: (id: string, opts: { sleep: boolean }) =>
     request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
+  /** Run a project's Claude as another account; its running agents restart under it. */
+  setClaudeProfile: (projectId: string, profile: string) =>
+    request<Project & { notRestarted: { sessionId: string; worktreeId: string }[] }>(
+      `/api/projects/${projectId}/claude-profile`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ profile }),
+      },
+    ),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
   /** Whether that branch is already there, so the form can say what it will do. */

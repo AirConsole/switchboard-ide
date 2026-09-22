@@ -211,6 +211,57 @@ describe('openProject', () => {
   })
 })
 
+describe('setClaudeProfile', () => {
+  /* Profiles are read from `homedir()`, which is `$HOME`; see claude.test.ts. */
+  let realHome: string | undefined
+  let home: string
+  beforeEach(async () => {
+    realHome = process.env.HOME
+    home = await mkdtemp(join(tmpdir(), 'swb-home-'))
+    await mkdir(join(home, '.claude-work'), { recursive: true })
+    await writeFile(join(home, '.claude-work', '.claude.json'), '{}')
+    process.env.HOME = home
+  })
+  afterEach(async () => {
+    if (realHome === undefined) delete process.env.HOME
+    else process.env.HOME = realHome
+    await rm(home, { recursive: true, force: true })
+  })
+
+  it('refuses an account this machine does not have', async () => {
+    // The name becomes CLAUDE_CONFIG_DIR, and a missing one is a Claude asking to log in.
+    const project = await workspace.openProject(repo.path)
+    expect(await statusOf(workspace.setClaudeProfile(project.id, 'claude-nope'))).toBe(400)
+    expect(store.project(project.id)?.claudeProfile).toBeUndefined()
+  })
+
+  it('records the account, and opening the project again keeps it', async () => {
+    const project = await workspace.openProject(repo.path)
+    expect((await workspace.setClaudeProfile(project.id, 'claude-work')).changed).toBe(true)
+    expect((await workspace.setClaudeProfile(project.id, 'claude-work')).changed).toBe(false)
+    // Reopening replaces the record; it must not quietly switch the account back.
+    await workspace.openProject(repo.path)
+    expect(store.project(project.id)?.claudeProfile).toBe('claude-work')
+    const [described] = (await workspace.snapshot()).projects
+    expect(described?.claudeProfiles).toEqual(['claude', 'claude-work'])
+    /*
+     * Closed without sleeping, its Claudes run on as claude-work; reopened from
+     * the recents on the default, new ones would bill the other account and
+     * the transcripts would be read from the wrong place.
+     */
+    await workspace.closeProject(project.id)
+    await store.flush()
+    const reloaded = new StateStore()
+    await reloaded.load()
+    expect(reloaded.recents[0]?.claudeProfile).toBe('claude-work')
+    await workspace.openProject(repo.path)
+    expect(store.project(project.id)?.claudeProfile).toBe('claude-work')
+    // Back to the default is stored as no choice at all.
+    await workspace.setClaudeProfile(project.id, 'claude')
+    expect(store.project(project.id)).not.toHaveProperty('claudeProfile')
+  })
+})
+
 describe('closeProject', () => {
   it('leaves everything running unless sleeping was asked for', async () => {
     /*

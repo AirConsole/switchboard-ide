@@ -2522,6 +2522,35 @@ button {
   color: var(--graphite);
 }
 
+/*
+ * The Claude accounts, one button each. The chosen one is the raised `.btn`
+ * and the rest are quiet, so the choice reads in grey alone. Names are
+ * directory names, so they keep their case and the face identifiers use.
+ */
+.projpane__accounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.projpane__account {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Dimmed like `.btn:disabled` while a switch is in flight, but still focusable. */
+.projpane__account[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.projpane__hint {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--graphite-dim);
+}
+
 /* The last row of the block above it, not a thing below it. */
 .projpane__foot .projpane__close {
   margin-top: 2px;

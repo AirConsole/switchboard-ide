@@ -1,10 +1,80 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { isTask } from '@switchboard/shared'
+import { DEFAULT_CLAUDE_PROFILE, isTask } from '@switchboard/shared'
 
 /**
- * The directory Claude Code keeps a working directory's transcripts in.
+ * A profile name as `claudeProfiles` can produce one: the default, or a
+ * `.claude-<name>` directory without its dot. No `/`, so a hand-edited
+ * state file cannot point a spawn's config directory anywhere but `~`.
+ */
+export const isProfileName = (name: unknown): name is string =>
+  typeof name === 'string' && (name === DEFAULT_CLAUDE_PROFILE || /^claude-[^/]+$/.test(name))
+
+/**
+ * Where a profile keeps its config and transcripts. `undefined` is the default,
+ * which is what a project that never chose one runs as.
+ */
+export const profileDir = (profile: string | undefined): string =>
+  join(homedir(), `.${profile ?? DEFAULT_CLAUDE_PROFILE}`)
+
+/**
+ * The Claude accounts on this machine: the default, then every `~/.claude-*`
+ * that holds a `.claude.json`.
+ *
+ * That file is the test because it is what Claude writes inside a
+ * `CLAUDE_CONFIG_DIR` once logged in; `~/.claude-mem` and
+ * `~/.claude-code-router` are other tools' directories and have none.
+ */
+export const claudeProfiles = async (): Promise<string[]> => {
+  let entries: string[]
+  try {
+    entries = await readdir(homedir())
+  } catch {
+    return [DEFAULT_CLAUDE_PROFILE]
+  }
+  const named = await Promise.all(
+    entries
+      .filter((entry) => entry.startsWith('.claude-'))
+      .map(async (entry) => {
+        try {
+          return (await stat(join(homedir(), entry, '.claude.json'))).isFile() ? entry.slice(1) : null
+        } catch {
+          return null
+        }
+      }),
+  )
+  return [
+    DEFAULT_CLAUDE_PROFILE,
+    ...named.filter((name): name is string => name !== null && isProfileName(name)).sort(),
+  ]
+}
+
+/**
+ * The command line that starts Claude as a profile, through `env` so the
+ * environment is said per spawn.
+ *
+ * The default has to *unset* `CLAUDE_CONFIG_DIR` rather than point it at
+ * `~/.claude`: set, Claude reads `~/.claude/.claude.json` instead of
+ * `~/.claude.json` and the login is gone. And unset it must be said, because
+ * the tmux server's global environment is whatever shell started it, and
+ * tmux's `-e` can set a variable but not remove one.
+ */
+export const claudeLaunch = (
+  command: string,
+  args: string[],
+  profile: string | undefined,
+): { command: string; args: string[] } => ({
+  command: 'env',
+  args:
+    profile === undefined || profile === DEFAULT_CLAUDE_PROFILE
+      ? ['-u', 'CLAUDE_CONFIG_DIR', command, ...args]
+      : [`CLAUDE_CONFIG_DIR=${profileDir(profile)}`, command, ...args],
+})
+
+/**
+ * The directory Claude Code keeps a working directory's transcripts in, under
+ * the profile it runs as.
  *
  * Claude encodes the absolute path by replacing every `/` and every `.` with
  * `-`, so `/home/a/src/x/.claude/worktrees/y` becomes
@@ -12,8 +82,8 @@ import { isTask } from '@switchboard/shared'
  * already contains `-` is indistinguishable from one that had a `/` there --
  * but it is deterministic, which is all an existence check needs.
  */
-export const transcriptDir = (cwd: string): string =>
-  join(homedir(), '.claude', 'projects', resolve(cwd).replace(/[/.]/g, '-'))
+export const transcriptDir = (cwd: string, profile?: string): string =>
+  join(profileDir(profile), 'projects', resolve(cwd).replace(/[/.]/g, '-'))
 
 /**
  * Whether Claude has ever held a conversation in this directory.
@@ -23,9 +93,9 @@ export const transcriptDir = (cwd: string): string =>
  * immediately in a worktree it has never run in, and the tile would come back
  * from sleep already dead.
  */
-export const hasTranscript = async (cwd: string): Promise<boolean> => {
+export const hasTranscript = async (cwd: string, profile?: string): Promise<boolean> => {
   try {
-    const entries = await readdir(transcriptDir(cwd))
+    const entries = await readdir(transcriptDir(cwd, profile))
     return entries.some((entry) => entry.endsWith('.jsonl'))
   } catch {
     // No directory at all: Claude has never run here.
@@ -43,8 +113,12 @@ export const hasTranscript = async (cwd: string): Promise<boolean> => {
  * session and tmux is where session metadata lives -- so the transcript on
  * disk is what carries the fact that there is anything to resume.
  */
-export const claudeArgs = async (cwd: string, resumeIfPossible: boolean): Promise<string[]> =>
-  resumeIfPossible && (await hasTranscript(cwd)) ? ['--continue'] : []
+export const claudeArgs = async (
+  cwd: string,
+  resumeIfPossible: boolean,
+  profile?: string,
+): Promise<string[]> =>
+  resumeIfPossible && (await hasTranscript(cwd, profile)) ? ['--continue'] : []
 
 /**
  * How much of a transcript's tail to read looking for the last prompt.
@@ -505,8 +579,11 @@ const summaryOf = (seen: Seen): PromptSummary => ({
  *
  * Nothing here costs a token: it is all already on disk.
  */
-export const promptSummary = async (cwd: string): Promise<PromptSummary | undefined> => {
-  const newest = await newestTranscript(transcriptDir(cwd))
+export const promptSummary = async (
+  cwd: string,
+  profile?: string,
+): Promise<PromptSummary | undefined> => {
+  const newest = await newestTranscript(transcriptDir(cwd, profile))
   if (newest === null) return undefined
   const seen = prompts.get(cwd)
 
@@ -593,8 +670,12 @@ const marks = new Map<
   { path: string; at: number; kind: 'prompt' | 'turn-end' | 'none' }
 >()
 
-export const turnState = async (cwd: string, now = Date.now()): Promise<TurnState> => {
-  const newest = await newestTranscript(transcriptDir(cwd))
+export const turnState = async (
+  cwd: string,
+  profile?: string,
+  now = Date.now(),
+): Promise<TurnState> => {
+  const newest = await newestTranscript(transcriptDir(cwd, profile))
   if (newest === null) return 'unknown'
   const cached = marks.get(cwd)
   let kind: 'prompt' | 'turn-end' | 'none'

@@ -11,7 +11,7 @@ import { encodeOutputFrame } from '@switchboard/shared'
 import { config } from '../config.js'
 import { TerminalMirror } from './mirror.js'
 import { classify, REPAINT_QUIET_MS, WORKING_WINDOW_MS } from './attention.js'
-import { turnState, type TurnState } from './claude.js'
+import { claudeLaunch, turnState, type TurnState } from './claude.js'
 import {
   attachArgs,
   attachCommandFor,
@@ -126,6 +126,11 @@ export interface CreateSessionRequest {
    * than a blank one.
    */
   args?: string[]
+  /**
+   * The Claude profile to launch as, when the caller already read it to decide
+   * `args` -- so `--continue` and the account come from the same read.
+   */
+  claudeProfile?: string
 }
 
 let nextStreamId = 1
@@ -205,6 +210,8 @@ class LiveSession {
     public record: Session,
     private readonly meta: SessionMeta,
     private readonly onStateChange: (s: LiveSession) => void,
+    /** Its project's Claude profile, asked each time: it can change under us. */
+    private readonly profile: () => string | undefined = () => undefined,
   ) {
     this.mirror = new TerminalMirror(record.cols, record.rows)
   }
@@ -224,6 +231,10 @@ class LiveSession {
 
   get name(): string {
     return this.record.tmuxName
+  }
+
+  get startedIn(): string {
+    return this.meta.cwd
   }
 
   /**
@@ -309,6 +320,14 @@ class LiveSession {
     if (this.mirrorGone) {
       this.mirror = new TerminalMirror(this.record.cols, this.record.rows)
       this.mirrorGone = false
+    } else {
+      /*
+       * A live session, which a profile switch restarts: the old Claude's resting
+       * input box, kept, reads as ready to type into before the new one paints.
+       * Cleared rather than replaced, since the modes tmux set on attach (the
+       * alternate screen) are not sent again for a respawned pane.
+       */
+      this.mirror.write('\x1b[H\x1b[2J\x1b[3J')
     }
     this.attention = 'working'
     this.lastOutputAt = 0
@@ -412,7 +431,7 @@ class LiveSession {
      */
     const quiet = Date.now() - this.lastOutputAt >= WORKING_WINDOW_MS
     if (quiet && this.record.kind === 'claude' && this.cwd !== '' && !this.dead) {
-      this.turn = await turnState(this.cwd)
+      this.turn = await turnState(this.cwd, this.profile())
     }
     const next = classify({
       kind: this.record.kind,
@@ -550,6 +569,14 @@ class LiveSession {
  * stored in tmux user options, so the model survives loss of the state file.
  */
 export class SessionEngine {
+  /**
+   * @param claudeProfileOf a project's Claude profile, read at every spawn and
+   *   every transcript read, so a switch reaches whatever starts next.
+   */
+  constructor(
+    private readonly claudeProfileOf: (projectId: string) => string | undefined = () => undefined,
+  ) {}
+
   private readonly sessions = new Map<string, LiveSession>()
   private poller: NodeJS.Timeout | null = null
   private readonly listeners = new Set<(session: Session) => void>()
@@ -644,7 +671,9 @@ export class SessionEngine {
         createdAt: meta.createdAt,
         attachCommand: attachCommandFor(info.name),
       }
-      const live = new LiveSession(record, meta, (s) => this.emit(s))
+      const live = new LiveSession(record, meta, (s) => this.emit(s), () =>
+        this.claudeProfileOf(meta.projectId),
+      )
       this.sessions.set(record.id, live)
       live.spawnPty()
       /*
@@ -732,16 +761,19 @@ export class SessionEngine {
     const rows = req.rows ?? DEFAULT_ROWS
     const title = req.title ?? (req.kind === 'claude' ? 'claude' : 'shell')
 
-    const command = req.kind === 'claude' ? config.claudeCommand : config.shellCommand
     // A login shell so the user's PATH and profile apply, exactly as it would if
     // they had opened a terminal themselves.
     const args = req.args ?? defaultArgs(req.kind)
+    const launch =
+      req.kind === 'claude'
+        ? claudeLaunch(config.claudeCommand, args, req.claudeProfile ?? this.claudeProfileOf(req.projectId))
+        : { command: config.shellCommand, args }
 
     await createSession({
       name: tmuxName,
       cwd: req.cwd,
-      command,
-      args,
+      command: launch.command,
+      args: launch.args,
       cols,
       rows,
       env: { COLORTERM: 'truecolor', ...req.env },
@@ -772,7 +804,9 @@ export class SessionEngine {
       createdAt: meta.createdAt,
       attachCommand: attachCommandFor(tmuxName),
     }
-    const live = new LiveSession(record, meta, (s) => this.emit(s))
+    const live = new LiveSession(record, meta, (s) => this.emit(s), () =>
+      this.claudeProfileOf(meta.projectId),
+    )
     /*
      * A session that has just been started is working: something is painting
      * its first screen. This has to be said on the instance, because
@@ -795,12 +829,20 @@ export class SessionEngine {
    * session's kind alone, so reviving a Claude session always started a fresh
    * conversation -- which is precisely what waking a worktree must not do.
    */
-  async respawn(sessionId: string, args?: string[]): Promise<Session | undefined> {
+  async respawn(
+    sessionId: string,
+    args?: string[],
+    /** See `CreateSessionRequest.claudeProfile`. */
+    claudeProfile?: string,
+  ): Promise<Session | undefined> {
     const live = this.sessions.get(sessionId)
     if (!live) return undefined
-    const command = live.record.kind === 'claude' ? config.claudeCommand : config.shellCommand
     const spawnArgs = args ?? defaultArgs(live.record.kind)
-    await respawnSession(live.name, command, spawnArgs)
+    const launch =
+      live.record.kind === 'claude'
+        ? claudeLaunch(config.claudeCommand, spawnArgs, claudeProfile ?? this.claudeProfileOf(live.projectId))
+        : { command: config.shellCommand, args: spawnArgs }
+    await respawnSession(live.name, launch.command, launch.args)
     live.liveness = 'live'
     live.dead = false
     live.deadStatus = null
@@ -884,6 +926,14 @@ export class SessionEngine {
       (l) => l.record.worktreeId === worktreeId && (!kinds || kinds.includes(l.record.kind)),
     )
     await Promise.all(doomed.map((l) => this.kill(l.record.id)))
+  }
+
+  /**
+   * The directory a session was started in, from its tmux metadata: what its
+   * transcripts are filed under, whether or not the worktree is still listed.
+   */
+  cwdOf(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.startedIn
   }
 
   /** Sessions belonging to a project, whatever worktree they are in. */

@@ -1,7 +1,12 @@
 import { homedir } from 'node:os'
 import type { FastifyInstance } from 'fastify'
 import type { Readable } from 'node:stream'
-import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
+import {
+  DEFAULT_CLAUDE_PROFILE,
+  MACHINE_WORKTREE_ID,
+  PROTOCOL_VERSION,
+  type SessionKind,
+} from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -63,6 +68,7 @@ const removeWorktreeQuery = z.object({
   deleteRemoteBranch: queryFlag,
 })
 const branchQuery = z.object({ name: z.string() })
+const claudeProfileBody = z.object({ profile: z.string().min(1) })
 const closeProjectQuery = z.object({
   /** Stop everything the project is running on the way out. */
   sleep: queryFlag,
@@ -630,6 +636,22 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   })
 
   /*
+   * Wakes and account switches run one at a time per project, so `--continue`
+   * is decided from the account the process is then launched as. Other creates
+   * and the --continue fallback are not in this chain.
+   */
+  const projectTurns = new Map<string, Promise<unknown>>()
+  const inProjectTurn = <T>(projectId: string, work: () => Promise<T>): Promise<T> => {
+    const turn = (projectTurns.get(projectId) ?? Promise.resolve()).then(work)
+    const settled = turn.catch(() => {})
+    projectTurns.set(projectId, settled)
+    void settled.then(() => {
+      if (projectTurns.get(projectId) === settled) projectTurns.delete(projectId)
+    })
+    return turn
+  }
+
+  /*
    * Wake a worktree: make sure Claude is running in it, carrying on where it
    * left off.
    *
@@ -643,29 +665,34 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const { worktree } = await workspace.resolve(id)
     await workspace.setAwake([worktree.id], true)
-    const existing = engine
-      .listForWorktree(worktree.id)
-      .find((session) => session.kind === 'claude')
+    return inProjectTurn(worktree.projectId, async () => {
+      const existing = engine
+        .listForWorktree(worktree.id)
+        .find((session) => session.kind === 'claude')
 
-    if (existing && existing.liveness !== 'dead') {
-      // Awake changed even though nothing was spawned, and every other viewer
-      // has to hear it.
+      if (existing && existing.liveness !== 'dead') {
+        // Awake changed even though nothing was spawned, and every other viewer
+        // has to hear it.
+        broadcastInvalidate()
+        return { ok: true, session: existing }
+      }
+      // Read once, inside the turn, for both the args and the launch.
+      const profile = store.project(worktree.projectId)?.claudeProfile ?? DEFAULT_CLAUDE_PROFILE
+      const args = await claudeArgs(worktree.path, true, profile)
+      const session = existing
+        ? await engine.respawn(existing.id, args, profile)
+        : await engine.create({
+            worktreeId: worktree.id,
+            projectId: worktree.projectId,
+            kind: 'claude',
+            cwd: worktree.path,
+            args,
+            claudeProfile: profile,
+          })
       broadcastInvalidate()
-      return { ok: true, session: existing }
-    }
-    const args = await claudeArgs(worktree.path, true)
-    const session = existing
-      ? await engine.respawn(existing.id, args)
-      : await engine.create({
-          worktreeId: worktree.id,
-          projectId: worktree.projectId,
-          kind: 'claude',
-          cwd: worktree.path,
-          args,
-        })
-    broadcastInvalidate()
-    if (session && args.includes('--continue')) void fallBackIfContinueRefused(session.id)
-    return { ok: true, session }
+      if (session && args.includes('--continue')) void fallBackIfContinueRefused(session.id)
+      return { ok: true, session }
+    })
   })
 
   /**
@@ -705,6 +732,47 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       watchedForRefusal.delete(sessionId)
     }
   }
+
+  /*
+   * Switch the Claude account a project runs as, and restart its running
+   * agents under it -- the point is to carry on when one account runs out.
+   *
+   * Each continues the conversation the *new* account has for its worktree, if
+   * any: `--continue` reads that profile's transcripts. Every live Claude of the
+   * project restarts, a sleeping worktree's kept-running one included; dead
+   * sessions pick the account up when next started.
+   *
+   * By the directory each session was started in, not the worktree listing: a
+   * live Claude whose worktree git no longer lists is still billing an account.
+   * Any that could not be restarted are named in `notRestarted`, under the
+   * field names the proxy scopes, so a linked machine's come back usable.
+   */
+  app.put('/api/projects/:id/claude-profile', async (request) => {
+    const { id } = request.params as { id: string }
+    const { profile } = claudeProfileBody.parse(request.body)
+    return inProjectTurn(id, async () => {
+      const { project, changed } = await workspace.setClaudeProfile(id, profile)
+      const notRestarted: { sessionId: string; worktreeId: string }[] = []
+      if (changed) {
+        for (const session of engine.listForProject(id)) {
+          if (session.kind !== 'claude' || session.liveness === 'dead') continue
+          const cwd = engine.cwdOf(session.id)
+          try {
+            if (cwd === undefined) throw new Error('session has gone')
+            const args = await claudeArgs(cwd, true, profile)
+            if (!(await engine.respawn(session.id, args, profile))) throw new Error('session has gone')
+            if (args.includes('--continue')) void fallBackIfContinueRefused(session.id)
+          } catch (err) {
+            // Killed while we got to it, most likely; the rest still switch.
+            app.log.warn({ err }, `could not restart ${session.id} under ${profile}`)
+            notRestarted.push({ sessionId: session.id, worktreeId: session.worktreeId })
+          }
+        }
+      }
+      broadcastInvalidate()
+      return { ...project, notRestarted }
+    })
+  })
 
   app.post('/api/sessions', async (request) => {
     const body = createSessionBody.parse(request.body)
