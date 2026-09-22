@@ -40,17 +40,22 @@ const ISOLATED = [
   'protocol.file.allow=always',
 ]
 
-export const makeRepo = async (prefix = 'swb-test-'): Promise<TempRepo> => {
-  const path = await mkdtemp(join(tmpdir(), prefix))
-  const git = async (...args: string[]): Promise<string> => {
+/** git in `cwd`, isolated from the user's config the way every repo here is. */
+export const gitIn =
+  (cwd: string) =>
+  async (...args: string[]): Promise<string> => {
     const { stdout } = await exec('git', [...ISOLATED, ...args], {
-      cwd: path,
+      cwd,
       maxBuffer: 8 * 1024 * 1024,
       // A user's own config must not decide what these tests see.
       env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
     })
     return stdout
   }
+
+export const makeRepo = async (prefix = 'swb-test-'): Promise<TempRepo> => {
+  const path = await mkdtemp(join(tmpdir(), prefix))
+  const git = gitIn(path)
   const write = async (rel: string, text: string): Promise<void> => {
     const file = join(path, rel)
     await mkdir(dirname(file), { recursive: true })

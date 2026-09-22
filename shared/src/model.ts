@@ -57,12 +57,21 @@ export interface RemoteServer {
   addedAt: number
 }
 
-/** A registered git repository. Every registered project is open. */
+/**
+ * A registered git repository, or a folder of them. Every registered project is
+ * open.
+ */
 export interface Project {
   id: string
   name: string
   host: ProjectHost
-  /** Absolute path to the main repository root, on its host. */
+  /**
+   * `workspace` is a folder that is not itself a repository and holds several,
+   * for work that spans them; absent is an ordinary repository. Absent rather
+   * than `'repo'` so a machine too old to say reads as what it always was.
+   */
+  kind?: 'workspace'
+  /** Absolute path to the main repository root -- or the workspace folder -- on its host. */
   root: string
   /** Absolute directory that new worktrees are created under. */
   worktreeRoot: string
@@ -72,6 +81,12 @@ export interface Project {
    * Derived from the repository, never persisted.
    */
   defaultBase?: string
+  /**
+   * A workspace's repositories: the directories directly inside `root` that are
+   * git checkouts, by name. What a new worktree of it can be made of. Derived
+   * from the disk, never persisted.
+   */
+  repos?: string[]
   addedAt: number
 }
 
@@ -92,6 +107,8 @@ export interface RecentProject {
   /** Absolute path to the repository root, as it was registered. */
   root: string
   name: string
+  /** A workspace reopens as one; see `Project.kind`. */
+  kind?: 'workspace'
   /** Epoch ms it was last closed; the list is newest first. */
   closedAt: number
 }
@@ -106,6 +123,12 @@ export interface Worktree {
   /** Absolute path to the worktree directory. */
   path: string
   isMain: boolean
+  /**
+   * A workspace worktree's repositories, by the directory name each has inside
+   * `path`. Every path this worktree reports -- a change, a file, a hit -- is
+   * relative to `path`, so it begins with one of these.
+   */
+  repos?: string[]
   /** Ref the worktree was branched from, when we created it. */
   base?: string
   /** Set when the directory or its git registration has gone missing. */
@@ -470,6 +493,8 @@ export interface Commit {
   author: string
   /** Epoch ms of the author date. */
   at: number
+  /** In a workspace, which of its repositories this commit is in. */
+  repo?: string
 }
 
 /**

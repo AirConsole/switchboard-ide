@@ -7,7 +7,8 @@ import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
 import { HttpError } from '../http-error.js'
 import type { Workspace } from '../workspace.js'
-import { commitDiff, fileDiff, worktreeChanges } from '../git/changes.js'
+import { commitDiff, fileDiff, memberOf, workspaceChanges, worktreeChanges } from '../git/changes.js'
+import { membersOf } from '../git/multirepo.js'
 import { claudeArgs } from '../session/claude.js'
 import { config } from '../config.js'
 import { sendRaw } from '../raw.js'
@@ -36,11 +37,15 @@ const openProjectBody = z.object({
   create: z.boolean().default(false),
   /** With `create`, put files already in the directory into the first commit. */
   commitExisting: z.boolean().default(true),
+  /** Open a folder of repositories as one workspace; see `Project.kind`. */
+  workspace: z.boolean().default(false),
 })
 const createWorktreeBody = z.object({
   projectId: z.string().min(1),
   branch: z.string().min(1),
   base: z.string().optional(),
+  /** A workspace's repositories to put in it, by name. Ignored for a repository. */
+  repos: z.array(z.string().min(1)).optional(),
   /** Start a Claude session in the new worktree immediately. */
   startClaude: z.boolean().default(true),
 })
@@ -62,7 +67,11 @@ const removeWorktreeQuery = z.object({
   deleteBranch: queryFlag,
   deleteRemoteBranch: queryFlag,
 })
-const branchQuery = z.object({ name: z.string() })
+const branchQuery = z.object({
+  name: z.string(),
+  /** A workspace's picked repositories, comma-separated; every one when absent. */
+  repos: z.string().optional(),
+})
 const closeProjectQuery = z.object({
   /** Stop everything the project is running on the way out. */
   sleep: queryFlag,
@@ -82,6 +91,8 @@ const diffQuery = z.object({
   untracked: queryFlag,
   /** Where a renamed file came from, so the diff reads as a rename. */
   from: z.string().min(1).optional(),
+  /** In a workspace, the repository `commit` is in. */
+  repo: z.string().min(1).optional(),
 })
 const createSessionBody = z.object({
   worktreeId: z.string().min(1),
@@ -272,8 +283,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/recents', async () => workspace.recentProjects())
 
   app.post('/api/projects', async (request) => {
-    const { path, create, commitExisting } = openProjectBody.parse(request.body)
-    const project = await workspace.openProject(path, { create, commitExisting })
+    const { path, create, commitExisting, workspace: asWorkspace } = openProjectBody.parse(request.body)
+    const project = await workspace.openProject(path, { create, commitExisting, workspace: asWorkspace })
     broadcastInvalidate()
     return project
   })
@@ -365,24 +376,39 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    */
   app.get('/api/projects/:id/branch', async (request) => {
     const { id } = request.params as { id: string }
-    const { name } = branchQuery.parse(request.query)
-    return workspace.describeBranch(id, name)
+    const { name, repos } = branchQuery.parse(request.query)
+    return workspace.describeBranch(
+      id,
+      name,
+      repos === undefined ? undefined : repos.split(',').filter((repo) => repo !== ''),
+    )
   })
 
   app.post('/api/worktrees', async (request) => {
     const body = createWorktreeBody.parse(request.body)
-    const worktree = await workspace.createWorktree(body)
+    const { extended, ...worktree } = await workspace.createWorktree(body)
     // A worktree you just made is one you want to work in.
     await workspace.setAwake([worktree.id], true)
     // The point of the feature is going from nothing to a working agent in one
     // click, so the session is created here rather than in a second round trip.
-    if (body.startClaude) {
-      await engine.create({
+    /*
+     * Not a second Claude in a worktree that has one: in a workspace, naming an
+     * existing worktree adds repositories to it, and its agent is already
+     * there -- or asleep, when it carries on its conversation rather than
+     * starting another.
+     */
+    if (body.startClaude && !engine.listForWorktree(worktree.id).some((s) => s.kind === 'claude')) {
+      // Only a worktree that was already there has a conversation to carry on;
+      // a new one at a path used before must not pick up the old one's.
+      const args = extended === true ? await claudeArgs(worktree.path, true) : []
+      const session = await engine.create({
         worktreeId: worktree.id,
         projectId: worktree.projectId,
         kind: 'claude',
         cwd: worktree.path,
+        args,
       })
+      if (session && args.includes('--continue')) void fallBackIfContinueRefused(session.id)
     }
     broadcastInvalidate()
     return { worktree, sessions: engine.listForWorktree(worktree.id) }
@@ -410,6 +436,13 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/worktrees/:id/changes', async (request) => {
     const { id } = request.params as { id: string }
     const { worktree, project } = await workspace.resolve(id)
+    if (worktree.repos !== undefined) {
+      return workspaceChanges({
+        worktreeId: worktree.id,
+        branch: worktree.branch,
+        members: membersOf(worktree),
+      })
+    }
     return worktreeChanges({
       worktreeId: worktree.id,
       root: project.root,
@@ -421,6 +454,26 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const query = diffQuery.parse(request.query)
     const { worktree } = await workspace.resolve(id)
+    /*
+     * A workspace's paths begin with the repository they are in, and git is
+     * asked in that repository with the rest; a commit names its repository
+     * outright, since a hash says nothing about where it lives.
+     */
+    if (worktree.repos !== undefined) {
+      const members = membersOf(worktree)
+      if (query.commit !== undefined) {
+        const member = members.find((m) => m.name === query.repo)
+        if (member === undefined) throw new HttpError(400, 'Say which repository that commit is in')
+        return { patch: await commitDiff(member.path, query.commit) }
+      }
+      if (query.file === undefined) throw new HttpError(400, 'Ask for either a file or a commit')
+      const { member, inner } = memberOf(members, query.file)
+      const from = query.from === undefined ? undefined : memberOf(members, query.from)
+      if (from !== undefined && from.member !== member) {
+        throw new HttpError(400, 'a file cannot be renamed from one repository into another')
+      }
+      return { patch: await fileDiff(member.path, inner, query.untracked, from?.inner) }
+    }
     if (query.commit !== undefined) {
       return { patch: await commitDiff(worktree.path, query.commit) }
     }

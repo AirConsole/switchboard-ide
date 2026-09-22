@@ -2592,6 +2592,36 @@ button {
 }
 
 /*
+ * A workspace's repositories, to pick which a worktree spans. Capped and
+ * scrolled on its own, because the foot it sits in is pinned: thirty rows here
+ * would push Close project off the pane.
+ */
+.addform__repos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.addform__repolist {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(22px * 7);
+  overflow-y: auto;
+}
+
+.addform__repo {
+  min-height: 22px;
+  font-size: 12px;
+}
+
+.addform__reponame {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+/*
  * Where it will land, which is the one thing about a new worktree you cannot
  * work out from the branch name. It ellipsises from the left, because the tail
  * -- the directory being made -- is the half worth reading.

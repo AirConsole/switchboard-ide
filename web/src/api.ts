@@ -145,7 +145,7 @@ export const api = {
 
   openProject: (
     path: string,
-    opts: { create?: boolean; commitExisting?: boolean; host?: string } = {},
+    opts: { create?: boolean; commitExisting?: boolean; workspace?: boolean; host?: string } = {},
   ) =>
     request<Project>(`/api/projects${opts.host === undefined ? '' : `?host=${opts.host}`}`, {
       method: 'POST',
@@ -153,6 +153,9 @@ export const api = {
         path,
         create: opts.create ?? false,
         commitExisting: opts.commitExisting ?? true,
+        // Only when asked, so a machine that predates workspaces is sent
+        // nothing it would refuse as an unknown key.
+        ...(opts.workspace === true ? { workspace: true } : {}),
       }),
     }),
   /** Close a project. `sleep` stops every session it is running on the way out. */
@@ -161,11 +164,18 @@ export const api = {
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
   /** Whether that branch is already there, so the form can say what it will do. */
-  describeBranch: (projectId: string, name: string) =>
-    request<{ valid: boolean; exists: boolean; usedBy?: string }>(
-      `/api/projects/${projectId}/branch?name=${encodeURIComponent(name)}`,
+  describeBranch: (projectId: string, name: string, repos?: string[]) =>
+    request<{ valid: boolean; exists: boolean; usedBy?: string; worktree?: string }>(
+      `/api/projects/${projectId}/branch?name=${encodeURIComponent(name)}` +
+        (repos === undefined ? '' : `&repos=${encodeURIComponent(repos.join(','))}`),
     ),
-  createWorktree: (body: { projectId: string; branch: string; base?: string; startClaude: boolean }) =>
+  createWorktree: (body: {
+    projectId: string
+    branch: string
+    base?: string
+    repos?: string[]
+    startClaude: boolean
+  }) =>
     request<{ worktree: Worktree; sessions: Session[] }>('/api/worktrees', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -205,11 +215,12 @@ export const api = {
   /** The patch for one uncommitted file, or for one commit. */
   diff: (
     worktreeId: string,
-    what: { file: string; untracked: boolean; from?: string } | { commit: string },
+    what: { file: string; untracked: boolean; from?: string } | { commit: string; repo?: string },
   ) => {
     const query =
       'commit' in what
-        ? `commit=${encodeURIComponent(what.commit)}`
+        ? `commit=${encodeURIComponent(what.commit)}` +
+          (what.repo === undefined ? '' : `&repo=${encodeURIComponent(what.repo)}`)
         : `file=${encodeURIComponent(what.file)}&untracked=${what.untracked}` +
           (what.from === undefined ? '' : `&from=${encodeURIComponent(what.from)}`)
     return request<{ patch: string }>(`/api/worktrees/${worktreeId}/diff?${query}`)

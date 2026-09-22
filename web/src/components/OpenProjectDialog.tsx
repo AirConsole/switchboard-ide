@@ -34,6 +34,16 @@ type Proposal =
       /** Heavy generated directories that a first commit would sweep in. */
       junk: string[]
     }
+  | {
+      /**
+       * Not a repository, and holding several. Initialising one around them
+       * would swallow them, so the only offer is to open the folder as a
+       * workspace of them.
+       */
+      kind: 'workspace'
+      path: string
+      repos: string[]
+    }
 
 const readString = (value: unknown, fallback: string): string =>
   typeof value === 'string' ? value : fallback
@@ -280,7 +290,7 @@ export const OpenProjectDialog = ({
       })
   }
 
-  const open = (target: string, create = false): void => {
+  const open = (target: string, create = false, workspace = false): void => {
     // The buttons are disabled while a request is in flight; Enter has to
     // respect the same rule, or key repeat sends several opens whose failures
     // are swallowed when the dialog unmounts.
@@ -314,6 +324,7 @@ export const OpenProjectDialog = ({
     const request = api.openProject(target, {
       create,
       commitExisting,
+      workspace,
       ...(server === undefined ? {} : { host: server.key }),
     })
     void request
@@ -332,6 +343,11 @@ export const OpenProjectDialog = ({
         }
         if (err instanceof ApiError && err.code === 'not-a-repo') {
           setError(null)
+          const repos = readStrings(err.details.repos)
+          if (repos.length > 0) {
+            setProposal({ kind: 'workspace', path: readString(err.details.path, target), repos })
+            return
+          }
           setProposal({
             kind: 'init',
             path: readString(err.details.path, target),
@@ -342,6 +358,43 @@ export const OpenProjectDialog = ({
         }
         setError(err instanceof Error ? err.message : String(err))
       })
+  }
+
+  if (proposal?.kind === 'workspace') {
+    const shown = proposal.repos.slice(0, 12)
+    return (
+      <div className="scrim" onClick={onClose}>
+        <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
+          <div className="dialog__head">
+            <h2 className="dialog__title">Open as a workspace?</h2>
+          </div>
+          <div className="dialog__body">
+            <p className="empty__body">
+              This folder is not a git repository. It holds {proposal.repos.length}{' '}
+              {proposal.repos.length === 1 ? 'repository' : 'repositories'}.
+            </p>
+            <p className="field__hint">{proposal.path}</p>
+            <p className="empty__body">
+              As a workspace, Claude starts in the folder itself and sees every repository in it. A
+              new worktree checks out only the repositories you pick, all on one branch, so one
+              agent can carry a change across them while another works beside it.
+            </p>
+            <p className="field__hint">
+              {shown.join(', ')}
+              {proposal.repos.length > shown.length && `, and ${proposal.repos.length - shown.length} more`}
+            </p>
+          </div>
+          <div className="dialog__foot">
+            <button className="btn btn--quiet" onClick={() => setProposal(null)}>
+              Back
+            </button>
+            <button className="btn" onClick={() => open(proposal.path, false, true)} disabled={busy}>
+              Open workspace
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (proposal) {
@@ -514,7 +567,7 @@ export const OpenProjectDialog = ({
                   <button
                     key={recent.root}
                     className="picker__row picker__row--repo"
-                    onClick={() => open(recent.root)}
+                    onClick={() => open(recent.root, false, recent.kind === 'workspace')}
                     disabled={busy}
                     title={recent.root}
                   >
@@ -544,6 +597,7 @@ export const OpenProjectDialog = ({
               Any directory inside a repository works; it resolves to the repository root. A path
               that does not exist is created and made into a repository — which is how you start
               one from nothing — and a directory that is not a repository yet can be made into one.
+              A folder holding several repositories opens as a workspace of them.
             </span>
           </div>
 

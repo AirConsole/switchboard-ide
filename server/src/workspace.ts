@@ -1,5 +1,5 @@
-import { access, mkdir, readdir, stat } from 'node:fs/promises'
-import { basename, dirname, resolve } from 'node:path'
+import { access, mkdir, readdir, realpath, rm, rmdir, stat } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import type { Readable } from 'node:stream'
 import { customAlphabet } from 'nanoid'
@@ -57,7 +57,20 @@ import {
   repoRoot,
   resolveDefaultBase,
   worktreePathFor,
+  currentBranch,
 } from './git/worktree.js'
+import {
+  type Member,
+  PARALLEL_GIT,
+  isRepoName,
+  listWorkspaceWorktrees,
+  mapLimit,
+  memberRoot,
+  membersOf,
+  removeWorkspaceFolder,
+  reposIn,
+  strayEntries,
+} from './git/multirepo.js'
 import { promptSummary } from './session/claude.js'
 
 /** Opaque, unlike a worktree id: nothing derives a todo from its path. */
@@ -215,7 +228,19 @@ export class Workspace {
     const all: Worktree[] = []
     for (const project of this.store.projects) {
       try {
-        const list = await listWorktrees(project.id, project.root)
+        if (project.kind === 'workspace') {
+          all.push(...(await this.workspaceWorktrees(project)))
+          continue
+        }
+        /*
+         * Not the checkouts a workspace worktree holds: those belong to that
+         * worktree, and listed here too they were a second tab on the same
+         * directory, with a second Claude to be started in it and a removal
+         * that quietly took a repository out of the workspace's worktree.
+         */
+        const list = (await listWorktrees(project.id, project.root)).filter(
+          (w) => !this.insideWorkspaceWorktrees(w.path),
+        )
         this.forgetGoneWorktrees(project.id, list)
         // Once per project, not once per worktree: they share a repository and
         // therefore a default branch.
@@ -244,6 +269,67 @@ export class Workspace {
     }
     if (generation === this.generation) this.cache = { at: now, worktrees: all }
     return all
+  }
+
+  /**
+   * A workspace's worktrees, with each count summed over its repositories.
+   *
+   * Unknown anywhere is unknown overall, for the reason `dirty` is undefined
+   * rather than zero in a single repository: the removal guard reads zero as
+   * "nothing to lose". What sits in a worktree's folder outside every
+   * repository is counted as uncommitted too -- nothing else holds a copy of it.
+   * `remoteBranch` is left out: one branch on one remote is not what a
+   * workspace worktree has, and the removal dialog asks about it only where it
+   * is set.
+   */
+  private async workspaceWorktrees(project: Project): Promise<Worktree[]> {
+    const list = await listWorkspaceWorktrees(project.id, project.root, project.worktreeRoot)
+    this.forgetGoneWorktrees(project.id, list)
+    const out: Worktree[] = []
+    for (const { members, ...worktree } of list) {
+      const counts = await mapLimit(members, PARALLEL_GIT, async (member) => ({
+        dirty: await dirtyCount(member.path),
+        // One checkout git cannot read -- a half-finished clone, a worktree whose
+        // repository moved -- must not take the whole workspace out of the row.
+        unmerged: await unmergedCount(
+          member.path,
+          await memberRoot(member.path)
+            .then(defaultBranchRef)
+            .catch(() => null),
+        ),
+      }))
+      const stray = worktree.isMain ? 0 : await this.strayWork(worktree.path, members)
+      out.push({
+        ...worktree,
+        dirty: counts.some((c) => c.dirty === null)
+          ? undefined
+          : counts.reduce((n, c) => n + (c.dirty ?? 0), stray),
+        unmerged: counts.reduce((n, c) => n + c.unmerged, 0),
+        ...(await promptSummary(worktree.path)),
+      })
+    }
+    return out
+  }
+
+  /**
+   * What a workspace worktree holds that no repository has a copy of: files
+   * beside the repositories, and a checkout that is a repository of its own --
+   * a `git clone` made in there rather than a worktree, whose whole history
+   * goes with the folder and whose own status says it is clean.
+   */
+  private async strayWork(path: string, members: Member[]): Promise<number> {
+    const own = await mapLimit(members, PARALLEL_GIT, async (m) =>
+      (await memberRoot(m.path).catch(() => null)) === resolve(m.path) ? 1 : 0,
+    )
+    return (await strayEntries(path, members)) + own.reduce<number>((n, c) => n + c, 0)
+  }
+
+  /** Whether `path` is inside where an open workspace keeps its worktrees. */
+  private insideWorkspaceWorktrees(path: string): boolean {
+    const target = resolve(path)
+    return this.store.projects.some(
+      (p) => p.kind === 'workspace' && target.startsWith(`${resolve(p.worktreeRoot)}/`),
+    )
   }
 
   /** See `Worktree.awake`, and `PersistedState.awake` for the null case. */
@@ -487,10 +573,15 @@ export class Workspace {
       // peer's path besides.
       this.store.projects
         .filter((project) => project.host.kind === 'local')
-        .map(async (project) => ({
-          ...project,
-          defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
-        })),
+        .map(async (project) =>
+          project.kind === 'workspace'
+            ? // Each repository branches from its own default; there is no one ref to name.
+              { ...project, repos: await reposIn(project.root) }
+            : {
+                ...project,
+                defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
+              },
+        ),
     )
   }
 
@@ -503,7 +594,7 @@ export class Workspace {
    */
   async openProject(
     path: string,
-    opts: { create?: boolean; commitExisting?: boolean } = {},
+    opts: { create?: boolean; commitExisting?: boolean; workspace?: boolean } = {},
   ): Promise<Project> {
     const target = resolve(expandHome(path))
 
@@ -521,11 +612,20 @@ export class Workspace {
 
     if (!(await isDirectory(target))) throw new HttpError(400, `Not a directory: ${target}`)
 
+    if (opts.workspace === true) return this.openWorkspace(target)
+
     if (!(await isGitRepo(target))) {
+      // Offering `git init` here would put a repository around live worktrees.
+      if (this.insideWorkspaceWorktrees(target)) {
+        throw new HttpError(400, `${target} is a worktree of an open workspace`, 'workspace-nested')
+      }
       if (!opts.create) {
         throw new HttpError(400, `Not a git repository: ${target}`, 'not-a-repo', {
           path: target,
           ...(await inspectForInit(target)),
+          // A folder of repositories is a workspace to open, not a directory
+          // to initialise -- a repository around them would swallow them.
+          repos: await reposIn(target),
         })
       }
       await initRepository(target, { commitExisting: opts.commitExisting })
@@ -549,6 +649,54 @@ export class Workspace {
     this.store.forgetRecent(root)
     this.invalidate()
     return { ...project, defaultBase: await resolveDefaultBase(root).catch(() => undefined) }
+  }
+
+  /**
+   * Register a folder of repositories as one project.
+   *
+   * Refused inside a repository, where it would be a directory of that
+   * repository with the whole of git's view of it disagreeing, and refused with
+   * no repositories in it, where there would be nothing for a worktree to be
+   * made of. The real path, so a symlink to the folder and the folder are one
+   * project -- ids hash the path.
+   */
+  private async openWorkspace(target: string): Promise<Project> {
+    if (await isGitRepo(target)) {
+      throw new HttpError(400, `${target} is inside a git repository -- open it as one`, 'workspace-in-repo')
+    }
+    const root = await realpath(target)
+    /*
+     * A workspace's own worktree is a folder of repositories too, and opened as
+     * a second workspace its id would be listed under two projects -- where
+     * `resolve()` answers with whichever comes first, and closing one deletes
+     * the other's todos.
+     */
+    if (this.insideWorkspaceWorktrees(root) || this.insideWorkspaceWorktrees(target)) {
+      throw new HttpError(400, `${root} is a worktree of an open workspace`, 'workspace-nested')
+    }
+    // And the other way round: one already open as a workspace of its own.
+    const mine = `${resolve(defaultWorktreeRoot(root))}/`
+    const nested = this.store.projects.find((p) => p.kind === 'workspace' && resolve(p.root).startsWith(mine))
+    if (nested !== undefined) {
+      throw new HttpError(400, `${nested.root} is open as a workspace, and is one of this one's worktrees -- close it first`, 'workspace-nested')
+    }
+    const repos = await reposIn(root)
+    if (repos.length === 0) {
+      throw new HttpError(400, `There are no git repositories directly inside ${root}`, 'workspace-empty')
+    }
+    const project: Project = {
+      id: projectIdFor(root),
+      name: basename(root),
+      kind: 'workspace',
+      host: { kind: 'local' },
+      root,
+      worktreeRoot: defaultWorktreeRoot(root),
+      addedAt: Date.now(),
+    }
+    this.store.addProject(project)
+    this.store.forgetRecent(root)
+    this.invalidate()
+    return { ...project, repos }
   }
 
   /**
@@ -717,7 +865,8 @@ export class Workspace {
   async describeBranch(
     projectId: string,
     name: string,
-  ): Promise<{ valid: boolean; exists: boolean; usedBy?: string }> {
+    repos?: string[],
+  ): Promise<{ valid: boolean; exists: boolean; usedBy?: string; worktree?: string }> {
     const project = this.store.project(projectId)
     if (!project) throw new HttpError(404, 'no such project')
     const branch = name.trim()
@@ -725,6 +874,7 @@ export class Workspace {
     if (!(await isValidBranchName(project.root, branch))) {
       return { valid: false, exists: false }
     }
+    if (project.kind === 'workspace') return this.describeWorkspaceBranch(project, branch, repos)
     /*
      * A branch can only be checked out in one worktree at a time, so a name
      * already in use is not a slow way to get an error -- it is a thing git
@@ -743,16 +893,63 @@ export class Workspace {
     }
   }
 
+  /**
+   * `describeBranch` for a workspace, over the repositories picked.
+   *
+   * A name that is already a worktree here is not refused: making it again is
+   * how a repository is added to it, and `worktree` says that is what Create
+   * will do. What is refused is the branch being checked out somewhere else in
+   * one of the picked repositories, which git would refuse for that one after
+   * the others had been made.
+   */
+  private async describeWorkspaceBranch(
+    project: Project,
+    branch: string,
+    picked: string[] | undefined,
+  ): Promise<{ valid: boolean; exists: boolean; usedBy?: string; worktree?: string }> {
+    const available = await reposIn(project.root)
+    const repos = picked === undefined ? available : picked.filter((r) => available.includes(r))
+    const path = worktreePathFor(project.worktreeRoot, branch)
+    // A folder whose repositories are on another branch shares the name only
+    // (`a/b` and `a-b`), and making this one there is refused.
+    let worktree: string | undefined
+    if (await isDirectory(path)) {
+      const onBranch = await mapLimit(await reposIn(path), PARALLEL_GIT, (repo) =>
+        currentBranch(join(path, repo)),
+      )
+      if (onBranch.some((b) => b !== null && b !== branch)) return { valid: true, exists: false, usedBy: path }
+      worktree = path
+    }
+    const each = await mapLimit(repos, PARALLEL_GIT, async (repo) => {
+      const root = join(project.root, repo)
+      const usedBy = (await listRawWorktrees(root).catch(() => [])).find(
+        (w) => w.branch === branch && resolve(w.path) !== resolve(path, repo),
+      )?.path
+      return { exists: await branchExists(root, branch), usedBy }
+    })
+    const usedBy = each.find((e) => e.usedBy !== undefined)?.usedBy
+    return {
+      valid: true,
+      exists: each.some((e) => e.exists),
+      ...(usedBy === undefined ? {} : { usedBy }),
+      ...(worktree === undefined ? {} : { worktree }),
+    }
+  }
+
   async createWorktree(opts: {
     projectId: string
     branch: string
     base?: string
-  }): Promise<Worktree> {
+    repos?: string[]
+  }): Promise<Worktree & { extended?: true }> {
     const project = this.store.project(opts.projectId)
     if (!project) throw new HttpError(404, 'no such project')
     const branch = opts.branch.trim()
     if (!(await isValidBranchName(project.root, branch))) {
       throw new HttpError(400, `invalid branch name: ${branch}`)
+    }
+    if (project.kind === 'workspace') {
+      return this.createWorkspaceWorktree(project, branch, opts.repos ?? [], opts.base)
     }
     const path = worktreePathFor(project.worktreeRoot, branch)
     if (await exists(path)) throw new HttpError(409, `path already exists: ${path}`)
@@ -780,6 +977,172 @@ export class Workspace {
   }
 
   /**
+   * Make a workspace worktree, or add repositories to one.
+   *
+   * One `git worktree add` per repository, each from that repository's own
+   * default -- there is no one ref that names "fresh" across a dozen remotes.
+   * All or nothing for the repositories named in this call: one that git
+   * refuses takes back the ones made before it, the branches this call cut
+   * with them, and the folder if this call made it. Half a feature checked out
+   * is a worktree nobody asked for, and the error names the repository that
+   * refused.
+   */
+  private async createWorkspaceWorktree(
+    project: Project,
+    branch: string,
+    repos: string[],
+    base: string | undefined,
+  ): Promise<Worktree & { extended?: true }> {
+    if (repos.length === 0) throw new HttpError(400, 'pick at least one repository', 'no-repos')
+    const available = await reposIn(project.root)
+    const unknown = repos.find((repo) => !isRepoName(repo) || !available.includes(repo))
+    if (unknown !== undefined) {
+      throw new HttpError(400, `${unknown} is not a repository in ${project.root}`)
+    }
+    if (base !== undefined && base.trim().startsWith('-')) {
+      throw new HttpError(400, 'that base ref is not a ref')
+    }
+    const path = worktreePathFor(project.worktreeRoot, branch)
+    const existed = await exists(path)
+    let adding = [...new Set(repos)]
+    let extending = false
+    if (existed) {
+      if (!(await isDirectory(path))) throw new HttpError(409, `path already exists: ${path}`)
+      const present = await reposIn(path)
+      // Two names that share a folder (`a/b` and `a-b`) are not the same worktree.
+      const onBranch = await mapLimit(present, PARALLEL_GIT, (repo) => currentBranch(join(path, repo)))
+      if (onBranch.some((b) => b !== null && b !== branch)) {
+        throw new HttpError(409, `${path} is a worktree on another branch`)
+      }
+      // An empty folder left behind is not one with a conversation to carry on.
+      extending = present.length > 0
+      adding = adding.filter((repo) => !present.includes(repo))
+      if (adding.length === 0) {
+        throw new HttpError(409, `${basename(path)} already has ${repos.join(', ')}`)
+      }
+    } else {
+      await mkdir(path, { recursive: true })
+    }
+
+    const made: { root: string; path: string; cutBranch: boolean }[] = []
+    for (const repo of adding) {
+      const root = join(project.root, repo)
+      try {
+        const from = base?.trim() || (await resolveDefaultBase(root))
+        const cutBranch = !(await branchExists(root, branch))
+        await addWorktree({ root, path: join(path, repo), branch, base: from })
+        made.push({ root, path: join(path, repo), cutBranch })
+      } catch (err) {
+        for (const undo of made.reverse()) {
+          await removeWorktree(undo.root, undo.path, true).catch(() => {})
+          if (undo.cutBranch) await deleteBranch(undo.root, branch, true).catch(() => {})
+          await pruneWorktrees(undo.root).catch(() => {})
+        }
+        if (!existed) await rmdir(path).catch(() => {})
+        throw new HttpError(400, `${repo}: ${gitMessage(err)}`)
+      }
+    }
+    this.invalidate()
+    const created = (await this.worktrees()).find((w) => resolve(w.path) === resolve(path))
+    if (!created) throw new HttpError(500, 'worktree created but not listed')
+    return extending ? { ...created, extended: true } : created
+  }
+
+  /**
+   * Remove a workspace worktree: each repository's worktree, then its folder.
+   *
+   * The same order as one repository's, for the same reasons: refuse on
+   * anything uncommitted -- in any repository, or in the folder beside them --
+   * before killing a session, then the sessions, then git. A repository git
+   * refuses stops it there and says which, with the ones before it gone: they
+   * were clean, which is what made them safe to take.
+   */
+  private async removeWorkspaceWorktree(
+    worktree: Worktree,
+    opts: { force: boolean; alsoDeleteBranch: boolean },
+  ): Promise<void> {
+    const members = membersOf(worktree)
+    if (!opts.force) {
+      const counts = await mapLimit(members, PARALLEL_GIT, (m) => dirtyCount(m.path))
+      if (counts.some((c) => c === null)) {
+        throw new HttpError(
+          400,
+          `git could not say whether ${worktree.path} has uncommitted changes. ` +
+            'Check it by hand, or remove it with force.',
+          'worktree-unknown',
+        )
+      }
+      const dirty = counts.reduce<number>((n, c) => n + (c ?? 0), await this.strayWork(worktree.path, members))
+      if (dirty > 0) {
+        throw new HttpError(
+          400,
+          `${worktree.path} has ${dirty} uncommitted change${dirty === 1 ? '' : 's'}. ` +
+            'Discard them to remove it.',
+          'worktree-dirty',
+          { dirty },
+        )
+      }
+    }
+    const each = await mapLimit(members, PARALLEL_GIT, async (member) => ({
+      member,
+      root: await memberRoot(member.path).catch(() => null),
+      branch: await currentBranch(member.path),
+    }))
+    const unreadable = each.find((e) => e.root === null)
+    if (unreadable !== undefined && !opts.force) {
+      throw new HttpError(
+        400,
+        `git cannot read ${unreadable.member.name} in ${worktree.path}. Check it by hand, or remove it with force.`,
+        'worktree-unknown',
+      )
+    }
+
+    await this.engine.killForWorktree(worktree.id)
+    const gone: string[] = []
+    for (const { member, root, branch } of each) {
+      try {
+        if (root === null) throw new Error('its repository cannot be read')
+        await removeWorktree(root, member.path, opts.force)
+      } catch (err) {
+        /*
+         * Forced, only a checkout git cannot remove because it is no worktree
+         * of anything -- its repository unreadable or gone, or a repository of
+         * its own -- is deleted as a directory. A locked worktree is refused by
+         * git even forced, and deleting it anyway leaves its branch held by a
+         * worktree that is gone.
+         */
+        if (
+          opts.force &&
+          (root === null || root === resolve(member.path) || !(await isGitRepo(member.path)))
+        ) {
+          await rm(member.path, { recursive: true, force: true })
+          gone.push(member.name)
+          if (root !== null) await pruneWorktrees(root).catch(() => {})
+          continue
+        }
+        this.invalidate()
+        const before = gone.length === 0 ? '' : ` (${gone.join(', ')} already removed)`
+        throw new HttpError(400, `${member.name}: ${gitMessage(err)}${before}`)
+      }
+      gone.push(member.name)
+      if (opts.alsoDeleteBranch && branch !== null && root !== null) {
+        // As in one repository: an unmerged branch git keeps is not a failure.
+        await deleteBranch(root, branch, opts.force).catch(() => {})
+      }
+      if (root !== null) await pruneWorktrees(root).catch(() => {})
+    }
+    try {
+      await removeWorkspaceFolder(worktree.path, opts.force)
+    } catch (err) {
+      this.invalidate()
+      throw new HttpError(400, `the repositories are gone, but ${worktree.path} was not: ${gitMessage(err)}`)
+    }
+    this.store.removeTodosFor([worktree.id])
+    if (this.store.awake !== null) this.store.setAwake(this.store.awake.filter((id) => id !== worktree.id))
+    this.invalidate()
+  }
+
+  /**
    * Remove a worktree and everything running in it.
    *
    * Of what is destroyed locally, sessions go first, deliberately: a live shell
@@ -796,6 +1159,7 @@ export class Workspace {
   }): Promise<void> {
     const { worktree, project } = await this.resolve(opts.worktreeId)
     if (worktree.isMain) throw new HttpError(400, 'refusing to remove the main worktree')
+    if (project.kind === 'workspace') return this.removeWorkspaceWorktree(worktree, opts)
 
     // Refuse before touching anything. Sessions have to die before git will
     // remove the directory, but killing them and only then discovering that git
@@ -998,7 +1362,7 @@ export class Workspace {
   /** One directory of a worktree, ignore-filtered. `''` is its root. */
   async fileTree(worktreeId: string, path: string): Promise<FileListing> {
     const { worktree } = await this.resolve(worktreeId)
-    return listDirectory(worktree.path, path)
+    return listDirectory(worktree.path, path, worktree.repos)
   }
 
   /**
@@ -1013,7 +1377,7 @@ export class Workspace {
     query: string,
   ): Promise<{ hits: FileHit[]; truncated?: boolean }> {
     const { worktree } = await this.resolve(worktreeId)
-    return findFiles(worktree.path, query)
+    return findFiles(worktree.path, query, worktree.repos)
   }
 
   /** Lines containing the query -- the finder's other half; see `grepFiles`. */
@@ -1022,7 +1386,7 @@ export class Workspace {
     query: string,
   ): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> {
     const { worktree } = await this.resolve(worktreeId)
-    return grepFiles(worktree.path, query)
+    return grepFiles(worktree.path, query, worktree.repos)
   }
 
   /** One file's text, or word that it has not moved since `ifNotRev`. */
