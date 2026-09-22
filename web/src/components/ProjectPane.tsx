@@ -76,7 +76,9 @@ export const ProjectPane = ({
    * bar has.
    */
   useListKeys(box, {
-    rows: '.projpane__list .tab__body, .projpane__foot .field__input, .projpane__foot .btn, .projpane__close',
+    rows:
+      '.projpane__list .tab__body, .projpane__foot .field__input, .projpane__foot .btn, ' +
+      '.projpane__foot .addform__repo input:not(:disabled), .projpane__close',
     cells: '.tab__body, .tab__close',
     line: '.tab',
   })
@@ -171,7 +173,12 @@ export const ProjectPane = ({
       */}
     <div className="projpane__foot">
       <span className="projpane__footlabel">New worktree</span>
-      <NewWorktreeForm project={project} focus={caret ? focus : null} onCreated={onCreated} />
+      <NewWorktreeForm
+        project={project}
+        focus={caret ? focus : null}
+        worktrees={[...awake, ...asleep]}
+        onCreated={onCreated}
+      />
       <button className="projpane__close" onClick={() => onCloseProject(project.id)}>
         Close project
       </button>

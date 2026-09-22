@@ -3,6 +3,7 @@ import { relative } from 'node:path'
 import { promisify } from 'node:util'
 import type { Commit, FileChange, WorktreeChanges } from '@switchboard/shared'
 import { LOCAL_HEAD_BASE, currentBranch, resolveDefaultBase } from './worktree.js'
+import { PARALLEL_GIT, mapLimit, memberRoot, type Member } from './multirepo.js'
 import { containedPath } from '../files.js'
 import { HttpError } from '../http-error.js'
 
@@ -173,6 +174,85 @@ export const worktreeChanges = async (opts: {
     commitScope: 'ahead',
     behind,
   }
+}
+
+/**
+ * A workspace worktree's changes: each repository's, as one list.
+ *
+ * Paths are prefixed with the repository's directory, which is what they are
+ * relative to the worktree -- so the changed-files tree groups by repository
+ * with no help, and a path picked in it is the same path the files tree opens.
+ *
+ * Commits cannot be merged that way: two repositories' histories have no order
+ * between them but the clock. So each one carries its `repo`, and the list is
+ * one question asked of all of them: the commits ahead of each repository's
+ * base where any repository has some, and the newest history of all of them
+ * otherwise -- mixing the two would put one repository's old history among
+ * another's new work under a heading claiming it is all work. `base` and
+ * `behind` have no single answer across repositories and are left out.
+ *
+ * A repository that cannot answer is left out rather than failing the rest:
+ * the panel is for reading what the others did.
+ */
+export const workspaceChanges = async (opts: {
+  worktreeId: string
+  branch: string | null
+  members: readonly Member[]
+}): Promise<WorktreeChanges> => {
+  const each = await mapLimit(opts.members, PARALLEL_GIT, async (member) => {
+    try {
+      const changes = await worktreeChanges({
+        worktreeId: opts.worktreeId,
+        root: await memberRoot(member.path),
+        path: member.path,
+      })
+      return { member, changes }
+    } catch {
+      return null
+    }
+  })
+  const answered = each.filter((e): e is NonNullable<typeof e> => e !== null)
+  const tagged = (scope: 'ahead' | 'recent'): Commit[] =>
+    answered
+      .filter((e) => e.changes.commitScope === scope)
+      .flatMap((e) => e.changes.commits.map((commit) => ({ ...commit, repo: e.member.name })))
+      .sort((a, b) => b.at - a.at)
+  const ahead = tagged('ahead')
+  return {
+    worktreeId: opts.worktreeId,
+    branch: opts.branch,
+    base: null,
+    uncommitted: answered.flatMap((e) =>
+      e.changes.uncommitted.map((change) => ({
+        ...change,
+        path: `${e.member.name}/${change.path}`,
+        ...(change.from === undefined ? {} : { from: `${e.member.name}/${change.from}` }),
+      })),
+    ),
+    commits: ahead.length > 0 ? ahead : tagged('recent').slice(0, RECENT_COMMITS),
+    commitScope: ahead.length > 0 ? 'ahead' : 'recent',
+    behind: 0,
+  }
+}
+
+/**
+ * Which repository of a workspace worktree a worktree-relative path is in, and
+ * the path inside it.
+ *
+ * By the first segment and nothing else, so `../` or an absolute path cannot
+ * name a repository; what is left is contained by `fileDiff` itself, the same
+ * as in a single repository.
+ */
+export const memberOf = (
+  members: readonly Member[],
+  path: string,
+): { member: Member; inner: string } => {
+  const at = path.indexOf('/')
+  const member = at > 0 ? members.find((m) => m.name === path.slice(0, at)) : undefined
+  if (member === undefined) {
+    throw new HttpError(400, `${path} is not inside any of this worktree's repositories`)
+  }
+  return { member, inner: path.slice(at + 1) }
 }
 
 /**

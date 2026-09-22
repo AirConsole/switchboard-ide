@@ -265,7 +265,8 @@ export const useChangesState = (opts: {
       mode === 'commits'
         ? commit === null
           ? null
-          : { commit }
+          : // A workspace's commits say which repository they are in; a hash does not.
+            { commit, repo: changes?.commits.find((c) => c.hash === commit)?.repo }
         : change === undefined
           ? null
           : { file: change.path, untracked: change.status === '??', from: change.from }
@@ -493,12 +494,19 @@ export const CommitsList = ({
   <>
     {commits.map((commit) => (
       <button
-        key={commit.hash}
+        // Two checkouts of one repository in a workspace list the same commits.
+        key={`${commit.repo ?? ''}:${commit.hash}`}
         className={commit.hash === selected ? 'files__commit files__commit--on' : 'files__commit'}
         onClick={() => onSelect(commit.hash)}
-        title={`${commit.hash}\n${commit.author}\n${new Date(commit.at).toLocaleString()}`}
+        title={`${commit.repo === undefined ? '' : `${commit.repo}\n`}${commit.hash}\n${commit.author}\n${new Date(commit.at).toLocaleString()}`}
       >
-        <span className="files__hash">{commit.short}</span>
+        {/* The repository rides the hash's line: it is the same kind of fact
+            -- where this commit is -- and a third line per commit is a list
+            twice as long to scan. */}
+        <span className="files__hash">
+          {commit.short}
+          {commit.repo !== undefined && ` · ${commit.repo}`}
+        </span>
         <span className="files__subject">{commit.subject}</span>
       </button>
     ))}

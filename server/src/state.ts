@@ -147,6 +147,9 @@ const reviveProject = (value: unknown): Project | null => {
   if (typeof row.root !== 'string' || row.root === '') return null
   return {
     ...(row as Project),
+    // Only the one value it may have: `kind` decides whether git or the folder
+    // walk answers for this project, so a hand-edited value must not reach it.
+    kind: row.kind === 'workspace' ? ('workspace' as const) : undefined,
     /*
      * Always local, and this is the one place that says so.
      *
@@ -200,6 +203,7 @@ const reviveRecent = (value: unknown): RecentProject | null => {
     root: row.root,
     name: typeof row.name === 'string' && row.name !== '' ? row.name : basename(row.root),
     closedAt: typeof row.closedAt === 'number' && Number.isFinite(row.closedAt) ? row.closedAt : 0,
+    ...(row.kind === 'workspace' ? { kind: 'workspace' as const } : {}),
   }
 }
 
@@ -353,7 +357,12 @@ export class StateStore {
    */
   rememberRecent(project: Project): void {
     this.state.recents = [
-      { root: project.root, name: project.name, closedAt: Date.now() },
+      {
+        root: project.root,
+        name: project.name,
+        closedAt: Date.now(),
+        ...(project.kind === 'workspace' ? { kind: 'workspace' as const } : {}),
+      },
       ...this.state.recents.filter((r) => r.root !== project.root),
     ].slice(0, RECENT_LIMIT)
     this.scheduleSave()

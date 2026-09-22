@@ -21,6 +21,7 @@ import { mediaKindOf, mediaTypeOf } from '@switchboard/shared'
 import { config } from './config.js'
 import { HttpError } from './http-error.js'
 import { parseStatus } from './git/changes.js'
+import { PARALLEL_GIT, mapLimit } from './git/multirepo.js'
 
 const exec = promisify(execFile)
 
@@ -212,9 +213,57 @@ const checkIgnore = async (cwd: string, paths: string[]): Promise<Set<string>> =
 
 const statusCache = new Map<string, { at: number; paths: Set<string> }>()
 
-/** Forget a worktree's cached status, after something we did changed it. */
+/**
+ * Forget a worktree's cached status, after something we did changed it -- and
+ * that of every repository inside it, which is where a workspace's are kept.
+ */
 export const invalidateStatus = (worktreePath: string): void => {
-  statusCache.delete(worktreePath)
+  for (const key of statusCache.keys()) {
+    if (key === worktreePath || key.startsWith(`${worktreePath}${sep}`)) statusCache.delete(key)
+  }
+}
+
+/**
+ * Which repository git should be asked about `rel` in, and what to strip from
+ * a worktree-relative path to make it relative to that repository.
+ *
+ * A worktree is one repository unless `repos` says it is a workspace's, where
+ * each is the directory of that name at the top. Null for a path in a
+ * workspace that no repository holds -- the folder itself, or a file beside the
+ * repositories -- where there is nothing to ignore and nothing to mark.
+ */
+const gitScopeOf = (
+  worktreePath: string,
+  rel: string,
+  repos: readonly string[] | undefined,
+): { cwd: string; prefix: string } | null => {
+  if (repos === undefined) return { cwd: worktreePath, prefix: '' }
+  const first = rel.split('/')[0] ?? ''
+  if (!repos.includes(first)) return null
+  return { cwd: join(worktreePath, first), prefix: `${first}/` }
+}
+
+/**
+ * `changedPaths` for a directory of a workspace worktree.
+ *
+ * At the top, a repository is marked when it has any change at all: the one
+ * `git status` per repository that asks is the same one descending into it
+ * reuses.
+ */
+const workspaceChanged = async (
+  worktreePath: string,
+  rel: string,
+  repos: readonly string[],
+): Promise<Set<string>> => {
+  const scope = gitScopeOf(worktreePath, rel, repos)
+  if (scope !== null) {
+    return new Set([...(await changedPaths(scope.cwd))].map((path) => scope.prefix + path))
+  }
+  if (rel !== '') return new Set()
+  const marked = await mapLimit(repos, PARALLEL_GIT, async (repo) =>
+    (await changedPaths(join(worktreePath, repo))).size > 0 ? repo : null,
+  )
+  return new Set(marked.filter((repo): repo is string => repo !== null))
 }
 
 /** A path and every directory above it, so an ancestor can be marked too. */
@@ -352,12 +401,22 @@ const dirsOf = (paths: string[]): string[] => {
 export const findFiles = async (
   worktreePath: string,
   query: string,
+  repos?: readonly string[],
 ): Promise<{ hits: FileHit[]; truncated?: boolean }> => {
   const needle = query.trim().toLowerCase()
   // Nothing to look for: answer without asking git anything.
   if (needle === '') return { hits: [] }
 
-  const files = await allFiles(worktreePath)
+  // A workspace's are each repository's own, prefixed with its directory; one
+  // that cannot answer contributes nothing rather than failing the search.
+  const files =
+    repos === undefined
+      ? await allFiles(worktreePath)
+      : (
+          await mapLimit(repos, PARALLEL_GIT, async (repo) =>
+            (await allFiles(join(worktreePath, repo)).catch(() => [])).map((p) => `${repo}/${p}`),
+          )
+        ).flat()
   const hits: FileHit[] = []
   for (const path of dirsOf(files)) {
     if (path.toLowerCase().includes(needle)) hits.push({ path, kind: 'dir' })
@@ -397,7 +456,47 @@ export const findFiles = async (
 const GREP_PER_FILE = 20
 const GREP_TIMEOUT_MS = 5000
 
-export const grepFiles = (
+/**
+ * The same, across a workspace's repositories, each prefixed with its directory.
+ *
+ * Four at a time rather than eight: a grep is heavier than a status, and each
+ * one already stops at `MAX_FIND` lines of its own.
+ */
+export const grepFiles = async (
+  worktreePath: string,
+  query: string,
+  repos?: readonly string[],
+): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> => {
+  if (repos === undefined) return grepRepo(worktreePath, query)
+  // Stops starting repositories once there is a full answer, or a one-letter
+  // query over thirty of them waits for every one to hit its own cap.
+  let held = 0
+  let skipped = false
+  const each = await mapLimit(repos, 4, async (repo) => {
+    if (held >= MAX_FIND) {
+      skipped = true
+      return null
+    }
+    try {
+      const found = await grepRepo(join(worktreePath, repo), query)
+      held += found.hits.length
+      return { repo, found }
+    } catch {
+      return null
+    }
+  })
+  const answered = each.filter((e): e is NonNullable<typeof e> => e !== null)
+  const hits = answered.flatMap((e) => e.found.hits.map((hit) => ({ ...hit, path: `${e.repo}/${hit.path}` })))
+  const more = answered.flatMap((e) => (e.found.more ?? []).map((path) => `${e.repo}/${path}`))
+  const truncated = skipped || hits.length > MAX_FIND || answered.some((e) => e.found.truncated === true)
+  return {
+    hits: hits.slice(0, MAX_FIND),
+    ...(truncated ? { truncated: true } : {}),
+    ...(more.length > 0 ? { more } : {}),
+  }
+}
+
+const grepRepo = (
   worktreePath: string,
   query: string,
 ): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> => {
@@ -531,9 +630,19 @@ const childOf = (rel: string, name: string): string => (rel === '' ? name : `${r
  * at the repository root that enumerates everything, per click, and never
  * mentions a tracked directory at all.
  */
-export const listDirectory = async (worktreePath: string, rel: string): Promise<FileListing> => {
+export const listDirectory = async (
+  worktreePath: string,
+  rel: string,
+  repos?: readonly string[],
+): Promise<FileListing> => {
   const base = await rootReal(worktreePath)
   const dir = await containedPath(worktreePath, rel)
+  /*
+   * In a workspace the repository is read off the path's first segment, so the
+   * path is taken as it resolved: `alpha/../beta` named alpha and listed beta
+   * with none of beta's ignore rules applied.
+   */
+  const at = repos === undefined ? rel : relative(base, dir).split(sep).join('/')
   if (!(await stat(dir)).isDirectory()) throw new HttpError(400, `not a directory: ${rel}`)
 
   const raw = await readdir(dir, { withFileTypes: true })
@@ -541,6 +650,10 @@ export const listDirectory = async (worktreePath: string, rel: string): Promise<
   for (const entry of raw) {
     // See containedPath: by name, because in a linked worktree it is a file.
     if (entry.name === '.git') continue
+    // A workspace's own worktrees are windows of their own, each already
+    // listed there with its repositories' ignore rules; here, nothing would
+    // filter their `node_modules`.
+    if (repos !== undefined && at === '.claude' && entry.name === 'worktrees') continue
     const kind = await classify(dir, entry, base)
     if (kind !== null) found.push({ name: entry.name, kind })
   }
@@ -552,18 +665,35 @@ export const listDirectory = async (worktreePath: string, rel: string): Promise<
    * themselves reported ignored, so the filter below would empty it anyway, but
    * saying so outright is clearer and costs nothing extra.
    */
-  const selfKey = rel === '' ? null : `${rel}/`
+  const selfKey = at === '' ? null : `${at}/`
   const keyOf = (entry: { name: string; kind: 'dir' | 'file' }): string =>
-    entry.kind === 'dir' ? `${childOf(rel, entry.name)}/` : childOf(rel, entry.name)
-  const ignored = await checkIgnore(base, [
-    ...(selfKey === null ? [] : [selfKey]),
-    ...found.map(keyOf),
-  ])
+    entry.kind === 'dir' ? `${childOf(at, entry.name)}/` : childOf(at, entry.name)
+  /*
+   * Asked of the repository the directory is in, with the keys made relative to
+   * it and put back afterwards -- in a workspace that is one of several, and at
+   * its top it is none, so nothing there is ignored. A repository's own
+   * directory strips to `''`, which is not a question.
+   */
+  const scope = gitScopeOf(worktreePath, at, repos)
+  const ignored =
+    scope === null
+      ? new Set<string>()
+      : new Set(
+          [
+            ...(await checkIgnore(
+              scope.prefix === '' ? base : await rootReal(scope.cwd),
+              [...(selfKey === null ? [] : [selfKey]), ...found.map(keyOf)]
+                .map((key) => key.slice(scope.prefix.length))
+                .filter((key) => key !== ''),
+            )),
+          ].map((key) => scope.prefix + key),
+        )
   if (selfKey !== null && ignored.has(selfKey)) {
     throw new HttpError(404, `no such file: ${rel}`, 'file-missing')
   }
 
-  const changed = await changedPaths(worktreePath)
+  const changed =
+    repos === undefined ? await changedPaths(worktreePath) : await workspaceChanged(worktreePath, at, repos)
   const kept = found.filter((entry) => !ignored.has(keyOf(entry)))
   // Directories first, then by name: the browser is walked far more often than
   // it is read, and a column you descend through wants its doors at the top.
@@ -575,7 +705,7 @@ export const listDirectory = async (worktreePath: string, rel: string): Promise<
     name: entry.name,
     kind: entry.kind,
     // Absent rather than false: in a clean repository that is every entry.
-    ...(changed.has(childOf(rel, entry.name)) ? { changed: true } : {}),
+    ...(changed.has(childOf(at, entry.name)) ? { changed: true } : {}),
   }))
   return { path: rel, entries, ...(kept.length > MAX_ENTRIES ? { truncated: true } : {}) }
 }

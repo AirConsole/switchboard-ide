@@ -95,6 +95,10 @@ export const worktreeTitle = (
   [
     worktree.path,
     ...(worktree.branch && worktree.branch !== worktree.name ? [`on ${worktree.branch}`] : []),
+    // A workspace's main worktree spans every repository, which is not worth a line.
+    ...(worktree.repos !== undefined && !worktree.isMain
+      ? [worktree.repos.length === 0 ? 'No repositories yet' : worktree.repos.join(', ')]
+      : []),
     stateLabel(claudeSession(sessions, worktree.id)),
     ...((worktree.task ?? worktree.prompt) ? [`“${worktree.task ?? worktree.prompt}”`] : []),
     ...(worktree.dirty
