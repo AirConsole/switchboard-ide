@@ -579,11 +579,10 @@ button {
  * 1.14:1 against the bar behind it and dissolved into it. What separates it
  * from a tab is the type -- uppercase, letterspaced, label size -- not the fill.
  *
- * What it says about its worktrees it says underneath, in one place at every
- * width -- see `.tabgroup__shares`. It was a bar down the leading edge for the
- * sleepers and a strip underneath for the windows, which put two marks with
- * two meanings on one pill and moved the answer depending on how wide the bar
- * was; now the strip is the only mark and it is always in the same place.
+ * Its state bar carries only the SLEEPING worktrees, and only amber or green.
+ * An awake one says its own state on its own tab; this reports what has no tab,
+ * which is the job the zZ tab used to do. `.tab--working` and `.tab--off` are
+ * deliberately never applied here: a summary that is always lit is not one.
  */
 .tabgroup__pill {
   display: flex;
@@ -594,9 +593,13 @@ button {
   gap: 4px;
   flex: none;
   align-self: stretch;
-  /* Even, now that the leading edge carries no bar to inset the name past. */
-  padding: 0 12px;
+  /* The bar's 4px plus the 9px the text has always kept from a segment's edge,
+     the same inset `.tab__body` uses. */
+  padding: 0 12px 0 13px;
   background-color: var(--level-object);
+  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
+  background-size: 4px 100%;
+  background-repeat: no-repeat;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -994,9 +997,13 @@ button {
    */
   --tab-fill: var(--level-object);
   /*
-   * The status is a bar down the leading edge, where an 11px bullet used to be:
-   * about four times the area, at the edge the eye lands on as it runs along a
-   * row, which is the one thing the top bar exists to make fast.
+   * The status is a bar along the bottom edge, where an 11px bullet used to
+   * be: several times the area, and the full width of the tab, so a row of
+   * them reads as a row of marks at one height -- which is the one thing the
+   * top bar exists to make fast. It ran down the leading edge first, which put
+   * it at the edge the eye lands on but gave each tab a mark as tall as the
+   * tab and as narrow as a hairline; the project head's own strip is drawn
+   * under its name for the same reason, and the two now agree.
    *
    * It is not the fill, and that was the choice. The fill is the loudest
    * channel on the strip -- amber over the sleeve is 9.70:1 where every other
@@ -1009,21 +1016,21 @@ button {
    * looks like anywhere, so the two cannot be read for each other.
    *
    * A background gradient with a hard stop, which is the only one of the three
-   * ways to draw this that gives a straight edge. `inset 4px 0 0` looks right
-   * in a mockup and is wrong on a pill: an inset shadow is the box minus a copy
-   * of itself shifted 4px, so *both* of the band's edges follow the 9px radius
-   * and it bends away along the top and bottom of the tab instead of ending in
-   * a line. A pseudo-element would need `overflow: hidden` on a tab that is a
-   * wrapper around two buttons. A background is painted inside the border box
-   * and clipped by the radius for free, so the outer edge takes the pill's
-   * curve, the inner edge stays vertical, and the menu's stacked tabs inherit
-   * it from this one rule.
+   * ways to draw this that gives a straight edge. An inset shadow is the box
+   * minus a copy of itself shifted, so *both* of the band's edges follow the
+   * 9px radius and it bends away instead of ending in a line. A pseudo-element
+   * would need `overflow: hidden` on a tab that is a wrapper around two
+   * buttons. A background is painted inside the border box and clipped by the
+   * radius for free, so the bar takes the pill's curve at its ends, its top
+   * edge stays straight, and the menu's stacked tabs inherit it from this one
+   * rule.
    *
    * Nothing running keeps a mark of its own -- see `.tab--off`.
    */
   background-color: var(--tab-fill);
   background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
-  background-size: 4px 100%;
+  background-size: 100% 3px;
+  background-position: left bottom;
   background-repeat: no-repeat;
 }
 
@@ -1036,12 +1043,11 @@ button {
   flex: 1;
   min-width: 0;
   /*
-   * 13px of leading inset: the bar's 4px plus the 9px the text has always kept
-   * from the tab's edge. Every tab carries it whether or not it has a bar, so
-   * the names stay on one left edge down the row -- which is what a row is
-   * scanned along.
+   * 9px of leading inset, which is what the text has always kept from the
+   * tab's edge. It was 13 while the bar ran down that edge and took 4 of them;
+   * under the tab now, the name has the edge back.
    */
-  padding: 0 5px 0 13px;
+  padding: 0 5px 0 9px;
   /*
    * Chrome's other half of "which tab am I in": its unselected titles are dim
    * (#9aa0a6) and its selected one is bright (#e8eaed), and that difference is
@@ -1223,7 +1229,9 @@ button {
 /*
  * Nothing running is a dashed bar, which is the old hollow bullet's job: solid
  * against dashed is what told a working agent from a stopped one, the way
- * filled against hollow used to.
+ * filled against hollow used to. `to right`, since the bar runs along the
+ * bottom -- a gradient with no direction runs down the box, which drew one
+ * dash smeared the width of the tab.
  *
  * Absence was tried instead, on the argument that not running is the one state
  * asking for nothing. It is wrong where it matters most: the zZ dropdown is
@@ -1234,7 +1242,11 @@ button {
  * there.
  */
 .tab--off {
-  background-image: repeating-linear-gradient(var(--graphite-dim) 0 3px, transparent 3px 6px);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--graphite-dim) 0 3px,
+    transparent 3px 6px
+  );
 }
 
 /*
@@ -1507,18 +1519,8 @@ button {
  * rather than as another thing in the row of names. 3px is the usage tracks'
  * height, which is the other place here that draws a proportion.
  */
-/*
- * What the project's windows are doing, under its name, at every width.
- *
- * It was drawn only once the bar had collapsed the project to its head, on the
- * argument that an awake worktree says its own state on its own tab. Both are
- * true and the strip is still the thing you scan: a row of tabs answers "which
- * one", and this answers "how much of this project needs me" without reading
- * the tabs at all. Always here, so the answer is never in a different place
- * than it was a moment ago.
- */
 .tabgroup__shares {
-  display: flex;
+  display: none;
   position: absolute;
   left: 0;
   right: 0;
@@ -1592,6 +1594,22 @@ button {
 .topbar[data-stage='4'] .tabgroup__count,
 .topbar[data-stage='5'] .tabgroup__count {
   display: inline;
+}
+
+/*
+ * Collapsed, the head grows the strip that says what its windows are doing.
+ *
+ * The two marks on the pill answer different questions and are drawn in
+ * different places, which is what keeps them apart: the bar down the leading
+ * edge is the sleepers -- what has no window at all -- in amber or green, and
+ * the strip along the bottom is the awake ones, as shares. Neither can stand
+ * in for the other, and the strip is the one that could not exist at the
+ * expanded rungs, where every awake worktree has a tab already saying it.
+ */
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
+.topbar[data-stage='4'] .tabgroup__shares,
+.topbar[data-stage='5'] .tabgroup__shares {
+  display: flex;
 }
 
 /*
