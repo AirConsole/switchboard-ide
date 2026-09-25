@@ -1,7 +1,7 @@
 #!/bin/sh
 # Switchboard, on a machine in the cloud.
 #
-#   ./provision-gcp.sh create   <name> --project <id>    build it, print its URL
+#   ./provision-gcp.sh create   [name]                   build it, print its URL
 #   ./provision-gcp.sh status   <name> --project <id>    what it is, and who touched it
 #   ./provision-gcp.sh recreate <name> --project <id>    new VM, same data disk
 #   ./provision-gcp.sh destroy  <name> --project <id>    everything it made
@@ -68,6 +68,34 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'provision: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# /dev/tty and not stdin, because this is also piped and redirected -- the same
+# reason install.sh reads from it. Where there is no terminal at all (CI, a
+# hook, a container) that has to be said plainly: the shell's own "cannot open
+# /dev/tty" is otherwise the last thing anyone sees.
+have_tty() { (: </dev/tty) 2>/dev/null; }
+
+# A question with an answer typed back, on /dev/tty like everything else here,
+# so it works under `curl | sh` where stdin is the script.
+ask_value() {
+  # prompt, default
+  if [ -n "$2" ]; then printf '%s [%s]: ' "$1" "$2" >/dev/tty; else printf '%s: ' "$1" >/dev/tty; fi
+  read -r reply </dev/tty || reply=""
+  [ -n "$reply" ] || reply=$2
+  printf '%s' "$reply"
+}
+
+ask() {
+  [ "$ASSUME_YES" -eq 1 ] && return 0
+  if ! have_tty; then
+    say "No terminal to ask on. Nothing was changed."
+    say "  re-run with --yes to proceed without asking."
+    exit 1
+  fi
+  printf '%s [y/N] ' "$1"
+  read -r reply </dev/tty || reply=n
+  case "$reply" in y|Y|yes|YES) return 0 ;; *) say "Nothing was changed."; exit 1 ;; esac
+}
+
 # A Linux user name, and one the image does not already use for something else:
 # setup.sh would refuse to take over `syslog` or `ubuntu` -- that would hand the
 # person's files to whatever the account was for -- and saying so here, before
@@ -88,6 +116,18 @@ valid_user() {
 # on the machine over ssh, so a quote in it would end the string it sits in --
 # the flag is typed by the person who already has ssh, but a typo should not
 # become a shell.
+# Every resource is `switchboard-<name>-something`, and GCP wants a name that
+# starts with a letter, holds only lowercase letters, digits and hyphens, and is
+# at most 63 characters. The longest suffix here is `-data`, so 40 leaves room
+# for all of them and for anything added later.
+valid_name() {
+  case "$1" in
+    ''|*[!a-z0-9-]*) return 1 ;;
+    [!a-z]*|*-) return 1 ;;
+  esac
+  [ "${#1}" -le 40 ]
+}
+
 valid_domain() {
   case "$1" in
     '') return 0 ;;
@@ -109,7 +149,7 @@ usage() {
     cat <<'EOF'
 Switchboard, on a machine in the cloud.
 
-  provision-gcp.sh create   <name> --project <id>    build it, print its URL
+  provision-gcp.sh create   [name]                   build it, print its URL
   provision-gcp.sh status   <name> --project <id>    what it is, and who touched it
   provision-gcp.sh recreate <name> --project <id>    new VM, same data disk
   provision-gcp.sh destroy  <name> --project <id>    everything it made
@@ -118,7 +158,7 @@ EOF
   cat <<'EOF'
 
 Options
-  --project <id>      the GCP project (required)
+  --project <id>      the GCP project (asked for if left out)
   --zone <zone>       default europe-west6-b
   --machine <type>    default e2-standard-4
   --disk-size <GB>    data disk, default 100
@@ -130,7 +170,7 @@ Options
                       otherwise you are asked for one, or given one
   --repo <url>        which checkout the machine builds from
   --repo-ref <ref>    which branch or tag of it (default master)
-  --in-org            allow a project inside an organisation (see above)
+  --in-org            a project inside an organisation, without being asked
   --no-sudo           the machine's user gets no sudo
   --from-snapshot <s> recreate: restore the data disk from this snapshot first
   --delete-data       destroy: also delete the data disk and its snapshots
@@ -142,9 +182,13 @@ VERB=${1:-}
 [ -n "$VERB" ] || { usage; exit 1; }
 case "$VERB" in -h|--help|help) usage; exit 0 ;; esac
 shift
-NAME=${1:-}
-case "$NAME" in ""|-*) die "which machine? e.g. provision-gcp.sh $VERB mybox --project my-project" ;; esac
-shift
+# The name is a positional, and optional: with a terminal it is asked for. A
+# flag here means it was left out, not that it is called `--project`.
+NAME=""
+case "${1:-}" in
+  ''|-*) : ;;
+  *) NAME=$1; shift ;;
+esac
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -193,7 +237,31 @@ have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/doc
 # the reader looking in the wrong place entirely.
 gcloud auth print-access-token >/dev/null 2>&1 \
   || die "gcloud has no usable credentials right now -- run:  gcloud auth login"
-[ -n "$PROJECT" ] || die "--project is required (a project of your own; see --in-org)"
+# What a flag did not say, a terminal is asked for -- which is what keeps the
+# published one-liner to `create` and nothing else. With no terminal (CI, a
+# hook) each of these is still required, and says so.
+if [ -z "$NAME" ]; then
+  have_tty || die "which machine? e.g. provision-gcp.sh $VERB mybox --project my-project"
+  say ""
+  say "A name for this machine. Everything it is made of is called after it:"
+  say "the VM, its disk, its network."
+  while :; do
+    NAME=$(ask_value "  name" "")
+    valid_name "$NAME" && break
+    say "  letters, digits and hyphens, starting with a letter."
+  done
+fi
+valid_name "$NAME" || die "\"$NAME\" cannot name a machine: letters, digits and hyphens, starting with a letter"
+
+if [ -z "$PROJECT" ]; then
+  have_tty || die "--project is required (a project of your own; see --in-org)"
+  current=$(gcloud config get-value project 2>/dev/null)
+  say ""
+  say "The GCP project to build it in. A project of your own is the one that keeps"
+  say "other people out of the machine -- see below."
+  PROJECT=$(ask_value "  project" "$current")
+  [ -n "$PROJECT" ] || die "no project given; nothing was changed"
+fi
 
 PASSWORD_MIN=12   # `MIN_LENGTH` in cli/src/password.js; the IDE refuses less
 REGION=$(printf '%s' "$ZONE" | sed 's/-[a-z]$//')
@@ -209,23 +277,8 @@ POLICY_NAME="switchboard-$NAME-touched"
 g() { gcloud --project "$PROJECT" "$@"; }
 gq() { gcloud --project "$PROJECT" "$@" >/dev/null 2>&1; }
 
-# /dev/tty and not stdin, because this is also piped and redirected -- the same
-# reason install.sh reads from it. Where there is no terminal at all (CI, a
-# hook, a container) that has to be said plainly: the shell's own "cannot open
-# /dev/tty" is otherwise the last thing anyone sees.
-have_tty() { (: </dev/tty) 2>/dev/null; }
 
-ask() {
-  [ "$ASSUME_YES" -eq 1 ] && return 0
-  if ! have_tty; then
-    say "No terminal to ask on. Nothing was changed."
-    say "  re-run with --yes to proceed without asking."
-    exit 1
-  fi
-  printf '%s [y/N] ' "$1"
-  read -r reply </dev/tty || reply=n
-  case "$reply" in y|Y|yes|YES) return 0 ;; *) say "Nothing was changed."; exit 1 ;; esac
-}
+
 
 # --- who else can reach this machine ----------------------------------------
 # Printed before anything is built, because it is the one thing about a cloud
@@ -248,12 +301,23 @@ check_org() {
   say "Encryption keeps the disk unreadable at rest -- snapshots, clones, a stopped VM."
   say "It cannot keep root out of a machine that is running, and nothing can."
   say ""
-  if [ "$IN_ORG" -eq 0 ]; then
-    say "Use a project of your own (one created under a personal account belongs to no"
-    say "organisation), or pass --in-org if that is the trade you want."
+  # Asked rather than refused, where there is somebody to ask: the answer is a
+  # judgement about who those people are, and they are named right above. With
+  # no terminal it is still a refusal, because the safe answer cannot be
+  # assumed and `--yes` means "do not ask me about the ordinary things".
+  if [ "$IN_ORG" -eq 1 ]; then
+    ask "Continue anyway?"
+    return 0
+  fi
+  say "A project of your own -- one created under a personal account belongs to no"
+  say "organisation -- is the only thing that keeps them out."
+  if ! have_tty || [ "$ASSUME_YES" -eq 1 ]; then
+    say ""
+    say "Nothing was changed. Pass --in-org if that is the trade you want."
     exit 1
   fi
-  ask "Continue anyway?"
+  say ""
+  ask "Build it here anyway?"
 }
 
 # --- a name for the address --------------------------------------------------
@@ -469,6 +533,9 @@ ensure_machine_files() {
   for f in setup.sh cloud-config.yaml; do
     curl -fsSL "$raw/$REPO_REF/cloud/$f" -o "$DIR/$f" \
       || die "could not fetch cloud/$f from $raw/$REPO_REF -- is --repo-ref right?"
+    # A 200 with nothing in it is not an error to curl, and an empty setup.sh
+    # is a machine that boots into nothing at all.
+    [ -s "$DIR/$f" ] || die "cloud/$f came back empty from $raw/$REPO_REF"
   done
 }
 
@@ -609,8 +676,12 @@ cmd_create() {
     say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
     say "  a static address"
     say ""
-    say "Roughly \$110-130 a month for an e2-standard-4 plus disks, less for $MACHINE,"
-    say "and less again if you stop it."
+    if [ "$MACHINE" = e2-standard-4 ]; then
+      say "Roughly \$110-130 a month for the VM and its disks, less if you stop it."
+    else
+      say "Roughly \$110-130 a month for an e2-standard-4 and its disks; $MACHINE is"
+      say "its own price, and stopping it costs less again."
+    fi
     say ""
     ask "Create it?"
   fi
