@@ -2489,6 +2489,34 @@ button {
 }
 
 /*
+ * Stacked, the state goes back down the leading edge.
+ *
+ * The strip's tabs sit side by side, so a bar under each one reads as a row of
+ * marks at one height, which is what the top bar is scanned for. These lists
+ * are the same tabs stood on end, and there a bar along the bottom reads as a
+ * rule between two rows instead of as a state -- reported from the project
+ * pane, where four of them in a column drew four dividers. So the shape of the
+ * list decides where the mark goes: side by side underneath, stacked at the
+ * edge, and the 4px it takes comes back out of the name's inset.
+ */
+.projpane__list .tab,
+.menu--tabs .tab {
+  background-size: 4px 100%;
+  background-position: left top;
+}
+
+.projpane__list .tab__body,
+.menu--tabs .tab__body {
+  padding-left: 13px;
+}
+
+/* Dashes down the edge rather than along the bottom; see `.tab--off`. */
+.projpane__list .tab--off,
+.menu--tabs .tab--off {
+  background-image: repeating-linear-gradient(var(--graphite-dim) 0 3px, transparent 3px 6px);
+}
+
+/*
  * One block: the heading, the field, what the name will do, and the way out.
  *
  * These were a form with a stray button under it. Both are things you do to the
