@@ -1515,6 +1515,22 @@ of its own keeps first claim through `inner()` -- measured on a tile's terminal
 tab strip, which took 8px of the gesture and left the row at 0, then handed the
 next one on once it was at its end.
 
+**The screen stays awake while you are watching, and only then.** A phone
+blanks after about fifteen seconds of not being touched, and watching an agent
+work is exactly fifteen seconds of not touching anything -- so `useWakeLock`
+holds a screen wake lock in `App`, not in a window: the row scrolls and windows
+mount and unmount as they come near, and a lock that travelled with one would
+drop on every swipe. It is held only where `softKeys()` is true, since a laptop
+has its own idea of when to sleep, and only while the page is **visible and
+focused**: hidden, the browser takes the lock back itself and asking again
+throws; visible but unfocused is a window nobody is looking at, which is how a
+battery disappears. That release is the ordinary end rather than an error, and
+the next `visibilitychange` asks afresh. Two things are easy to get wrong and
+both are tested: a request is a promise, so a page hidden while one was in
+flight is handed a lock nobody wants and has to give it straight back, and a
+browser without the API or in a battery saver simply refuses -- which is worth
+no word on screen, since the screen dims exactly as it did before.
+
 ## Cmd+Left and Cmd+Right walk panes, not only worktrees
 
 **Alt+Left and Alt+Right off the Mac** -- see "The modifier is Cmd on a Mac and
