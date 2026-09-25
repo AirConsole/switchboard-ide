@@ -579,10 +579,11 @@ button {
  * 1.14:1 against the bar behind it and dissolved into it. What separates it
  * from a tab is the type -- uppercase, letterspaced, label size -- not the fill.
  *
- * Its state bar carries only the SLEEPING worktrees, and only amber or green.
- * An awake one says its own state on its own tab; this reports what has no tab,
- * which is the job the zZ tab used to do. `.tab--working` and `.tab--off` are
- * deliberately never applied here: a summary that is always lit is not one.
+ * What it says about its worktrees it says underneath, in one place at every
+ * width -- see `.tabgroup__shares`. It was a bar down the leading edge for the
+ * sleepers and a strip underneath for the windows, which put two marks with
+ * two meanings on one pill and moved the answer depending on how wide the bar
+ * was; now the strip is the only mark and it is always in the same place.
  */
 .tabgroup__pill {
   display: flex;
@@ -593,13 +594,9 @@ button {
   gap: 4px;
   flex: none;
   align-self: stretch;
-  /* The bar's 4px plus the 9px the text has always kept from a segment's edge,
-     the same inset `.tab__body` uses. */
-  padding: 0 12px 0 13px;
+  /* Even, now that the leading edge carries no bar to inset the name past. */
+  padding: 0 12px;
   background-color: var(--level-object);
-  background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
-  background-size: 4px 100%;
-  background-repeat: no-repeat;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1510,8 +1507,18 @@ button {
  * rather than as another thing in the row of names. 3px is the usage tracks'
  * height, which is the other place here that draws a proportion.
  */
+/*
+ * What the project's windows are doing, under its name, at every width.
+ *
+ * It was drawn only once the bar had collapsed the project to its head, on the
+ * argument that an awake worktree says its own state on its own tab. Both are
+ * true and the strip is still the thing you scan: a row of tabs answers "which
+ * one", and this answers "how much of this project needs me" without reading
+ * the tabs at all. Always here, so the answer is never in a different place
+ * than it was a moment ago.
+ */
 .tabgroup__shares {
-  display: none;
+  display: flex;
   position: absolute;
   left: 0;
   right: 0;
@@ -1585,22 +1592,6 @@ button {
 .topbar[data-stage='4'] .tabgroup__count,
 .topbar[data-stage='5'] .tabgroup__count {
   display: inline;
-}
-
-/*
- * Collapsed, the head grows the strip that says what its windows are doing.
- *
- * The two marks on the pill answer different questions and are drawn in
- * different places, which is what keeps them apart: the bar down the leading
- * edge is the sleepers -- what has no window at all -- in amber or green, and
- * the strip along the bottom is the awake ones, as shares. Neither can stand
- * in for the other, and the strip is the one that could not exist at the
- * expanded rungs, where every awake worktree has a tab already saying it.
- */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
-.topbar[data-stage='4'] .tabgroup__shares,
-.topbar[data-stage='5'] .tabgroup__shares {
-  display: flex;
 }
 
 /*

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
-import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
+import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
 import { UsageBars, useUsage } from './UsageBars.js'
 import { LinkIcon } from './LinkIcon.js'
 import { MACHINE_KEY, projectKey } from '../views/Overview.js'
@@ -163,33 +163,22 @@ const Group = ({
 >): React.ReactElement => {
   const { project, awake, asleep } = group
   /*
-   * What the head's leading bar says, and only two states can say anything.
-   *
-   * It stands for the sleeping worktrees, which have no tab of their own --
-   * sleeping does not mean stopped, Claude can be left running, so one of them
-   * being blocked on you still has to reach the top bar.
-   *
-   * Collapsed, where nothing has a tab, the head says more than one colour can
-   * carry and the bar stands down for `shares` below.
-   */
-  const statusOf = (w: Worktree): WorktreeStatus => worktreeStatus(sessions, w.id)
-  const openSignal = summaryClass(asleep.map(statusOf))
-  /*
-   * The project's **awake** worktrees as shares of the head's own bar -- see
-   * `statusShares`.
+   * The project's **awake** worktrees as shares of the strip under its name --
+   * see `statusShares`, and `.tabgroup__shares` for where it sits.
    *
    * Awake is the whole set it can describe: those are the windows in the row,
    * and the strip is read as "how much of what is open here needs me". The
    * sleepers were in it at first, which made the bands answer a question
    * nobody asks of a row of windows -- a project with one window open and
    * eight asleep drew an eighth of a band for the thing you were looking at.
-   * What a sleeper needs is still said, by the leading bar, which is exactly
-   * the job that bar keeps.
    *
-   * Drawn only once the tabs are gone, and rendered at every rung for the
-   * reason the aggregate above is: the rung is written on the DOM after React
-   * has run, so nothing rendered may depend on it.
+   * Drawn at every width now, not only where the bar has collapsed the project
+   * to this pill. It was a bar down the pill's leading edge for the sleepers
+   * and this strip for the windows, and which of the two you were reading
+   * depended on how much room the bar had -- so the strip is the only mark,
+   * and it is always in the same place.
    */
+  const statusOf = (w: Worktree): WorktreeStatus => worktreeStatus(sessions, w.id)
   const shares = statusShares(awake.map(statusOf))
 
   const tab = (worktree: Worktree, sleeping: boolean): React.ReactElement => {
@@ -232,19 +221,13 @@ const Group = ({
         * Closing lives in the pane now; this walks you there and lights while
         * you are in it, exactly as a worktree's tab does for its window.
         *
-        * The state bar aggregates only the SLEEPING worktrees, and only in
-        * amber and green. An awake one already says its own state on its own
-        * tab, so the head reports what has no tab -- which is the job the zZ
-        * tab used to do, and the one thing that could not be lost when it went.
-        * Grey and dashed are left off deliberately: this is a summary, and the
-        * two colours are the only states a row of agents is scanned for.
-        * Collapsed, all of that is replaced by the shares strip below.
+        * What its worktrees are doing is the strip underneath it -- one mark,
+        * in one place, at every width.
         */}
       <button
         className={[
           'tabgroup__pill',
           activeId === projectKey(project.id) ? 'tabgroup__pill--on' : '',
-          openSignal,
         ]
           .filter(Boolean)
           .join(' ')}
@@ -290,9 +273,9 @@ const Group = ({
         {awake.length > 0 && <span className="tabgroup__count">{awake.length}</span>}
         {/*
           * The project's worktrees as a bar under its name, one band per
-          * state. Out of flow, so a head is exactly as wide collapsed as the
-          * sweep measured it, and `aria-hidden` because the title above says
-          * the same thing in words.
+          * state. Out of flow, so a head is exactly as wide as the sweep
+          * measured it, and `aria-hidden` because the title above says the
+          * same thing in words.
           */}
         <span className="tabgroup__shares" aria-hidden="true">
           {shares.map((share) => (
