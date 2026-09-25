@@ -261,6 +261,67 @@ exit 0
   }, 30_000)
 })
 
+describe('what it asks for rather than demanding', () => {
+  /** Run the script with no terminal, so every prompt has to fall back. */
+  const runHeadless = (/** @type {string[]} */ args) => {
+    const dir = mkdtempSync(join(tmpdir(), 'swb-ask-'))
+    try {
+      writeFileSync(join(dir, 'gcloud'), '#!/bin/sh\ncase "$*" in *"config get-value project"*) echo p ;; esac\nexit 0\n')
+      chmodSync(join(dir, 'gcloud'), 0o755)
+      try {
+        execFileSync('sh', [join(CLOUD, 'provision-gcp.sh'), ...args], {
+          encoding: 'utf8',
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+        return ''
+      } catch (/** @type {any} */ err) {
+        return `${err.stdout ?? ''}${err.stderr ?? ''}`
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  it.each([
+    [['create'], /which machine/],
+    [['create', 'mybox'], /--project is required/],
+  ])('%s says what is missing, rather than failing inside itself', (args, expected) => {
+    // Each of these is asked for at a terminal, and the fallback is where the
+    // ordering bugs show: a helper called above its own definition dies with
+    // "have_tty: not found", which is what this reads as a failure.
+    const out = runHeadless(args)
+    expect(out).toMatch(expected)
+    expect(out).not.toMatch(/not found/)
+  })
+
+  it('names a machine only what every resource can be called after', () => {
+    const src = readFileSync(join(CLOUD, 'provision-gcp.sh'), 'utf8')
+    const fn = src.match(/^valid_name\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
+    /** @param {string} name */
+    const ok = (name) => {
+      try {
+        execFileSync('sh', ['-c', `${fn}\nvalid_name "$1"`, '_', name])
+        return true
+      } catch {
+        return false
+      }
+    }
+    for (const good of ['mybox', 'my-box', 'box1']) expect(ok(good), good).toBe(true)
+    // GCP wants a leading letter and lowercase; and `switchboard-<name>-data`
+    // has to stay inside 63 characters.
+    for (const bad of ['Mybox', '1box', '-box', 'box-', 'a b', 'a'.repeat(41), '']) {
+      expect(ok(bad), bad).toBe(false)
+    }
+  })
+
+  it('keeps the published one-liner to the verb', () => {
+    const readme = readFileSync(join(CLOUD, '..', 'README.md'), 'utf8')
+    const line = readme.match(/sh -s -- create[^\n]*/)?.[0] ?? ''
+    expect(line).toBe('sh -s -- create')
+  })
+})
+
 describe('who touched the machine', () => {
   const filter = () =>
     execFileSync(
