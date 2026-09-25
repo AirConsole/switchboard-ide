@@ -9,6 +9,7 @@ import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
 import { MACHINE_KEY, Overview, WELCOME_KEY, projectKey, type PaneKind } from './views/Overview.js'
+import { useWakeLock } from './wakeLock.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -117,6 +118,14 @@ export const App = (): React.ReactElement => {
    * `data-narrow` on `.app` rather than being given the number again.
    */
   const narrow = useNarrow()
+  /*
+   * The screen stays awake while you are watching this, on a phone -- see
+   * `useWakeLock`. Here rather than in a window, because it is the page that
+   * is being looked at, not one worktree: the row scrolls, windows mount and
+   * unmount as they come near, and a lock that went with them would drop every
+   * time you swiped.
+   */
+  useWakeLock()
   /**
    * Focus moved; remember where, unless it is where we already were.
    *
