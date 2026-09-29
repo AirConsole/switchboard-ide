@@ -223,10 +223,19 @@ export const App = (): React.ReactElement => {
    * Taking `dragover` is what makes a drop *possible*, which reads backwards
    * until you know the default: refusing the drag means the browser handles the
    * drop itself, and handling it means we can decline to do anything.
+   *
+   * **Only a drag nobody below took.** This runs on `window`, after React's
+   * handlers on the root, so it sees the tree's `dragover` too -- and setting
+   * `none` there overwrote the tree's `copy` and the browser never fired
+   * `drop` at all. No file could be dropped anywhere, from Finder or anything
+   * else. Measured with a real drag through CDP (`Input.dispatchDragEvent`),
+   * which honours `dropEffect`: a synthetic `dispatchEvent` fires the drop
+   * regardless, which is how this passed when it was written.
    */
   useEffect(() => {
     const swallow = (event: DragEvent): void => {
       if (event.dataTransfer?.types.includes('Files') !== true) return
+      if (event.defaultPrevented) return
       event.preventDefault()
       if (event.type === 'dragover') event.dataTransfer.dropEffect = 'none'
     }
