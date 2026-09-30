@@ -156,8 +156,8 @@ const outside = (rel: string): HttpError =>
  * blow ARG_MAX, and an entry named `-n` would be read as an option.
  *
  * Note what this inherits for free -- every `.gitignore` on the way up,
- * `.git/info/exclude`, and `core.excludesFile`. The exclude file is how the
- * IDE's own nested worktrees stay out of the browser, since
+ * `.git/info/exclude`, and `core.excludesFile`. The exclude file is why the
+ * IDE's own nested worktrees are drawn as ignored in the tree, since
  * `ensureWorktreesIgnored` writes its worktree pattern there.
  */
 const checkIgnore = async (cwd: string, paths: string[]): Promise<Set<string>> => {
@@ -521,7 +521,16 @@ const classify = async (
 const childOf = (rel: string, name: string): string => (rel === '' ? name : `${rel}/${name}`)
 
 /**
- * One directory of a worktree, ignore-filtered and change-marked.
+ * One directory of a worktree, ignore-marked and change-marked.
+ *
+ * Ignored entries are **listed, and marked**, not left out. The tree is where
+ * you go to look at what is actually on disk, and what an agent is most often
+ * asked about there is exactly what git ignores: the `.env` it should read,
+ * the `dist/` it just built, the log it wrote, the package it is debugging
+ * inside `node_modules`. Hiding them made the one panel that shows files the
+ * one place those files could not be reached, short of a terminal. Search
+ * (`findFiles`, `grepFiles`) still leaves them out -- a query that matches
+ * every file in `node_modules` answers nothing.
  *
  * One level only: the browser shows the path you are standing on and its
  * siblings, and a recursive listing of a real repository is tens of thousands
@@ -546,38 +555,29 @@ export const listDirectory = async (worktreePath: string, rel: string): Promise<
   }
 
   /*
-   * The directory itself goes into the same batch as its entries. A client that
-   * hand-crafts `?path=node_modules` then gets a refusal rather than a column
-   * of three hundred thousand rows -- children of an ignored directory are
-   * themselves reported ignored, so the filter below would empty it anyway, but
-   * saying so outright is clearer and costs nothing extra.
+   * Only the entries: children of an ignored directory are reported ignored by
+   * name -- measured, including one that a `!dist/keep.js` tries and fails to
+   * re-include -- so the directory itself need not be asked about.
    */
-  const selfKey = rel === '' ? null : `${rel}/`
   const keyOf = (entry: { name: string; kind: 'dir' | 'file' }): string =>
     entry.kind === 'dir' ? `${childOf(rel, entry.name)}/` : childOf(rel, entry.name)
-  const ignored = await checkIgnore(base, [
-    ...(selfKey === null ? [] : [selfKey]),
-    ...found.map(keyOf),
-  ])
-  if (selfKey !== null && ignored.has(selfKey)) {
-    throw new HttpError(404, `no such file: ${rel}`, 'file-missing')
-  }
+  const ignored = await checkIgnore(base, found.map(keyOf))
 
   const changed = await changedPaths(worktreePath)
-  const kept = found.filter((entry) => !ignored.has(keyOf(entry)))
   // Directories first, then by name: the browser is walked far more often than
   // it is read, and a column you descend through wants its doors at the top.
-  kept.sort((a, b) =>
+  found.sort((a, b) =>
     a.kind !== b.kind ? (a.kind === 'dir' ? -1 : 1) : a.name.localeCompare(b.name),
   )
 
-  const entries: FileEntry[] = kept.slice(0, MAX_ENTRIES).map((entry) => ({
+  const entries: FileEntry[] = found.slice(0, MAX_ENTRIES).map((entry) => ({
     name: entry.name,
     kind: entry.kind,
     // Absent rather than false: in a clean repository that is every entry.
     ...(changed.has(childOf(rel, entry.name)) ? { changed: true } : {}),
+    ...(ignored.has(keyOf(entry)) ? { ignored: true } : {}),
   }))
-  return { path: rel, entries, ...(kept.length > MAX_ENTRIES ? { truncated: true } : {}) }
+  return { path: rel, entries, ...(found.length > MAX_ENTRIES ? { truncated: true } : {}) }
 }
 
 /* ------------------------------------------------------------ read, write -- */

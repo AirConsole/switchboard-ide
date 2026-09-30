@@ -149,17 +149,27 @@ describe('listing', () => {
   it('lists one level, directories first then by name', async () => {
     const listing = await listDirectory(repo.path, '')
     expect(listing.path).toBe('')
-    expect(listing.entries.map((e) => e.name)).toEqual(['src', '.gitignore', 'README.md'])
+    expect(listing.entries.map((e) => e.name)).toEqual(['dist', 'src', '.gitignore', 'README.md'])
     expect(listing.entries[0]?.kind).toBe('dir')
   })
 
-  it('applies the repository’s ignore rules', async () => {
-    const names = (await listDirectory(repo.path, '')).entries.map((e) => e.name)
-    expect(names).not.toContain('dist')
+  it('lists what git ignores, and marks it', async () => {
+    /*
+     * It was left out, which made `.env`, `dist/` and `node_modules` the files
+     * the files panel could not show. Marked rather than dropped, so the tree
+     * can draw them quieter; absent rather than false on everything else.
+     */
+    const root = await listDirectory(repo.path, '')
+    expect(root.entries.find((e) => e.name === 'dist')?.ignored).toBe(true)
+    expect(root.entries.find((e) => e.name === 'src')?.ignored).toBeUndefined()
+    expect(root.entries.find((e) => e.name === 'README.md')?.ignored).toBeUndefined()
   })
 
-  it('refuses an ignored directory outright rather than showing it empty', async () => {
-    expect(await statusOf(listDirectory(repo.path, 'dist'))).toBe(404)
+  it('opens an ignored directory, and marks what is inside it', async () => {
+    // It answered 404, which made an ignored directory a dead end even when
+    // something else had named it.
+    const dist = await listDirectory(repo.path, 'dist')
+    expect(dist.entries).toEqual([{ name: 'built.js', kind: 'file', ignored: true }])
   })
 
   it('never lists .git', async () => {

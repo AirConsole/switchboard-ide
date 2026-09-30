@@ -4567,6 +4567,17 @@ button {
   color: var(--bone);
 }
 
+/*
+ * Ignored by git: `dist/`, `node_modules`, a `.env`. Listed, because that is
+ * often exactly what you came to look at, and one step down the grey ladder,
+ * because it is not the project's own source. The last step rather than a
+ * lower opacity, so it still clears 4.5:1; hovered or open, it goes to --bone
+ * like any other row, since `:hover` and `--on` outrank this.
+ */
+.files__row--ignored {
+  color: var(--graphite-dim);
+}
+
 
 /*
  * The disclosure triangle, in a fixed box whether or not there is one in it, so
