@@ -102,6 +102,11 @@ export interface FilesState {
   media: MediaFile | null
   /** Why there is no file to show: not text, not drawable, too large, gone. */
   refusal: string | null
+  /**
+   * A file is open and nothing has been read for it yet. `file`, `media` and
+   * `refusal` are all null meanwhile -- never the answer for the file before.
+   */
+  fileLoading: boolean
   dirty: boolean
   saving: boolean
   /** A save was refused because the file moved on disk underneath it. */
@@ -291,6 +296,16 @@ export const useFilesState = (opts: {
   const [file, setFile] = useState<EditorFile | null>(null)
   const [media, setMedia] = useState<MediaFile | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
+  /*
+   * Which file `file`, `media` and `refusal` are the answer for.
+   *
+   * They used to be read as the answer for whatever file was open, and that
+   * held only once a read had landed: switching files showed the previous
+   * file's text under the new file's name for as long as the read took. Set
+   * in the same callback as they are, so React batches the two into one
+   * render and they cannot disagree on screen.
+   */
+  const [readFor, setReadFor] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState(false)
@@ -329,6 +344,20 @@ export const useFilesState = (opts: {
    */
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
+  /*
+   * The two callbacks the reads below make, held rather than depended on.
+   *
+   * The row passes both as arrows written inline, so each is a new function
+   * on every render of the row -- which is every socket update. As effect
+   * dependencies they tore the reads down and started them again each time:
+   * the root and every expanded directory, and the open file, re-read on each
+   * render instead of every few seconds. Reported as a flood of `/tree?path=`
+   * in the network panel.
+   */
+  const onOpenRef = useRef(onOpen)
+  onOpenRef.current = onOpen
+  const onToggleDirRef = useRef(onToggleDir)
+  onToggleDirRef.current = onToggleDir
 
   // Only while the panel is on screen; see TREE_POLL_MS.
   useEffect(() => {
@@ -376,7 +405,7 @@ export const useFilesState = (opts: {
               delete next[dir]
               return next
             })
-            if (expandedRef.current.includes(dir)) onToggleDir(dir)
+            if (expandedRef.current.includes(dir)) onToggleDirRef.current(dir)
             return
           }
           // The root failing is a real error -- and it must not also leave the
@@ -390,7 +419,7 @@ export const useFilesState = (opts: {
     return () => {
       live = false
     }
-  }, [worktreeId, dirsKey, revision, treeNonce, enabled, onToggleDir])
+  }, [worktreeId, dirsKey, revision, treeNonce, enabled])
 
   /*
    * The open file, and the poll that follows it.
@@ -401,18 +430,34 @@ export const useFilesState = (opts: {
    * you are editing must not be rewritten underneath you.
    */
   useEffect(() => {
+    /*
+     * The rev held is the last file's until this file has been read. Sent up
+     * as `ifNotRev` for a different file it can only miss, but a save made
+     * before the read landed would have been checked against the wrong file.
+     */
+    if (readFor !== filePath) revRef.current = null
     if (!enabled || filePath === null) {
       if (filePath === null) {
         setFile(null)
         setMedia(null)
         setRefusal(null)
-        revRef.current = null
+        setReadFor(null)
       }
       return
     }
     let live = true
+    /*
+     * Whether this file has been read in this effect yet. The draft check
+     * below skips the *poll*, and it used to skip the first read too: open a
+     * file with unsaved edits -- edit B, click A, click B -- and B was never
+     * read at all, so A's text stayed on screen under B's name. Reading it is
+     * safe, since the editor opens on the draft whenever there is one and
+     * only follows the disk when there is not.
+     */
+    let first = true
     const read = (): void => {
-      if (drafts.has(key)) return
+      if (!first && drafts.has(key)) return
+      first = false
       void api
         .readFile(worktreeId, filePath, revRef.current ?? undefined)
         .then((result) => {
@@ -422,6 +467,7 @@ export const useFilesState = (opts: {
           // a file under you -- left the red notice up for the session.
           setError(null)
           if ('unchanged' in result) return
+          setReadFor(filePath)
           revRef.current = result.rev
           if (result.binary === true) {
             setFile(null)
@@ -469,7 +515,7 @@ export const useFilesState = (opts: {
         .catch((err: unknown) => {
           if (!live) return
           if (err instanceof ApiError && err.status === 404) {
-            onOpen('')
+            onOpenRef.current('')
             return
           }
           setError(err instanceof Error ? err.message : String(err))
@@ -481,7 +527,7 @@ export const useFilesState = (opts: {
       live = false
       clearInterval(timer)
     }
-  }, [worktreeId, filePath, revision, fileNonce, enabled, onOpen])
+  }, [worktreeId, filePath, revision, fileNonce, enabled])
 
   /*
    * A different file shows whatever is being held for *it*.
@@ -503,7 +549,8 @@ export const useFilesState = (opts: {
    * nothing.
    */
   const lastDiskRef = useRef<string | null>(null)
-  lastDiskRef.current = file?.text ?? null
+  const current = readFor !== null && readFor === filePath
+  lastDiskRef.current = current ? (file?.text ?? null) : null
 
   const edited = useCallback(
     (text: string): void => {
@@ -592,9 +639,11 @@ export const useFilesState = (opts: {
     path,
     rows,
     loading: listings[''] === undefined,
-    file,
-    media,
-    refusal,
+    file: current ? file : null,
+    media: current ? media : null,
+    refusal: current ? refusal : null,
+    // Not while a failure is up: that is the answer, and it is already shown.
+    fileLoading: filePath !== null && !current && error === null,
     dirty,
     saving,
     conflict,
@@ -2016,6 +2065,7 @@ export const FilesPane = ({
        */
       if (files.media !== null) return near ? <MediaView media={files.media} /> : <></>
       if (files.refusal !== null) return <p className="files__note">{files.refusal}</p>
+      if (files.fileLoading) return <p className="files__note files__loading">Loading…</p>
       if (files.file === null) return <></>
       if (markdownPreview && isMarkdown(files.file.path)) {
         /*

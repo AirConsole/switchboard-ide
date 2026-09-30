@@ -4568,6 +4568,22 @@ button {
 }
 
 /*
+ * A file still being read. Held back for a moment rather than shown at once:
+ * most reads land in a few milliseconds, and a word that flashes up on every
+ * click is noise. A step, not a fade -- the only motion here is the terminal.
+ */
+.files__loading {
+  visibility: hidden;
+  animation: files-loading-show 0s linear 150ms forwards;
+}
+
+@keyframes files-loading-show {
+  to {
+    visibility: visible;
+  }
+}
+
+/*
  * Ignored by git: `dist/`, `node_modules`, a `.env`. Listed, because that is
  * often exactly what you came to look at, and one step down the grey ladder,
  * because it is not the project's own source. The last step rather than a
