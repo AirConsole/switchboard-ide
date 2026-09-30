@@ -60,6 +60,8 @@ export interface TreeRow {
   kind: 'dir' | 'file'
   depth: number
   changed: boolean
+  /** git ignores it; see `FileEntry.ignored`. */
+  ignored: boolean
   /** Directories only: whether this one is open. */
   open: boolean
 }
@@ -256,6 +258,7 @@ const flatten = (
       kind: entry.kind,
       depth,
       changed: entry.changed === true,
+      ignored: entry.ignored === true,
       open,
     })
     if (open) flatten(path, depth + 1, listings, expanded, out)
@@ -1913,6 +1916,7 @@ export const FilesPane = ({
                   'files__row',
                   isOpenFile ? 'files__row--on' : '',
                   row.changed ? 'files__row--changed' : '',
+                  row.ignored ? 'files__row--ignored' : '',
                   row.kind === 'dir' && row.path === dropInto ? 'files__row--drop' : '',
                 ]
                   .filter(Boolean)

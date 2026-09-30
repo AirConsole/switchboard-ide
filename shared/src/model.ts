@@ -524,6 +524,12 @@ export interface FileEntry {
    * entry, and this listing is sent on every click.
    */
   changed?: boolean
+  /**
+   * git ignores this -- by a `.gitignore`, `.git/info/exclude` or the global
+   * excludes file, or by being inside a directory that is ignored. Listed
+   * anyway, and drawn a step quieter. Absent rather than false, like `changed`.
+   */
+  ignored?: boolean
 }
 
 /**
