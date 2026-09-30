@@ -948,10 +948,18 @@ const WorktreeTile = ({
   useEffect(() => {
     if (!filesOpen && showList) onShowList(false)
   }, [filesOpen, showList, onShowList])
+  /*
+   * The panel reads only while this window is near the screen -- the same
+   * test that decides whether its terminals are built. Every window with the
+   * panel open used to poll whether or not anybody could see it: the tree,
+   * every open directory and the open file, every two or three seconds, for
+   * windows scrolled a dozen screens away. Coming back into range is a change
+   * of `enabled`, which reads at once.
+   */
   const changes = useChangesState({
     worktreeId: worktree.id,
     revision,
-    enabled: filesOpen && filesMode !== 'files',
+    enabled: near && filesOpen && filesMode !== 'files',
     path: openPath,
     mode: filesMode,
     commit,
@@ -960,7 +968,7 @@ const WorktreeTile = ({
   const files = useFilesState({
     worktreeId: worktree.id,
     revision,
-    enabled: filesOpen && filesMode === 'files',
+    enabled: near && filesOpen && filesMode === 'files',
     path: openPath,
     expanded: expandedDirs,
     onOpen: onOpenPath,

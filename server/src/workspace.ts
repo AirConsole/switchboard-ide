@@ -9,6 +9,7 @@ import type {
   ContentHit,
   FileHit,
   FileListing,
+  FileListings,
   FileSaved,
   FileUnchanged,
   Project,
@@ -999,6 +1000,31 @@ export class Workspace {
   async fileTree(worktreeId: string, path: string): Promise<FileListing> {
     const { worktree } = await this.resolve(worktreeId)
     return listDirectory(worktree.path, path)
+  }
+
+  /**
+   * The tree's poll, in one request: see `FileListings`.
+   *
+   * One after another rather than all at once, because they share the one
+   * `git status` `changedPaths` caches, and the first read is what fills it --
+   * in parallel every directory would run its own.
+   */
+  async fileTrees(worktreeId: string, paths: string[]): Promise<FileListings> {
+    const { worktree } = await this.resolve(worktreeId)
+    const listings: FileListing[] = []
+    const missing: string[] = []
+    for (const path of new Set(paths)) {
+      try {
+        listings.push(await listDirectory(worktree.path, path))
+      } catch (err) {
+        // Gone, or a file now: the directory the client remembers is not there.
+        // Anything else -- containment above all -- is the request's answer.
+        const status = err instanceof HttpError ? err.status : null
+        if (path === '' || (status !== 404 && status !== 400)) throw err
+        missing.push(path)
+      }
+    }
+    return { listings, missing }
   }
 
   /**

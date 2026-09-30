@@ -558,6 +558,23 @@ export interface FileListing {
 }
 
 /**
+ * Several directories of one worktree, in one answer: the tree's poll.
+ *
+ * The tree is the root plus every directory you have expanded, and it used to
+ * be read one request per directory, every few seconds, for every worktree with
+ * the panel open -- measured from a real browser as a dozen `/tree` requests
+ * every three seconds, queueing behind each other for a second at a time.
+ *
+ * `missing` is a directory that is not there any more (or is a file now): the
+ * agent deleted it, or the branch moved. The client forgets it, as it did the
+ * single-directory route's 404; the root missing is the whole request failing.
+ */
+export interface FileListings {
+  listings: FileListing[]
+  missing: string[]
+}
+
+/**
  * One answer from the finder: a path, and what is at it.
  *
  * Directories are in it as well as files, because a search is also how you

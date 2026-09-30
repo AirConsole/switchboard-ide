@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import type { FileContent } from '@switchboard/shared'
-import { api } from '../src/api.js'
+import { ApiError, api } from '../src/api.js'
 import { useFilesState } from '../src/views/FilesPane.js'
 
 /**
@@ -10,7 +10,10 @@ import { useFilesState } from '../src/views/FilesPane.js'
  */
 const pendingReads = () => {
   const waiting: { path: string; ifNotRev?: string; answer: (text: string) => void }[] = []
-  vi.spyOn(api, 'tree').mockResolvedValue({ path: '', entries: [] })
+  vi.spyOn(api, 'trees').mockImplementation(async (_worktree, paths) => ({
+    listings: paths.map((path) => ({ path, entries: [] })),
+    missing: [],
+  }))
   vi.spyOn(api, 'readFile').mockImplementation(
     (_worktree, path, ifNotRev) =>
       new Promise((resolve) => {
@@ -37,7 +40,7 @@ const noop = (_: string): void => {}
  * Each callback a new arrow on every render, exactly as the row passes them:
  * that is what made every render a fresh round of reads.
  */
-const open = (worktreeId: string, path: string) =>
+const open = (worktreeId: string, path: string, expanded: string[] = []) =>
   renderHook(
     (props: { path: string; tick?: number }) =>
       useFilesState({
@@ -45,7 +48,7 @@ const open = (worktreeId: string, path: string) =>
         revision: 'r',
         enabled: true,
         path: props.path,
-        expanded: [],
+        expanded,
         onOpen: (p) => noop(p),
         onToggleDir: (d) => noop(d),
         onExpandDir: (d) => noop(d),
@@ -55,6 +58,7 @@ const open = (worktreeId: string, path: string) =>
 
 afterEach(() => {
   vi.restoreAllMocks()
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
 })
 
 describe('the open file', () => {
@@ -113,10 +117,102 @@ describe('the open file', () => {
     const reads = pendingReads()
     const { rerender } = open('w3', 'a.txt')
     await reads.answer('a.txt', 'A')
-    const trees = vi.mocked(api.tree).mock.calls.length
+    const trees = vi.mocked(api.trees).mock.calls.length
     const files = vi.mocked(api.readFile).mock.calls.length
     for (let tick = 1; tick <= 5; tick++) rerender({ path: 'a.txt', tick })
-    expect(vi.mocked(api.tree).mock.calls.length).toBe(trees)
+    expect(vi.mocked(api.trees).mock.calls.length).toBe(trees)
     expect(vi.mocked(api.readFile).mock.calls.length).toBe(files)
+  })
+})
+
+describe('the tree', () => {
+  it('reads every directory on screen in one request, and none that are folded away', async () => {
+    /*
+     * It was one request per directory, and `expanded` keeps a directory whose
+     * parent has been folded, so those went on being polled while drawn
+     * nowhere: a dozen `/tree` requests every three seconds, measured.
+     */
+    pendingReads()
+    open('w4', '', ['src', 'src/ui', 'docs/api'])
+    await act(async () => {})
+    expect(vi.mocked(api.trees).mock.calls).toEqual([['w4', ['', 'src', 'src/ui']]])
+  })
+
+  it('reads nothing while the tab is in the background', async () => {
+    // Timers still run in a hidden tab, only slower: every open panel went on
+    // polling for a page nobody was looking at.
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    const reads = pendingReads()
+    open('w5', 'a.txt')
+    await act(async () => {})
+    expect(api.trees).not.toHaveBeenCalled()
+    expect(reads.waiting).toEqual([])
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    // Coming back reads at once rather than at the next tick.
+    expect(api.trees).toHaveBeenCalledTimes(1)
+    expect(reads.waiting.map((read) => read.path)).toEqual(['a.txt'])
+  })
+})
+
+describe('api.trees', () => {
+  it('falls back to a directory at a time on a machine from before it', async () => {
+    /*
+     * A linked machine on an older build has no `/trees` and answers the
+     * router's own 404, which carries no code. Its directories are then read
+     * as they always were, and a gone one is reported the new route's way.
+     */
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      const answer = (status: number, body: unknown): Response =>
+        new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+      if (url.includes('/trees?')) return answer(404, { error: 'not found' })
+      const path = new URL(url, 'http://x').searchParams.get('path')
+      if (path === 'gone') return answer(404, { error: 'no such file: gone', code: 'file-missing' })
+      return answer(200, { path, entries: [] })
+    })
+    const answer = await api.trees('w6', ['', 'src', 'gone'])
+    expect(answer).toEqual({
+      listings: [{ path: '', entries: [] }, { path: 'src', entries: [] }],
+      missing: ['gone'],
+    })
+    expect(fetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not fall back on a refusal that says what it is', async () => {
+    // Asked once: falling back would ask again per directory and hide nothing.
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ error: 'outside', code: 'path-outside-worktree' }), { status: 403 }),
+    )
+    await expect(api.trees('w7', ['', '../..'])).rejects.toBeInstanceOf(ApiError)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the hook itself', () => {
+  it('survives being turned off and on', async () => {
+    /*
+     * `opts.enabled && usePageVisible()` skipped the hook whenever the panel
+     * was off, and React threw on the first render that changed it -- which
+     * took the whole row down in a browser, found there and not here, because
+     * every test above keeps the panel on.
+     */
+    pendingReads()
+    const { rerender } = renderHook(
+      (props: { enabled: boolean }) =>
+        useFilesState({
+          worktreeId: 'w8',
+          revision: 'r',
+          enabled: props.enabled,
+          path: '',
+          expanded: [],
+          onOpen: noop,
+          onToggleDir: noop,
+          onExpandDir: noop,
+        }),
+      { initialProps: { enabled: true } },
+    )
+    expect(() => rerender({ enabled: false })).not.toThrow()
+    expect(() => rerender({ enabled: true })).not.toThrow()
   })
 })
