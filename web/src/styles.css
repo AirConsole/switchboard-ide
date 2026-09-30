@@ -1465,7 +1465,7 @@ button {
  *   2  the `Open project` label; the icon stays
  *   3  the tabs of every project but the one you are in
  *   4  the tabs of that one too
- *   5  the usage readout altogether
+ *   5  the usage labels; each limit keeps its percent and its reset
  */
 
 /*
@@ -1479,7 +1479,8 @@ button {
 .topbar[data-stage='1'] .usage__track,
 .topbar[data-stage='2'] .usage__track,
 .topbar[data-stage='3'] .usage__track,
-.topbar[data-stage='4'] .usage__track {
+.topbar[data-stage='4'] .usage__track,
+.topbar[data-stage='5'] .usage__track {
   display: none;
 }
 
@@ -1631,9 +1632,27 @@ button {
   color: var(--quiet-on);
 }
 
-/* Rung 5: the last thing the bar has to give. */
+/*
+ * Rung 5: the labels, and the readout narrows to two numbers a row.
+ *
+ * It used to go altogether here, and that was the wrong last step: on a phone,
+ * which is where the ladder bottoms out, the limits vanished exactly where
+ * there is least else to tell you that the session you are about to start will
+ * end early. `82% 4h` is the reading; which limit a row is, is its place in
+ * the column -- session, week, model, the order `/usage` reports -- and the
+ * tooltip names each. 26 + 24 + one gap + the 8px padding either side: about
+ * 72px, against 146 at rung 4.
+ */
 .topbar[data-stage='5'] .usage {
+  padding: 0 8px;
+}
+
+.topbar[data-stage='5'] .usage__label {
   display: none;
+}
+
+.topbar[data-stage='5'] .usage__row {
+  grid-template-columns: 26px 24px;
 }
 
 /* --------------------------------------------------------------- the tile -- */
