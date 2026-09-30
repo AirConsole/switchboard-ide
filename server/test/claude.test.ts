@@ -186,6 +186,31 @@ describe('lastPrompt', () => {
     expect(await lastPrompt(cwd)).toBe('do step 3')
   })
 
+  it('skips machinery whose tag carries attributes, a subagent hand-back', async () => {
+    /*
+     * `<agent-message from="…">` got past a pattern that wanted `>` right
+     * after the tag name, so a window's recent prompts read "<agent-message
+     * from="abb31323b396787ac"> [Subagent hand-back] The text below is the
+     * final rep…". Both ways it can arrive: as a user record, and queued
+     * while the parent is mid-turn.
+     */
+    const handBack =
+      '<agent-message from="abb31323b396787ac">\n[Subagent hand-back] The text below is the final report\n</agent-message>'
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [userSays('do step 3'), userSays(handBack)])
+    expect(await lastPrompt(cwd)).toBe('do step 3')
+    const busy = freshCwd()
+    await writeTranscript(busy, 'a.jsonl', [
+      userSays('do step 3'),
+      {
+        type: 'attachment',
+        isSidechain: false,
+        attachment: { type: 'queued_command', prompt: handBack, commandMode: 'prompt' },
+      },
+    ])
+    expect(await promptSummary(busy)).toEqual({ prompt: 'do step 3', task: 'do step 3', followUps: [] })
+  })
+
   it('skips a subagent’s own records and the harness’s meta ones', async () => {
     const cwd = freshCwd()
     await writeTranscript(cwd, 'a.jsonl', [
