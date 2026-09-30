@@ -19,6 +19,7 @@ import {
 } from './ChangesPane.js'
 import { ApiError, api } from '../api.js'
 import { useListKeys } from '../components/useListKeys.js'
+import { usePageVisible } from '../usePageVisible.js'
 import type { EditorFile } from '../editor/CodeEditor.js'
 
 /*
@@ -290,7 +291,18 @@ export const useFilesState = (opts: {
   /** Open a directory and everything above it, without touching the rest. */
   onExpandDir: (dir: string) => void
 }): FilesState => {
-  const { worktreeId, revision, enabled, path, expanded, onOpen, onToggleDir, onExpandDir } = opts
+  const { worktreeId, revision, path, expanded, onOpen, onToggleDir, onExpandDir } = opts
+  /*
+   * Nothing is read while the tab is in the background. A browser slows its
+   * timers there but still runs them, so a tab left open overnight went on
+   * reading every open panel's tree every few seconds for nobody. Coming back
+   * is a change of `enabled`, which reads at once rather than at the next tick.
+   */
+  // Called before the \`&&\`, never after it: short-circuited, it is a hook that
+  // runs only while the panel is enabled, and React crashed the row on the
+  // first render that turned it off.
+  const pageVisible = usePageVisible()
+  const enabled = opts.enabled && pageVisible
 
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({})
   const [file, setFile] = useState<EditorFile | null>(null)
@@ -332,8 +344,17 @@ export const useFilesState = (opts: {
   /** The file on screen right now, for callbacks that resolve later. */
   const pathRef = useRef<string | null>(filePath)
   pathRef.current = filePath
-  // The root is always read; everything else only once it has been expanded.
-  const dirsKey = ['', ...expanded].join('\n')
+  /*
+   * The root is always read, and a directory only while it is on screen: open,
+   * and every directory above it open too. `expanded` keeps a directory whose
+   * parent you have since folded -- so unfolding the parent brings it back as
+   * it was -- and it went on being polled all the while, drawn nowhere.
+   */
+  const unfolded = new Set(expanded)
+  const dirsKey = [
+    '',
+    ...expanded.filter((dir) => ancestorsOf(dir).every((up) => unfolded.has(up))),
+  ].join('\n')
   /**
    * What is expanded right now, for the 404 path below.
    *
@@ -376,46 +397,45 @@ export const useFilesState = (opts: {
   useEffect(() => {
     if (!enabled) return
     let live = true
-    for (const dir of dirsKey.split('\n')) {
-      void api
-        .tree(worktreeId, dir)
-        .then((listing) => {
-          if (!live) return
-          setError(null)
-          setListings((previous) => {
-            const had = previous[dir]
-            if (had !== undefined && JSON.stringify(had) === JSON.stringify(listing.entries)) {
-              return previous
-            }
-            return { ...previous, [dir]: listing.entries }
-          })
-        })
-        .catch((err: unknown) => {
-          if (!live) return
-          /*
-           * A stored path can name a directory that is gone -- the agent deleted
-           * it, or this is a reload onto a different branch. Forget it rather
-           * than showing an error about a path nobody chose; the root failing is
-           * a real error and does get shown.
-           */
-          if (err instanceof ApiError && err.status === 404 && dir !== '') {
-            setListings((previous) => {
-              if (previous[dir] === undefined) return previous
-              const next = { ...previous }
-              delete next[dir]
-              return next
-            })
-            if (expandedRef.current.includes(dir)) onToggleDirRef.current(dir)
-            return
+    // One request for all of them: see `FileListings`.
+    void api
+      .trees(worktreeId, dirsKey.split('\n'))
+      .then(({ listings: read, missing }) => {
+        if (!live) return
+        setError(null)
+        setListings((previous) => {
+          let next = previous
+          for (const listing of read) {
+            const had = previous[listing.path]
+            if (had !== undefined && JSON.stringify(had) === JSON.stringify(listing.entries)) continue
+            if (next === previous) next = { ...previous }
+            next[listing.path] = listing.entries
           }
-          // The root failing is a real error -- and it must not also leave the
-          // tree claiming to be loading for the rest of the session, since
-          // `loading` is "the root listing is missing" and nothing else ever
-          // fills it in.
-          if (dir === '') setListings((previous) => ({ ...previous, '': previous[''] ?? [] }))
-          setError(err instanceof Error ? err.message : String(err))
+          for (const dir of missing) {
+            if (next[dir] === undefined) continue
+            if (next === previous) next = { ...previous }
+            delete next[dir]
+          }
+          return next
         })
-    }
+        /*
+         * A stored path can name a directory that is gone -- the agent deleted
+         * it, or this is a reload onto a different branch. Forget it rather
+         * than showing an error about a path nobody chose.
+         */
+        for (const dir of missing) {
+          if (expandedRef.current.includes(dir)) onToggleDirRef.current(dir)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!live) return
+        // The root failing is a real error -- and it must not also leave the
+        // tree claiming to be loading for the rest of the session, since
+        // `loading` is "the root listing is missing" and nothing else ever
+        // fills it in.
+        setListings((previous) => ({ ...previous, '': previous[''] ?? [] }))
+        setError(err instanceof Error ? err.message : String(err))
+      })
     return () => {
       live = false
     }

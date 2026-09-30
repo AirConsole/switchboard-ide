@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Commit, FileChange, FilesMode, WorktreeChanges } from '@switchboard/shared'
 import { api } from '../api.js'
+import { usePageVisible } from '../usePageVisible.js'
 
 /**
  * A diff big enough to be a rendering problem is truncated rather than allowed
@@ -188,7 +189,13 @@ export const useChangesState = (opts: {
   commit: string | null
   onSelectCommit: (hash: string | null) => void
 }): ChangesState => {
-  const { worktreeId, revision, enabled, path, mode, commit, onSelectCommit } = opts
+  const { worktreeId, revision, path, mode, commit, onSelectCommit } = opts
+  // Not in a background tab; see the same line in `useFilesState`.
+  // Called before the \`&&\`, never after it: short-circuited, it is a hook that
+  // runs only while the panel is enabled, and React crashed the row on the
+  // first render that turned it off.
+  const pageVisible = usePageVisible()
+  const enabled = opts.enabled && pageVisible
   const [changes, setChanges] = useState<WorktreeChanges | null>(null)
   const [patch, setPatch] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)

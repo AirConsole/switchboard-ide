@@ -113,6 +113,18 @@ const patchTodoBody = z.object({
  */
 const filePath = z.string()
 const treeQuery = z.object({ path: filePath.default('') })
+/*
+ * `?path=a&path=b`, which Fastify's parser hands over as an array -- and as a
+ * bare string when there is only one. Capped, since each is a readdir and a
+ * `git check-ignore`, and a real tree has a few dozen open at most.
+ */
+const treesQuery = z.object({
+  path: z
+    .union([filePath, z.array(filePath)])
+    .default([''])
+    .transform((path) => (Array.isArray(path) ? path : [path]))
+    .pipe(z.array(filePath).min(1).max(200)),
+})
 const findQuery = z.object({
   /** What to look for. Empty finds nothing rather than everything. */
   q: z.string().default(''),
@@ -443,6 +455,13 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const { path } = treeQuery.parse(request.query)
     return workspace.fileTree(id, path)
+  })
+
+  /** Several directories in one request; see `FileListings`. */
+  app.get('/api/worktrees/:id/trees', async (request) => {
+    const { id } = request.params as { id: string }
+    const { path } = treesQuery.parse(request.query)
+    return workspace.fileTrees(id, path)
   })
 
   /*

@@ -4,6 +4,7 @@ import type {
   ContentHit,
   FileHit,
   FileListing,
+  FileListings,
   FileSaved,
   FileUnchanged,
   Project,
@@ -261,6 +262,35 @@ export const api = {
    * `{ unchanged: true }` rather than sending the whole thing back every two
    * seconds.
    */
+  /**
+   * The tree's poll: every directory it shows, in one request.
+   *
+   * A machine from before `/trees` answers it 404 with no code -- the router's
+   * own not-found, where a worktree it does not have carries none either, so
+   * the two are told apart by trying the old route: the directories are then
+   * read one at a time, as they always were, and a gone one comes back in
+   * `missing` exactly as the new route would say it.
+   */
+  trees: async (worktreeId: string, paths: string[]): Promise<FileListings> => {
+    const query = paths.map((path) => `path=${encodeURIComponent(path)}`).join('&')
+    try {
+      return await request<FileListings>(`/api/worktrees/${worktreeId}/trees?${query}`)
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 404 || err.code !== undefined) throw err
+    }
+    const listings: FileListing[] = []
+    const missing: string[] = []
+    for (const path of paths) {
+      try {
+        listings.push(await api.tree(worktreeId, path))
+      } catch (err) {
+        if (path === '' || !(err instanceof ApiError) || err.status !== 404) throw err
+        missing.push(path)
+      }
+    }
+    return { listings, missing }
+  },
+
   readFile: (worktreeId: string, path: string, ifNotRev?: string) =>
     request<FileContent | FileUnchanged>(
       `/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}` +
