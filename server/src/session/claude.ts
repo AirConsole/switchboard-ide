@@ -165,11 +165,18 @@ const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
  * plus `system-reminder` and `attachment` from before. A slash command opens
  * with a tag too and must survive: `readCommand` runs first and returns it.
  *
+ * An opening tag **with attributes** counts too. `<agent-message from="…">`,
+ * which is how a subagent's hand-back arrives in its parent's transcript, was
+ * missed by a pattern that wanted `>` straight after the name, and a window's
+ * recent prompts read "<agent-message from="abb3…"> [Subagent hand-back] The
+ * text below is the final rep…". Widening it newly skips nothing a person
+ * typed: zero records across every local transcript, measured.
+ *
  * The cost is a paste that opens with markup -- `<div>...</div>` and a question
  * after it -- which reads as machinery and leaves the previous prompt in the
  * bar. A stale line for one turn, against a bar full of XML.
  */
-const INJECTED = /^\s*<[a-z][a-z0-9-]*>/i
+const INJECTED = /^\s*<[a-z][a-z0-9_-]*(?:\s[^<>]*)?>/i
 
 /**
  * The words a person types when they turn a tool use down.
@@ -271,7 +278,14 @@ const markOf = (line: string): Mark => {
     if (record.isSidechain === true || queued?.type !== 'queued_command') return null
     if (queued.commandMode !== 'prompt' || typeof queued.prompt !== 'string') return null
     const said = queued.prompt.replace(PASTE_TAG, '')
-    return said.trim() === '' ? null : { kind: 'prompt', text: said, steer: true }
+    /*
+     * Machinery can arrive this way too: a hand-back that lands while the
+     * parent is mid-turn is queued like anything else said then. Of 302
+     * `prompt`-mode messages across every local transcript, none a person
+     * typed opens with a tag, so the same test costs nothing here.
+     */
+    if (said.trim() === '' || INJECTED.test(said)) return null
+    return { kind: 'prompt', text: said, steer: true }
   }
   if (record.type !== 'user') return null
   // A subagent's own transcript, or something the harness injected.
