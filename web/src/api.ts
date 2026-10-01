@@ -75,6 +75,13 @@ export interface ServerRow {
   refused?: boolean
 }
 
+/** What a removal was told to take with it; see `removalQuestions`. */
+export interface RemoveOptions {
+  force: boolean
+  deleteBranch: boolean
+  deleteRemoteBranch: boolean
+}
+
 export const api = {
   /**
    * A single-use ticket for the next socket upgrade.
@@ -171,10 +178,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  removeWorktree: (
-    id: string,
-    opts: { force: boolean; deleteBranch: boolean; deleteRemoteBranch: boolean },
-  ) =>
+  removeWorktree: (id: string, opts: RemoveOptions) =>
     request<{ ok: true }>(
       `/api/worktrees/${id}?force=${opts.force}&deleteBranch=${opts.deleteBranch}` +
         `&deleteRemoteBranch=${opts.deleteRemoteBranch}`,

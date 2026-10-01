@@ -39,16 +39,32 @@ in a 38px band -- and what used to get squeezed out was the tabs, which are the
 part the bar is *for*. So `data-stage` on the header is a rung, and the bar
 walks down them: **1** drops the usage tracks, **2** the `Open project` label
 (the icon stays), **3** the tabs of every project but the one you are in, **4**
-the tabs of that one too, **5** the usage readout down to its percentages,
-which a click opens in full under the bar. Past it the strip scrolls, which is what it has always
-done.
+the tabs of that one too. **5** gives the bar a second row: the project heads
+get the whole of it and wrap onto more rows of the bar's height when even that
+is not enough, and the usage readout gets its bars back on the first row, since
+it was only squeezed for sharing a row with them. **6** takes those bars again
+and **7** takes the readout down to its percentages, which a click opens in
+full under the bar. Past 7 nothing is left to give and the first row overflows.
+
+Rung 5 is a **grid**, not a wrapping flex row, and that is load-bearing: a
+wrapping row that is too wide wraps again instead of overflowing, and overflow
+is the only signal the sweep has. So the first row overflows honestly and moves
+the ladder to 6 and 7, while the heads' row wraps and never does -- nothing the
+sweep could still take away is on that row, and before the heads wrapped it
+walked straight to 7 and shrank the readout for nothing. Every item is placed
+explicitly: the machine button and sign-out share a class, and auto-placement
+dropped one of them into the spacer column. Each row costs the windows 38px of
+height, which is why this is the last thing the bar does.
+
+Measured with six projects, three of them awake in one: rung 0 at 1600, 4 at
+900, 5 at 700 (two rows, 77px), 5 still at 540 to 360 with the heads on two
+rows of their own (121px) and the full readout above them, 6 at 300, 7 at 240
+(209px, four rows of heads). At every width each head was on screen and under
+`elementFromPoint`, and sweeping back up gave 6, 5, 5, 5, 4, 0.
 
 Measured with two projects holding three and one awake worktrees: stage 0 from
-900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 240 -- and at
-*every* width the strip has no overflow, which is the whole claim. Since rung 5
-keeps the usage percentages rather than dropping them, it arrives at 380px and
-the bar fits down to 300px; below that the strip scrolls by the difference,
-which is the ladder's honest end. The ladder is
+900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down -- and at *every* width
+the strip has no overflow, which is the whole claim. The ladder is
 monotone, it never collapses more than it must (at each width, forcing it one
 rung up overflows), and a sweep back up the widths reproduces the same rungs
 exactly.
@@ -56,14 +72,15 @@ exactly.
 **The usage block narrows in two bites, first and last, and never goes.** The
 tracks are 54px of its 189 and the least of it -- a bar with no number beside it
 is hard to act on, where `session 34% 4h` is the whole reading -- so the picture
-goes at rung 1, and at rung 5 everything but the percentages, a column of
-`34%` in about 42px. **A click there hangs the whole readout under the bar**
+goes at rung 1. At rung 5 the bar has a row to spare and the readout is whole
+again; rung 6 takes the bars once more, and rung 7 everything but the
+percentages, a column of `34%` in about 42px. **A click there hangs the whole readout under the bar**
 (`.usage__pop`, through `useAnchoredMenu`), and another click, Escape or a click
 elsewhere puts it away. Which rung it is gets read off the DOM at the click
 rather than rendered from, and CSS hides the panel at every other rung, so a
 window widened with it open does not show the readout twice. It used to go
-altogether at rung 5, which put the limits out of sight on exactly the screen,
-a phone, where the ladder bottoms out. `useUsage` keeps polling at every rung: a reading
+altogether at the ladder's last rung, which put the limits out of sight on exactly the
+screen, a phone, where the ladder bottoms out. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
 
@@ -263,7 +280,14 @@ The pieces, and why each is the way it is:
   *before* it destroys anything local, and under `--force-with-lease`: mergedness
   is read from `refs/remotes` and nothing here fetches, so the lease is what
   stops "merged, delete it" throwing away a colleague's push. A failed lease
-  leaves the dialog open with git's own words and the worktree untouched.
+  leaves the worktree untouched and says so in its window, in git's own words.
+- **Removal says so at the click.** The dialog closes, the window greys out
+  under *Shutting down…* and stops taking input (`inert`), and the keyboard
+  moves to its neighbour -- all before the request is answered, since killing
+  every session in a worktree and deleting it takes seconds with real agents in
+  it, and nothing used to change on screen until it was done. `departing` in
+  `App` holds it; success drops the window with the refresh, and a refusal
+  brings it back with the reason in it (`TileFailure`).
 - **What is running is told, not asked.** `removalWarnings` covers what git
   knows nothing about: a Claude that is working or waiting on you, todos queued
   behind it, terminals still running. Each is one red line (`--danger`, the

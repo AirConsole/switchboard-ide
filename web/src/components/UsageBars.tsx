@@ -185,7 +185,7 @@ export const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | nul
         aria-expanded={pop.at !== null}
         onClick={(event) => {
           const stage = event.currentTarget.closest<HTMLElement>('.topbar')?.dataset.stage
-          if (stage === '5' || pop.at !== null) pop.toggle()
+          if (stage === '7' || pop.at !== null) pop.toggle()
         }}
       >
         {rows()}

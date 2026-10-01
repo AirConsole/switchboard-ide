@@ -390,7 +390,8 @@ button {
 
 .app {
   display: grid;
-  grid-template-rows: var(--bar-h) auto 1fr;
+  /* The bar says its own height -- one row, or two at the ladder's end. */
+  grid-template-rows: auto auto 1fr;
   height: 100%;
   overflow: hidden;
 }
@@ -431,6 +432,7 @@ button {
 .topbar {
   display: flex;
   align-items: stretch;
+  height: var(--bar-h);
   /*
    * The frame, and the darkest thing on screen: everything in the strip is read
    * against it, and the page below it is now the light one. The bottom rule is
@@ -774,7 +776,7 @@ button {
   padding: 8px 12px;
 }
 
-.topbar:not([data-stage='5']) .usage__pop {
+.topbar:not([data-stage='7']) .usage__pop {
   display: none;
 }
 
@@ -1487,7 +1489,10 @@ button {
  *   2  the `Open project` label; the icon stays
  *   3  the tabs of every project but the one you are in
  *   4  the tabs of that one too
- *   5  everything of the usage readout but the percentages; a click shows it
+ *   5  a second row: the project heads get the whole of it, and the usage
+ *      readout gets its bars back on the first
+ *   6  those bars again
+ *   7  everything of the usage readout but the percentages; a click shows it
  */
 
 /*
@@ -1502,14 +1507,16 @@ button {
 .topbar[data-stage='2'] .usage > .usage__row > .usage__track,
 .topbar[data-stage='3'] .usage > .usage__row > .usage__track,
 .topbar[data-stage='4'] .usage > .usage__row > .usage__track,
-.topbar[data-stage='5'] .usage > .usage__row > .usage__track {
+.topbar[data-stage='6'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='7'] .usage > .usage__row > .usage__track {
   display: none;
 }
 
 .topbar[data-stage='1'] .usage > .usage__row,
 .topbar[data-stage='2'] .usage > .usage__row,
 .topbar[data-stage='3'] .usage > .usage__row,
-.topbar[data-stage='4'] .usage > .usage__row {
+.topbar[data-stage='4'] .usage > .usage__row,
+.topbar[data-stage='6'] .usage > .usage__row {
   grid-template-columns: 42px 26px 24px;
 }
 
@@ -1518,14 +1525,18 @@ button {
 .topbar[data-stage='2'] .topbar__label,
 .topbar[data-stage='3'] .topbar__label,
 .topbar[data-stage='4'] .topbar__label,
-.topbar[data-stage='5'] .topbar__label {
+.topbar[data-stage='5'] .topbar__label,
+.topbar[data-stage='6'] .topbar__label,
+.topbar[data-stage='7'] .topbar__label {
   display: none;
 }
 
 .topbar[data-stage='2'] .topbar__open,
 .topbar[data-stage='3'] .topbar__open,
 .topbar[data-stage='4'] .topbar__open,
-.topbar[data-stage='5'] .topbar__open {
+.topbar[data-stage='5'] .topbar__open,
+.topbar[data-stage='6'] .topbar__open,
+.topbar[data-stage='7'] .topbar__open {
   /* Square around the icon rather than the label's 14px either side. */
   padding: 0 11px;
 }
@@ -1600,22 +1611,30 @@ button {
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab,
 .topbar[data-stage='4'] .tab,
 .topbar[data-stage='5'] .tab,
+.topbar[data-stage='6'] .tab,
+.topbar[data-stage='7'] .tab,
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__add,
 .topbar[data-stage='4'] .tabgroup__add,
-.topbar[data-stage='5'] .tabgroup__add {
+.topbar[data-stage='5'] .tabgroup__add,
+.topbar[data-stage='6'] .tabgroup__add,
+.topbar[data-stage='7'] .tabgroup__add {
   display: none;
 }
 
 /* And the name takes its own right edge back once the + beside it has gone. */
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__pill,
 .topbar[data-stage='4'] .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup__pill {
+.topbar[data-stage='5'] .tabgroup__pill,
+.topbar[data-stage='6'] .tabgroup__pill,
+.topbar[data-stage='7'] .tabgroup__pill {
   padding-right: 12px;
 }
 
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__count,
 .topbar[data-stage='4'] .tabgroup__count,
-.topbar[data-stage='5'] .tabgroup__count {
+.topbar[data-stage='5'] .tabgroup__count,
+.topbar[data-stage='6'] .tabgroup__count,
+.topbar[data-stage='7'] .tabgroup__count {
   display: inline;
 }
 
@@ -1631,7 +1650,9 @@ button {
  */
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
 .topbar[data-stage='4'] .tabgroup__shares,
-.topbar[data-stage='5'] .tabgroup__shares {
+.topbar[data-stage='5'] .tabgroup__shares,
+.topbar[data-stage='6'] .tabgroup__shares,
+.topbar[data-stage='7'] .tabgroup__shares {
   display: flex;
 }
 
@@ -1644,43 +1665,128 @@ button {
  * and being in one of its worktrees is exactly what collapsing gave up.
  */
 .topbar[data-stage='4'] .tabgroup--current .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill {
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='6'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='7'] .tabgroup--current .tabgroup__pill {
   background-color: var(--level-lit);
   color: var(--bone);
 }
 
 .topbar[data-stage='4'] .tabgroup--current .tabgroup__count,
-.topbar[data-stage='5'] .tabgroup--current .tabgroup__count {
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='6'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='7'] .tabgroup--current .tabgroup__count {
   color: var(--quiet-on);
 }
 
 /*
- * Rung 5: the percentages, and a click for the rest.
+ * Rungs 5 to 7: a second row.
  *
- * It used to go altogether here, which on a phone -- where the ladder bottoms
- * out -- put the limits out of sight on the screen with least else to warn you
- * that the session you are about to start will end early. Then it kept
- * `82% 4h`; now it keeps `82%` alone, one per limit in the order `/usage`
- * reports them, and a click hangs the whole readout under the bar
- * (`.usage__pop`). The colour rides on the percent, so amber and red still say
- * which one to open it for.
+ * Collapsed, every project is one head, and a row of heads that still does not
+ * fit used to scroll -- on a phone with six projects, three of them were off
+ * the edge, and what was off the edge was whatever might be blocked on you.
+ * So the bar becomes two rows: the heads get the whole of the second, which is
+ * where the strip already stood, and the first keeps the controls. And when
+ * the heads overrun even that, they **wrap**, a row of the bar's height at a
+ * time, rather than scrolling -- the sweep cannot help them otherwise, since
+ * nothing it can still take away is on their row. Only the first row's
+ * overflow moves the ladder past here.
+ *
+ * Which hands the first row the room the heads had, and the usage readout gets
+ * its bars back (rung 5): it was squeezed only because it shared a row with
+ * the strip. If even that row is too narrow, it narrows again the way it did
+ * before -- the bars (6), then all but the percentages (7).
+ *
+ * A grid, not a wrapping flex row, and that is load-bearing: a wrapping row
+ * that is too wide wraps again instead of overflowing, and overflowing is the
+ * only way the sweep can tell. Every item is placed, because the machine
+ * button and sign-out share a class and auto-placement would drop one of them
+ * into the spacer column. The usage panel is `position: fixed` and takes no
+ * cell.
+ *
+ * It costs the row of windows 38px of height a row, so it is the last thing
+ * the bar does rather than the first, and every pty under it is resized once
+ * when it arrives.
  */
-.topbar[data-stage='5'] .usage {
+.topbar[data-stage='5'],
+.topbar[data-stage='6'],
+.topbar[data-stage='7'] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: var(--bar-h) auto;
+  height: auto;
+}
+
+.topbar[data-stage='5'] > .topbar__open,
+.topbar[data-stage='6'] > .topbar__open,
+.topbar[data-stage='7'] > .topbar__open {
+  grid-area: 1 / 1;
+}
+
+.topbar[data-stage='5'] > .usage,
+.topbar[data-stage='6'] > .usage,
+.topbar[data-stage='7'] > .usage {
+  grid-area: 1 / 3;
+}
+
+.topbar[data-stage='5'] > .topbar__signout:nth-last-child(2),
+.topbar[data-stage='6'] > .topbar__signout:nth-last-child(2),
+.topbar[data-stage='7'] > .topbar__signout:nth-last-child(2) {
+  grid-area: 1 / 4;
+}
+
+.topbar[data-stage='5'] > .topbar__signout:last-child,
+.topbar[data-stage='6'] > .topbar__signout:last-child,
+.topbar[data-stage='7'] > .topbar__signout:last-child {
+  grid-area: 1 / 5;
+}
+
+/*
+ * The heads' row, with the same rule above it that the bar has below: two rows
+ * of one instrument rather than a toolbar with a shelf under it.
+ */
+.topbar[data-stage='5'] > .tabstrip,
+.topbar[data-stage='6'] > .tabstrip,
+.topbar[data-stage='7'] > .tabstrip {
+  grid-area: 2 / 1 / 3 / -1;
+  border-top: 1px solid var(--rule);
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+/* A row of heads is the bar's height, the 3px inset above each included. */
+.topbar[data-stage='5'] .tabgroup,
+.topbar[data-stage='6'] .tabgroup,
+.topbar[data-stage='7'] .tabgroup {
+  height: calc(var(--bar-h) - 3px);
+}
+
+/*
+ * Rung 7: the percentages, and a click for the rest.
+ *
+ * It used to go altogether at the bottom of the ladder, which on a phone put
+ * the limits out of sight on the screen with least else to warn you that the
+ * session you are about to start will end early. Now it keeps `82%` alone, one
+ * per limit in the order `/usage` reports them, and a click hangs the whole
+ * readout under the bar (`.usage__pop`). The colour rides on the percent, so
+ * amber and red still say which one to open it for.
+ */
+.topbar[data-stage='7'] .usage {
   padding: 0 8px;
   cursor: pointer;
 }
 
-.topbar[data-stage='5'] .usage:hover,
-.topbar[data-stage='5'] .usage--open {
+.topbar[data-stage='7'] .usage:hover,
+.topbar[data-stage='7'] .usage--open {
   background: var(--level-hover);
 }
 
-.topbar[data-stage='5'] .usage > .usage__row > .usage__label,
-.topbar[data-stage='5'] .usage > .usage__row > .usage__resets {
+.topbar[data-stage='7'] .usage > .usage__row > .usage__label,
+.topbar[data-stage='7'] .usage > .usage__row > .usage__resets {
   display: none;
 }
 
-.topbar[data-stage='5'] .usage > .usage__row {
+.topbar[data-stage='7'] .usage > .usage__row {
   grid-template-columns: 26px;
 }
 
@@ -1711,6 +1817,33 @@ button {
    * positioned things in the interface, so nothing else changes ancestor.
    */
   position: relative;
+}
+
+/*
+ * A worktree being removed, from the moment you confirm until it has gone.
+ *
+ * Greyed rather than hidden, because it is still there -- its agents are being
+ * stopped and its directory deleted, which takes seconds -- and a window that
+ * vanished before that was done would come back if git then refused. A wash of
+ * the page's own ground over everything, so whatever the panes held is still
+ * legible as what is going, and the words in --bone over it say which way.
+ * No colour: this is not a state you scan the row for, and nothing moves.
+ */
+.tile--departing {
+  position: relative;
+}
+
+.tile__departing {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--level-ground) 78%, transparent);
+  color: var(--bone);
+  font-size: 13px;
+  letter-spacing: 0.02em;
 }
 
 /*

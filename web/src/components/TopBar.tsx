@@ -19,10 +19,12 @@ import {
  *
  * 0 the bar as it is, 1 without the usage tracks, 2 without the `Open project`
  * label, 3 with every project but the current one collapsed to its head, 4 with
- * all of them collapsed, 5 with the usage readout down to its percentages. Past it the strip
- * scrolls, which is what it has always done and the honest end of the ladder.
+ * all of them collapsed, 5 with those heads on a second row and the usage bars
+ * back on the first, 6 without those bars again, 7 with the usage readout down
+ * to its percentages. Past it the strip scrolls, which is what it has always
+ * done and the honest end of the ladder.
  */
-const LAST_STAGE = 5
+const LAST_STAGE = 7
 
 /**
  * Is this the project you are in?
@@ -405,8 +407,10 @@ export const TopBar = ({
    *
    * `data-stage` on the header is the rung, and every rung is a CSS
    * consequence of it: 1 drops the usage tracks, 2 the `Open project` label, 3
-   * the tabs of every project but the one you are in, 4 the rest of them, 5 the
-   * usage readout down to its percentages, which a click opens. The strip is what runs out -- it is `flex: 1;
+   * the tabs of every project but the one you are in, 4 the rest of them, 5
+   * puts the heads on a second row and gives the usage its bars back, 6 takes
+   * them again, 7 the usage readout down to its percentages, which a click
+   * opens. The strip is what runs out -- it is `flex: 1;
    * min-width: 0`, so it takes whatever the other two leave -- and it says so
    * by `scrollWidth > clientWidth`.
    *
