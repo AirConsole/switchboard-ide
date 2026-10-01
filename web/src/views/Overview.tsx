@@ -657,6 +657,13 @@ interface WorktreeTileProps {
   /** An action about *this* worktree that failed, if there is one. */
   failure: Failure | null
   onDismissFailure: () => void
+  /**
+   * Being removed. The request is a `git worktree remove` behind killing every
+   * session in it, which takes seconds with real agents in it, and nothing on
+   * screen used to change until it was done -- so a click that had worked
+   * looked like one that had not. The window says so the moment you confirm.
+   */
+  departing: boolean
   worktree: Worktree
   /**
    * The project it belongs to.
@@ -803,6 +810,7 @@ interface WorktreeTileProps {
 const WorktreeTile = ({
   failure,
   onDismissFailure,
+  departing,
   worktree,
   project,
   todos,
@@ -1126,9 +1134,21 @@ const WorktreeTile = ({
        */
       className={`tile tile--${state}${current ? ' tile--current' : ''}${
         keysLit && current ? ' tile--keys' : ''
-      }`}
+      }${departing ? ' tile--departing' : ''}`}
       ref={tileRef}
+      /*
+       * Nothing in it can be used any more: its sessions are being killed and
+       * its directory deleted. `inert` takes it out of the keyboard walk and
+       * the pointer both, and it is the browser's own, so nothing here has to
+       * remember to check.
+       */
+      inert={departing}
     >
+      {departing && (
+        <div className="tile__departing" role="status">
+          Shutting down…
+        </div>
+      )}
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
@@ -1409,6 +1429,8 @@ export interface OverviewProps {
    */
   failure: Failure | null
   onDismissFailure: () => void
+  /** Worktrees being removed: drawn greyed and inert until they are gone. */
+  departing: ReadonlySet<string>
   /** Start the machine's own terminal; it has none. */
   onMachineTerminal: () => void
   /** The open-project dialog, for the welcome window's button. */
@@ -1485,6 +1507,7 @@ export const Overview = ({
   onActivate,
   failure,
   onDismissFailure,
+  departing,
   onMachineTerminal,
   onOpenProject,
   onCreated,
@@ -2115,8 +2138,14 @@ export const Overview = ({
    * panel is where you were going most of the time. It falls out of `panesOf`
    * with no special case: a worktree with nothing open contributes one stop,
    * one with a panel two, and a window too narrow to hold Claude one again.
+   *
+   * Not a window that is shutting down: it is `inert`, so a step into it
+   * would land nowhere, and the walk starts from where the keyboard *is* --
+   * the next press would compute the same step, and the window would be a
+   * wall. Measured before this: the hint under it read "to switch to this
+   * Claude", pointing into a window that could no longer take the keyboard.
    */
-  const stops = cells.flatMap((cell) =>
+  const stops = cells.filter((cell) => !departing.has(cell.key)).flatMap((cell) =>
     cell.panes.map((pane) => ({
       // The cell's own key: a worktree id, or `add:<projectId>` for the tile at
       // the end of a project's run. The walk does not care which.
@@ -2763,6 +2792,7 @@ export const Overview = ({
                     <WorktreeTile
                       failure={failure?.where === worktree.id ? failure : null}
                       onDismissFailure={onDismissFailure}
+                      departing={departing.has(worktree.id)}
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}

@@ -1820,6 +1820,33 @@ button {
 }
 
 /*
+ * A worktree being removed, from the moment you confirm until it has gone.
+ *
+ * Greyed rather than hidden, because it is still there -- its agents are being
+ * stopped and its directory deleted, which takes seconds -- and a window that
+ * vanished before that was done would come back if git then refused. A wash of
+ * the page's own ground over everything, so whatever the panes held is still
+ * legible as what is going, and the words in --bone over it say which way.
+ * No colour: this is not a state you scan the row for, and nothing moves.
+ */
+.tile--departing {
+  position: relative;
+}
+
+.tile__departing {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--level-ground) 78%, transparent);
+  color: var(--bone);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+/*
  * Three sides, named one at a time, because the fourth is not hover's to
  * touch: the left border is the rail, and the rail is what says whether this
  * agent is done, blocked on you or working. The `border-color` shorthand set

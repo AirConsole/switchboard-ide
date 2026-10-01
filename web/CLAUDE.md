@@ -280,7 +280,14 @@ The pieces, and why each is the way it is:
   *before* it destroys anything local, and under `--force-with-lease`: mergedness
   is read from `refs/remotes` and nothing here fetches, so the lease is what
   stops "merged, delete it" throwing away a colleague's push. A failed lease
-  leaves the dialog open with git's own words and the worktree untouched.
+  leaves the worktree untouched and says so in its window, in git's own words.
+- **Removal says so at the click.** The dialog closes, the window greys out
+  under *Shutting down…* and stops taking input (`inert`), and the keyboard
+  moves to its neighbour -- all before the request is answered, since killing
+  every session in a worktree and deleting it takes seconds with real agents in
+  it, and nothing used to change on screen until it was done. `departing` in
+  `App` holds it; success drops the window with the refresh, and a refusal
+  brings it back with the reason in it (`TileFailure`).
 - **What is running is told, not asked.** `removalWarnings` covers what git
   knows nothing about: a Claude that is working or waiting on you, todos queued
   behind it, terminals still running. Each is one red line (`--danger`, the
