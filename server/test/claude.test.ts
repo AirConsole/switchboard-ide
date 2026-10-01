@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   claudeArgs,
+  claudeLaunch,
+  claudeProfiles,
   hasTranscript,
   promptSummary,
   transcriptDir,
@@ -66,6 +68,55 @@ describe('transcriptDir', () => {
     expect(transcriptDir('/home/a/src/x/.claude/worktrees/y')).toBe(
       join(home, '.claude', 'projects', '-home-a-src-x--claude-worktrees-y'),
     )
+  })
+})
+
+describe('profiles', () => {
+  it('are the default plus every ~/.claude-* that Claude has logged in to', async () => {
+    /*
+     * The machine this was built for has `~/.claude-mem` and
+     * `~/.claude-code-router` beside `~/.claude-work`: other tools'
+     * directories, which have no `.claude.json` and are not accounts.
+     */
+    await mkdir(join(home, '.claude'), { recursive: true })
+    await mkdir(join(home, '.claude-work'), { recursive: true })
+    await writeFile(join(home, '.claude-work', '.claude.json'), '{}')
+    await mkdir(join(home, '.claude-mem'), { recursive: true })
+    await writeFile(join(home, '.claude-mem', 'settings.json'), '{}')
+    expect(await claudeProfiles()).toEqual(['claude', 'claude-work'])
+  })
+
+  it('start the default with CLAUDE_CONFIG_DIR unset, and a named one with it set', () => {
+    /*
+     * Unset, not pointed at ~/.claude: set, Claude reads ~/.claude/.claude.json
+     * rather than ~/.claude.json and the default login is lost. And said on
+     * the command line, since tmux's global environment may carry the variable
+     * from whichever shell started the server.
+     */
+    expect(claudeLaunch('claude', ['--continue'], undefined)).toEqual({
+      command: 'env',
+      args: ['-u', 'CLAUDE_CONFIG_DIR', 'claude', '--continue'],
+    })
+    expect(claudeLaunch('claude', [], 'claude')).toEqual({
+      command: 'env',
+      args: ['-u', 'CLAUDE_CONFIG_DIR', 'claude'],
+    })
+    expect(claudeLaunch('claude', ['--continue'], 'claude-work')).toEqual({
+      command: 'env',
+      args: [`CLAUDE_CONFIG_DIR=${join(home, '.claude-work')}`, 'claude', '--continue'],
+    })
+  })
+
+  it('keep their transcripts, so --continue asks the profile it will run as', async () => {
+    const cwd = freshCwd()
+    expect(transcriptDir(cwd, 'claude-work')).toBe(
+      join(home, '.claude-work', 'projects', cwd.replace(/[/.]/g, '-')),
+    )
+    await mkdir(transcriptDir(cwd, 'claude-work'), { recursive: true })
+    await writeFile(join(transcriptDir(cwd, 'claude-work'), 'a.jsonl'), '{}\n')
+    expect(await claudeArgs(cwd, true, 'claude-work')).toEqual(['--continue'])
+    // The default account has never run here, so it starts a conversation.
+    expect(await claudeArgs(cwd, true)).toEqual([])
   })
 })
 

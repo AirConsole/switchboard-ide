@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
-import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import { useEffect, useRef, useState } from 'react'
+import { DEFAULT_CLAUDE_PROFILE, type Project, type Session, type Worktree, type WorktreeTodo } from '@switchboard/shared'
+import { api } from '../api.js'
 import { NewWorktreeForm } from './NewWorktreeForm.js'
 import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
 import { useListKeys } from './useListKeys.js'
@@ -70,6 +71,49 @@ export const ProjectPane = ({
   onCloseProject,
 }: ProjectPaneProps): React.ReactElement => {
   const box = useRef<HTMLDivElement | null>(null)
+  /*
+   * A switch in flight: the account it started from, and, once the reply is
+   * in, the project as it stood then.
+   */
+  const [pending, setPending] = useState<{ from: string; seen?: Project } | null>(null)
+  const [switchError, setSwitchError] = useState<string | null>(null)
+  const profiles = project.claudeProfiles ?? []
+  const account = project.claudeProfile ?? DEFAULT_CLAUDE_PROFILE
+  const current = useRef(project)
+  current.current = project
+  /*
+   * Over once the reply is in and the snapshot has moved: the account is no
+   * longer the one we left (whichever viewer chose it), or any newer snapshot
+   * arrives. Not "shows the account asked for", which a third viewer's switch
+   * made never true, and before the reply the snapshot can already show it
+   * while windows are still restarting.
+   */
+  useEffect(() => {
+    if (pending?.seen === undefined) return
+    if (account !== pending.from || project !== pending.seen) setPending(null)
+  }, [pending, account, project])
+  const switchTo = (profile: string): void => {
+    if (pending !== null || profile === account) return
+    const from = account
+    setPending({ from })
+    setSwitchError(null)
+    // The server broadcasts the change, so the snapshot brings the new account.
+    void api
+      .setClaudeProfile(project.id, profile)
+      .then((reply) => {
+        setPending({ from, seen: current.current })
+        if (reply.notRestarted.length > 0) {
+          const names = reply.notRestarted.map(
+            (s) => [...awake, ...asleep].find((w) => w.id === s.worktreeId)?.name ?? s.worktreeId,
+          )
+          setSwitchError(`Claude in ${names.join(', ')} could not be restarted on ${profile}.`)
+        }
+      })
+      .catch((err: unknown) => {
+        setPending(null)
+        setSwitchError(err instanceof Error ? err.message : String(err))
+      })
+  }
   /*
    * The column is every worktree, then the form and the way out; the second
    * control on a worktree's line is its ×, which is the shape a tab in the top
@@ -172,6 +216,42 @@ export const ProjectPane = ({
     <div className="projpane__foot">
       <span className="projpane__footlabel">New worktree</span>
       <NewWorktreeForm project={project} focus={caret ? focus : null} onCreated={onCreated} />
+      {/*
+        * Which account this project's Claude runs as, for a machine that has
+        * more than one: switching is how you carry on when one runs out.
+        */}
+      {/* Also when the chosen one is gone from disk, so there is a way back. */}
+      {(profiles.length > 1 || !profiles.includes(account)) && profiles.length > 0 && (
+        <>
+          <span className="projpane__footlabel">Claude account</span>
+          <div className="projpane__accounts" role="group" aria-label="Claude account">
+            {profiles.map((profile) => (
+              <button
+                key={profile}
+                className={profile === account ? 'btn projpane__account' : 'btn btn--quiet projpane__account'}
+                aria-pressed={profile === account}
+                // Not `disabled`: that drops the focus of the one just pressed
+                // to <body>, where the row's keyboard walk cannot start from.
+                aria-disabled={pending !== null}
+                title={
+                  profile === account
+                    ? `This project's Claude runs as ${profile}`
+                    : `Run as ${profile}: restarts this project's Claude windows, continuing their conversations`
+                }
+                onClick={() => switchTo(profile)}
+              >
+                {profile}
+              </button>
+            ))}
+          </div>
+          <span className="projpane__hint">
+            {profiles.includes(account)
+              ? "Switching restarts this project's Claude windows."
+              : `${account} is no longer on this machine; pick another.`}
+          </span>
+          {switchError && <p className="addform__error">{switchError}</p>}
+        </>
+      )}
       <button className="projpane__close" onClick={() => onCloseProject(project.id)}>
         Close project
       </button>

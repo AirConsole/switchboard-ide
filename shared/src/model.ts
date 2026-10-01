@@ -72,8 +72,24 @@ export interface Project {
    * Derived from the repository, never persisted.
    */
   defaultBase?: string
+  /**
+   * The Claude account this project's agents run as, by profile name. Absent
+   * means `DEFAULT_CLAUDE_PROFILE`. Persisted, on the machine the project is on.
+   */
+  claudeProfile?: string
+  /**
+   * The profiles that machine has, `DEFAULT_CLAUDE_PROFILE` first. Derived from
+   * its home directory, never persisted.
+   */
+  claudeProfiles?: string[]
   addedAt: number
 }
+
+/**
+ * The account Claude uses with `CLAUDE_CONFIG_DIR` unset: `~/.claude` plus
+ * `~/.claude.json`. Every other profile is a `~/.claude-<name>` directory.
+ */
+export const DEFAULT_CLAUDE_PROFILE = 'claude'
 
 /**
  * A project that was open and is not any more.
@@ -94,6 +110,11 @@ export interface RecentProject {
   name: string
   /** Epoch ms it was last closed; the list is newest first. */
   closedAt: number
+  /**
+   * Its Claude account, so reopening it keeps it: a project closed without
+   * sleeping still has Claudes running as that account.
+   */
+  claudeProfile?: string
 }
 
 /** A git worktree of a project. The main worktree is included, with `isMain`. */

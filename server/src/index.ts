@@ -25,7 +25,8 @@ const app = Fastify({
 })
 
 const store = new StateStore()
-const engine = new SessionEngine()
+// A project's Claude account, read from the store at every spawn.
+const engine = new SessionEngine((projectId) => store.project(projectId)?.claudeProfile)
 const workspace = new Workspace(store, engine)
 
 await store.load()
@@ -102,9 +103,10 @@ startDispatcher({
     workspace.invalidate()
     broadcastInvalidate()
   },
-  pathFor: async (worktreeId) => {
+  worktreeFor: async (worktreeId) => {
     try {
-      return (await workspace.resolve(worktreeId)).worktree.path
+      const { worktree, project } = await workspace.resolve(worktreeId)
+      return { path: worktree.path, claudeProfile: project.claudeProfile }
     } catch {
       // The worktree is gone or its project is unreadable; its queue waits.
       return undefined
