@@ -39,16 +39,16 @@ in a 38px band -- and what used to get squeezed out was the tabs, which are the
 part the bar is *for*. So `data-stage` on the header is a rung, and the bar
 walks down them: **1** drops the usage tracks, **2** the `Open project` label
 (the icon stays), **3** the tabs of every project but the one you are in, **4**
-the tabs of that one too, **5** the usage labels, leaving each limit as its
-percent and its reset. Past it the strip scrolls, which is what it has always
+the tabs of that one too, **5** the usage readout down to its percentages,
+which a click opens in full under the bar. Past it the strip scrolls, which is what it has always
 done.
 
 Measured with two projects holding three and one awake worktrees: stage 0 from
 900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down, and 5 at 240 -- and at
 *every* width the strip has no overflow, which is the whole claim. Since rung 5
-keeps the usage numbers rather than dropping them, it arrives at 380px and the
-bar fits down to 330; below that the strip scrolls by the difference (10px at
-320), which is the ladder's honest end, and every phone is wider. The ladder is
+keeps the usage percentages rather than dropping them, it arrives at 380px and
+the bar fits down to 300px; below that the strip scrolls by the difference,
+which is the ladder's honest end. The ladder is
 monotone, it never collapses more than it must (at each width, forcing it one
 rung up overflows), and a sweep back up the widths reproduces the same rungs
 exactly.
@@ -56,9 +56,14 @@ exactly.
 **The usage block narrows in two bites, first and last, and never goes.** The
 tracks are 54px of its 189 and the least of it -- a bar with no number beside it
 is hard to act on, where `session 34% 4h` is the whole reading -- so the picture
-goes at rung 1, and the labels at rung 5, leaving `34% 4h` a row in about 72px.
-It used to go altogether at rung 5, which put the limits out of sight on
-exactly the screen, a phone, where the ladder bottoms out. `useUsage` keeps polling at every rung: a reading
+goes at rung 1, and at rung 5 everything but the percentages, a column of
+`34%` in about 42px. **A click there hangs the whole readout under the bar**
+(`.usage__pop`, through `useAnchoredMenu`), and another click, Escape or a click
+elsewhere puts it away. Which rung it is gets read off the DOM at the click
+rather than rendered from, and CSS hides the panel at every other rung, so a
+window widened with it open does not show the readout twice. It used to go
+altogether at rung 5, which put the limits out of sight on exactly the screen,
+a phone, where the ladder bottoms out. `useUsage` keeps polling at every rung: a reading
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
 

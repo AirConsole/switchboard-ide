@@ -752,8 +752,30 @@ button {
   flex: none;
   gap: 2px;
   padding: 0 12px;
+  /* A button, for the last rung's click, dressed as the readout it is. */
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
   border-left: 1px solid var(--rule);
   cursor: default;
+}
+
+/*
+ * The whole readout, hung under the bar from the last rung's percentages.
+ * `.menu` gives it the surface and the place; the rows are the bar's own at
+ * full width, which is the point -- the same reading, with the room to say it.
+ * Only at that rung: wider, the bar already shows all of it.
+ */
+.usage__pop {
+  min-width: 0;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.topbar:not([data-stage='5']) .usage__pop {
+  display: none;
 }
 
 /* Fixed columns, so three bars line up as a column of bars rather than three
@@ -1465,7 +1487,7 @@ button {
  *   2  the `Open project` label; the icon stays
  *   3  the tabs of every project but the one you are in
  *   4  the tabs of that one too
- *   5  the usage labels; each limit keeps its percent and its reset
+ *   5  everything of the usage readout but the percentages; a click shows it
  */
 
 /*
@@ -1476,18 +1498,18 @@ button {
  * reading in three cells. So it is the first thing overboard and the numbers
  * are nearly the last.
  */
-.topbar[data-stage='1'] .usage__track,
-.topbar[data-stage='2'] .usage__track,
-.topbar[data-stage='3'] .usage__track,
-.topbar[data-stage='4'] .usage__track,
-.topbar[data-stage='5'] .usage__track {
+.topbar[data-stage='1'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='2'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='3'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='4'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='5'] .usage > .usage__row > .usage__track {
   display: none;
 }
 
-.topbar[data-stage='1'] .usage__row,
-.topbar[data-stage='2'] .usage__row,
-.topbar[data-stage='3'] .usage__row,
-.topbar[data-stage='4'] .usage__row {
+.topbar[data-stage='1'] .usage > .usage__row,
+.topbar[data-stage='2'] .usage > .usage__row,
+.topbar[data-stage='3'] .usage > .usage__row,
+.topbar[data-stage='4'] .usage > .usage__row {
   grid-template-columns: 42px 26px 24px;
 }
 
@@ -1633,26 +1655,33 @@ button {
 }
 
 /*
- * Rung 5: the labels, and the readout narrows to two numbers a row.
+ * Rung 5: the percentages, and a click for the rest.
  *
- * It used to go altogether here, and that was the wrong last step: on a phone,
- * which is where the ladder bottoms out, the limits vanished exactly where
- * there is least else to tell you that the session you are about to start will
- * end early. `82% 4h` is the reading; which limit a row is, is its place in
- * the column -- session, week, model, the order `/usage` reports -- and the
- * tooltip names each. 26 + 24 + one gap + the 8px padding either side: about
- * 72px, against 146 at rung 4.
+ * It used to go altogether here, which on a phone -- where the ladder bottoms
+ * out -- put the limits out of sight on the screen with least else to warn you
+ * that the session you are about to start will end early. Then it kept
+ * `82% 4h`; now it keeps `82%` alone, one per limit in the order `/usage`
+ * reports them, and a click hangs the whole readout under the bar
+ * (`.usage__pop`). The colour rides on the percent, so amber and red still say
+ * which one to open it for.
  */
 .topbar[data-stage='5'] .usage {
   padding: 0 8px;
+  cursor: pointer;
 }
 
-.topbar[data-stage='5'] .usage__label {
+.topbar[data-stage='5'] .usage:hover,
+.topbar[data-stage='5'] .usage--open {
+  background: var(--level-hover);
+}
+
+.topbar[data-stage='5'] .usage > .usage__row > .usage__label,
+.topbar[data-stage='5'] .usage > .usage__row > .usage__resets {
   display: none;
 }
 
-.topbar[data-stage='5'] .usage__row {
-  grid-template-columns: 26px 24px;
+.topbar[data-stage='5'] .usage > .usage__row {
+  grid-template-columns: 26px;
 }
 
 /* --------------------------------------------------------------- the tile -- */
