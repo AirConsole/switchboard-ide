@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   mediaKindOf,
   mediaTypeOf,
@@ -18,7 +18,9 @@ import {
   type ChangesState,
 } from './ChangesPane.js'
 import { ApiError, api } from '../api.js'
+import { ErrorBoundary } from '../components/ErrorBoundary.js'
 import { useListKeys } from '../components/useListKeys.js'
+import { lazyChunk } from '../lazyChunk.js'
 import { usePageVisible } from '../usePageVisible.js'
 import type { EditorFile } from '../editor/CodeEditor.js'
 
@@ -27,14 +29,14 @@ import type { EditorFile } from '../editor/CodeEditor.js'
  * A session that never opens one never downloads it, and `fallback={null}`
  * keeps the no-spinner rule -- the pane simply shows its ground until it lands.
  */
-const CodeEditor = lazy(() => import('../editor/CodeEditor.js'))
+const CodeEditor = lazyChunk(() => import('../editor/CodeEditor.js'))
 
 /*
  * And so is the Markdown renderer, for the same reason and with the same
  * fallback: the parser is only wanted by a panel that is actually showing a
  * rendered `.md`, which most sessions never do.
  */
-const Markdown = lazy(() => import('./Markdown.js'))
+const Markdown = lazyChunk(() => import('./Markdown.js'))
 
 /**
  * How often an open panel re-reads the directories it is showing.
@@ -2369,7 +2371,23 @@ export const FilesPane = ({
             </div>
           )}
 
-          {content()}
+          {/*
+            * Keyed by what is shown, so a failure belongs to that file and
+            * picking another one tries again.
+            */}
+          <ErrorBoundary
+            key={`${mode}\0${files.path}`}
+            fallback={(error) => (
+              <p className="files__note">
+                This could not be shown: {error.message}{' '}
+                <button className="btn btn--quiet" onClick={() => window.location.reload()}>
+                  Reload
+                </button>
+              </p>
+            )}
+          >
+            {content()}
+          </ErrorBoundary>
         </div>
       )}
     </div>

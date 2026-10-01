@@ -421,6 +421,26 @@ button {
   grid-template-rows: auto 1fr;
 }
 
+/*
+ * What is left when a render throws past every pane's own boundary: the page
+ * says so and offers the reload, instead of going black. The sessions are
+ * tmux's and are untouched by anything the page does, which is worth saying.
+ */
+.crash {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
+  color: var(--bone);
+  background: var(--level-ground);
+  height: 100%;
+}
+
+.crash__note {
+  color: var(--graphite);
+}
+
 /* ---------------------------------------------------------------- top bar -- */
 
 /*
