@@ -67,11 +67,34 @@ export interface PersistedState {
    * same answer.
    */
   awake: string[] | null
+  /**
+   * The usage-limit stops already answered with a todo, newest last; see
+   * `session/resume.ts`.
+   *
+   * Remembered apart from the todo itself because the todo can be deleted, and
+   * the stop it answered is still the last thing in that transcript: without
+   * this, deleting it would bring it straight back on the next look, and a
+   * restart would park a second one beside it.
+   */
+  limitStops: string[]
+  /**
+   * Whether a stop is answered at all; see `AppSnapshot.autoContinue`. On
+   * unless switched off: a stop nobody answers is an agent that sits stopped,
+   * which is the thing this was built to end.
+   */
+  autoContinue: boolean
   ui: UiState
 }
 
 /** How many closed projects are worth remembering. */
 const RECENT_LIMIT = 12
+
+/**
+ * How many answered limit stops are worth remembering. Only the newest stop in
+ * each worktree can still be the last thing in its transcript, so this needs
+ * to cover the worktrees, not the history.
+ */
+const LIMIT_STOPS_KEPT = 256
 
 const emptyState = (): PersistedState => ({
   version: 1,
@@ -81,6 +104,8 @@ const emptyState = (): PersistedState => ({
   servers: [],
   remoteCache: [],
   awake: null,
+  limitStops: [],
+  autoContinue: true,
   ui: defaultUiState(),
 })
 
@@ -198,6 +223,8 @@ const reviveTodo = (value: unknown): WorktreeTodo | null => {
     ...(num('queuedAt') === undefined ? {} : { queuedAt: num('queuedAt') }),
     ...(num('dispatchingAt') === undefined ? {} : { dispatchingAt: num('dispatchingAt') }),
     ...(str('lastError') === undefined ? {} : { lastError: str('lastError') }),
+    ...(num('notBefore') === undefined ? {} : { notBefore: num('notBefore') }),
+    ...(str('limitStop') === undefined ? {} : { limitStop: str('limitStop') }),
   }
 }
 
@@ -271,6 +298,10 @@ export class StateStore {
             .map(reviveRemoteCache)
             .filter((entry): entry is RemoteCache => entry !== null),
           awake: reviveAwake(candidate.awake, candidate.ui),
+          limitStops: (Array.isArray(candidate.limitStops) ? candidate.limitStops : [])
+            .filter((id): id is string => typeof id === 'string' && id !== '')
+            .slice(-LIMIT_STOPS_KEPT),
+          autoContinue: candidate.autoContinue !== false,
           ui: pickKnownUiKeys(candidate.ui),
         }
       }
@@ -433,6 +464,43 @@ export class StateStore {
 
   removeTodo(id: string): void {
     this.state.todos = this.state.todos.filter((t) => t.id !== id)
+    this.scheduleSave()
+  }
+
+  hasAnsweredLimitStop(id: string): boolean {
+    return this.state.limitStops.includes(id)
+  }
+
+  answerLimitStop(id: string): void {
+    if (this.hasAnsweredLimitStop(id)) return
+    this.state.limitStops = [...this.state.limitStops, id].slice(-LIMIT_STOPS_KEPT)
+    this.scheduleSave()
+  }
+
+  get autoContinue(): boolean {
+    return this.state.autoContinue
+  }
+
+  /**
+   * Switching it off takes back every `continue` still waiting, and forgets
+   * that their stops were answered -- so switching it on again parks them
+   * afresh, for the agents still sitting there, rather than treating a stop
+   * whose todo was withdrawn as one a person dealt with.
+   */
+  setAutoContinue(on: boolean): void {
+    if (this.state.autoContinue === on) return
+    this.state.autoContinue = on
+    if (!on) {
+      const withdrawn = new Set(
+        this.state.todos
+          .filter((t) => t.limitStop !== undefined && t.dispatchingAt === undefined)
+          .map((t) => t.limitStop),
+      )
+      this.state.todos = this.state.todos.filter(
+        (t) => t.limitStop === undefined || !withdrawn.has(t.limitStop),
+      )
+      this.state.limitStops = this.state.limitStops.filter((id) => !withdrawn.has(id))
+    }
     this.scheduleSave()
   }
 

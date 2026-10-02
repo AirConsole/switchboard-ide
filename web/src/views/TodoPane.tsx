@@ -4,7 +4,7 @@ import { api } from '../api.js'
 import { WorktreeTab } from '../components/WorktreeTab.js'
 import { useAnchoredMenu } from '../components/useAnchoredMenu.js'
 import { useListKeys } from '../components/useListKeys.js'
-import type { TodoView, WorktreeStatus } from '../selectors.js'
+import { todoWaitText, type TodoView, type WorktreeStatus } from '../selectors.js'
 import { COMMIT_LABEL } from './keyLegend.js'
 
 /** A worktree a todo can be moved to, with everything its tab needs to say. */
@@ -218,6 +218,10 @@ const TodoRow = ({
   }
 
   const queued = position !== null
+  // Read at render, with no timer of its own: the time it names is the point,
+  // and once it has passed the todo is sent and removed as soon as Claude is at
+  // rest, which refetches the snapshot and re-renders this anyway.
+  const wait = todoWaitText(todo, Date.now())
 
   return (
     <div className={queued ? 'todo__row todo__row--queued' : 'todo__row'} ref={rowRef}>
@@ -371,6 +375,7 @@ const TodoRow = ({
       {queued && !claudeRunning && (
         <span className="todo__wait">Waiting for Claude to be running here</span>
       )}
+      {wait !== null && <span className="todo__wait">{wait}</span>}
       {todo.lastError !== undefined && <span className="todo__wait">{todo.lastError}</span>}
     </div>
   )

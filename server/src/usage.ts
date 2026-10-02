@@ -118,6 +118,64 @@ export const parseResetAt = (text: string, now = Date.now()): number | null => {
   return rolled === dayNumber ? at : null
 }
 
+/**
+ * When the limit a stop names resets, from the sentence Claude stopped with.
+ *
+ * Three shapes, each from a real stop:
+ *
+ * - `You've hit your session limit · resets 4:10pm (UTC)` -- a time and no
+ *   date, measured in a live transcript. It means the next such time at or
+ *   after the stop, with an hour's grace backwards because the time is rounded
+ *   for reading: a stop at 4:10:30 that says 4:10pm means today, not tomorrow.
+ * - `... · resets Oct 6, 9am (UTC)`, the dated form `/usage` itself prints and
+ *   what a weekly limit reads as.
+ * - `Claude AI usage limit reached|1752501600`, the older form, an epoch in
+ *   seconds after a bar.
+ *
+ * Null for anything else; the caller asks `/usage` instead.
+ */
+const STOP_EPOCH = /\|(\d{10})\s*$/
+const STOP_RESETS = /\bresets\s+(.+?)\s*$/i
+const TIME_ONLY = /^(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(\([^)]+\))?$/i
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+export const stopResetsAt = (text: string, at: number): number | null => {
+  const epoch = STOP_EPOCH.exec(text)?.[1]
+  if (epoch !== undefined) return Number(epoch) * 1000
+  const resets = STOP_RESETS.exec(text)?.[1]
+  if (resets === undefined) return null
+  const time = TIME_ONLY.exec(resets.trim())
+  if (time === null) return parseResetAt(resets, at)
+  // Dated as the day of the stop, in the zone the sentence names, and read by
+  // the parser the dated form uses -- so `(UTC)` and a zone it does not know
+  // mean what they mean there.
+  const zone = time[2] ?? ''
+  const utc = zone === '' || /^\((?:utc|gmt|z)\)$/i.test(zone)
+  const day = new Date(at)
+  const month = MONTHS[utc ? day.getUTCMonth() : day.getMonth()] ?? 'jan'
+  const date = utc ? day.getUTCDate() : day.getDate()
+  const same = parseResetAt(`${month} ${date}, ${time[1] ?? ''} ${zone}`, at)
+  if (same === null) return null
+  return same < at - HOUR_MS ? same + DAY_MS : same
+}
+
+/**
+ * The latest reset among the limits that are full, or null when none is.
+ *
+ * What a stop waits for when its own sentence did not say: the limit that
+ * stopped it is the one at 100%, and if two are, nothing runs until both have
+ * reset.
+ */
+export const fullUntil = (reading: Usage): number | null => {
+  let until: number | null = null
+  for (const limit of reading.limits) {
+    if (limit.percent < 100 || limit.resetsAt === null) continue
+    until = until === null ? limit.resetsAt : Math.max(until, limit.resetsAt)
+  }
+  return until
+}
+
 /** Every limit `/usage` reported, in the order it reported them. */
 export const parseUsage = (text: string): UsageLimit[] => {
   const limits: UsageLimit[] = []
@@ -153,7 +211,10 @@ const run = (): Promise<string> =>
      */
     execFile(
       config.usageCommand,
-      ['-p', '/usage'],
+      // `--no-session-persistence` because each reading otherwise leaves a
+      // session behind: measured, 1,077 transcripts (12MB) under the state
+      // directory's project in ~/.claude/projects after a few weeks of polls.
+      ['-p', '--no-session-persistence', '/usage'],
       { cwd: config.stateDir, timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024 },
       (error, stdout) => {
         if (error) reject(error instanceof Error ? error : new Error(String(error)))

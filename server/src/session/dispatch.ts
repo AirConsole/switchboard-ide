@@ -81,14 +81,26 @@ export const startDispatcher = (opts: {
   const notBefore = new Map<string, number>()
   const reasons = new Map<string, NotReady | 'no-session' | 'sent'>()
 
-  /** The head of a worktree's queue: the todo whose RUN NEXT was pressed first. */
+  /**
+   * The head of a worktree's queue: the todo whose RUN NEXT was pressed first --
+   * unless Claude stopped on a usage limit, and then the `continue` that
+   * resumes it (`resume.ts`). That one goes first because what it continues is
+   * the turn the limit interrupted, which everything queued behind it was
+   * queued to follow; and because it waits for the reset, it holds the rest of
+   * the queue back with it rather than letting a todo be typed into an account
+   * that would only stop it again.
+   */
   const head = (worktreeId: string): WorktreeTodo | undefined =>
     store.todos
       .filter(
         (t) =>
           t.worktreeId === worktreeId && t.queuedAt !== undefined && t.dispatchingAt === undefined,
       )
-      .sort((a, b) => (a.queuedAt ?? 0) - (b.queuedAt ?? 0))[0]
+      .sort(
+        (a, b) =>
+          Number(b.limitStop !== undefined) - Number(a.limitStop !== undefined) ||
+          (a.queuedAt ?? 0) - (b.queuedAt ?? 0),
+      )[0]
 
   /** The first line of the prompt, which is what the box should be showing. */
   const opening = (prompt: string): string =>
@@ -222,7 +234,7 @@ export const startDispatcher = (opts: {
         ...state,
         turn,
         queuedAt: todo.queuedAt ?? 0,
-        notBefore: notBefore.get(worktreeId) ?? 0,
+        notBefore: Math.max(notBefore.get(worktreeId) ?? 0, todo.notBefore ?? 0),
       })
       if (!verdict.ready && verdict.why === 'typed-after-queue') {
         /*
@@ -234,6 +246,13 @@ export const startDispatcher = (opts: {
         for (const t of store.todos) {
           if (t.worktreeId !== worktreeId || t.queuedAt === undefined) continue
           if (t.dispatchingAt !== undefined || t.queuedAt >= state.lastUserInputAt) continue
+          // The server's own `continue` is not handed back: the human has
+          // already done what it was waiting to do, and a stray "continue"
+          // left in the list would read as something they had written.
+          if (t.limitStop !== undefined) {
+            store.removeTodo(t.id)
+            continue
+          }
           store.patchTodo(t.id, {
             queuedAt: undefined,
             lastError: 'You typed into Claude after queueing this, so it was not sent. Queue it again?',
