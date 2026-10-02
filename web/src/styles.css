@@ -796,10 +796,13 @@ button {
  * Whether an agent stopped on a usage limit is continued once it resets: the
  * third row, where a model's own allowance used to be (see `shownLimits`).
  *
- * A row's own type and grey, with no colour of its own -- it is a setting,
- * not a state, and the colour rule leaves the chrome nothing else to wear. On
- * is the brighter grey of the two and a filled box; off is the quieter grey,
- * --graphite-dim, which is the same 5.24:1 the countdowns beside it clear.
+ * On is green, label and box: --done, the colour of an agent that has come to
+ * rest, and the one it borrows on purpose -- with it on, an agent stopped by a
+ * limit is carried on to rest without you. It was a brighter grey and a filled
+ * 7px box, and on and off read alike: one rung of grey is not visible without
+ * the other beside it, the reason the usage bars stopped saying 80% that way.
+ * Off is the quieter grey, --graphite-dim, the same 5.24:1 the countdowns
+ * beside it clear.
  *
  * Three labels in the markup, one shown per rung below: the long one while the
  * tracks are there to give it the width, then `auto-continue`, then `cont.`.
@@ -820,9 +823,15 @@ button {
   cursor: pointer;
 }
 
-.usage__auto:hover,
-.usage__auto--on {
+.usage__auto:hover {
   color: var(--graphite);
+}
+
+/* Hover included: `:hover` outranks a bare class, and the switch you just
+   turned on went grey under the pointer that turned it on. */
+.usage__auto--on,
+.usage__auto--on:hover {
+  color: var(--done);
 }
 
 .usage__box {
