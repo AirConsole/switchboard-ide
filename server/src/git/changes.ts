@@ -117,9 +117,32 @@ export const worktreeChanges = async (opts: {
   const branch = await currentBranch(opts.path)
   const base = await resolveReviewBase(opts.root, branch)
 
-  const uncommitted = parseStatus(
-    await git(opts.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
-  )
+  /*
+   * The one unwrapped git call in this file, and it had to stop being one.
+   *
+   * A folder project's root is not a repository, so `git status` exits 128
+   * there and this answered a 500 with a git fatal in the body -- and the panel
+   * is polled, so it did so every three seconds. The honest answer for a root
+   * with no repository is the empty one: nothing uncommitted, nothing
+   * committed, no base to measure against. Every other read below already
+   * degrades this way.
+   */
+  let uncommitted: FileChange[]
+  try {
+    uncommitted = parseStatus(
+      await git(opts.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+    )
+  } catch {
+    return {
+      worktreeId: opts.worktreeId,
+      branch,
+      base: null,
+      uncommitted: [],
+      commits: [],
+      commitScope: 'recent',
+      behind: 0,
+    }
+  }
   const nothingAhead = async (withBase: string | null): Promise<WorktreeChanges> => ({
     worktreeId: opts.worktreeId,
     branch,

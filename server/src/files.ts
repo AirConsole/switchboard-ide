@@ -288,16 +288,99 @@ const changedPaths = async (worktreePath: string): Promise<Set<string>> => {
  */
 const listFilesCache = new Map<string, { at: number; paths: string[] }>()
 
+/**
+ * Heavy, machine-generated directories, skipped when there is no git to skip
+ * them for us.
+ *
+ * Shared with the first-commit warning in `workspace.ts`, because it is the
+ * same judgement: these are the directories nobody means when they say "the
+ * files here". Measured on the folder this was written for -- four game
+ * checkouts, 476MB -- three of them carry a `node_modules`, so a walk without
+ * this reads a third of a gigabyte on every keystroke.
+ */
+export const GENERATED_DIRECTORIES = [
+  'node_modules',
+  '.venv',
+  'venv',
+  'dist',
+  'build',
+  'target',
+  '.next',
+  'vendor',
+  '__pycache__',
+]
+
+/** Most files the walk will return. Past this, a search is not the tool. */
+const MAX_WALK = 20000
+
+/**
+ * Every file under a root, for a root git cannot answer for.
+ *
+ * The fallback behind `allFiles`, and the reason it exists is a folder of
+ * repositories: the folder itself is not a checkout, so `git ls-files` exits
+ * 128 there and the search box -- which is where the keyboard lands when the
+ * panel opens -- answered a 500.
+ *
+ * It cannot apply the ignore rules git would, and does not try to read the
+ * nested repositories' own: a file is interesting here or it is not, and the
+ * skip list above is what keeps that affordable. Breadth-first with a cap, so a
+ * deep tree costs the same as a wide one.
+ */
+const walkFiles = async (root: string): Promise<string[]> => {
+  const paths: string[] = []
+  const queue: string[] = ['']
+  while (queue.length > 0 && paths.length < MAX_WALK) {
+    const rel = queue.shift() as string
+    let entries: Dirent[]
+    try {
+      entries = await readdir(join(root, rel), { withFileTypes: true })
+    } catch {
+      // Unreadable, or gone since it was queued. A missing branch is not a
+      // reason to fail the whole search.
+      continue
+    }
+    for (const entry of entries) {
+      // `.git` by name, because in a linked worktree it is a file.
+      if (entry.name === '.git' || GENERATED_DIRECTORIES.includes(entry.name)) continue
+      const next = rel === '' ? entry.name : `${rel}/${entry.name}`
+      // Symlinks are not followed: a link to an ancestor is a cycle, and one
+      // pointing outside the root would list files the panel then refuses.
+      if (entry.isDirectory()) queue.push(next)
+      else if (entry.isFile()) {
+        if (paths.length >= MAX_WALK) break
+        paths.push(next)
+      }
+    }
+  }
+  return paths.sort()
+}
+
+/** Whether git refused because there is no repository here. */
+const notARepoError = (err: unknown): boolean =>
+  typeof err === 'object' &&
+  err !== null &&
+  'code' in err &&
+  (err as { code?: unknown }).code === 128
+
 const allFiles = async (worktreePath: string): Promise<string[]> => {
   const now = Date.now()
   const cached = listFilesCache.get(worktreePath)
   if (cached !== undefined && now - cached.at < STATUS_TTL_MS) return cached.paths
-  const { stdout } = await exec(
-    'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-    { cwd: worktreePath, maxBuffer: 16 * 1024 * 1024 },
-  )
-  const paths = stdout.split('\0').filter((path) => path !== '')
+  let paths: string[]
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      { cwd: worktreePath, maxBuffer: 16 * 1024 * 1024 },
+    )
+    paths = stdout.split('\0').filter((path) => path !== '')
+  } catch (err) {
+    // Asked rather than assumed: a folder project has no repository, and so
+    // does a worktree whose registration was pruned while its directory
+    // survived -- the case `checkIgnore` already tolerates below.
+    if (!notARepoError(err)) throw err
+    paths = await walkFiles(worktreePath)
+  }
   listFilesCache.set(worktreePath, { at: now, paths })
   return paths
 }
@@ -397,13 +480,90 @@ export const findFiles = async (
 const GREP_PER_FILE = 20
 const GREP_TIMEOUT_MS = 5000
 
-export const grepFiles = (
+/** Largest file the fallback scan will read. Past this it is not prose. */
+const SCAN_MAX_BYTES = 2 * 1024 * 1024
+
+/** git exited 128: there is no repository at this root. */
+class NotARepo extends Error {}
+
+/**
+ * `grepFiles` for a root git cannot answer for -- see `walkFiles`.
+ *
+ * Reads the files the walk found and matches them here. Slower than `git grep`
+ * by a long way, which is why it is the fallback and not the implementation,
+ * and bounded the same three ways so that cost is capped: per file, overall,
+ * and in time.
+ */
+const scanFiles = async (
+  worktreePath: string,
+  needle: string,
+): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> => {
+  const lowered = needle.toLowerCase()
+  const hits: ContentHit[] = []
+  const more = new Set<string>()
+  let truncated = false
+  const deadline = Date.now() + GREP_TIMEOUT_MS
+  for (const path of await allFiles(worktreePath)) {
+    if (hits.length >= MAX_FIND || Date.now() > deadline) {
+      truncated = true
+      break
+    }
+    let buffer: Buffer
+    try {
+      const info = await stat(join(worktreePath, path))
+      if (!info.isFile() || info.size > SCAN_MAX_BYTES) continue
+      buffer = await readFile(join(worktreePath, path))
+    } catch {
+      // Gone or unreadable since the walk listed it.
+      continue
+    }
+    // The same test `readTextFile` uses: a NUL early on says not text.
+    if (buffer.subarray(0, NUL_SCAN_BYTES).includes(0)) continue
+    const lines = buffer.toString('utf8').split('\n')
+    let inFile = 0
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] as string
+      if (!line.toLowerCase().includes(lowered)) continue
+      inFile += 1
+      if (inFile > GREP_PER_FILE) {
+        more.add(path)
+        break
+      }
+      const text = line.trim()
+      hits.push({ path, line: i + 1, text: text.length > 200 ? `${text.slice(0, 200)}…` : text })
+      if (hits.length >= MAX_FIND) {
+        truncated = true
+        break
+      }
+    }
+  }
+  return {
+    hits,
+    ...(truncated ? { truncated: true } : {}),
+    ...(more.size > 0 ? { more: [...more] } : {}),
+  }
+}
+
+export const grepFiles = async (
   worktreePath: string,
   query: string,
 ): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> => {
   // Not trimmed, unlike a name: in a file, `x = ` and `x =` are different.
   const needle = query
-  if (needle.trim() === '') return Promise.resolve({ hits: [] })
+  if (needle.trim() === '') return { hits: [] }
+  try {
+    return await gitGrep(worktreePath, needle)
+  } catch (err) {
+    if (!(err instanceof NotARepo)) throw err
+    return scanFiles(worktreePath, needle)
+  }
+}
+
+/** The git half of `grepFiles`, which is the fast path. */
+const gitGrep = (
+  worktreePath: string,
+  needle: string,
+): Promise<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }> => {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(
       'git',
@@ -476,7 +636,15 @@ export const grepFiles = (
       clearTimeout(timer)
       // 1 is "nothing matched"; a kill of our own is not a failure either.
       if (code !== 0 && code !== 1 && code !== null) {
-        reject(new Error(stderr.trim() || `git grep exited ${code}`))
+        // 128 is "not a git repository", which is a folder project's root and
+        // also a worktree whose registration was pruned under it. Named so the
+        // caller can fall back to its own scan instead of answering a 500 with
+        // a git fatal in the body.
+        reject(
+          code === 128
+            ? new NotARepo(stderr.trim() || 'not a git repository')
+            : new Error(stderr.trim() || `git grep exited ${code}`),
+        )
         return
       }
       resolvePromise({

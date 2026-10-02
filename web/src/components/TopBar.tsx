@@ -257,7 +257,13 @@ const Group = ({
            to read. */
         title={`${project.host.kind === 'remote' ? `on ${hostLabel(project.host)}\n` : ''}${project.root}\n${
           awake.length === 0 ? 'Nothing awake' : `${awake.length} awake: ${awake.map((w) => w.name).join(', ')}`
-        }${asleep.length === 0 ? '' : `, ${asleep.length} asleep`}\nClick for this project's worktrees, a new one, and closing it`}
+        }${asleep.length === 0 ? '' : `, ${asleep.length} asleep`}\n${
+          // A folder has no worktrees and nothing to make, so the pane it walks
+          // to holds only the way out.
+          project.kind === 'folder'
+            ? "Click for this folder's window, and closing it"
+            : "Click for this project's worktrees, a new one, and closing it"
+        }`}
       >
         {/*
           * Which machine, and only when it is not this one.
@@ -324,7 +330,11 @@ const Group = ({
         * all with nothing awake, since then there are no tabs to show; that is
         * a count, not a rung, so it is React's to decide.
         */}
-      {awake.length > 0 && (
+      {/*
+        * A folder has no branches, so there is no worktree to offer -- and the
+        * pane this walks to has no form on it either.
+        */}
+      {awake.length > 0 && project.kind !== 'folder' && (
         <button
           className="tabgroup__add"
           onClick={() => onRevealProject(project)}

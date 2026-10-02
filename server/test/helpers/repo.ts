@@ -40,8 +40,11 @@ const ISOLATED = [
   'protocol.file.allow=always',
 ]
 
-export const makeRepo = async (prefix = 'swb-test-'): Promise<TempRepo> => {
-  const path = await mkdtemp(join(tmpdir(), prefix))
+export const makeRepo = async (prefix = 'swb-test-'): Promise<TempRepo> =>
+  makeRepoAt(await mkdtemp(join(tmpdir(), prefix)))
+
+/** `makeRepo` into a directory that already exists -- see `makeFolderOfRepos`. */
+export const makeRepoAt = async (path: string): Promise<TempRepo> => {
   const git = async (...args: string[]): Promise<string> => {
     const { stdout } = await exec('git', [...ISOLATED, ...args], {
       cwd: path,
@@ -71,6 +74,46 @@ export const makeRepoWithCommit = async (prefix?: string): Promise<TempRepo> => 
   await repo.write('README.md', 'hello\n')
   await repo.commit('Initial commit')
   return repo
+}
+
+/**
+ * A directory that is not a repository and holds some, plus a loose file.
+ *
+ * The shape a folder project is for, built with real git for the reason the
+ * rest of this file is: what matters about it is what git says when asked from
+ * the folder itself -- `worktree list`, `status`, `ls-files` and `grep` all
+ * exit 128 there -- and no fixture can stand in for that.
+ */
+export interface TempFolder {
+  path: string
+  /** The checkouts inside it, by directory name. */
+  repos: TempRepo[]
+  cleanup: () => Promise<void>
+}
+
+export const makeFolderOfRepos = async (
+  names: string[] = ['alpha', 'beta'],
+  prefix = 'swb-folder-',
+): Promise<TempFolder> => {
+  const path = await mkdtemp(join(tmpdir(), prefix))
+  const repos: TempRepo[] = []
+  for (const name of names) {
+    const inner = join(path, name)
+    await mkdir(inner, { recursive: true })
+    const repo = await makeRepoAt(inner)
+    await repo.write('README.md', `${name}\n`)
+    await repo.commit('Initial commit')
+    repos.push(repo)
+  }
+  // Something that belongs to the folder rather than to any repository in it,
+  // because that is the case a per-repository answer would miss.
+  await mkdir(join(path, 'notes'), { recursive: true })
+  await writeFile(join(path, 'notes', 'todo.txt'), 'spans both\n', 'utf8')
+  return {
+    path,
+    repos,
+    cleanup: () => rm(path, { recursive: true, force: true }),
+  }
 }
 
 /**

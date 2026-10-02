@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { access, appendFile, mkdir, readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Worktree } from '@switchboard/shared'
 
@@ -37,6 +37,38 @@ const idFor = (prefix: string, path: string): string =>
 
 export const projectIdFor = (root: string): string => idFor('p', root)
 export const worktreeIdFor = (path: string): string => idFor('wt', path)
+
+/**
+ * The directories directly inside `path` that are themselves checkouts, sorted.
+ *
+ * What makes a folder worth opening as one: it is not a repository itself, but
+ * the things in it are. `.git` is tested for existence rather than kind,
+ * because in a linked worktree it is a file rather than a directory.
+ *
+ * One level only, and deliberately: this answers "is this a folder of
+ * repositories", which is a question about what you are looking at, not a
+ * search. Walking deeper would also mean walking into `node_modules`.
+ */
+export const containedRepos = async (path: string): Promise<string[]> => {
+  let entries
+  try {
+    entries = await readdir(path, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const found = await Promise.all(
+    entries.map(async (entry) => {
+      if (!entry.isDirectory()) return null
+      try {
+        await access(join(path, entry.name, '.git'))
+        return entry.name
+      } catch {
+        return null
+      }
+    }),
+  )
+  return found.filter((name): name is string => name !== null).sort()
+}
 
 export const isGitRepo = async (path: string): Promise<boolean> => {
   try {

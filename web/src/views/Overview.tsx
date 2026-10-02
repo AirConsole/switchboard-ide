@@ -1295,6 +1295,7 @@ const WorktreeTile = ({
                 openFiles={openFiles}
                 markdownPreview={markdownPreview}
                 branch={worktree.branch}
+                inRepo={project?.kind !== 'folder'}
                 near={near}
                 focus={focusPane === 'files' ? focus : null}
               />
@@ -1602,8 +1603,22 @@ export const Overview = ({
    * Each mode has its own answer because each opens a different thing: Files
    * keeps a list of tabs, Changes and Commits open one and close it again.
    */
+  /**
+   * Which face this worktree's files panel is on.
+   *
+   * Coerced for a folder project's unit, which has no repository and so offers
+   * only Files. A stored mode can still name one of the other two -- `migrateUi`
+   * writes `changes` for a panel carried over from when there were two of them
+   * -- and left alone that face would render with no tab to leave it by, and
+   * poll `/changes` every three seconds for a worktree that has none.
+   */
+  const filesModeOf = (worktree: Worktree): FilesMode => {
+    const stored = filesModeByWorktree[worktree.id] ?? 'files'
+    return projectById.get(worktree.projectId)?.kind === 'folder' ? 'files' : stored
+  }
+
   const filesContentOpen = (worktree: Worktree): boolean => {
-    switch (filesModeByWorktree[worktree.id] ?? 'files') {
+    switch (filesModeOf(worktree)) {
       case 'files':
         return (openFilesByWorktree[worktree.id] ?? []).length > 0
       case 'commits':
@@ -2840,7 +2855,7 @@ export const Overview = ({
                       openPath={openPathByWorktree[worktree.id] ?? ''}
                       openFiles={openFilesByWorktree[worktree.id] ?? EMPTY_FILES}
                       expandedDirs={expandedByWorktree[worktree.id] ?? EMPTY_DIRS}
-                      filesMode={filesModeByWorktree[worktree.id] ?? 'files'}
+                      filesMode={filesModeOf(worktree)}
                       markdownPreview={markdownPreview}
                       keysLit={keysLit}
                       hint={hintFor(worktree.id)}

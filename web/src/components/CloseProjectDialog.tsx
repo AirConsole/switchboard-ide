@@ -55,12 +55,20 @@ export const CloseProjectDialog = ({
           <h2 className="dialog__title">Close {project.name}?</h2>
         </div>
         <div className="dialog__body">
-          <p className="empty__body">
-            Takes {project.name} out of the top bar, with its{' '}
-            {count(worktrees.length, 'worktree', 'worktrees')}. Nothing on disk changes — the
-            repository, its branches and every worktree stay exactly as they are, and opening it
-            again brings them all back.
-          </p>
+          {project.kind === 'folder' ? (
+            <p className="empty__body">
+              Takes {project.name} out of the top bar. Nothing on disk changes — the folder and
+              every repository in it stay exactly as they are, and opening it again brings its
+              Claude session back.
+            </p>
+          ) : (
+            <p className="empty__body">
+              Takes {project.name} out of the top bar, with its{' '}
+              {count(worktrees.length, 'worktree', 'worktrees')}. Nothing on disk changes — the
+              repository, its branches and every worktree stay exactly as they are, and opening it
+              again brings them all back.
+            </p>
+          )}
           <p className="field__hint">{project.root}</p>
 
           {nothingRunning ? (

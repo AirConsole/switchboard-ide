@@ -239,6 +239,42 @@ Anything destructive checks first and in the right order: `removeWorktree`
 refuses a dirty worktree *before* killing its sessions, so a refusal costs
 nothing.
 
+**A folder project contributes one worktree that git never saw.** `Project.kind
+=== 'folder'` is a directory holding checkouts rather than being one, and
+`worktrees()` pushes a single synthetic unit for it -- `worktreeIdFor(root)`,
+`branch: null`, `isMain: true` -- instead of calling `listWorktrees`. Modelling
+it as a worktree is what makes it cost almost nothing: todos, the dispatcher,
+sessions, the files tree, sleep and wake all key off the id and needed no
+change at all. `isMain` is load-bearing, since it is what `removeWorktree`
+refuses on.
+
+Three things had to give way, each because git exits **128** outside a
+repository and three callers did not expect it. `worktreeChanges` had the
+file's one unwrapped `git status` and answered a 500 with a fatal in the body,
+every three seconds, because the panel polls. `allFiles` (`git ls-files`) and
+`grepFiles` (`git grep`) are the search box, which is where the keyboard lands
+when the files panel opens -- so arriving in a folder's panel put the caret in
+a control that 500s. Both now fall back to one bounded `readdir` walk that
+skips `.git` and `GENERATED_DIRECTORIES`; the skip list is not cosmetic, since
+the folder this was built for is 476MB and three of its four checkouts carry a
+`node_modules`.
+
+`openProject` must skip **both** `isGitRepo` and `repoRoot` on that path.
+`isGitRepo` walks up, so a folder inside a checkout answers true, and `repoRoot`
+then normalises to the ancestor -- asking for `<repo>/games` would quietly
+register `<repo>`. And `describeProjects` suppresses `defaultBase`:
+`resolveDefaultBase` is the one git helper that does not throw outside a
+repository, falling through to `HEAD`, so left alone it names a base for
+branches that cannot exist.
+
+No `--session-id` is involved, and that was measured rather than assumed. With
+one session per folder, `transcriptDir(cwd)` plus newest-transcript is exactly
+how every worktree already works and is correct. It would only be needed for a
+*second* session in one folder -- and it cannot simply be added for that:
+`claude --session-id <uuid>` **refuses an id that already exists** ("Session ID
+… is already in use"), so a deterministic per-path id could resume but never
+start fresh, and persisted ids are the thing one unit per folder removes.
+
 ## The machine's own terminal
 
 One shell that belongs to no worktree: `POST /api/sessions` with the reserved

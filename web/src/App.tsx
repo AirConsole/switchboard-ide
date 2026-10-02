@@ -1030,6 +1030,10 @@ export const App = (): React.ReactElement => {
       {sleeping && worktrees.some((w) => w.id === sleeping) && (
         <SleepWorktreeDialog
           worktree={worktrees.find((w) => w.id === sleeping)!}
+          isWorktree={
+            projects.find((p) => p.id === worktrees.find((w) => w.id === sleeping)?.projectId)
+              ?.kind !== 'folder'
+          }
           sessions={sessions}
           todos={todos}
           onClose={() => {
