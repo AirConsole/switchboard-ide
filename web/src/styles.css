@@ -834,6 +834,57 @@ button {
   color: var(--done);
 }
 
+/* The switch and the mark that explains it, on the one row they share. */
+.usage__autorow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/*
+ * An "i" in a ring, the size of the switch's own box plus a little, so it reads
+ * as a footnote to the switch rather than a second control beside it. Its grey
+ * is the switch's resting one and it lifts the same way under the pointer.
+ */
+.usage__info {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: 8px;
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1;
+  color: var(--graphite-dim);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.usage__info:hover,
+.usage__info--open {
+  color: var(--graphite);
+}
+
+/* What the switch does, in sentences: the menu's surface at a reading width. */
+.usage__explain {
+  max-width: 300px;
+  gap: 8px;
+  padding: 10px 12px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--bone);
+}
+
+.usage__explain p {
+  margin: 0;
+}
+
 .usage__box {
   flex: none;
   width: 7px;

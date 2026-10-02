@@ -161,6 +161,13 @@ export const UsageBars = ({
    * with it open does not show the readout twice.
    */
   const pop = useAnchoredMenu<HTMLButtonElement>()
+  /*
+   * What the switch does, said in full on a click. Its title said it already,
+   * but a tooltip is a sentence nobody finds: it waits for a hover held still
+   * and says nothing on a phone, and the label alone is two words for a
+   * behaviour that needs three sentences.
+   */
+  const info = useAnchoredMenu<HTMLButtonElement>()
   if (usage.limits.length === 0) return null
   const resetsOf = (limit: Usage['limits'][number]): string => {
     if (limit.resetsAt !== null) {
@@ -223,25 +230,37 @@ export const UsageBars = ({
          * shows, because nothing React renders may depend on the rung -- see
          * the sweep in `TopBar`.
          */
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          className={on ? 'usage__auto usage__auto--on' : 'usage__auto'}
-          title={
-            on
-              ? 'On: an agent stopped by a usage limit is sent "continue" once the limit resets, here and on every linked machine. Click to turn it off.'
-              : 'Off: an agent stopped by a usage limit waits for you. Click to continue such agents once the limit resets.'
-          }
-          onClick={() => {
-            void api.setAutoContinue(!on).catch(() => {})
-          }}
-        >
-          <i className="usage__box" aria-hidden="true" />
-          <span className="usage__auto-long">continue automatically</span>
-          <span className="usage__auto-mid">auto-continue</span>
-          <span className="usage__auto-short">cont.</span>
-        </button>
+        <div className="usage__autorow">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            className={on ? 'usage__auto usage__auto--on' : 'usage__auto'}
+            title={
+              on
+                ? 'On: an agent stopped by a usage limit is sent "continue" once the limit resets, here and on every linked machine. Click to turn it off.'
+                : 'Off: an agent stopped by a usage limit waits for you. Click to continue such agents once the limit resets.'
+            }
+            onClick={() => {
+              void api.setAutoContinue(!on).catch(() => {})
+            }}
+          >
+            <i className="usage__box" aria-hidden="true" />
+            <span className="usage__auto-long">continue automatically</span>
+            <span className="usage__auto-mid">auto-continue</span>
+            <span className="usage__auto-short">cont.</span>
+          </button>
+          <button
+            type="button"
+            ref={info.anchor}
+            className={info.at === null ? 'usage__info' : 'usage__info usage__info--open'}
+            aria-label="What continue automatically does"
+            aria-expanded={info.at !== null}
+            onClick={info.toggle}
+          >
+            i
+          </button>
+        </div>
       )}
       {pop.at !== null && (
         <div
@@ -251,6 +270,29 @@ export const UsageBars = ({
           aria-label="Claude usage limits"
         >
           {rows(usage.limits)}
+        </div>
+      )}
+      {info.at !== null && (
+        <div
+          ref={info.menu}
+          className="menu usage__explain"
+          style={{ left: info.at.left, top: info.at.top }}
+          role="dialog"
+          aria-label="Continue automatically"
+        >
+          <p>
+            When Claude stops because a usage limit was reached, it waits for you to type
+            “continue” once the limit resets.
+          </p>
+          <p>
+            With this on, that is done for you: each agent a limit stopped is sent “continue” as
+            soon as the limit resets, here and on every linked machine, with or without a browser
+            open.
+          </p>
+          <p>
+            {on ? 'It is on: the box is filled and green.' : 'It is off: the box is empty.'} Click
+            the switch to change it.
+          </p>
         </div>
       )}
     </div>
