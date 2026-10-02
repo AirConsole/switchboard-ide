@@ -234,6 +234,17 @@ export interface WorktreeTodo {
   dispatchingAt?: number
   /** Why the last attempt did not finish. Shown to the human, never retried. */
   lastError?: string
+  /** Epoch ms before which this is not typed, however ready Claude looks. */
+  notBefore?: number
+  /**
+   * The transcript record of the usage-limit stop this todo continues from.
+   *
+   * Present only on the todo the server parks itself when Claude stops on a
+   * limit (`session/resume.ts`). It marks the todo as the server's rather than
+   * a person's, which is what lets it go first in the queue and vanish rather
+   * than linger when the human takes the conversation over.
+   */
+  limitStop?: string
 }
 
 export type SessionKind = 'claude' | 'shell'
@@ -457,6 +468,12 @@ export interface AppSnapshot {
   sessions: Session[]
   todos: WorktreeTodo[]
   ui: UiState
+  /**
+   * Whether this machine continues an agent by itself once a usage limit that
+   * stopped it has reset (`server/src/session/resume.ts`). Absent from a
+   * machine too old to do it, where the top bar offers no switch.
+   */
+  autoContinue?: boolean
 }
 
 /**
