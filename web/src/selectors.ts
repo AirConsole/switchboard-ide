@@ -145,15 +145,46 @@ export interface TodoView {
  */
 export const worktreeTodos = (todos: WorktreeTodo[], worktreeId: string): TodoView[] => {
   const mine = todos.filter((t) => t.worktreeId === worktreeId)
+  // The server's order, `head` in dispatch.ts: the `continue` after a usage
+  // limit goes first, since it holds the rest of the queue back until then.
   const queue = mine
     .filter((t) => t.queuedAt !== undefined)
-    .sort((a, b) => (a.queuedAt ?? 0) - (b.queuedAt ?? 0))
+    .sort(
+      (a, b) =>
+        Number(b.limitStop !== undefined) - Number(a.limitStop !== undefined) ||
+        (a.queuedAt ?? 0) - (b.queuedAt ?? 0),
+    )
   return [...mine]
     .sort((a, b) => a.createdAt - b.createdAt)
     .map((todo) => {
       const at = queue.indexOf(todo)
       return { todo, position: at === -1 ? null : at + 1 }
     })
+}
+
+/** The exact moment, in the reader's zone: `Tue 08:59`, or `17:29` for today. */
+export const resetText = (at: number, now: number): string => {
+  const when = new Date(at)
+  const sameDay = when.toDateString() === new Date(now).toDateString()
+  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return sameDay ? time : `${when.toLocaleDateString([], { weekday: 'short' })} ${time}`
+}
+
+/**
+ * Why a queued todo is not being typed yet although Claude may be at rest, or
+ * null when nothing is holding it.
+ *
+ * Only a usage limit holds a todo to a clock, so the sentence names it. The
+ * server's own `continue` says what it is for, since nobody wrote it.
+ */
+export const todoWaitText = (todo: WorktreeTodo, now: number): string | null => {
+  if (todo.queuedAt === undefined || todo.notBefore === undefined || todo.notBefore <= now) {
+    return null
+  }
+  const at = resetText(todo.notBefore, now)
+  return todo.limitStop !== undefined
+    ? `Claude stopped on its usage limit. This continues it at ${at}, once the limit has reset.`
+    : `Waits for the usage limit to reset, until ${at}.`
 }
 
 /** How many of a worktree's todos are waiting to be typed into Claude. */

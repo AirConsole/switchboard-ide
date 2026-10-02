@@ -421,4 +421,52 @@ describe('the dispatcher', () => {
     expect(typed.filter((data) => data.includes('\x1b[200~'))).toHaveLength(1)
     expect(dispatcher.lastReason(WORKTREE)).toBe('cooling-down')
   })
+
+  describe('after a usage limit', () => {
+    it('holds the continue until its time, however ready Claude looks', async () => {
+      store.addTodo(
+        todo({ id: 't-1', prompt: 'continue', queuedAt: 1, notBefore: Date.now() + 60_000, limitStop: 's' }),
+      )
+      const { engine, typed } = fakeEngine({})
+      const dispatcher = await run(engine)
+      expect(typed).toEqual([])
+      expect(dispatcher.lastReason(WORKTREE)).toBe('cooling-down')
+    })
+
+    it('types it once the time has come', async () => {
+      store.addTodo(
+        todo({ id: 't-1', prompt: 'continue', queuedAt: 1, notBefore: Date.now() + 500, limitStop: 's' }),
+      )
+      const { engine, typed } = fakeEngine({})
+      await run(engine)
+      expect(typed[0]).toBe('\x1b[200~continue\x1b[201~')
+    })
+
+    it('goes ahead of a todo queued before the stop, and holds it back too', async () => {
+      // What it continues is the turn the limit interrupted, which the earlier
+      // todo was queued to follow; and typing that one now would only be
+      // stopped by the same limit.
+      store.addTodo(todo({ id: 'mine', prompt: 'next task', queuedAt: 1 }))
+      store.addTodo(
+        todo({ id: 't-1', prompt: 'continue', queuedAt: 5, notBefore: Date.now() + 60_000, limitStop: 's' }),
+      )
+      const { engine, typed } = fakeEngine({})
+      await run(engine)
+      expect(typed).toEqual([])
+      expect(store.todo('mine')?.queuedAt).toBe(1)
+    })
+
+    it('drops it, rather than handing it back, when the human types first', async () => {
+      store.addTodo(
+        todo({ id: 't-1', prompt: 'continue', queuedAt: 1, notBefore: Date.now() + 60_000, limitStop: 's' }),
+      )
+      store.addTodo(todo({ id: 'mine', prompt: 'next task', queuedAt: 2 }))
+      const { engine, typed } = fakeEngine({ lastUserInputAt: 10 })
+      await run(engine)
+      expect(typed).toEqual([])
+      expect(store.todo('t-1')).toBeUndefined()
+      // A person's own todo is handed back as before.
+      expect(store.todo('mine')?.lastError).toContain('You typed into Claude')
+    })
+  })
 })

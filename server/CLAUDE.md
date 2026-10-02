@@ -19,6 +19,7 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
   attention.ts  idle / working / needs-you
   readiness.ts  whether it is safe to TYPE into a session -- a stricter question
   dispatch.ts   hands queued todos to Claude when it comes to rest
+  resume.ts     parks a `continue` behind a Claude that stopped on a usage limit
   claude.ts     transcripts: --continue, the last prompt, and turn boundaries
                 (the prompt reader is incremental -- see "What a worktree is
                 working on")
@@ -196,6 +197,53 @@ sending it**, and a Return pressed on a screen we misread is not recoverable.
 
 `SWB_DEBUG_DISPATCH=1` logs every verdict change, which is how the predicate was
 checked against a real Claude before it was allowed to type anything.
+
+## After a usage limit
+
+When a limit runs out, Claude Code ends the turn and waits for a person, so an
+agent working on its own stops and stays stopped after the limit resets.
+Nothing inside Claude can undo that -- its `StopFailure` hook fires and its
+output is ignored -- so `resume.ts` does it from here, and **types nothing
+itself**: it parks a todo, `continue`, queued with `notBefore` set to the
+reset, and the dispatcher types it exactly as it types any todo.
+
+- **The stop is read from the transcript, not the screen or a hook.** Measured
+  in a live transcript: the turn closes with an assistant record carrying
+  `"error":"rate_limit"` and `"isApiErrorMessage":true`, whose text is `You've
+  hit your session limit · resets 4:10pm (UTC)`, then `turn_duration`. Going
+  back from the end, the first prompt or assistant record decides; a prompt
+  means somebody has spoken since, which is also what makes a retry that stops
+  again a *new* stop with a record of its own.
+- **The reset comes from that sentence first, `/usage` second.** The sentence
+  has a time and no date, rounded, so it means the next such time with an
+  hour's grace backwards. Two minutes are added for the rounding, and the wait
+  is never under five minutes *from the stop* -- an early `continue` is answered
+  with another stop whose reset has passed, which would otherwise be continued
+  every fifteen seconds. From the stop rather than from now, so a server that
+  was down through the reset continues its agents as soon as it is back.
+- **Answered stops are remembered in `state.json`** (`limitStops`), apart from
+  the todo, because the todo can be deleted while the stop is still the last
+  thing in the transcript.
+- **It goes first and holds the queue.** `head` puts it ahead of todos queued
+  before the stop: it continues the turn they were queued to follow, and they
+  would only be stopped by the same limit.
+- **It is the server's until a person touches it.** Typing into that Claude
+  drops it rather than handing it back with an error -- measured on a scratch
+  instance: one keystroke, and the todo was gone. Editing, moving or re-queuing
+  it makes it an ordinary todo that keeps its wait.
+
+**It can be switched off**, from the top bar: `PUT /api/auto-continue`, kept in
+`state.json` as `autoContinue` and on unless switched off. The limit is the
+account's, so the switch is passed on to every linked machine (best effort --
+one that is off or too old is skipped) and not on again from there, since a
+request carrying the peer header is a gateway's. Measured with two scratch
+instances: switched off at the gateway, the peer read `false`. Off parks
+nothing and withdraws the `continue`s still waiting, forgetting their stops,
+so switching it back on answers the agents that are still sitting there.
+
+It looks every fifteen seconds, at the panes' own directories from
+`engine.claudeDirs()`: resolving worktrees would run `git status` in every one
+of them on a clock that runs with no browser open.
 
 ## Worktrees and ids
 
@@ -495,6 +543,11 @@ out from 256KB to a cap of 8MB, which stops at the first real prompt. Measured:
 Print mode is why this is small: `-p` answers a slash command as plain text, so
 there is no pty to drive and no TUI to scrape. `--bare` does **not** work — it
 skips whatever handles the command and prints a cost summary instead.
+
+`--no-session-persistence` is load-bearing: without it every reading leaves a
+session transcript behind, measured as 1,077 of them (12MB) under the state
+directory's project in `~/.claude/projects`. With it, none -- checked by
+listing that directory after a reading.
 
 The reading costs a `claude` process, measured 4.3–4.6s, so it is cached for
 five minutes and there is no timer: the browser polls on the same interval and a

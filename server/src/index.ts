@@ -8,6 +8,7 @@ import { StateStore } from './state.js'
 import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
 import { startDispatcher } from './session/dispatch.js'
+import { startResumeWatcher } from './session/resume.js'
 import { registerWs, wsPluginOptions } from './routes/ws.js'
 import { registerGate } from './gate.js'
 import { registerSecurityHeaders } from './headers.js'
@@ -88,6 +89,21 @@ engine.onSessionGone(() => {
   broadcastInvalidate()
 })
 
+/** A worktree's absolute path, for reading its transcript. */
+const pathFor = async (worktreeId: string): Promise<string | undefined> => {
+  try {
+    return (await workspace.resolve(worktreeId)).worktree.path
+  } catch {
+    // The worktree is gone or its project is unreadable; its queue waits.
+    return undefined
+  }
+}
+
+const onTodosChange = (): void => {
+  workspace.invalidate()
+  broadcastInvalidate()
+}
+
 /*
  * Hand queued todos to Claude as it comes to rest.
  *
@@ -95,22 +111,14 @@ engine.onSessionGone(() => {
  * below, this must keep working with every browser closed -- a queue that only
  * drains while someone is watching it is a queue you have to watch.
  */
-startDispatcher({
-  store,
-  engine,
-  onChange: () => {
-    workspace.invalidate()
-    broadcastInvalidate()
-  },
-  pathFor: async (worktreeId) => {
-    try {
-      return (await workspace.resolve(worktreeId)).worktree.path
-    } catch {
-      // The worktree is gone or its project is unreadable; its queue waits.
-      return undefined
-    }
-  },
-})
+startDispatcher({ store, engine, onChange: onTodosChange, pathFor })
+
+/*
+ * Park a `continue` behind every Claude that stops on a usage limit, for the
+ * dispatcher to type once the limit resets. Unconditional for the same reason:
+ * an agent that ran out overnight is exactly one nobody is watching.
+ */
+startResumeWatcher({ store, engine, onChange: onTodosChange })
 
 /**
  * Notice when an agent changes the repository.
