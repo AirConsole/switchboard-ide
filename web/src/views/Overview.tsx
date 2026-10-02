@@ -1952,6 +1952,8 @@ export const Overview = ({
   const steering = useRef(false)
   /* Where the last glide was sent, in px; NaN once a hand has taken the row. */
   const sentTo = useRef(Number.NaN)
+  /* A request is waiting, a frame at a time, for the row to be wide enough. */
+  const waiting = useRef(false)
   useEffect(() => {
     if (target === undefined || width === 0 || scrollTo === null) return
     if (answered.current === scrollTo.nonce) return
@@ -1993,16 +1995,22 @@ export const Overview = ({
      * and a half at most, and not at all once a finger or a wheel has taken
      * the row, or another request has sent it somewhere else.
      */
-    if (grid.scrollWidth - grid.clientWidth < aim - 2) {
+    waiting.current = grid.scrollWidth - grid.clientWidth < aim - 2
+    if (waiting.current) {
       let frames = 0
       const wait = (): void => {
-        if (sentTo.current !== aim) return
+        if (sentTo.current !== aim) {
+          waiting.current = false
+          return
+        }
         if (grid.scrollWidth - grid.clientWidth >= aim - 2) {
+          waiting.current = false
           steering.current = true
           grid.scrollTo({ left: aim, behavior: 'smooth' })
           return
         }
         if (++frames < 90) requestAnimationFrame(wait)
+        else waiting.current = false
       }
       requestAnimationFrame(wait)
     }
@@ -2051,8 +2059,16 @@ export const Overview = ({
      * request that is still waiting for the row to be wide enough -- see the
      * request above -- and cancelling that wait left `alpha` lit one pixel
      * past the screen's edge after a reload.
+     *
+     * Only while that wait is still running. `sentTo` outlives the glide --
+     * only a finger, a wheel or this clears it -- so on its own it went on
+     * saying "on its way" long after the row had arrived and been moved again,
+     * and a reveal that happened to want the same offset did nothing. Measured
+     * after a reload at 1600px: opening a file in a window hanging off the
+     * right edge wanted 3176, the reload's glide had been sent to 3176, and
+     * the row stayed at 2779.
      */
-    if (offset * pitch === sentTo.current) return
+    if (waiting.current && offset * pitch === sentTo.current) return
     steering.current = true
     sentTo.current = Number.NaN
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })

@@ -1352,8 +1352,25 @@ export const FilesPane = ({
   const at = rows.findIndex((row) => row.path === (cursor ?? files.path))
   const here = at === -1 ? (rows.length > 0 ? 0 : -1) : at
 
+  /*
+   * The open file's row is kept in view by scrolling the tree, and only the
+   * tree. `scrollIntoView` scrolls every scroller above the row as well, and the
+   * row of windows is one of them: the click that opened the file had already
+   * started a smooth scroll to bring a window hanging off the edge over (see
+   * `revealTile`), and any scroll on that element -- even one to where it
+   * already is -- cancels it. Measured: opening a second file in a window
+   * hanging 385px off the right edge asked for 2779 -> 3176, and the row stayed
+   * at 2779. The first file opened worked only because the window grows then,
+   * and that reveal runs after this.
+   */
   useLayoutEffect(() => {
-    selectedRef.current?.scrollIntoView({ block: 'nearest' })
+    const row = selectedRef.current
+    const tree = row?.closest<HTMLElement>('.files__tree')
+    if (!row || !tree) return
+    const at = row.getBoundingClientRect()
+    const box = tree.getBoundingClientRect()
+    if (at.top < box.top) tree.scrollTop += at.top - box.top
+    else if (at.bottom > box.bottom) tree.scrollTop += at.bottom - box.bottom
   }, [files.path])
 
   /*
