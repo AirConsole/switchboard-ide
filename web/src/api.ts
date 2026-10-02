@@ -153,7 +153,7 @@ export const api = {
 
   openProject: (
     path: string,
-    opts: { create?: boolean; commitExisting?: boolean; host?: string } = {},
+    opts: { create?: boolean; commitExisting?: boolean; folder?: boolean; host?: string } = {},
   ) =>
     request<Project>(`/api/projects${opts.host === undefined ? '' : `?host=${opts.host}`}`, {
       method: 'POST',
@@ -161,6 +161,7 @@ export const api = {
         path,
         create: opts.create ?? false,
         commitExisting: opts.commitExisting ?? true,
+        folder: opts.folder ?? false,
       }),
     }),
   /** Close a project. `sleep` stops every session it is running on the way out. */

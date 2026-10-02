@@ -15,7 +15,7 @@ export interface OpenProjectDialogProps {
 /**
  * A path that cannot be opened as-is, and what we would do about it.
  *
- * Both cases end in the same action -- make this path into a project -- but they
+ * All three end in the same action -- make this path into a project -- but they
  * need different explanations, so they stay distinct rather than collapsing into
  * one vague "set up" message.
  */
@@ -33,6 +33,17 @@ type Proposal =
       entries: number
       /** Heavy generated directories that a first commit would sweep in. */
       junk: string[]
+    }
+  | {
+      /**
+       * Not a repository, and holding some. The only offer is to open the
+       * folder as itself: initialising a repository around checkouts commits
+       * each one as a bare reference to a commit, and leaves the new repository
+       * reporting them as modified every time an agent commits inside one.
+       */
+      kind: 'folder'
+      path: string
+      repos: string[]
     }
 
 const readString = (value: unknown, fallback: string): string =>
@@ -280,7 +291,7 @@ export const OpenProjectDialog = ({
       })
   }
 
-  const open = (target: string, create = false): void => {
+  const open = (target: string, create = false, folder = false): void => {
     // The buttons are disabled while a request is in flight; Enter has to
     // respect the same rule, or key repeat sends several opens whose failures
     // are swallowed when the dialog unmounts.
@@ -314,6 +325,7 @@ export const OpenProjectDialog = ({
     const request = api.openProject(target, {
       create,
       commitExisting,
+      folder,
       ...(server === undefined ? {} : { host: server.key }),
     })
     void request
@@ -332,9 +344,18 @@ export const OpenProjectDialog = ({
         }
         if (err instanceof ApiError && err.code === 'not-a-repo') {
           setError(null)
+          const path = readString(err.details.path, target)
+          const repos = readStrings(err.details.repos)
+          // Holding repositories answers the question for us: there is one
+          // sensible thing to do with such a folder, and making it a repository
+          // is not it.
+          if (repos.length > 0) {
+            setProposal({ kind: 'folder', path, repos })
+            return
+          }
           setProposal({
             kind: 'init',
-            path: readString(err.details.path, target),
+            path,
             entries: readNumber(err.details.entries),
             junk: readStrings(err.details.junk),
           })
@@ -342,6 +363,58 @@ export const OpenProjectDialog = ({
         }
         setError(err instanceof Error ? err.message : String(err))
       })
+  }
+
+  /*
+   * A screen of its own rather than a third arm of the one below, because it
+   * is the only proposal whose answer is not "make this a repository". It also
+   * drops that offer entirely: with checkouts inside, initialising is not a
+   * worse choice among two, it is the wrong one.
+   */
+  if (proposal?.kind === 'folder') {
+    const shown = proposal.repos.slice(0, 10)
+    const rest = proposal.repos.length - shown.length
+    return (
+      <div className="scrim" onClick={onClose}>
+        <div className="dialog" ref={box} onClick={(event) => event.stopPropagation()}>
+          <div className="dialog__head">
+            <h2 className="dialog__title">Open as a folder?</h2>
+          </div>
+          <div className="dialog__body">
+            <p className="empty__body">
+              This is not a git repository. It holds {proposal.repos.length}{' '}
+              {proposal.repos.length === 1 ? 'repository' : 'repositories'}.
+            </p>
+            <p className="field__hint">{proposal.path}</p>
+            <p className="field__hint">
+              {shown.join(', ')}
+              {rest > 0 && `, and ${rest} more`}
+            </p>
+            <p className="empty__body">
+              It opens with one Claude session in the folder itself, which sees every repository in
+              it, with its own todos, terminals and files. There are no branches here to cut, so it
+              has no worktrees and no changes of its own — each repository keeps its own.
+            </p>
+            <p className="field__hint">
+              Making a repository here instead would commit each of those checkouts as a bare
+              reference to a commit, and report them as modified for ever after.
+            </p>
+          </div>
+          <div className="dialog__foot">
+            <button className="btn btn--quiet" onClick={() => setProposal(null)}>
+              Back
+            </button>
+            <button
+              className="btn"
+              onClick={() => open(proposal.path, false, true)}
+              disabled={busy}
+            >
+              Open folder
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (proposal) {
@@ -514,12 +587,15 @@ export const OpenProjectDialog = ({
                   <button
                     key={recent.root}
                     className="picker__row picker__row--repo"
-                    onClick={() => open(recent.root)}
+                    // Reopened as what it was. Without the kind, a folder goes
+                    // back through the refusal it was opened past, and the
+                    // picker asks a question it has already been answered.
+                    onClick={() => open(recent.root, false, recent.kind === 'folder')}
                     disabled={busy}
                     title={recent.root}
                   >
                     {recent.root}
-                    <span className="picker__tag">open</span>
+                    <span className="picker__tag">{recent.kind === 'folder' ? 'folder' : 'open'}</span>
                   </button>
                 ))}
               </div>
@@ -528,7 +604,7 @@ export const OpenProjectDialog = ({
 
           <div className="field">
             <label className="field__label" htmlFor="project-path">
-              Repository path
+              Repository or folder path
             </label>
             <input
               id="project-path"
@@ -543,7 +619,8 @@ export const OpenProjectDialog = ({
             <span className="field__hint">
               Any directory inside a repository works; it resolves to the repository root. A path
               that does not exist is created and made into a repository — which is how you start
-              one from nothing — and a directory that is not a repository yet can be made into one.
+              one from nothing — a directory that is not a repository yet can be made into one, and
+              one that holds several opens as a folder of them.
             </span>
           </div>
 

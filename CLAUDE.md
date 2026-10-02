@@ -20,6 +20,20 @@ there is no "active" one. A project's **worktrees** are discovered from
 `git worktree list`, never stored, so dropping the IDE on a repo finds its
 worktrees already there.
 
+A project can also be a **folder of repositories** -- a directory that is not a
+checkout and holds several, for the work that spans them or comes before any of
+them. It has no branches to cut, so it has one window rather than a row of
+them: one Claude session in the folder itself, with its own todos, terminals
+and files, and no changes of its own, since each repository in it keeps those.
+That unit is a worktree like any other as far as everything downstream is
+concerned -- which is what makes the whole thing small -- and its id is derived
+from the folder's path, so nothing about it is stored either. The one fact that
+*is* stored is that the project is a folder at all: a repository announces
+itself and a folder of them looks like any directory. Opening one is offered
+only when the directory holds checkouts, because initialising a repository
+around them commits each as a bare reference to a commit and leaves the new
+repository reporting them as modified for ever after.
+
 A worktree is the unit, and it owns everything about itself: one Claude session,
 any number of terminals, its todos, and its files and changes. A todo is a
 prompt you park against a worktree; RUN NEXT hands it to the server, which types
