@@ -598,7 +598,10 @@ export const TopBar = ({
     </button>
     <button
       className="topbar__signout"
-      onClick={() => void signOut()}
+      onClick={() => {
+        // The icon sits beside the machine's terminal, one slip away from it.
+        if (window.confirm('Sign out of this browser?')) void signOut()
+      }}
       title="Sign out of this browser"
       aria-label="Sign out"
     >
