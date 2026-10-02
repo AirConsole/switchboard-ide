@@ -14,6 +14,7 @@ import { sendRaw } from '../raw.js'
 import { hostKeyFor } from '../remote/scope.js'
 import { PEER_READ_HEADER } from '../remote/peer.js'
 import { usage } from '../usage.js'
+import { startUpdate, updateStatus } from '../update.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -112,6 +113,18 @@ const patchTodoBody = z.object({
  */
 const filePath = z.string()
 const treeQuery = z.object({ path: filePath.default('') })
+/*
+ * `?path=a&path=b`, which Fastify's parser hands over as an array -- and as a
+ * bare string when there is only one. Capped, since each is a readdir and a
+ * `git check-ignore`, and a real tree has a few dozen open at most.
+ */
+const treesQuery = z.object({
+  path: z
+    .union([filePath, z.array(filePath)])
+    .default([''])
+    .transform((path) => (Array.isArray(path) ? path : [path]))
+    .pipe(z.array(filePath).min(1).max(200)),
+})
 const findQuery = z.object({
   /** What to look for. Empty finds nothing rather than everything. */
   q: z.string().default(''),
@@ -172,6 +185,7 @@ export const uiShape = z
      * and not a negative one.
      */
     stepsTaken: z.number().int().min(0),
+    activeWorktree: z.string().nullable(),
   })
   .partial()
 
@@ -242,6 +256,21 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    */
   app.get('/api/usage', async () => usage())
 
+  /*
+   * Whether this machine's Switchboard is behind origin, and updating it.
+   *
+   * Local by construction: no id in the path, so the proxy never forwards it,
+   * and a linked machine is updated on that machine. The POST answers before
+   * the work starts, since the work ends by replacing this process; the page
+   * learns the outcome by asking the GET until a different instance answers.
+   * See server/src/update.ts.
+   */
+  app.get('/api/update', async () => updateStatus())
+  app.post('/api/update', async (_request, reply) => {
+    await startUpdate()
+    return reply.status(202).send({ ok: true })
+  })
+
   app.get('/api/browse', async (request) => {
     const { path } = browseQuery.parse(request.query)
     return workspace.browse(path)
@@ -304,6 +333,21 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     // Other tabs, and this tab's own relay, have to learn there is a machine.
     broadcastInvalidate()
     return { key: hostKeyFor(server.baseUrl), baseUrl: server.baseUrl, name: server.name }
+  })
+
+  /*
+   * Update a linked machine: `pnpm pull` there, asked from here.
+   *
+   * By key, the one the snapshot's scoped ids carry, and answered here rather
+   * than proxied (see `ALWAYS_LOCAL`): the proxy checks the peer's protocol on
+   * every reply, and a machine out of step with this one is the reason to ask.
+   */
+  app.post('/api/servers/:key/update', async (request, reply) => {
+    const { key } = z.object({ key: z.string().min(1) }).parse(request.params)
+    const peer = workspace.peerFor(key)
+    if (peer === null) throw new HttpError(404, 'no such server')
+    await peer.startUpdate()
+    return reply.status(202).send({ ok: true })
   })
 
   app.delete('/api/servers', async (request) => {
@@ -413,6 +457,13 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return workspace.fileTree(id, path)
   })
 
+  /** Several directories in one request; see `FileListings`. */
+  app.get('/api/worktrees/:id/trees', async (request) => {
+    const { id } = request.params as { id: string }
+    const { path } = treesQuery.parse(request.query)
+    return workspace.fileTrees(id, path)
+  })
+
   /*
    * Files matching a fragment, anywhere in the worktree.
    *
@@ -425,6 +476,17 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     const { id } = request.params as { id: string }
     const { q } = findQuery.parse(request.query)
     return workspace.findFiles(id, q)
+  })
+
+  /*
+   * What is *in* the files rather than what they are called: the finder's
+   * content switch. The query goes to `git grep` as one argument after `-e`,
+   * so it is never read as an option, and every path in the answer is git's.
+   */
+  app.get('/api/worktrees/:id/grep', async (request) => {
+    const { id } = request.params as { id: string }
+    const { q } = findQuery.parse(request.query)
+    return workspace.grepFiles(id, q)
   })
 
   app.get('/api/worktrees/:id/file', async (request) => {

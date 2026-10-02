@@ -161,6 +161,58 @@ describe('talking to a peer', () => {
     )
   })
 
+  /*
+   * The page offers to do what the sentence says, so it needs the same
+   * answer as data: which machine is behind, and the key to reach it by.
+   */
+  it('says which machine is behind in a form the page can act on', async () => {
+    const at = (version: number) =>
+      peerAt((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'x-swb-protocol': String(version) })
+        res.end('{}')
+      })
+    const behind = await at(PROTOCOL_VERSION - 1)
+    await expect(behind.request('GET', '/api/snapshot')).rejects.toMatchObject({
+      code: 'protocol-mismatch',
+      details: { outdated: 'there', host: behind.key },
+    })
+    const ahead = await at(PROTOCOL_VERSION + 1)
+    await expect(ahead.request('GET', '/api/snapshot')).rejects.toMatchObject({
+      details: { outdated: 'here' },
+    })
+  })
+
+  /*
+   * A machine out of step is the reason to ask it to update, so its reply to
+   * that one request cannot be refused for being out of step -- the pull has
+   * started over there, and reporting it as an error would say it had not.
+   */
+  it('asks an out-of-step machine to update without refusing its answer', async () => {
+    const seen: string[] = []
+    const peer = await peerAt((req, res) => {
+      seen.push(`${req.method} ${req.url}`)
+      res.writeHead(202, {
+        'content-type': 'application/json',
+        'x-swb-protocol': String(PROTOCOL_VERSION - 1),
+      })
+      res.end('{"ok":true}')
+    })
+    await expect(peer.startUpdate()).resolves.toBeUndefined()
+    expect(seen).toEqual(['POST /api/update'])
+  })
+
+  it('says to go there when that machine predates updating from here', async () => {
+    const peer = await peerAt((_req, res) => {
+      res.writeHead(404, { 'content-type': 'application/json', 'x-swb-protocol': '1' })
+      res.end('{"error":"Route POST:/api/update not found"}')
+    })
+    await expect(peer.startUpdate()).rejects.toMatchObject({
+      status: 409,
+      code: 'peer-too-old',
+      message: expect.stringMatching(/Run pnpm pull in the Switchboard directory on that machine\.$/),
+    })
+  })
+
   it('accepts a peer speaking our own version', async () => {
     const peer = await peerAt((_req, res) => {
       res.writeHead(200, {

@@ -48,6 +48,27 @@ export interface CodeEditorProps {
    * it in an effect is what closes both gaps.
    */
   focus?: number | null
+  /**
+   * Put the cursor on this line of this file, once per nonce, and scroll it to
+   * the middle -- a content search hit being opened. Carries the path because
+   * the request arrives before the file does, and must not land on the file
+   * that was showing while it loaded.
+   */
+  goto?: { path: string; line: number; nonce: number } | null
+  /**
+   * What the editor spends beside the code, whenever it changes: the
+   * line-number gutter and the scrollbar.
+   *
+   * The pane budgets 80 columns *plus* this, and neither part can be a
+   * constant. The gutter is as wide as the line count, so a thousand-line
+   * file's four digits took the eightieth column -- measured at 79.19. The
+   * scrollbar is the platform's: `scrollbar-width: thin` is an overlay of no
+   * width in some browsers and a real 11 to 15px in others, so a file that fit
+   * here wrapped on a machine whose scrollbars take room. Only this side of
+   * the layout can see either, so it hands the sum over and the pane takes it
+   * out of the tree beside it.
+   */
+  onChromeWidth?: (px: number) => void
 }
 
 /**
@@ -148,6 +169,8 @@ export const CodeEditor = ({
   onChange,
   onSave,
   focus = null,
+  goto = null,
+  onChromeWidth,
 }: CodeEditorProps): React.ReactElement => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -321,6 +344,59 @@ export const CodeEditor = ({
       view.dispatch({ effects: language.reconfigure(support) })
     })
   }, [file.path, language])
+
+  /*
+   * After the effect that swaps documents, so the line is looked for in the
+   * file it names rather than the one it replaced.
+   */
+  const wentTo = useRef<number | null>(null)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || goto === null || goto.path !== file.path || wentTo.current === goto.nonce) return
+    wentTo.current = goto.nonce
+    const doc = view.state.doc
+    const line = doc.line(Math.min(Math.max(goto.line, 1), doc.lines))
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    })
+  }, [goto, file])
+
+  /*
+   * The gutter and the scrollbar, measured rather than assumed -- see
+   * `onChromeWidth`.
+   *
+   * An observer, because both change without React: a file's line count is the
+   * document's, so the gutter widens past a thousand lines and narrows when
+   * another file is dispatched into the same view, and the scrollbar arrives
+   * the moment a document is taller than the pane. The scroller's content box
+   * is what a scrollbar takes room out of, which is why observing it catches
+   * one appearing; `getBoundingClientRect` for the gutter's fractional width,
+   * since flooring here would cost the column this exists to protect.
+   */
+  const chromeRef = useRef(onChromeWidth)
+  chromeRef.current = onChromeWidth
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const gutters = host.querySelector('.cm-gutters')
+    const scroller = host.querySelector<HTMLElement>('.cm-scroller')
+    if (!gutters || !scroller) return
+    const report = (): void =>
+      chromeRef.current?.(
+        gutters.getBoundingClientRect().width + (scroller.offsetWidth - scroller.clientWidth),
+      )
+    report()
+    // jsdom has no ResizeObserver, and a test that mounts an editor is not
+    // testing the layout: the one measurement above still happens there.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(report)
+    observer.observe(gutters)
+    observer.observe(scroller)
+    return () => observer.disconnect()
+    // The host holds one view for its lifetime, and the view keeps one gutters
+    // and one scroller across documents, so this subscribes once.
+  }, [file.path])
 
   /*
    * Declared after the effect that builds the view, so on a fresh mount there

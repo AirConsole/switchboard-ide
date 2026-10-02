@@ -240,6 +240,12 @@ const protocolMismatch = (baseUrl: string, said: number | string): HttpError => 
     `${baseUrl} speaks protocol ${said}, this one speaks ${PROTOCOL_VERSION}. ` +
       `Run pnpm pull in the Switchboard directory ${older ? 'on that machine' : 'here'}.`,
     'protocol-mismatch',
+    /*
+     * The same answer for the page, which offers to do it: `outdated` is which
+     * of the two to update, and `host` is how to reach that machine through
+     * this one's `/api/servers/:key/update`.
+     */
+    { outdated: older ? 'there' : 'here', host: hostKeyFor(baseUrl) },
   )
 }
 
@@ -339,6 +345,8 @@ export class PeerClient {
     path: string,
     body?: unknown,
     timeoutMs = 10_000,
+    /** Off for the one request whose purpose is to end a mismatch. See `startUpdate`. */
+    checkProtocol = true,
   ): Promise<T> {
     const controller = new AbortController()
     /*
@@ -375,7 +383,7 @@ export class PeerClient {
         },
         ...(body === undefined ? {} : { body: JSON.stringify(unscopeTree(body)) }),
       })
-      await this.checkProtocol(response)
+      if (checkProtocol) await this.checkProtocol(response)
       const text = await readCapped(response)
       if (!response.ok) throw peerError(response.status, text)
       if (text === '') return undefined as T
@@ -610,6 +618,33 @@ export class PeerClient {
       throw new HttpError(502, 'that machine did not hand back a link token', 'bad-peer')
     }
     return reply.token
+  }
+
+  /**
+   * Ask that machine to `pnpm pull` itself.
+   *
+   * Without the protocol check, because the usual reason to ask is that the
+   * check is failing: a machine one version behind is exactly the one to
+   * update, and refusing its reply would report a pull that had started as an
+   * error. The route is a fixed, bodiless POST, so a reply from a different
+   * version has nothing in it to misread.
+   *
+   * A 404 is a machine from before there was a route to ask, and the one
+   * thing left is to go there -- so that is what the error says.
+   */
+  async startUpdate(): Promise<void> {
+    try {
+      await this.request('POST', '/api/update', {}, 15_000, false)
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 404) {
+        throw new HttpError(
+          409,
+          `${this.baseUrl} is too old to be updated from here. Run pnpm pull in the Switchboard directory on that machine.`,
+          'peer-too-old',
+        )
+      }
+      throw err
+    }
   }
 
   async identify(): Promise<PeerIdentity> {

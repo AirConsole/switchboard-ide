@@ -154,6 +154,18 @@ if (existsSync(config.webDist)) {
       void reply.status(404).send({ error: 'not found' })
       return
     }
+    /*
+     * A build's own files are never a client-side route. Answering a missing
+     * chunk with index.html and a 200 is what a page left open across a deploy
+     * got for the chunk it had not loaded yet -- the browser then refused HTML
+     * as a module, and the message said MIME type rather than "this file is
+     * gone". A 404 says what happened; the page reloads itself either way (see
+     * `lazyChunk` in web).
+     */
+    if (request.url.startsWith('/assets/')) {
+      void reply.status(404).send('not found')
+      return
+    }
     void reply.sendFile('index.html')
   })
 } else {

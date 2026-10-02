@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appendFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { claudeArgs, hasTranscript, lastPrompt, transcriptDir, turnState } from '../src/session/claude.js'
+import {
+  claudeArgs,
+  hasTranscript,
+  promptSummary,
+  transcriptDir,
+  turnState,
+} from '../src/session/claude.js'
+
+/** The newest prompt, which is what most of these were written about. */
+const lastPrompt = async (cwd: string): Promise<string | undefined> =>
+  (await promptSummary(cwd))?.prompt
 
 /*
  * `transcriptDir` reads `homedir()`, which on POSIX is `$HOME`, so pointing
@@ -15,7 +25,7 @@ let realHome: string | undefined
 /**
  * A different working directory per test.
  *
- * `lastPrompt` and `turnState` both memoise by cwd for the life of the process,
+ * `promptSummary` and `turnState` both memoise by cwd for the life of the process,
  * which is the whole point of them -- a transcript only grows, so the next look
  * reads the new bytes and nothing else. Sharing a cwd between tests would mean
  * one test's cached answer deciding the next one's.
@@ -138,6 +148,26 @@ describe('lastPrompt', () => {
     expect(await lastPrompt(cwd)).toBe('/clear')
   })
 
+  it('reads a paste without the tags Claude Code wraps it in', async () => {
+    /*
+     * The user record carries `<pasted_content id="…">` around the paste, with
+     * the id on the closing tag too; a window showed the tags. Verbatim from a
+     * live transcript, and a second paste with words typed around it.
+     */
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays(
+        '\n\n<pasted_content id="7b6d">\nPressing on the top bar should collapse the panels\n</pasted_content id="7b6d">\n',
+      ),
+    ])
+    expect(await lastPrompt(cwd)).toBe('Pressing on the top bar should collapse the panels')
+    const typed = freshCwd()
+    await writeTranscript(typed, 'a.jsonl', [
+      userSays('fix this: <pasted_content id="a1">TypeError: x</pasted_content id="a1"> please'),
+    ])
+    expect(await lastPrompt(typed)).toBe('fix this: TypeError: x please')
+  })
+
   it('skips the machinery the harness records as user records', async () => {
     /*
      * A `<task-notification>` was read as a prompt, so a worktree's bar showed
@@ -154,6 +184,31 @@ describe('lastPrompt', () => {
       userSays('<bash-input>ls</bash-input>'),
     ])
     expect(await lastPrompt(cwd)).toBe('do step 3')
+  })
+
+  it('skips machinery whose tag carries attributes, a subagent hand-back', async () => {
+    /*
+     * `<agent-message from="…">` got past a pattern that wanted `>` right
+     * after the tag name, so a window's recent prompts read "<agent-message
+     * from="abb31323b396787ac"> [Subagent hand-back] The text below is the
+     * final rep…". Both ways it can arrive: as a user record, and queued
+     * while the parent is mid-turn.
+     */
+    const handBack =
+      '<agent-message from="abb31323b396787ac">\n[Subagent hand-back] The text below is the final report\n</agent-message>'
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [userSays('do step 3'), userSays(handBack)])
+    expect(await lastPrompt(cwd)).toBe('do step 3')
+    const busy = freshCwd()
+    await writeTranscript(busy, 'a.jsonl', [
+      userSays('do step 3'),
+      {
+        type: 'attachment',
+        isSidechain: false,
+        attachment: { type: 'queued_command', prompt: handBack, commandMode: 'prompt' },
+      },
+    ])
+    expect(await promptSummary(busy)).toEqual({ prompt: 'do step 3', task: 'do step 3', followUps: [] })
   })
 
   it('skips a subagent’s own records and the harness’s meta ones', async () => {
@@ -281,6 +336,176 @@ describe('lastPrompt', () => {
     const past = new Date(Date.now() - 60_000)
     await utimes(old, past, past)
     expect(await lastPrompt(cwd)).toBe('the new conversation')
+  })
+  it('keeps the newest task and what followed it apart', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      TURN_END,
+      userSays('yes'),
+      TURN_END,
+      userSays('merge and deploy'),
+    ])
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'merge and deploy',
+      task: 'the topbar of a worktree shows the last prompt but not the task it was given',
+      followUps: ['yes', 'merge and deploy'],
+    })
+  })
+
+  it('reads a message sent mid-turn as a follow-up, however long', async () => {
+    /*
+     * Claude records one as a `queued_command` attachment, not a user record,
+     * so none of them reached the strip. Shaped as measured in a live
+     * transcript; the second is long enough that `isTask` alone would have
+     * made it the task, and the task-notification is machinery.
+     */
+    const cwd = freshCwd()
+    const queued = (prompt: string, commandMode = 'prompt'): unknown => ({
+      type: 'attachment',
+      isSidechain: false,
+      attachment: { type: 'queued_command', prompt, commandMode, humanTurn: true },
+    })
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the files search should have a switch between file name and content'),
+      queued('also italic'),
+      queued('the last prompt display should strip the text so newlines at the end are ignored'),
+      queued('<task-notification>done</task-notification>', 'task-notification'),
+    ])
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'the last prompt display should strip the text so newlines at the end are ignored',
+      task: 'the files search should have a switch between file name and content',
+      followUps: [
+        'also italic',
+        'the last prompt display should strip the text so newlines at the end are ignored',
+      ],
+    })
+  })
+
+  it('keeps the newest three follow-ups', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      ...['one', 'two', 'three', 'four', 'five'].map(userSays),
+    ])
+    const summary = await promptSummary(cwd)
+    expect(summary?.followUps).toEqual(['three', 'four', 'five'])
+    // And says that it dropped some, so the strip can put `…` in front.
+    expect(summary?.earlierFollowUps).toBe(true)
+  })
+
+  it('says it dropped follow-ups across reads, and forgets once a task clears them', async () => {
+    const cwd = freshCwd()
+    const path = await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      ...['one', 'two', 'three', 'four'].map(userSays),
+    ])
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBe(true)
+    // A later read sees only the new line, and must still know.
+    await appendFile(path, JSON.stringify(userSays('five')) + '\n')
+    const later = await promptSummary(cwd)
+    expect(later?.followUps).toEqual(['three', 'four', 'five'])
+    expect(later?.earlierFollowUps).toBe(true)
+    // A read with no prompt in it at all -- Claude's reply -- has nothing to
+    // work it out from again, so the flag has to be carried.
+    await appendFile(
+      path,
+      JSON.stringify({ type: 'assistant', message: { content: 'done' } }) + '\n',
+    )
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBe(true)
+    await appendFile(
+      path,
+      JSON.stringify(userSays('now make the files pane remember which folders were expanded')) + '\n',
+    )
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBeUndefined()
+  })
+
+  it('says nothing about earlier follow-ups when none were dropped', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the topbar of a worktree shows the last prompt but not the task it was given'),
+      ...['one', 'two', 'three'].map(userSays),
+    ])
+    expect((await promptSummary(cwd))?.earlierFollowUps).toBeUndefined()
+  })
+
+  it('lets a new task clear the follow-ups of the last one as it is written', async () => {
+    // The incremental path, which folds onto what it had rather than rescanning.
+    const cwd = freshCwd()
+    const path = await writeTranscript(cwd, 'a.jsonl', [
+      userSays('make the usage bars in the top bar turn amber above seventy five percent'),
+      userSays('deploy'),
+    ])
+    expect((await promptSummary(cwd))?.followUps).toEqual(['deploy'])
+
+    await appendFile(
+      path,
+      `${JSON.stringify(userSays('hovering over a panel should not remove the status colour on the left'))}\n` +
+        `${JSON.stringify(userSays('commit'))}\n`,
+      'utf8',
+    )
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'commit',
+      task: 'hovering over a panel should not remove the status colour on the left',
+      followUps: ['commit'],
+    })
+  })
+
+  it('counts a follow-up once, however many looks it straddles', async () => {
+    /*
+     * The incremental read used to re-read a 64KB overlap, harmless while it
+     * kept one newest prompt and a duplicate in every list once it kept
+     * several. A line caught half-written is read whole on the next look.
+     */
+    const cwd = freshCwd()
+    const path = await writeTranscript(cwd, 'a.jsonl', [
+      userSays('the files list seems to be broken when a directory is renamed underneath it'),
+      // Past the old overlap, so a re-read sees the follow-up and not the task.
+      ...Array.from({ length: 100 }, () => ({ type: 'assistant', message: { content: 'x'.repeat(1000) } })),
+      userSays('yes'),
+    ])
+    await promptSummary(cwd)
+    const line = JSON.stringify(userSays('try again'))
+    await appendFile(path, line.slice(0, 10), 'utf8')
+    expect((await promptSummary(cwd))?.followUps).toEqual(['yes'])
+    await appendFile(path, `${line.slice(10)}\n`, 'utf8')
+    expect((await promptSummary(cwd))?.followUps).toEqual(['yes', 'try again'])
+    expect((await promptSummary(cwd))?.followUps).toEqual(['yes', 'try again'])
+  })
+
+  it('makes the first prompt the task when none reads as one', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [userSays('merge origin master'), userSays('deploy')])
+    expect(await promptSummary(cwd)).toEqual({
+      prompt: 'deploy',
+      task: 'merge origin master',
+      followUps: ['deploy'],
+    })
+  })
+
+  it('reads a planning answer as a follow-up to the plan', async () => {
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays(
+        '<command-name>/plan</command-name><command-args>show the task above claude instead of in the bar</command-args>',
+      ),
+      {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              content:
+                "The user doesn't want to proceed with this tool use. The tool use was rejected. To tell you how to proceed, the user said: keep it greyscale",
+            },
+          ],
+        },
+      },
+    ])
+    expect(await promptSummary(cwd)).toMatchObject({
+      task: '/plan show the task above claude instead of in the bar',
+      followUps: ['keep it greyscale'],
+    })
   })
 })
 

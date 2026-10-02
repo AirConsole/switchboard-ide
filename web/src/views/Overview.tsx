@@ -14,6 +14,9 @@ import {
 } from '../terminal/TerminalView.js'
 import type { ProjectGroup } from '../App.js'
 import { api } from '../api.js'
+import type { Failure } from '../store.js'
+import { requestUpdate } from '../components/UpdateBanner.js'
+import { TaskStrip } from '../components/TaskStrip.js'
 import {
   claudeSession,
   isRunning,
@@ -41,6 +44,7 @@ import {
   PANE_CHROME,
   EDITOR_FONT_SIZE,
   FILES_EDITOR_CHROME,
+  thinScrollbarWidth,
   FILES_TREE_MIN,
   TILE_CHROME,
   TOGGLE_WORDS_MIN,
@@ -536,19 +540,56 @@ const useExitOutput = (session: Session | undefined): string[] => {
  * anywhere changes, and this message used to go with the first one.
  */
 export const TileFailure = ({
-  message,
+  failure,
   onDismiss,
 }: {
-  message: string
+  failure: Failure
   onDismiss: () => void
-}): React.ReactElement => (
-  <div className="tile__failure">
-    <span className="tile__failure-text">{message}</span>
-    <button className="tile__failure-dismiss" onClick={onDismiss} aria-label="Dismiss">
-      ×
-    </button>
-  </div>
-)
+}): React.ReactElement => {
+  /*
+   * A version skew offers to end itself. This machine is updated through the
+   * banner's own path, which reloads the page when the new server is up; a
+   * linked one is asked through the gateway, and its windows come back on
+   * their own once it answers again.
+   */
+  const [asked, setAsked] = useState<'no' | 'asking' | 'asked'>('no')
+  const [refused, setRefused] = useState<string | null>(null)
+  const target = failure.update
+  const update = (): void => {
+    if (target === undefined) return
+    if (target.host === null) {
+      requestUpdate()
+      onDismiss()
+      return
+    }
+    setAsked('asking')
+    setRefused(null)
+    api
+      .updateServer(target.host)
+      .then(() => setAsked('asked'))
+      .catch((err: unknown) => {
+        setAsked('no')
+        setRefused(err instanceof Error ? err.message : String(err))
+      })
+  }
+  const text =
+    asked === 'asked'
+      ? 'That machine is updating: pulling, building, restarting. Its windows come back when it has.'
+      : (refused ?? failure.message)
+  return (
+    <div className="tile__failure">
+      <span className="tile__failure-text">{text}</span>
+      {target !== undefined && asked !== 'asked' && (
+        <button className="btn tile__failure-action" onClick={update} disabled={asked === 'asking'}>
+          {target.host === null ? 'Update this machine' : 'Update that machine'}
+        </button>
+      )}
+      <button className="tile__failure-dismiss" onClick={onDismiss} aria-label="Dismiss">
+        ×
+      </button>
+    </div>
+  )
+}
 
 /** Why Claude is not on screen, in the interface's own voice. */
 const idleReason = (session: Session | undefined): string => {
@@ -614,8 +655,15 @@ const IdleClaude = ({
 
 interface WorktreeTileProps {
   /** An action about *this* worktree that failed, if there is one. */
-  failure: string | null
+  failure: Failure | null
   onDismissFailure: () => void
+  /**
+   * Being removed. The request is a `git worktree remove` behind killing every
+   * session in it, which takes seconds with real agents in it, and nothing on
+   * screen used to change until it was done -- so a click that had worked
+   * looked like one that had not. The window says so the moment you confirm.
+   */
+  departing: boolean
   worktree: Worktree
   /**
    * The project it belongs to.
@@ -713,7 +761,7 @@ interface WorktreeTileProps {
   /** The scroller, so the tile can tell whether it is worth mounting. */
   scroller: RefObject<HTMLElement | null>
   onStart: () => void
-  /** Bring this worktree wholly into view. */
+  /** Bring this worktree wholly into view, back to Claude alone. */
   onReveal: () => void
   onTogglePanel: (panel: PanelName) => void
   /** Put this worktree away: the sleep dialog, where deleting also lives. */
@@ -762,6 +810,7 @@ interface WorktreeTileProps {
 const WorktreeTile = ({
   failure,
   onDismissFailure,
+  departing,
   worktree,
   project,
   todos,
@@ -907,10 +956,18 @@ const WorktreeTile = ({
   useEffect(() => {
     if (!filesOpen && showList) onShowList(false)
   }, [filesOpen, showList, onShowList])
+  /*
+   * The panel reads only while this window is near the screen -- the same
+   * test that decides whether its terminals are built. Every window with the
+   * panel open used to poll whether or not anybody could see it: the tree,
+   * every open directory and the open file, every two or three seconds, for
+   * windows scrolled a dozen screens away. Coming back into range is a change
+   * of `enabled`, which reads at once.
+   */
   const changes = useChangesState({
     worktreeId: worktree.id,
     revision,
-    enabled: filesOpen && filesMode !== 'files',
+    enabled: near && filesOpen && filesMode !== 'files',
     path: openPath,
     mode: filesMode,
     commit,
@@ -919,7 +976,7 @@ const WorktreeTile = ({
   const files = useFilesState({
     worktreeId: worktree.id,
     revision,
-    enabled: filesOpen && filesMode === 'files',
+    enabled: near && filesOpen && filesMode === 'files',
     path: openPath,
     expanded: expandedDirs,
     onOpen: onOpenPath,
@@ -936,7 +993,10 @@ const WorktreeTile = ({
 
   const claudeIndex = panes.findIndex((pane) => pane.kind === 'claude')
   const controlsIndex = claudeIndex === -1 ? 0 : claudeIndex
-  const revealHint = `Click to bring ${worktree.name}'s window into view`
+  const panelOpen = panes.some((pane) => pane.kind !== 'claude')
+  const revealHint = panelOpen
+    ? `Click to close the panel and go back to ${worktree.name}'s Claude`
+    : `Click to bring ${worktree.name}'s window into view`
 
 
   const identity = (
@@ -963,21 +1023,6 @@ const WorktreeTile = ({
       {worktree.dirty ? <span className="tile__branch">{worktree.dirty}&plusmn;</span> : null}
     </span>
   )
-
-  /*
-   * What this worktree is about, in the words you asked for it in.
-   *
-   * A row of windows all look alike -- same chrome, same terminal -- and the
-   * name only says which branch it is. This is the line that answers "which one
-   * is doing what" without reading four terminals. Quiet, because the state and
-   * the name still outrank it, and one line however long the prompt was; the
-   * whole of it is in the tooltip.
-   */
-  const prompt = worktree.prompt ? (
-    <span className="tile__prompt" title={worktree.prompt}>
-      {worktree.prompt}
-    </span>
-  ) : null
 
   /*
    * What the worktree can show, and nothing else.
@@ -1089,9 +1134,21 @@ const WorktreeTile = ({
        */
       className={`tile tile--${state}${current ? ' tile--current' : ''}${
         keysLit && current ? ' tile--keys' : ''
-      }`}
+      }${departing ? ' tile--departing' : ''}`}
       ref={tileRef}
+      /*
+       * Nothing in it can be used any more: its sessions are being killed and
+       * its directory deleted. `inert` takes it out of the keyboard walk and
+       * the pointer both, and it is the browser's own, so nothing here has to
+       * remember to check.
+       */
+      inert={departing}
     >
+      {departing && (
+        <div className="tile__departing" role="status">
+          Shutting down…
+        </div>
+      )}
       <div
         className="tile__bar"
         style={{ gridTemplateColumns: columns }}
@@ -1103,9 +1160,12 @@ const WorktreeTile = ({
         onClick={(event) => {
           /*
            * Clicking the bar brings the worktree's window to the front, which
-           * is how you get to one you can only see part of. Never through
-           * something that already does its own job -- a panel toggle, sleep,
-           * remove, or a panel's own controls in the bar.
+           * is how you get to one you can only see part of -- and shuts
+           * whatever panel is open beside Claude, since the bar is the biggest
+           * target a window has and "just Claude again" otherwise meant finding
+           * the lit toggle. Never through something that already does its own
+           * job -- a panel toggle, sleep, remove, or a panel's own controls in
+           * the bar.
            */
           if (
             (event.target as HTMLElement).closest(
@@ -1122,7 +1182,6 @@ const WorktreeTile = ({
           // tab, Save -- reports that panel rather than the tile at large.
           <div className="tile__seg" key={pane.key} data-pane={pane.key}>
             {index === 0 && identity}
-            {index === 0 && prompt}
             {pane.kind === 'terminals' && (
               <TerminalsTabs
                 terminals={terminals}
@@ -1153,7 +1212,7 @@ const WorktreeTile = ({
         ))}
       </div>
 
-      {failure !== null && <TileFailure message={failure} onDismiss={onDismissFailure} />}
+      {failure !== null && <TileFailure failure={failure} onDismiss={onDismissFailure} />}
       <div className="tile__body" style={{ gridTemplateColumns: columns }}>
         {panes.map((pane) => (
           <div
@@ -1172,6 +1231,7 @@ const WorktreeTile = ({
             key={pane.key}
             data-pane={pane.key}
           >
+            {pane.kind === 'claude' && <TaskStrip worktree={worktree} />}
             {pane.kind === 'claude' &&
               (running && session ? (
                 near && (
@@ -1367,8 +1427,10 @@ export interface OverviewProps {
    * An action of yours that failed, and which window it was about -- drawn
    * inside that window, because that is where it means something.
    */
-  failure: { message: string; where: string | null } | null
+  failure: Failure | null
   onDismissFailure: () => void
+  /** Worktrees being removed: drawn greyed and inert until they are gone. */
+  departing: ReadonlySet<string>
   /** Start the machine's own terminal; it has none. */
   onMachineTerminal: () => void
   /** The open-project dialog, for the welcome window's button. */
@@ -1383,6 +1445,12 @@ export interface OverviewProps {
   onStart: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
+  /**
+   * The same, but back to Claude alone: any open panel is shut first. What a
+   * click on a window's bar does, and not the Cmd+arrow walk, which steps
+   * *through* the panels and could never land on one that shut as it arrived.
+   */
+  onRevealClaude: (worktreeId: string) => void
   onTogglePanel: (worktreeId: string, panel: PanelName) => void
   /** A worktree's queue emptied itself into Claude; close its todo panel. */
   onQueueDrained: (worktreeId: string) => void
@@ -1439,6 +1507,7 @@ export const Overview = ({
   onActivate,
   failure,
   onDismissFailure,
+  departing,
   onMachineTerminal,
   onOpenProject,
   onCreated,
@@ -1448,6 +1517,7 @@ export const Overview = ({
   onCloseProject,
   onStart,
   onReveal,
+  onRevealClaude,
   onTogglePanel,
   onQueueDrained,
   onSelectTerminal,
@@ -1652,10 +1722,24 @@ export const Overview = ({
    * row's answer -- a pane that measured itself would be deciding from a number
    * it had caused.
    */
+  /*
+   * One advance more than the stylesheet's chrome, because that chrome is the
+   * three-digit gutter and a file of a thousand lines has four. Without it the
+   * row kept the tree over a band of pane widths where the two could not both
+   * be had: measured, panes of 837 to 841px held the tree at its 158px floor
+   * and wrapped an 80-character line at 79.3 columns. The tree is what gives
+   * way, so it gives way a few pixels earlier rather than the code losing a
+   * column -- and a five-digit file is past what this pane is for.
+   *
+   * And the scrollbar, for the same reason and with the same answer: it is
+   * nothing on a platform that draws them over the content and 10 to 17px on
+   * one that does not, which is a column and a half of code.
+   */
   const treeNeeds =
     FILES_TREE_MIN +
     FILES_EDITOR_CHROME +
-    MIN_PANE_COLUMNS * monoAdvance(EDITOR_FONT_SIZE, TERMINAL_FONT_FAMILY)
+    thinScrollbarWidth() +
+    (MIN_PANE_COLUMNS + 1) * monoAdvance(EDITOR_FONT_SIZE, TERMINAL_FONT_FAMILY)
 
   /*
    * That, against the pixels this cell's files pane will actually get.
@@ -1855,6 +1939,19 @@ export const Overview = ({
    * the tile is a render behind.
    */
   const answered = useRef<number | null>(null)
+  /* The unit the row is at, or headed for -- see "Keep your place" below. */
+  const unitRef = useRef(0)
+  /*
+   * The row is gliding somewhere it was sent, rather than being swiped.
+   *
+   * A smooth scroll fires `scroll` like a swipe does, and a tab click that
+   * crosses three windows would otherwise light each of them on the way --
+   * the tab you clicked going dark and coming back. Cleared when the row comes
+   * to rest, and by a finger or a wheel, which take the row back from the glide.
+   */
+  const steering = useRef(false)
+  /* Where the last glide was sent, in px; NaN once a hand has taken the row. */
+  const sentTo = useRef(Number.NaN)
   useEffect(() => {
     if (target === undefined || width === 0 || scrollTo === null) return
     if (answered.current === scrollTo.nonce) return
@@ -1873,7 +1970,42 @@ export const Overview = ({
     const tile = { at: target.at, units: target.units }
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, restRef.current)
-    grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
+    const aim = offset * pitch
+    steering.current = true
+    sentTo.current = aim
+    /*
+     * Where the row is headed is where it is, as far as keeping your place
+     * across a resize goes. The page's first request lands in the same commit
+     * as the row's first width, and "Keep your place" below runs after this
+     * and put the row back at the unit it had been at: measured, `two-terms`
+     * aimed at 1191px and the row stayed at 0.
+     */
+    unitRef.current = offset
+    grid.scrollTo({ left: aim, behavior: 'smooth' })
+    /*
+     * And again once the row is wide enough to get there, if it is not yet.
+     *
+     * A scroll cannot go past the row's width *at the moment it is sent*, and
+     * the page's first request -- back to the window you were in before a
+     * reload -- is made while the windows are still laying out. Measured: sent
+     * to 3176px with 1589px of row to scroll, it stopped at 1589, the machine's
+     * window lit and focused and off screen. A frame at a time for a second
+     * and a half at most, and not at all once a finger or a wheel has taken
+     * the row, or another request has sent it somewhere else.
+     */
+    if (grid.scrollWidth - grid.clientWidth < aim - 2) {
+      let frames = 0
+      const wait = (): void => {
+        if (sentTo.current !== aim) return
+        if (grid.scrollWidth - grid.clientWidth >= aim - 2) {
+          steering.current = true
+          grid.scrollTo({ left: aim, behavior: 'smooth' })
+          return
+        }
+        if (++frames < 90) requestAnimationFrame(wait)
+      }
+      requestAnimationFrame(wait)
+    }
     // scrollTo carries a counter, so asking twice for one worktree is two
     // requests; the spot alone would compare equal and scroll nowhere.
   }, [scrollTo, target, pitch, width, units])
@@ -1914,6 +2046,15 @@ export const Overview = ({
     if (!grid || width === 0) return
     if (wholeOnScreen(tile, grid.scrollLeft, pitch, width, gap)) return
     const offset = nearestOffset(tile, grid.scrollLeft / pitch, units, rest)
+    /*
+     * Already on its way: the focus that fired this was handed over by a
+     * request that is still waiting for the row to be wide enough -- see the
+     * request above -- and cancelling that wait left `alpha` lit one pixel
+     * past the screen's edge after a reload.
+     */
+    if (offset * pitch === sentTo.current) return
+    steering.current = true
+    sentTo.current = Number.NaN
     grid.scrollTo({ left: offset * pitch, behavior: 'smooth' })
   }
 
@@ -1997,8 +2138,14 @@ export const Overview = ({
    * panel is where you were going most of the time. It falls out of `panesOf`
    * with no special case: a worktree with nothing open contributes one stop,
    * one with a panel two, and a window too narrow to hold Claude one again.
+   *
+   * Not a window that is shutting down: it is `inert`, so a step into it
+   * would land nowhere, and the walk starts from where the keyboard *is* --
+   * the next press would compute the same step, and the window would be a
+   * wall. Measured before this: the hint under it read "to switch to this
+   * Claude", pointing into a window that could no longer take the keyboard.
    */
-  const stops = cells.flatMap((cell) =>
+  const stops = cells.filter((cell) => !departing.has(cell.key)).flatMap((cell) =>
     cell.panes.map((pane) => ({
       // The cell's own key: a worktree id, or `add:<projectId>` for the tile at
       // the end of a project's run. The walk does not care which.
@@ -2094,7 +2241,25 @@ export const Overview = ({
    * phone, are in the body.
    */
   const settled = useRef<string | null>(null)
+  /* Whichever window covers the middle of the screen. */
+  const middleCell = useCallback(
+    (scrollLeft: number): Cell | undefined => {
+      if (pitch <= 0) return undefined
+      const middle = (scrollLeft + width / 2) / pitch
+      return cellsRef.current.find((cell) => middle >= cell.at && middle < cell.at + cell.units)
+    },
+    [pitch, width],
+  )
   const settleActive = useCallback((): void => {
+    /*
+     * A glide something asked for has already said where you are. Reading it
+     * again off the row at rest second-guessed it: after a reload back to the
+     * machine's window, the row came to rest while still laying out with only
+     * `alpha` wholly on screen, and `alpha` took the keyboard.
+     */
+    const sent = steering.current
+    steering.current = false
+    if (sent) return
     const grid = gridRef.current
     if (!grid || pitch <= 0) return
     /*
@@ -2113,12 +2278,11 @@ export const Overview = ({
      */
     const cells = cellsRef.current
     const onePane = units <= 2
-    const middle = (grid.scrollLeft + width / 2) / pitch
     const seen = cells.filter((cell) =>
       wholeOnScreen({ at: cell.at, units: cell.units }, grid.scrollLeft, pitch, width, gap),
     )
     const showing = onePane
-      ? cells.find((cell) => middle >= cell.at && middle < cell.at + cell.units)
+      ? middleCell(grid.scrollLeft)
       : seen.length === 1
         ? seen[0]
         : undefined
@@ -2145,7 +2309,33 @@ export const Overview = ({
      * yes and nothing moves.
      */
     onReveal(showing.key, first.kind === 'project' ? 'project' : first.kind)
-  }, [pitch, width, gap, units, onReveal])
+  }, [pitch, width, gap, units, onReveal, middleCell])
+
+  /*
+   * The mark alone, while the row is still moving -- on a phone only.
+   *
+   * Waiting for the row to come to rest before lighting the tab was the
+   * arrival done right and the answer given late: a swipe's momentum and the
+   * snap after it are most of a second, and all that time the strip went on
+   * naming the window you had already left. So the tab follows the middle of
+   * the screen as it crosses from one window into the next, and the arrival --
+   * the keyboard, `onReveal` -- still waits for `settleActive`.
+   *
+   * `onActivate` and not `onReveal`, because it is the only one of the two
+   * that is cheap enough to answer mid-swipe: it writes no `ui`, sends no
+   * scroll request and takes no focus, and it bails when the mark would not
+   * change -- which, since it is asked only when the middle crosses into a
+   * different window, is every scroll event but a handful. A desktop does not
+   * get it: there a scroll is you looking around, as above.
+   */
+  const markMiddle = (): void => {
+    const grid = gridRef.current
+    if (!grid || units > 2 || steering.current) return
+    const cell = middleCell(grid.scrollLeft)
+    const first = cell?.panes[0]
+    if (cell === undefined || first === undefined || active?.id === cell.key) return
+    onActivate(cell.key, first.kind === 'project' ? 'project' : first.kind)
+  }
 
   useEffect(() => {
     const step = (event: KeyboardEvent): void => {
@@ -2306,7 +2496,6 @@ export const Overview = ({
    * tile without having scrolled there. The spot index is what survives; the
    * offset is recomputed from it.
    */
-  const unitRef = useRef(0)
   useEffect(() => {
     const grid = gridRef.current
     if (!grid || width === 0) return
@@ -2383,6 +2572,8 @@ export const Overview = ({
           ? (stops.find((at) => at > from + 0.01) ?? stops[stops.length - 1] ?? 0)
           : ([...stops].reverse().find((at) => at < from - 0.01) ?? stops[0] ?? 0)
       aim = to
+      steering.current = false
+      sentTo.current = Number.NaN
       grid.scrollTo({ left: to * pitch })
     }
     grid.addEventListener('wheel', onWheel, { passive: false })
@@ -2411,11 +2602,12 @@ export const Overview = ({
         onScroll={(event) => {
           const el = event.currentTarget
           if (pitch > 0) unitRef.current = Math.round(el.scrollLeft / pitch)
+          markMiddle()
           /*
-           * When it stops, not while it moves: a swipe crosses every window
-           * between here and where it lands, and marking each one in turn would
-           * light three tabs on the way to the fourth -- and each is a write of
-           * `ui`. `scrollend` is the honest signal and Chrome has it; the
+           * The arrival when it stops, not while it moves: a swipe crosses
+           * every window between here and where it lands, and handing each one
+           * the keyboard in turn is a write of `ui` apiece. (The mark alone
+           * does follow it -- see `markMiddle`.) `scrollend` is the honest signal and Chrome has it; the
            * timeout is for the browsers that do not, and is harmless where both
            * fire because `activate` bails when nothing changed.
            */
@@ -2423,6 +2615,10 @@ export const Overview = ({
           restTimer.current = window.setTimeout(settleActive, 140)
         }}
         onScrollEnd={settleActive}
+        onTouchStart={() => {
+          steering.current = false
+          sentTo.current = Number.NaN
+        }}
       >
         {/*
           * One marker per place the row may rest -- see `rest`: each pane's
@@ -2515,7 +2711,7 @@ export const Overview = ({
                         hintFor(slot.key),
                       )}
                       <MachineTile
-                        failure={failure?.where === MACHINE_KEY ? failure.message : null}
+                        failure={failure?.where === MACHINE_KEY ? failure : null}
                         onDismissFailure={onDismissFailure}
                         session={machineSession(sessions)}
                         fontSize={TERMINAL_FONT_SIZE}
@@ -2594,8 +2790,9 @@ export const Overview = ({
                     </div>
                   ) : (
                     <WorktreeTile
-                      failure={failure?.where === worktree.id ? failure.message : null}
+                      failure={failure?.where === worktree.id ? failure : null}
                       onDismissFailure={onDismissFailure}
+                      departing={departing.has(worktree.id)}
                       worktree={worktree}
                       project={projectById.get(worktree.projectId)}
                       todos={worktreeTodos(todos, worktree.id)}
@@ -2635,7 +2832,7 @@ export const Overview = ({
                       commit={commitByWorktree[worktree.id] ?? null}
                       scroller={gridRef}
                       onStart={() => onStart(worktree.id)}
-                      onReveal={() => onReveal(worktree.id)}
+                      onReveal={() => onRevealClaude(worktree.id)}
                       onTogglePanel={(panel) => onTogglePanel(worktree.id, panel)}
                       onSleep={() => onSleep(worktree.id)}
                       onQueueDrained={() => onQueueDrained(worktree.id)}

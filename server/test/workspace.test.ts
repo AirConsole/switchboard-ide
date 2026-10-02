@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Session } from '@switchboard/shared'
 import { HttpError } from '../src/http-error.js'
+import { worktreeIdFor } from '../src/git/worktree.js'
 import {
   makeRepo,
   makeRepoWithCommit,
@@ -912,5 +913,32 @@ describe('awake', () => {
     await workspace.setAwake([main!.id], true)
     // Well inside the two seconds the worktree list is cached for.
     expect(Object.values(await awakeIn())).toEqual([true])
+  })
+})
+
+describe('fileTrees', () => {
+  it('reads every directory asked for in one answer, and names the ones gone', async () => {
+    /*
+     * The tree's poll was one request per expanded directory, every few
+     * seconds, for every worktree with the panel open: a dozen `/tree`
+     * requests every three seconds, measured from a real browser. This is the
+     * one request that replaces them -- and a directory the agent deleted is
+     * named rather than failing the rest, as the single route's 404 was.
+     */
+    await repo.write('src/a.ts', 'a\n')
+    await repo.write('src/deep/b.ts', 'b\n')
+    await repo.commit('add src')
+    await workspace.openProject(repo.path)
+    const id = worktreeIdFor(repo.path)
+    const answer = await workspace.fileTrees(id, ['', 'src', 'src/deep', 'gone', 'README.md'])
+    expect(answer.listings.map((listing) => listing.path)).toEqual(['', 'src', 'src/deep'])
+    expect(answer.listings[2]?.entries.map((entry) => entry.name)).toEqual(['b.ts'])
+    expect(answer.missing).toEqual(['gone', 'README.md'])
+  })
+
+  it('fails outright on a path outside the worktree', async () => {
+    // Only "gone" is tolerated per directory; containment is the request's answer.
+    await workspace.openProject(repo.path)
+    expect(await statusOf(workspace.fileTrees(worktreeIdFor(repo.path), ['', '../..']))).toBe(403)
   })
 })

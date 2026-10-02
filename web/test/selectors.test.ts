@@ -15,9 +15,9 @@ import {
   removalQuestions,
   removalWarnings,
   stateLabel,
+  statusShares,
   summarySignal,
   terminalSessions,
-  titleFor,
   worktreeStatus,
   worktreeTodos,
 } from '../src/selectors.js'
@@ -387,6 +387,34 @@ describe('removalLanding', () => {
  * makes that the common shape rather than a rare one, since every collapsed
  * head then has awake worktrees in its set.
  */
+/*
+ * The collapsed project head draws its worktrees as shares of one bar, where
+ * the leading bar could only say the most urgent of them -- "something needs
+ * you", without whether it is one of two or one of nine.
+ */
+describe('statusShares', () => {
+  it('counts each state, in urgency order whatever order they arrive in', () => {
+    expect(statusShares(['idle', 'needs-you', 'working', 'needs-you'])).toEqual([
+      { status: 'needs-you', count: 2 },
+      { status: 'working', count: 1 },
+      { status: 'idle', count: 1 },
+    ])
+  })
+
+  it('leaves out a state nobody is in, rather than drawing it empty', () => {
+    expect(statusShares(['working', 'working'])).toEqual([{ status: 'working', count: 2 }])
+    expect(statusShares([])).toEqual([])
+  })
+
+  it('keeps the quiet states, since a share is a proportion of everything', () => {
+    // Three working and one blocked is a quarter amber, not all of it.
+    expect(statusShares(['working', 'working', 'working', 'needs-you'])).toEqual([
+      { status: 'needs-you', count: 1 },
+      { status: 'working', count: 3 },
+    ])
+  })
+})
+
 describe('summarySignal', () => {
   it('says amber when anything here needs you', () => {
     expect(summarySignal(['needs-you'])).toBe('needs-you')
@@ -411,22 +439,6 @@ describe('summarySignal', () => {
     expect(summarySignal([])).toBeNull()
     expect(summarySignal(['working'])).toBeNull()
     expect(summarySignal(['off', 'working', 'off'])).toBeNull()
-  })
-})
-
-describe('titleFor', () => {
-  it('follows the name with the circle for the state the row is scanned for', () => {
-    // After the name, not before: Chrome shows an installed app's title as-is
-    // only when it starts with the app's short name, and a leading circle came
-    // out "Switchboard - 🟠 Switchboard".
-    expect(titleFor(['working', 'needs-you', 'idle'])).toBe('Switchboard 🟠')
-    expect(titleFor(['working', 'idle'])).toBe('Switchboard 🟢')
-  })
-
-  it('is the bare name when nothing is worth saying', () => {
-    // Grey has no circle: working and not running are the silence.
-    expect(titleFor([])).toBe('Switchboard')
-    expect(titleFor(['working', 'off'])).toBe('Switchboard')
   })
 })
 

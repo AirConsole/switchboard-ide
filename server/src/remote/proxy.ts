@@ -138,6 +138,13 @@ const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
   '/api/login',
   '/api/logout',
   '/api/ws-ticket',
+  /*
+   * Updating is this machine's, or -- through the second route -- the linked
+   * machine it names by key. Neither is steered: `?host=` on the first would be
+   * a second, unannounced way to restart somebody else's server.
+   */
+  '/api/update',
+  '/api/servers/:key/update',
 ])
 
 /**

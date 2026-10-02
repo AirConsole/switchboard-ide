@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Usage } from '@switchboard/shared'
 import { api } from '../api.js'
+import { useAnchoredMenu } from './useAnchoredMenu.js'
 
 /**
  * How often the browser asks for Claude's usage limits.
@@ -124,6 +125,18 @@ export const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | nul
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
     return () => window.clearInterval(timer)
   }, [])
+  /*
+   * At the last rung the readout is the percentages alone, and a click hangs
+   * the whole of it under the bar; another click, Escape or a click anywhere
+   * else puts it away. Wider, the whole of it is already in the bar, so the
+   * click does nothing.
+   *
+   * Which rung it is gets read off the DOM *at the click*, not rendered from:
+   * nothing React draws may depend on the rung (see the sweep in `TopBar`),
+   * and the panel is hidden by CSS at every other one, so a window widened
+   * with it open does not show the readout twice.
+   */
+  const pop = useAnchoredMenu<HTMLButtonElement>()
   if (usage.limits.length === 0) return null
   const resetsOf = (limit: Usage['limits'][number]): string => {
     if (limit.resetsAt !== null) {
@@ -141,31 +154,53 @@ export const UsageBars = ({ usage }: { usage: Usage }): React.ReactElement | nul
       ? `read ${new Date(usage.fetchedAt).toLocaleTimeString()}`
       : `last read ${new Date(usage.fetchedAt).toLocaleTimeString()} — ${usage.error}`,
   ].join('\n')
+  const rows = (): React.ReactElement[] =>
+    usage.limits.map((limit) => (
+      /*
+       * The level goes on the row rather than on the fill, because the number
+       * wears it too: the bar itself is the first thing the top bar gives up
+       * as it runs out of room (rung 1), and a colour that lived only on the
+       * track would go out exactly when the window is too small to show it.
+       */
+      <div className={`usage__row usage__row--${usageLevel(limit.percent)}`} key={limit.label}>
+        <span className="usage__label">{limit.label}</span>
+        <span className="usage__track">
+          <i className="usage__fill" style={{ width: `${limit.percent}%` }} />
+        </span>
+        <span className="usage__percent">{limit.percent}%</span>
+        <span className="usage__resets">
+          {limit.resetsAt === null ? '' : untilText(limit.resetsAt, now)}
+        </span>
+      </div>
+    ))
+  const stale = usage.error === undefined ? '' : ' usage--stale'
   return (
-    <div
-      className={usage.error === undefined ? 'usage' : 'usage usage--stale'}
-      title={title}
-      aria-label="Claude usage limits"
-    >
-      {usage.limits.map((limit) => (
-        /*
-         * The level goes on the row rather than on the fill, because the number
-         * wears it too: the bar itself is the first thing the top bar gives up
-         * as it runs out of room (rung 1), and a colour that lived only on the
-         * track would go out exactly when the window is too small to show it.
-         */
-        <div className={`usage__row usage__row--${usageLevel(limit.percent)}`} key={limit.label}>
-          <span className="usage__label">{limit.label}</span>
-          <span className="usage__track">
-            <i className="usage__fill" style={{ width: `${limit.percent}%` }} />
-          </span>
-          <span className="usage__percent">{limit.percent}%</span>
-          <span className="usage__resets">
-            {limit.resetsAt === null ? '' : untilText(limit.resetsAt, now)}
-          </span>
+    <>
+      <button
+        type="button"
+        ref={pop.anchor}
+        className={`usage${stale}${pop.at === null ? '' : ' usage--open'}`}
+        title={title}
+        aria-label="Claude usage limits"
+        aria-expanded={pop.at !== null}
+        onClick={(event) => {
+          const stage = event.currentTarget.closest<HTMLElement>('.topbar')?.dataset.stage
+          if (stage === '7' || pop.at !== null) pop.toggle()
+        }}
+      >
+        {rows()}
+      </button>
+      {pop.at !== null && (
+        <div
+          ref={pop.menu}
+          className={`menu usage__pop${stale}`}
+          style={{ left: pop.at.left, top: pop.at.top }}
+          aria-label="Claude usage limits"
+        >
+          {rows()}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   )
 }
 

@@ -96,7 +96,7 @@ export const worktreeTitle = (
     worktree.path,
     ...(worktree.branch && worktree.branch !== worktree.name ? [`on ${worktree.branch}`] : []),
     stateLabel(claudeSession(sessions, worktree.id)),
-    ...(worktree.prompt ? [`“${worktree.prompt}”`] : []),
+    ...((worktree.task ?? worktree.prompt) ? [`“${worktree.task ?? worktree.prompt}”`] : []),
     ...(worktree.dirty
       ? [`${worktree.dirty} uncommitted change${worktree.dirty === 1 ? '' : 's'}`]
       : []),

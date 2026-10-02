@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import type { Session, Worktree, WorktreeTodo } from '@switchboard/shared'
-import { api } from '../api.js'
+import type { RemoveOptions } from '../api.js'
 import { removalQuestions, removalWarnings } from '../selectors.js'
 import { useEscape } from './useEscape.js'
 import { useDialogKeys } from './useDialogKeys.js'
@@ -11,7 +11,8 @@ export interface RemoveWorktreeDialogProps {
   sessions: Session[]
   todos: WorktreeTodo[]
   onClose: () => void
-  onRemoved: () => void
+  /** The answers; the row removes it, and says so in the window meanwhile. */
+  onRemove: (opts: RemoveOptions) => void
 }
 
 /**
@@ -45,7 +46,7 @@ export const RemoveWorktreeDialog = ({
   sessions,
   todos,
   onClose,
-  onRemoved,
+  onRemove,
 }: RemoveWorktreeDialogProps): React.ReactElement => {
   useEscape(onClose)
   const box = useRef<HTMLDivElement | null>(null)
@@ -55,27 +56,22 @@ export const RemoveWorktreeDialog = ({
   const [force, setForce] = useState(false)
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [deleteRemoteBranch, setDeleteRemoteBranch] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const submit = (): void => {
-    setBusy(true)
-    void api
-      .removeWorktree(worktree.id, {
-        // Each answer comes from its own checkbox, or from the fact that made
-        // asking pointless -- never from a box that was not on screen.
-        force: asks.discard && force,
-        deleteBranch: asks.branch ? deleteBranch : asks.branchGoesAnyway,
-        deleteRemoteBranch: asks.remoteBranch
-          ? deleteRemoteBranch
-          : asks.remoteBranchGoesAnyway,
-      })
-      .then(() => onRemoved())
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-        setBusy(false)
-      })
-  }
+  /*
+   * The dialog asks and the row does the removing. It used to wait here for
+   * the answer, with the button disabled, while the worktree's agents were
+   * stopped and its directory deleted -- seconds of a dialog that looked stuck.
+   * Now it closes on the click and the window says it is shutting down; a
+   * refusal comes back in that window rather than here (see `removeWorktree`
+   * in App).
+   */
+  const submit = (): void =>
+    onRemove({
+      // Each answer comes from its own checkbox, or from the fact that made
+      // asking pointless -- never from a box that was not on screen.
+      force: asks.discard && force,
+      deleteBranch: asks.branch ? deleteBranch : asks.branchGoesAnyway,
+      deleteRemoteBranch: asks.remoteBranch ? deleteRemoteBranch : asks.remoteBranchGoesAnyway,
+    })
 
   return (
     <div className="scrim" onClick={onClose}>
@@ -158,13 +154,12 @@ export const RemoveWorktreeDialog = ({
               Delete &ldquo;{worktree.remoteBranch}&rdquo; from the remote as well
             </label>
           )}
-          {error && <p className="dialog__warn">{error}</p>}
         </div>
         <div className="dialog__foot">
           <button className="btn btn--quiet" onClick={onClose}>
             Keep it
           </button>
-          <button className="btn btn--danger" onClick={submit} disabled={busy}>
+          <button className="btn btn--danger" onClick={submit}>
             Remove worktree
           </button>
         </div>

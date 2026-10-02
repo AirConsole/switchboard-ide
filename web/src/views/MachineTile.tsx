@@ -4,10 +4,11 @@ import { PanelIcon } from '../components/PanelIcon.js'
 import { TerminalView } from '../terminal/TerminalView.js'
 import { useNearViewport } from './useNearViewport.js'
 import { TileFailure } from './Overview.js'
+import type { Failure } from '../store.js'
 
 export interface MachineTileProps {
   /** An action about this window that failed, if there is one. */
-  failure: string | null
+  failure: Failure | null
   onDismissFailure: () => void
   /** The machine's one terminal, while it is running. */
   session: Session | undefined
@@ -87,7 +88,7 @@ export const MachineTile = ({
           <span className="tile__prompt">a terminal in your home directory</span>
         </div>
       </div>
-      {failure !== null && <TileFailure message={failure} onDismiss={onDismissFailure} />}
+      {failure !== null && <TileFailure failure={failure} onDismiss={onDismissFailure} />}
       <div className="tile__body">
         <div className="tile__pane" data-pane="machine:machine">
           {session === undefined ? (

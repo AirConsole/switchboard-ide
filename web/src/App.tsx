@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api } from './api.js'
+import { api, ApiError, type RemoveOptions } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
 import { TopBar } from './components/TopBar.js'
+import { UpdateBanner } from './components/UpdateBanner.js'
 import { useNarrow } from './components/useNarrow.js'
 import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { MACHINE_KEY, Overview, projectKey, type PaneKind } from './views/Overview.js'
+import { MACHINE_KEY, Overview, WELCOME_KEY, projectKey, type PaneKind } from './views/Overview.js'
+import { useWakeLock } from './wakeLock.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
 import {
@@ -20,7 +22,6 @@ import {
   removalAsks,
   removalQuestions,
   terminalSessions,
-  titleFor,
   worktreeStatus,
 } from './selectors.js'
 import type { MoveTarget } from './views/TodoPane.js'
@@ -39,6 +40,20 @@ export interface ProjectGroup {
   project: Project
   awake: Worktree[]
   asleep: Worktree[]
+}
+
+
+/**
+ * Which machine a version skew says to update, from the error the gateway
+ * sent: `outdated` is `here` or `there`, and `host` is the linked machine's
+ * key. Anything else is not a skew and offers nothing.
+ */
+const skewOf = (err: unknown): { host: string | null } | undefined => {
+  if (!(err instanceof ApiError) || err.code !== 'protocol-mismatch') return undefined
+  const { outdated, host } = err.details
+  if (outdated === 'here') return { host: null }
+  if (outdated === 'there' && typeof host === 'string') return { host }
+  return undefined
 }
 
 export const App = (): React.ReactElement => {
@@ -103,6 +118,14 @@ export const App = (): React.ReactElement => {
    * `data-narrow` on `.app` rather than being given the number again.
    */
   const narrow = useNarrow()
+  /*
+   * The screen stays awake while you are watching this, on a phone -- see
+   * `useWakeLock`. Here rather than in a window, because it is the page that
+   * is being looked at, not one worktree: the row scrolls, windows mount and
+   * unmount as they come near, and a lock that went with them would drop every
+   * time you swiped.
+   */
+  useWakeLock()
   /**
    * Focus moved; remember where, unless it is where we already were.
    *
@@ -188,14 +211,41 @@ export const App = (): React.ReactElement => {
     if (!worktrees.some((worktree) => worktree.id === where)) setFailure(null)
   }, [failure, worktrees, setFailure])
 
-  /**
-   * Amber or green in the title when any worktree anywhere is -- asleep and on
-   * a linked machine included, since an agent blocked on you is blocked on you
-   * wherever it is. That is `titleFor`; this only hands it every worktree.
+  /*
+   * A file dropped anywhere but the files tree does nothing.
+   *
+   * The browser's own answer to a dropped file is to *navigate to it*, which
+   * here means the IDE is replaced by somebody's screen recording and every
+   * terminal on screen is gone -- the sessions survive, being tmux, but the
+   * page has to be loaded again. The tree accepts a drop on purpose (see
+   * `FilesPane`); this is what makes a near miss cost nothing instead.
+   *
+   * Taking `dragover` is what makes a drop *possible*, which reads backwards
+   * until you know the default: refusing the drag means the browser handles the
+   * drop itself, and handling it means we can decline to do anything.
+   *
+   * **Only a drag nobody below took.** This runs on `window`, after React's
+   * handlers on the root, so it sees the tree's `dragover` too -- and setting
+   * `none` there overwrote the tree's `copy` and the browser never fired
+   * `drop` at all. No file could be dropped anywhere, from Finder or anything
+   * else. Measured with a real drag through CDP (`Input.dispatchDragEvent`),
+   * which honours `dropEffect`: a synthetic `dispatchEvent` fires the drop
+   * regardless, which is how this passed when it was written.
    */
   useEffect(() => {
-    document.title = titleFor(worktrees.map((worktree) => worktreeStatus(sessions, worktree.id)))
-  }, [worktrees, sessions])
+    const swallow = (event: DragEvent): void => {
+      if (event.dataTransfer?.types.includes('Files') !== true) return
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      if (event.type === 'dragover') event.dataTransfer.dropEffect = 'none'
+    }
+    window.addEventListener('dragover', swallow)
+    window.addEventListener('drop', swallow)
+    return () => {
+      window.removeEventListener('dragover', swallow)
+      window.removeEventListener('drop', swallow)
+    }
+  }, [])
 
   /*
    * A file dropped anywhere but the files tree does nothing.
@@ -242,7 +292,7 @@ export const App = (): React.ReactElement => {
   const failIn =
     (where: string | null) =>
     (err: unknown): void =>
-      setFailure({ message: err instanceof Error ? err.message : String(err), where })
+      setFailure({ message: err instanceof Error ? err.message : String(err), where, update: skewOf(err) })
   const fail = failIn(null)
 
   /*
@@ -352,6 +402,17 @@ export const App = (): React.ReactElement => {
   /** Every awake worktree, in the order the row shows them. */
   const rowWorktrees = useMemo(() => groups.flatMap((group) => group.awake), [groups])
 
+  /*
+   * Where you are, remembered as you move -- see the arrival below, which reads
+   * it back. Not until that arrival has happened, or the first window to take
+   * focus on load would overwrite the one it is about to go back to.
+   */
+  useEffect(() => {
+    if (!started.current || active === null || active.id === WELCOME_KEY) return
+    if (uiRef.current.activeWorktree === active.id) return
+    setUi({ activeWorktree: active.id })
+  }, [active, setUi])
+
   /**
    * Where a todo can be moved to, per project: that project's own worktrees, in
    * the top bar's own order.
@@ -406,23 +467,41 @@ export const App = (): React.ReactElement => {
   }
 
   /*
-   * On arrival, the first worktree is the active one and its Claude has the
-   * keyboard.
+   * On arrival, the window you were in when you left, and otherwise the first
+   * worktree -- and its Claude has the keyboard.
+   *
+   * The remembered one only if the row still has it: a worktree put to sleep
+   * or removed since, on this machine or another, is somewhere you cannot be.
+   * It was only ever the first worktree, and a reload in the middle of the row
+   * dropped you back at its start with the window you had been in off screen.
    *
    * Once, and only once there is something to point at -- the first render
-   * happens before the snapshot lands. After that the active worktree is
+   * happens before the snapshot lands. After that the active window is
    * whatever you last navigated to, and this must not keep dragging it back.
    */
   const started = useRef(false)
   useEffect(() => {
-    if (started.current) return
+    if (started.current || !loaded) return
+    // Absent in a `ui` stored before this was remembered.
+    const id = ui.activeWorktree ?? null
+    const pane: PaneKind | null =
+      id === null
+        ? null
+        : id === MACHINE_KEY
+          ? 'machine'
+          : groups.some((group) => projectKey(group.project.id) === id)
+            ? 'project'
+            : rowWorktrees.some((worktree) => worktree.id === id)
+              ? 'claude'
+              : null
     const first = rowWorktrees[0]
-    if (first === undefined) return
+    if (pane === null && first === undefined) return
     started.current = true
-    reveal(first.id)
+    if (id !== null && pane !== null) reveal(id, pane)
+    else if (first !== undefined) reveal(first.id)
     // `reveal` is rebuilt every render and this fires once, so it is not a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowWorktrees])
+  }, [loaded, rowWorktrees])
 
   /**
    * Wake a worktree: bring back its tile and its agent.
@@ -437,33 +516,59 @@ export const App = (): React.ReactElement => {
   }
 
   /**
-   * A worktree is gone: drop everything this client remembered about it.
+   * Worktrees whose removal has been asked for and not yet answered.
    *
-   * "Where you are" included -- it would otherwise point at a window that is
-   * not there, which is what a Cmd+arrow step counts from. Shared by the two
-   * ways of removing one, the dialog and the straight-through delete, because
-   * what has to be forgotten does not depend on how many questions were asked.
+   * Their windows stay in the row, greyed and inert, saying they are shutting
+   * down. The request is a `git worktree remove` behind killing every session
+   * in the worktree -- seconds, with real agents in it -- and nothing on screen
+   * used to change until it came back, so a click that had worked looked like
+   * one that had not.
    */
-  const forgetWorktree = (worktreeId: string): void => {
-    const panels = { ...ui.panels }
-    delete panels[worktreeId]
-    // Its awake mark went with it, on its own machine.
-    setUi({ panels })
-    /*
-     * If you were in the one that went, move into its neighbour -- see
-     * `removalLanding`, which is where the rule and its reasons live. Read off
-     * the row as it stands, which still holds the worktree being removed: the
-     * refresh below is what drops it, and by then this has already said where
-     * to go. Leaving `active` null instead is what used to happen, and it left
-     * the keyboard on the document with every window still full of terminals.
-     */
+  const [departing, setDeparting] = useState<ReadonlySet<string>>(new Set())
+
+  /**
+   * Remove a worktree, and say so at once.
+   *
+   * The two ways in -- the dialog, and the straight-through delete when there
+   * is nothing to ask -- both end here, because what the window does while it
+   * goes does not depend on how many questions were asked.
+   *
+   * **Where you are moves on at the click**, not when the answer comes: the
+   * window you were in has stopped taking input, and a keyboard left in it
+   * reaches nothing. See `removalLanding` for where, read off the row as it
+   * stands, which still holds the worktree.
+   *
+   * On success everything this client remembered about it goes, and the window
+   * with it once the refresh lands. On failure it comes back, with git's own
+   * words in it -- a lease that failed, changes that appeared -- which is
+   * where an action that failed is said here (see `TileFailure`).
+   */
+  const removeWorktree = (worktreeId: string, opts: RemoveOptions): void => {
+    setDeparting((current) => new Set(current).add(worktreeId))
     if (active?.id === worktreeId) {
       const landing = removalLanding(groups, worktreeId)
       if (landing === null) setActive(null)
       else if (landing.kind === 'worktree') reveal(landing.id)
       else reveal(projectKey(landing.id), 'project')
     }
-    void refresh()
+    void api
+      .removeWorktree(worktreeId, opts)
+      .then(() => {
+        // Read at the answer, not at the click: the panels may have moved since.
+        const panels = { ...uiRef.current.panels }
+        delete panels[worktreeId]
+        // Its awake mark went with it, on its own machine.
+        setUi({ panels })
+        return refresh()
+      })
+      .catch(failIn(worktreeId))
+      .finally(() =>
+        setDeparting((current) => {
+          const next = new Set(current)
+          next.delete(worktreeId)
+          return next
+        }),
+      )
   }
 
   /**
@@ -900,7 +1005,7 @@ export const App = (): React.ReactElement => {
              * pane now, so `active` reliably names a cell that is about to go --
              * and an `active` pointing at nothing leaves the keyboard on the
              * document and blanks the Cmd legend. The same reasoning as
-             * `forgetWorktree`, one level up.
+             * `removeWorktree`, one level up.
              */
             const mine = new Set(
               worktrees.filter((w) => w.projectId === closingProject).map((w) => w.id),
@@ -950,14 +1055,11 @@ export const App = (): React.ReactElement => {
               setRemoving(worktree.id)
               return
             }
-            void api
-              .removeWorktree(worktree.id, {
-                force: false,
-                deleteBranch: removalQuestions(worktree).branchGoesAnyway,
-                deleteRemoteBranch: removalQuestions(worktree).remoteBranchGoesAnyway,
-              })
-              .then(() => forgetWorktree(worktree.id))
-              .catch(fail)
+            removeWorktree(worktree.id, {
+              force: false,
+              deleteBranch: removalQuestions(worktree).branchGoesAnyway,
+              deleteRemoteBranch: removalQuestions(worktree).remoteBranchGoesAnyway,
+            })
           }}
         />
       )}
@@ -970,9 +1072,9 @@ export const App = (): React.ReactElement => {
             setRemoving(null)
             refocus()
           }}
-          onRemoved={() => {
-            forgetWorktree(removing)
+          onRemove={(opts) => {
             setRemoving(null)
+            removeWorktree(removing, opts)
           }}
         />
       )}
@@ -995,29 +1097,43 @@ export const App = (): React.ReactElement => {
       {topBar}
 
       {/*
-        * The page being out of touch, or an action that belongs to no window.
-        * Everything that *is* about a window is said in it -- see `failure`.
+        * Everything said across the whole app, in one grid row of its own. The
+        * grid is the bar and then the row of windows; a banner placed straight
+        * in it took the windows' `1fr` track and pushed the row into an
+        * implicit one below the screen -- measured, a one-line banner drawn
+        * 373px tall with the windows under it and out of reach. Empty, this is
+        * a track of height zero.
         */}
-      {(error ?? (failure?.where === null ? failure.message : null)) !== null && (
-        <div className="banner">
-          {error ?? failure?.message}
-          <button
-            className="banner__dismiss"
-            onClick={() => {
-              setError(null)
-              setFailure(null)
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      <div className="app__notices">
+        {/* A newer Switchboard on origin, and the page reloaded onto it once it is running. */}
+        <UpdateBanner />
+
+        {/*
+          * The page being out of touch, or an action that belongs to no window.
+          * Everything that *is* about a window is said in it -- see `failure`.
+          */}
+        {(error ?? (failure?.where === null ? failure.message : null)) !== null && (
+          <div className="banner">
+            {error ?? failure?.message}
+            <button
+              className="banner__dismiss"
+              onClick={() => {
+                setError(null)
+                setFailure(null)
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
 
       <Overview
         narrow={narrow}
         /* Said in the window it is about, and kept until dismissed. */
         failure={failure?.where === null ? null : (failure ?? null)}
         onDismissFailure={() => setFailure(null)}
+        departing={departing}
         onMachineTerminal={machineTerminal}
         onOpenProject={() => setShowOpenProject(true)}
         worktrees={rowWorktrees}
@@ -1042,6 +1158,7 @@ export const App = (): React.ReactElement => {
         onActivate={activate}
         onStart={startClaude}
         onReveal={reveal}
+        onRevealClaude={revealClaude}
         onTogglePanel={togglePanel}
         onQueueDrained={queueDrained}
         onCreated={(worktreeId) => {

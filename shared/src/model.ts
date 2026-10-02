@@ -159,6 +159,21 @@ export interface Worktree {
    */
   prompt?: string
   /**
+   * The newest prompt that set Claude a task, as opposed to steering one --
+   * see `isTask`. What the worktree is *about*: after a piece of work the
+   * newest prompt is almost always "merge and deploy", which says what it was
+   * told last and nothing about what it is for. Absent from a machine too old
+   * to say, where the viewer falls back to `prompt`.
+   */
+  task?: string
+  /**
+   * The prompts since `task`, oldest first: the "yes" and "merge and deploy"
+   * that steered it. Only the newest few are kept.
+   */
+  followUps?: string[]
+  /** More follow-ups came before these, and were dropped; the strip says `…`. */
+  earlierFollowUps?: boolean
+  /**
    * Whether this worktree has a window in the row.
    *
    * Decided by the machine the worktree lives on, not by whoever is looking:
@@ -232,6 +247,27 @@ export type SessionKind = 'claude' | 'shell'
  * word alone (`server/src/remote/scope.ts`).
  */
 export const MACHINE_WORKTREE_ID = 'machine'
+
+/**
+ * Whether a prompt sets Claude a task rather than steering the one it has.
+ *
+ * Length, and nothing cleverer. Measured over every transcript on the machine
+ * it was written on -- 63 sessions, 1,151 prompts -- the short end is nearly
+ * all steering: `merge and deploy`, `yes`, `continue`, `pr, merge and reload`,
+ * and as often `mege` and `Metge and deploy`, which is why a list of workflow
+ * words would do worse than a count. A short question is steering too -- "is
+ * this url stable?" asks about the work, it does not start any -- until it is
+ * long enough to be a brief of its own.
+ *
+ * Where it is wrong it is wrong at 8-12 words, where either reading is fair:
+ * `slide 9 should be after monetization slide 12` reads as steering. The cost
+ * is which of two lines it lands on, and there was no call for a model.
+ */
+export const isTask = (prompt: string): boolean => {
+  const words = prompt.split(/\s+/).filter((word) => word !== '').length
+  if (words < 10) return false
+  return !(prompt.trimEnd().endsWith('?') && words < 20)
+}
 
 /**
  * Liveness of the underlying tmux session.
@@ -378,6 +414,16 @@ export interface UiState {
    * traffic: no PATCH per arrow key for the life of the install.
    */
   stepsTaken: number
+  /**
+   * The window you were in -- a worktree's id, a project pane's key, or the
+   * machine's -- so a reload lands where you left off rather than at the start
+   * of the row with nothing lit. Null before anything has been navigated to.
+   *
+   * Written as you move, on the same debounced write as the rest of this, so
+   * a step taken a moment before a reload can be lost; the row just starts one
+   * window back.
+   */
+  activeWorktree: string | null
 }
 
 export const defaultUiState = (): UiState => ({
@@ -389,6 +435,7 @@ export const defaultUiState = (): UiState => ({
   openFilesByWorktree: {},
   markdownPreview: true,
   stepsTaken: 0,
+  activeWorktree: null,
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */
@@ -477,6 +524,12 @@ export interface FileEntry {
    * entry, and this listing is sent on every click.
    */
   changed?: boolean
+  /**
+   * git ignores this -- by a `.gitignore`, `.git/info/exclude` or the global
+   * excludes file, or by being inside a directory that is ignored. Listed
+   * anyway, and drawn a step quieter. Absent rather than false, like `changed`.
+   */
+  ignored?: boolean
 }
 
 /**
@@ -505,6 +558,23 @@ export interface FileListing {
 }
 
 /**
+ * Several directories of one worktree, in one answer: the tree's poll.
+ *
+ * The tree is the root plus every directory you have expanded, and it used to
+ * be read one request per directory, every few seconds, for every worktree with
+ * the panel open -- measured from a real browser as a dozen `/tree` requests
+ * every three seconds, queueing behind each other for a second at a time.
+ *
+ * `missing` is a directory that is not there any more (or is a file now): the
+ * agent deleted it, or the branch moved. The client forgets it, as it did the
+ * single-directory route's 404; the root missing is the whole request failing.
+ */
+export interface FileListings {
+  listings: FileListing[]
+  missing: string[]
+}
+
+/**
  * One answer from the finder: a path, and what is at it.
  *
  * Directories are in it as well as files, because a search is also how you
@@ -514,6 +584,19 @@ export interface FileListing {
 export interface FileHit {
   path: string
   kind: 'dir' | 'file'
+}
+
+/**
+ * One line of a file that contains what was searched for.
+ *
+ * `line` is 1-based, the number the editor's gutter shows, so a hit can be
+ * opened at the line it names. `text` is the line itself, trimmed and cut to
+ * what a row can show -- it is there to be recognised, not read in full.
+ */
+export interface ContentHit {
+  path: string
+  line: number
+  text: string
 }
 
 /**
@@ -630,5 +713,50 @@ export interface UsageLimit {
 export interface Usage {
   limits: UsageLimit[]
   fetchedAt: number
+  error?: string
+}
+
+/** A commit the running build does not have yet. */
+export interface UpdateCommit {
+  sha: string
+  subject: string
+}
+
+/**
+ * Whether this machine's Switchboard is behind origin, and what `pnpm pull` is
+ * doing about it.
+ *
+ * `updatable` false is the common answer for anything that is not the
+ * machine's own instance -- a scratch one, a dev server, a checkout on a
+ * branch -- and then nothing else here was asked of git.
+ */
+export interface UpdateStatus {
+  /**
+   * Changes per start, so a page can tell the server it loaded from has been
+   * replaced. Not `instanceId`, which is what `/api/server` calls the same
+   * value: a field ending in `Id` is scoped at the peer boundary as if it
+   * named something to route to, and this names nothing.
+   */
+  instance: string
+  /** The commit this server was built from, or null when the build was not stamped. */
+  running: string | null
+  updatable: boolean
+  /** The branch updates come from, as origin names it. */
+  branch: string | null
+  /** Commits on that branch the running build does not have, newest first; capped. */
+  commits: UpdateCommit[]
+  /** How many there are in all, which `commits` may not list. */
+  behind: number
+  /**
+   * Why `pnpm pull` would refuse, said before the click rather than after:
+   * uncommitted changes, another branch, history of its own.
+   */
+  blocked: string | null
+  /** `pnpm pull` is running, or the last one failed and this is how it ended. */
+  state: 'idle' | 'updating' | 'failed'
+  failure: string | null
+  /** The fetch that found this, or null before the first one. */
+  checkedAt: number | null
+  /** The fetch failed; `commits` is what the last one that worked found. */
   error?: string
 }

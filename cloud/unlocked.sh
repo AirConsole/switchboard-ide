@@ -6,7 +6,11 @@
 # failure that would quietly write a user's home into the clear.
 set -euo pipefail
 
-SWB_USER=switchboard
+# Who this machine is for; see the same lines in setup.sh.
+if [ -f /etc/switchboard/env ]; then
+  . /etc/switchboard/env
+fi
+SWB_USER=${SWB_USER:-switchboard}
 HOME_DIR=/home/$SWB_USER
 IDE_DIR=/opt/switchboard
 IDE_PORT=7999
@@ -21,6 +25,20 @@ if [ ! -d "$HOME_DIR" ]; then
   log "first unlock: creating $HOME_DIR"
   mkdir -p "$HOME_DIR"
   cp -a /etc/skel/. "$HOME_DIR/" 2>/dev/null || true
+fi
+
+# The files on the volume are owned by a number, and the user this boot made
+# has to be that number. setup.sh pins it, so they agree -- but if they ever do
+# not (a machine from before the pin, rebuilt on an image whose next free uid
+# has moved), the IDE would start as a user who can read none of its own home,
+# and what that looks like is every terminal failing for no stated reason.
+# Handing the files back is slow on a big home and happens once; not doing it
+# is a machine that cannot be used.
+owner=$(stat -c %u "$HOME_DIR")
+want=$(id -u "$SWB_USER")
+if [ "$owner" != "$want" ]; then
+  log "$HOME_DIR is owned by uid $owner, not $SWB_USER ($want); handing it back"
+  chown -R "$SWB_USER:$SWB_USER" "$HOME_DIR"
 fi
 chown "$SWB_USER:$SWB_USER" "$HOME_DIR"
 chmod 0700 "$HOME_DIR"
@@ -85,7 +103,7 @@ MD
 fi
 
 # Packages an agent installed since the machine was built. apt writes to the
-# boot disk, which `provision.sh recreate` throws away, so the list lives on
+# boot disk, which `provision-gcp.sh recreate` throws away, so the list lives on
 # the volume and is replayed here. Without this a rebuild silently forgets
 # every tool the work depends on -- the same weakness a container has.
 PKG_LIST=$HOME_DIR/.switchboard/packages
@@ -110,7 +128,7 @@ fi
 install -d -o "$SWB_USER" -g "$SWB_USER" "$HOME_DIR/.docker-data"
 systemctl restart docker 2>/dev/null || true
 
-# On a machine being built there is no password yet -- provision.sh sets it
+# On a machine being built there is no password yet -- provision-gcp.sh sets it
 # next, as the user, and starts the IDE itself. The IDE refuses to start
 # without one, so starting it here would only be a failed unit for the first
 # minute of every machine's life.

@@ -52,6 +52,30 @@ export const worktreeStatus = (sessions: Session[], worktreeId: string): Worktre
  */
 const URGENCY: WorktreeStatus[] = ['needs-you', 'working', 'idle', 'off']
 
+/**
+ * A group's statuses as shares of one bar, in a fixed order.
+ *
+ * What the collapsed head draws under the project's name: one band per state,
+ * as wide as that state's share of the project's worktrees, so a project with
+ * four agents and one blocked on you shows a quarter of its bar in amber. The
+ * bar down the pill's leading edge said only the most urgent of them, which is
+ * the right answer for a *tab* standing for one window and the wrong one for a
+ * head standing for a whole project -- "something needs you" without saying
+ * whether it is one of two or one of nine.
+ *
+ * Urgency order, not the row's: the bands are read as quantities, and a band
+ * that moves about as agents change state cannot be compared with the one
+ * beside it. States nobody has are left out rather than drawn empty, so the
+ * bar has no zero-width segments to hairline against each other.
+ */
+export const statusShares = (
+  statuses: WorktreeStatus[],
+): { status: WorktreeStatus; count: number }[] =>
+  URGENCY.map((status) => ({
+    status,
+    count: statuses.filter((each) => each === status).length,
+  })).filter((share) => share.count > 0)
+
 export const mostUrgentStatus = (statuses: WorktreeStatus[]): WorktreeStatus =>
   URGENCY.find((status) => statuses.includes(status)) ?? 'off'
 
@@ -75,34 +99,6 @@ export const summarySignal = (
   statuses: WorktreeStatus[],
 ): 'needs-you' | 'idle' | null =>
   statuses.includes('needs-you') ? 'needs-you' : statuses.includes('idle') ? 'idle' : null
-
-/**
- * The page's title, carrying `summarySignal` over every worktree there is.
- *
- * The title is the one place the state can reach outside the page on every
- * platform: the browser tab, and the installed app's own window -- whose dock
- * icon comes from the manifest and cannot change, and where the favicon is not
- * drawn at all. A title is plain text, so the colour has to be a character that
- * carries its own, which is an emoji: 🟠 and 🟢 are the only two of the circles
- * that can pass for `--signal` and `--done`, though the system chooses the exact
- * shade.
- *
- * Grey says nothing, and not for want of a character. There is no grey circle
- * emoji, but the reason is the rule above: working and not running are the
- * silence that makes the other two worth scanning for, so the quiet title is
- * the bare name.
- *
- * **The circle goes after the name**, and in the installed app it has to:
- * Chrome rewrites an app window's title, showing one that starts with the
- * app's short name as it is and anything else as `<name> - <title>`
- * (`WebAppBrowserController::GetTitle`), so a leading circle came out as
- * `Switchboard - 🟠 Switchboard`. A browser tab is the same order, since the
- * name is short enough that the circle survives truncation there too.
- */
-export const titleFor = (statuses: WorktreeStatus[]): string => {
-  const signal = summarySignal(statuses)
-  return signal === 'needs-you' ? 'Switchboard 🟠' : signal === 'idle' ? 'Switchboard 🟢' : 'Switchboard'
-}
 
 /**
  * Main worktree first, then alphabetical, within one project.

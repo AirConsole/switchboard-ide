@@ -1,7 +1,8 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   mediaKindOf,
   mediaTypeOf,
+  type ContentHit,
   type FileEntry,
   type FileHit,
   type FilesMode,
@@ -17,7 +18,10 @@ import {
   type ChangesState,
 } from './ChangesPane.js'
 import { ApiError, api } from '../api.js'
+import { ErrorBoundary } from '../components/ErrorBoundary.js'
 import { useListKeys } from '../components/useListKeys.js'
+import { lazyChunk } from '../lazyChunk.js'
+import { usePageVisible } from '../usePageVisible.js'
 import type { EditorFile } from '../editor/CodeEditor.js'
 
 /*
@@ -25,14 +29,14 @@ import type { EditorFile } from '../editor/CodeEditor.js'
  * A session that never opens one never downloads it, and `fallback={null}`
  * keeps the no-spinner rule -- the pane simply shows its ground until it lands.
  */
-const CodeEditor = lazy(() => import('../editor/CodeEditor.js'))
+const CodeEditor = lazyChunk(() => import('../editor/CodeEditor.js'))
 
 /*
  * And so is the Markdown renderer, for the same reason and with the same
  * fallback: the parser is only wanted by a panel that is actually showing a
  * rendered `.md`, which most sessions never do.
  */
-const Markdown = lazy(() => import('./Markdown.js'))
+const Markdown = lazyChunk(() => import('./Markdown.js'))
 
 /**
  * How often an open panel re-reads the directories it is showing.
@@ -59,6 +63,8 @@ export interface TreeRow {
   kind: 'dir' | 'file'
   depth: number
   changed: boolean
+  /** git ignores it; see `FileEntry.ignored`. */
+  ignored: boolean
   /** Directories only: whether this one is open. */
   open: boolean
 }
@@ -99,6 +105,11 @@ export interface FilesState {
   media: MediaFile | null
   /** Why there is no file to show: not text, not drawable, too large, gone. */
   refusal: string | null
+  /**
+   * A file is open and nothing has been read for it yet. `file`, `media` and
+   * `refusal` are all null meanwhile -- never the answer for the file before.
+   */
+  fileLoading: boolean
   dirty: boolean
   saving: boolean
   /** A save was refused because the file moved on disk underneath it. */
@@ -193,6 +204,44 @@ const hitRows = (hits: FileHit[]): HitRow[] => {
   })
 }
 
+/** A content search's hits, one list per file, in the order git gave them. */
+const linesByFile = (hits: ContentHit[]): Map<string, ContentHit[]> => {
+  const byFile = new Map<string, ContentHit[]>()
+  for (const hit of hits) {
+    const lines = byFile.get(hit.path)
+    if (lines) lines.push(hit)
+    else byFile.set(hit.path, [hit])
+  }
+  return byFile
+}
+
+/**
+ * A line with what was searched for picked out.
+ *
+ * Brightness, not colour -- the tree's own way of saying "this one" -- since a
+ * search hit is not a state and amber and green are spoken for.
+ */
+const Marked = ({ text, query }: { text: string; query: string }): React.ReactElement => {
+  const needle = query.toLowerCase()
+  if (needle.trim() === '') return <>{text}</>
+  const lower = text.toLowerCase()
+  const parts: React.ReactNode[] = []
+  let from = 0
+  let at = lower.indexOf(needle)
+  while (at !== -1) {
+    if (at > from) parts.push(text.slice(from, at))
+    parts.push(
+      <b className="files__match" key={at}>
+        {text.slice(at, at + needle.length)}
+      </b>,
+    )
+    from = at + needle.length
+    at = lower.indexOf(needle, from)
+  }
+  parts.push(text.slice(from))
+  return <>{parts}</>
+}
+
 /**
  * The tree, flattened to the rows actually on screen.
  *
@@ -217,6 +266,7 @@ const flatten = (
       kind: entry.kind,
       depth,
       changed: entry.changed === true,
+      ignored: entry.ignored === true,
       open,
     })
     if (open) flatten(path, depth + 1, listings, expanded, out)
@@ -243,12 +293,33 @@ export const useFilesState = (opts: {
   /** Open a directory and everything above it, without touching the rest. */
   onExpandDir: (dir: string) => void
 }): FilesState => {
-  const { worktreeId, revision, enabled, path, expanded, onOpen, onToggleDir, onExpandDir } = opts
+  const { worktreeId, revision, path, expanded, onOpen, onToggleDir, onExpandDir } = opts
+  /*
+   * Nothing is read while the tab is in the background. A browser slows its
+   * timers there but still runs them, so a tab left open overnight went on
+   * reading every open panel's tree every few seconds for nobody. Coming back
+   * is a change of `enabled`, which reads at once rather than at the next tick.
+   */
+  // Called before the \`&&\`, never after it: short-circuited, it is a hook that
+  // runs only while the panel is enabled, and React crashed the row on the
+  // first render that turned it off.
+  const pageVisible = usePageVisible()
+  const enabled = opts.enabled && pageVisible
 
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({})
   const [file, setFile] = useState<EditorFile | null>(null)
   const [media, setMedia] = useState<MediaFile | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
+  /*
+   * Which file `file`, `media` and `refusal` are the answer for.
+   *
+   * They used to be read as the answer for whatever file was open, and that
+   * held only once a read had landed: switching files showed the previous
+   * file's text under the new file's name for as long as the read took. Set
+   * in the same callback as they are, so React batches the two into one
+   * render and they cannot disagree on screen.
+   */
+  const [readFor, setReadFor] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState(false)
@@ -275,8 +346,17 @@ export const useFilesState = (opts: {
   /** The file on screen right now, for callbacks that resolve later. */
   const pathRef = useRef<string | null>(filePath)
   pathRef.current = filePath
-  // The root is always read; everything else only once it has been expanded.
-  const dirsKey = ['', ...expanded].join('\n')
+  /*
+   * The root is always read, and a directory only while it is on screen: open,
+   * and every directory above it open too. `expanded` keeps a directory whose
+   * parent you have since folded -- so unfolding the parent brings it back as
+   * it was -- and it went on being polled all the while, drawn nowhere.
+   */
+  const unfolded = new Set(expanded)
+  const dirsKey = [
+    '',
+    ...expanded.filter((dir) => ancestorsOf(dir).every((up) => unfolded.has(up))),
+  ].join('\n')
   /**
    * What is expanded right now, for the 404 path below.
    *
@@ -287,6 +367,20 @@ export const useFilesState = (opts: {
    */
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
+  /*
+   * The two callbacks the reads below make, held rather than depended on.
+   *
+   * The row passes both as arrows written inline, so each is a new function
+   * on every render of the row -- which is every socket update. As effect
+   * dependencies they tore the reads down and started them again each time:
+   * the root and every expanded directory, and the open file, re-read on each
+   * render instead of every few seconds. Reported as a flood of `/tree?path=`
+   * in the network panel.
+   */
+  const onOpenRef = useRef(onOpen)
+  onOpenRef.current = onOpen
+  const onToggleDirRef = useRef(onToggleDir)
+  onToggleDirRef.current = onToggleDir
 
   // Only while the panel is on screen; see TREE_POLL_MS.
   useEffect(() => {
@@ -305,50 +399,49 @@ export const useFilesState = (opts: {
   useEffect(() => {
     if (!enabled) return
     let live = true
-    for (const dir of dirsKey.split('\n')) {
-      void api
-        .tree(worktreeId, dir)
-        .then((listing) => {
-          if (!live) return
-          setError(null)
-          setListings((previous) => {
-            const had = previous[dir]
-            if (had !== undefined && JSON.stringify(had) === JSON.stringify(listing.entries)) {
-              return previous
-            }
-            return { ...previous, [dir]: listing.entries }
-          })
-        })
-        .catch((err: unknown) => {
-          if (!live) return
-          /*
-           * A stored path can name a directory that is gone -- the agent deleted
-           * it, or this is a reload onto a different branch. Forget it rather
-           * than showing an error about a path nobody chose; the root failing is
-           * a real error and does get shown.
-           */
-          if (err instanceof ApiError && err.status === 404 && dir !== '') {
-            setListings((previous) => {
-              if (previous[dir] === undefined) return previous
-              const next = { ...previous }
-              delete next[dir]
-              return next
-            })
-            if (expandedRef.current.includes(dir)) onToggleDir(dir)
-            return
+    // One request for all of them: see `FileListings`.
+    void api
+      .trees(worktreeId, dirsKey.split('\n'))
+      .then(({ listings: read, missing }) => {
+        if (!live) return
+        setError(null)
+        setListings((previous) => {
+          let next = previous
+          for (const listing of read) {
+            const had = previous[listing.path]
+            if (had !== undefined && JSON.stringify(had) === JSON.stringify(listing.entries)) continue
+            if (next === previous) next = { ...previous }
+            next[listing.path] = listing.entries
           }
-          // The root failing is a real error -- and it must not also leave the
-          // tree claiming to be loading for the rest of the session, since
-          // `loading` is "the root listing is missing" and nothing else ever
-          // fills it in.
-          if (dir === '') setListings((previous) => ({ ...previous, '': previous[''] ?? [] }))
-          setError(err instanceof Error ? err.message : String(err))
+          for (const dir of missing) {
+            if (next[dir] === undefined) continue
+            if (next === previous) next = { ...previous }
+            delete next[dir]
+          }
+          return next
         })
-    }
+        /*
+         * A stored path can name a directory that is gone -- the agent deleted
+         * it, or this is a reload onto a different branch. Forget it rather
+         * than showing an error about a path nobody chose.
+         */
+        for (const dir of missing) {
+          if (expandedRef.current.includes(dir)) onToggleDirRef.current(dir)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!live) return
+        // The root failing is a real error -- and it must not also leave the
+        // tree claiming to be loading for the rest of the session, since
+        // `loading` is "the root listing is missing" and nothing else ever
+        // fills it in.
+        setListings((previous) => ({ ...previous, '': previous[''] ?? [] }))
+        setError(err instanceof Error ? err.message : String(err))
+      })
     return () => {
       live = false
     }
-  }, [worktreeId, dirsKey, revision, treeNonce, enabled, onToggleDir])
+  }, [worktreeId, dirsKey, revision, treeNonce, enabled])
 
   /*
    * The open file, and the poll that follows it.
@@ -359,18 +452,34 @@ export const useFilesState = (opts: {
    * you are editing must not be rewritten underneath you.
    */
   useEffect(() => {
+    /*
+     * The rev held is the last file's until this file has been read. Sent up
+     * as `ifNotRev` for a different file it can only miss, but a save made
+     * before the read landed would have been checked against the wrong file.
+     */
+    if (readFor !== filePath) revRef.current = null
     if (!enabled || filePath === null) {
       if (filePath === null) {
         setFile(null)
         setMedia(null)
         setRefusal(null)
-        revRef.current = null
+        setReadFor(null)
       }
       return
     }
     let live = true
+    /*
+     * Whether this file has been read in this effect yet. The draft check
+     * below skips the *poll*, and it used to skip the first read too: open a
+     * file with unsaved edits -- edit B, click A, click B -- and B was never
+     * read at all, so A's text stayed on screen under B's name. Reading it is
+     * safe, since the editor opens on the draft whenever there is one and
+     * only follows the disk when there is not.
+     */
+    let first = true
     const read = (): void => {
-      if (drafts.has(key)) return
+      if (!first && drafts.has(key)) return
+      first = false
       void api
         .readFile(worktreeId, filePath, revRef.current ?? undefined)
         .then((result) => {
@@ -380,6 +489,7 @@ export const useFilesState = (opts: {
           // a file under you -- left the red notice up for the session.
           setError(null)
           if ('unchanged' in result) return
+          setReadFor(filePath)
           revRef.current = result.rev
           if (result.binary === true) {
             setFile(null)
@@ -427,7 +537,7 @@ export const useFilesState = (opts: {
         .catch((err: unknown) => {
           if (!live) return
           if (err instanceof ApiError && err.status === 404) {
-            onOpen('')
+            onOpenRef.current('')
             return
           }
           setError(err instanceof Error ? err.message : String(err))
@@ -439,7 +549,7 @@ export const useFilesState = (opts: {
       live = false
       clearInterval(timer)
     }
-  }, [worktreeId, filePath, revision, fileNonce, enabled, onOpen])
+  }, [worktreeId, filePath, revision, fileNonce, enabled])
 
   /*
    * A different file shows whatever is being held for *it*.
@@ -461,7 +571,8 @@ export const useFilesState = (opts: {
    * nothing.
    */
   const lastDiskRef = useRef<string | null>(null)
-  lastDiskRef.current = file?.text ?? null
+  const current = readFor !== null && readFor === filePath
+  lastDiskRef.current = current ? (file?.text ?? null) : null
 
   const edited = useCallback(
     (text: string): void => {
@@ -550,9 +661,11 @@ export const useFilesState = (opts: {
     path,
     rows,
     loading: listings[''] === undefined,
-    file,
-    media,
-    refusal,
+    file: current ? file : null,
+    media: current ? media : null,
+    refusal: current ? refusal : null,
+    // Not while a failure is up: that is the answer, and it is already shown.
+    fileLoading: filePath !== null && !current && error === null,
     dirty,
     saving,
     conflict,
@@ -1168,6 +1281,37 @@ export const FilesPane = ({
    */
   const [query, setQuery] = useState('')
   const [found, setFound] = useState<FileHit[]>([])
+  /*
+   * What the files search looks at: names, or what is in the files. The
+   * panel's for the same reason the query is, and kept across a mode switch
+   * with it.
+   */
+  const [findIn, setFindIn] = useState<'name' | 'text'>('name')
+  const [foundLines, setFoundLines] = useState<{
+    hits: ContentHit[]
+    truncated: boolean
+    /** Files with more matching lines than are listed. */
+    more: string[]
+  }>({ hits: [], truncated: false, more: [] })
+  /*
+   * What the editor is actually spending beside the code, in px: its
+   * line-number gutter and its scrollbar.
+   *
+   * The pane asks for 80 columns *plus* that, and it was a constant wide
+   * enough for a three-digit gutter and no scrollbar at all -- so a file past
+   * a thousand lines paid for its fourth digit out of the code (79.19 columns
+   * measured), and on a platform whose scrollbars take room every long file
+   * paid again. The editor reports both as they change and the difference
+   * comes out of the tree beside it, which is a list of names and has it to
+   * give.
+   *
+   * Null until an editor has measured it: everything else the pane can show
+   * -- a diff, a picture, a rendered page -- keeps the stylesheet's own value.
+   */
+  const [chrome, setChrome] = useState<number | null>(null)
+
+  /* A content hit being opened: the editor puts its cursor on this line. */
+  const [goto, setGoto] = useState<{ path: string; line: number; nonce: number } | null>(null)
   const searching = query.trim() !== ''
   /*
    * One nonce per thing the row can hand the keyboard to. Both are separate
@@ -1242,21 +1386,49 @@ export const FilesPane = ({
   useEffect(() => {
     if (mode !== 'files' || !searching) {
       setFound([])
+      setFoundLines({ hits: [], truncated: false, more: [] })
       return
     }
     let live = true
-    void api
-      .find(files.worktreeId, query)
-      .then((res) => {
-        if (live) setFound(res.hits)
-      })
-      .catch(() => {
-        if (live) setFound([])
-      })
+    if (findIn === 'name') {
+      void api
+        .find(files.worktreeId, query)
+        .then((res) => {
+          if (live) setFound(res.hits)
+        })
+        .catch(() => {
+          if (live) setFound([])
+        })
+      return () => {
+        live = false
+      }
+    }
+    /*
+     * A content search reads every file, where a name search reads one list
+     * git already had -- so it waits for a pause in the typing rather than
+     * running a `git grep` per keystroke.
+     */
+    const timer = window.setTimeout(() => {
+      void api
+        .grep(files.worktreeId, query)
+        .then((res) => {
+          if (live) {
+            setFoundLines({
+              hits: res.hits,
+              truncated: res.truncated === true,
+              more: res.more ?? [],
+            })
+          }
+        })
+        .catch(() => {
+          if (live) setFoundLines({ hits: [], truncated: false, more: [] })
+        })
+    }, 150)
     return () => {
       live = false
+      window.clearTimeout(timer)
     }
-  }, [files.worktreeId, mode, query, searching])
+  }, [files.worktreeId, mode, query, searching, findIn])
 
   /**
    * Whether there is a content pane at all.
@@ -1683,11 +1855,21 @@ export const FilesPane = ({
        * is the only thing you can have meant by picking a place rather than a
        * file.
        */
-      const rowsFound = hitRows(found)
+      /*
+       * By content, the files that have a hit are drawn as a name search draws
+       * its hits, and each one's matching lines sit under it -- line number,
+       * then the line -- so a hit says where it is before it says what it is.
+       * A line opens its file at that line; the file row opens it at the top.
+       */
+      const byText = findIn === 'text'
+      const lines = linesByFile(foundLines.hits)
+      const rowsFound = hitRows(
+        byText ? [...lines.keys()].map((path) => ({ path, kind: 'file' as const })) : found,
+      )
       return (
         <div className="files__tree" ref={treeRef}>
           {rowsFound.length === 0 && <p className="files__note">Nothing matches.</p>}
-          {rowsFound.map((row) => (
+          {rowsFound.flatMap((row) => [
             <button
               key={row.path}
               data-kind={row.kind}
@@ -1715,8 +1897,52 @@ export const FilesPane = ({
                 {row.kind === 'dir' ? (row.open ? '▾' : '▸') : ''}
               </span>
               <span className="files__name">{row.name}</span>
-            </button>
-          ))}
+            </button>,
+            ...(byText && row.kind === 'file' ? (lines.get(row.path) ?? []) : []).map((hit) => (
+              <button
+                key={`${hit.path}\0${hit.line}`}
+                data-kind="line"
+                className={[
+                  'files__row',
+                  'files__line',
+                  hit.path === files.path && goto?.path === hit.path && goto.line === hit.line
+                    ? 'files__row--on'
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                style={{ paddingLeft: 6 + (row.depth + 1) * INDENT }}
+                onClick={() => {
+                  if (hit.path !== files.path) open(hit.path)
+                  setGoto((previous) => ({
+                    path: hit.path,
+                    line: hit.line,
+                    nonce: (previous?.nonce ?? 0) + 1,
+                  }))
+                }}
+                title={`${hit.path}:${hit.line}`}
+              >
+                <span className="files__lineno">{hit.line}</span>
+                <span className="files__name">
+                  <Marked text={hit.text} query={query} />
+                </span>
+              </button>
+            )),
+            ...(byText && foundLines.more.includes(row.path)
+              ? [
+                  <p
+                    key={`${row.path}\0more`}
+                    className="files__note files__more"
+                    style={{ paddingLeft: 6 + (row.depth + 1) * INDENT }}
+                  >
+                    More in this file
+                  </p>,
+                ]
+              : []),
+          ])}
+          {byText && foundLines.truncated && (
+            <p className="files__note">The first {foundLines.hits.length} lines. Type more to narrow it.</p>
+          )}
         </div>
       )
     }
@@ -1761,6 +1987,7 @@ export const FilesPane = ({
                   'files__row',
                   isOpenFile ? 'files__row--on' : '',
                   row.changed ? 'files__row--changed' : '',
+                  row.ignored ? 'files__row--ignored' : '',
                   row.kind === 'dir' && row.path === dropInto ? 'files__row--drop' : '',
                 ]
                   .filter(Boolean)
@@ -1860,6 +2087,7 @@ export const FilesPane = ({
        */
       if (files.media !== null) return near ? <MediaView media={files.media} /> : <></>
       if (files.refusal !== null) return <p className="files__note">{files.refusal}</p>
+      if (files.fileLoading) return <p className="files__note files__loading">Loading…</p>
       if (files.file === null) return <></>
       if (markdownPreview && isMarkdown(files.file.path)) {
         /*
@@ -1894,6 +2122,8 @@ export const FilesPane = ({
             onChange={files.edited}
             onSave={files.save}
             focus={editorFocusNow}
+            goto={goto}
+            onChromeWidth={setChrome}
           />
         </Suspense>
       ) : (
@@ -1927,6 +2157,14 @@ export const FilesPane = ({
   return (
     <div
       className="files"
+      /* What the editor measured, plus the 14px a line is inset by; see
+         `chrome`. Rounded up, because a fraction of a pixel short is a column
+         short. */
+      style={
+        chrome === null
+          ? undefined
+          : ({ '--files-editor-chrome': `${Math.ceil(chrome + 14)}px` } as React.CSSProperties)
+      }
       onKeyDown={(event) => {
         /*
          * Cmd+S with the keyboard anywhere but the editor would otherwise open
@@ -2016,7 +2254,13 @@ export const FilesPane = ({
             className="files__search"
             value={query}
             spellCheck={false}
-            placeholder={mode === 'commits' ? 'Find a commit' : 'Find a file'}
+            placeholder={
+              mode === 'commits'
+                ? 'Find a commit'
+                : mode === 'files' && findIn === 'text'
+                  ? 'Find in files'
+                  : 'Find a file'
+            }
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               /*
@@ -2049,7 +2293,8 @@ export const FilesPane = ({
                  */
                 const target =
                   event.key === 'Enter'
-                    ? (list.querySelector<HTMLButtonElement>('button[data-kind="file"]') ??
+                    ? (list.querySelector<HTMLButtonElement>('button[data-kind="line"]') ??
+                      list.querySelector<HTMLButtonElement>('button[data-kind="file"]') ??
                       list.querySelector<HTMLButtonElement>('button'))
                     : list.querySelector<HTMLButtonElement>('button')
                 if (!target) return
@@ -2059,6 +2304,30 @@ export const FilesPane = ({
               }
             }}
           />
+          {/*
+            * Names or contents, at the right of the box it changes. Files mode
+            * only: Changes and Commits filter lists they already hold, and a
+            * commit has no contents to search. Clicking one hands the keyboard
+            * straight back to the box, since the next thing you do is type.
+            */}
+          {mode === 'files' && (
+            <div className="files__in" role="group" aria-label="Search in">
+              {(['name', 'text'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  className={findIn === kind ? 'files__in-opt files__in-opt--on' : 'files__in-opt'}
+                  aria-pressed={findIn === kind}
+                  title={kind === 'name' ? 'Search file names' : 'Search what is in the files'}
+                  onClick={() => {
+                    setFindIn(kind)
+                    searchRef.current?.focus()
+                  }}
+                >
+                  {kind === 'name' ? 'Name' : 'Text'}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       )}
@@ -2102,7 +2371,23 @@ export const FilesPane = ({
             </div>
           )}
 
-          {content()}
+          {/*
+            * Keyed by what is shown, so a failure belongs to that file and
+            * picking another one tries again.
+            */}
+          <ErrorBoundary
+            key={`${mode}\0${files.path}`}
+            fallback={(error) => (
+              <p className="files__note">
+                This could not be shown: {error.message}{' '}
+                <button className="btn btn--quiet" onClick={() => window.location.reload()}>
+                  Reload
+                </button>
+              </p>
+            )}
+          >
+            {content()}
+          </ErrorBoundary>
         </div>
       )}
     </div>

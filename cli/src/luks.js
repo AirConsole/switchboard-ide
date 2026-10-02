@@ -1,7 +1,7 @@
 /**
  * Changing the password on a machine whose disk that password opens.
  *
- * Only cloud machines have one (`cloud/provision.sh`). On a laptop there is no
+ * Only cloud machines have one (`cloud/provision-gcp.sh`). On a laptop there is no
  * such device and `pnpm password` behaves exactly as it always did.
  *
  * Two rules, both of which cost a measured bug to learn:

@@ -1,15 +1,26 @@
 #!/bin/sh
 # Switchboard, on a machine in the cloud.
 #
-#   ./provision.sh create   <name> --project <id>    build it, print its URL
-#   ./provision.sh status   <name> --project <id>    what it is, and who touched it
-#   ./provision.sh recreate <name> --project <id>    new VM, same data disk
-#   ./provision.sh destroy  <name> --project <id>    everything it made
+#   ./provision-gcp.sh create   [name]                   build it, print its URL
+#   ./provision-gcp.sh status   <name> --project <id>    what it is, and who touched it
+#   ./provision-gcp.sh recreate <name> --project <id>    new VM, same data disk
+#   ./provision-gcp.sh destroy  <name> --project <id>    everything it made
 #
 # POSIX sh, like install.sh, and gcloud is the only thing it needs. The machine
 # itself is cloud-config -- the format GCP, Hetzner, DigitalOcean, AWS and a
 # local VM all take -- so a second provider needs its own `create` and not a
 # second definition of the machine.
+#
+# **Named for its cloud, because nearly all of it is that cloud's.** The
+# network, the firewall, the static address, the snapshot schedule, the audit
+# log and even the ssh are gcloud; what is not -- the machine's definition --
+# is already in cloud-config.yaml and setup.sh, beside this. A second provider
+# is a second script, provision-hetzner.sh next to this one, not a --provider
+# flag threaded through every function here. The pieces the two would share
+# (the password prompt, the checks on a user name and a domain) move into a
+# file of their own when there is a second script to share them with -- and
+# not before, since a seam named for a caller that does not exist yet is a
+# guess about its shape.
 #
 # **Not a `swb` verb, and not a pnpm script**, though everything else in this
 # repository is one. Those run on the machine the IDE is on; this one runs on
@@ -43,10 +54,12 @@ IN_ORG=0
 NO_SUDO=0
 DELETE_DATA=0
 FROM_SNAPSHOT=""
-ALERT_EMAIL=""
 DOMAIN=""
 DOMAIN_GIVEN=0
 PASSWORD_STDIN=0
+USER_FLAG=""
+MACHINE_USER=""
+MACHINE_UID=""
 DOMAIN_ASKED=0
 REPO_URL=${SWB_REPO_URL:-https://github.com/AirConsole/switchboard-ide.git}
 REPO_REF=${SWB_REPO_REF:-master}
@@ -55,10 +68,66 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'provision: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# /dev/tty and not stdin, because this is also piped and redirected -- the same
+# reason install.sh reads from it. Where there is no terminal at all (CI, a
+# hook, a container) that has to be said plainly: the shell's own "cannot open
+# /dev/tty" is otherwise the last thing anyone sees.
+have_tty() { (: </dev/tty) 2>/dev/null; }
+
+# A question with an answer typed back, on /dev/tty like everything else here,
+# so it works under `curl | sh` where stdin is the script.
+ask_value() {
+  # prompt, default
+  if [ -n "$2" ]; then printf '%s [%s]: ' "$1" "$2" >/dev/tty; else printf '%s: ' "$1" >/dev/tty; fi
+  read -r reply </dev/tty || reply=""
+  [ -n "$reply" ] || reply=$2
+  printf '%s' "$reply"
+}
+
+ask() {
+  [ "$ASSUME_YES" -eq 1 ] && return 0
+  if ! have_tty; then
+    say "No terminal to ask on. Nothing was changed."
+    say "  re-run with --yes to proceed without asking."
+    exit 1
+  fi
+  printf '%s [y/N] ' "$1"
+  read -r reply </dev/tty || reply=n
+  case "$reply" in y|Y|yes|YES) return 0 ;; *) say "Nothing was changed."; exit 1 ;; esac
+}
+
+# A Linux user name, and one the image does not already use for something else:
+# setup.sh would refuse to take over `syslog` or `ubuntu` -- that would hand the
+# person's files to whatever the account was for -- and saying so here, before
+# a VM exists, is cheaper than a machine that stops at its first boot.
+valid_user() {
+  case "$1" in
+    ''|*[!a-z0-9_-]*) return 1 ;;
+    [!a-z_]*) return 1 ;;
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|\
+    list|irc|gnats|nobody|ubuntu|admin|syslog|messagebus|sshd|lxd|docker|caddy|\
+    _apt|tss|uuidd|tcpdump|landscape|pollinate|polkitd|systemd-*|google-sudoers)
+      return 1 ;;
+  esac
+  [ "${#1}" -le 32 ]
+}
+
 # A name, and nothing else. This value is interpolated into a command that runs
 # on the machine over ssh, so a quote in it would end the string it sits in --
 # the flag is typed by the person who already has ssh, but a typo should not
 # become a shell.
+# Every resource is `switchboard-<name>-something`, and GCP wants a name that
+# starts with a letter, holds only lowercase letters, digits and hyphens, and is
+# at most 63 characters. The longest suffix here is `-data`, so 40 leaves room
+# for all of them and for anything added later.
+valid_name() {
+  case "$1" in
+    ''|*[!a-z0-9-]*) return 1 ;;
+    [!a-z]*|*-) return 1 ;;
+  esac
+  [ "${#1}" -le 40 ]
+}
+
 valid_domain() {
   case "$1" in
     '') return 0 ;;
@@ -69,24 +138,39 @@ valid_domain() {
   esac
 }
 
-
 usage() {
-  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+  # The verbs are the file's own header. Under `curl | sh` there is no file --
+  # $0 is the shell's name -- so they are said here instead, rather than
+  # `--help` opening with "sed: can't read sh", which is what the README's own
+  # one-liner produced.
+  if [ -f "$0" ]; then
+    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+  else
+    cat <<'EOF'
+Switchboard, on a machine in the cloud.
+
+  provision-gcp.sh create   [name]                   build it, print its URL
+  provision-gcp.sh status   <name> --project <id>    what it is, and who touched it
+  provision-gcp.sh recreate <name> --project <id>    new VM, same data disk
+  provision-gcp.sh destroy  <name> --project <id>    everything it made
+EOF
+  fi
   cat <<'EOF'
 
 Options
-  --project <id>      the GCP project (required)
+  --project <id>      the GCP project (asked for if left out)
   --zone <zone>       default europe-west6-b
   --machine <type>    default e2-standard-4
   --disk-size <GB>    data disk, default 100
-  --alert-email <a>   who to mail when someone else touches the machine
   --domain <name>     also answer to this name; it tells you the DNS record
                       (--domain "" takes one away again)
+  --user <name>       who the machine is for: your login on it, and /home/<name>
+                      (default: your user name here; fixed once the disk exists)
   --password-stdin    read the machine's password from stdin, for scripts;
                       otherwise you are asked for one, or given one
   --repo <url>        which checkout the machine builds from
   --repo-ref <ref>    which branch or tag of it (default master)
-  --in-org            allow a project inside an organisation (see above)
+  --in-org            a project inside an organisation, without being asked
   --no-sudo           the machine's user gets no sudo
   --from-snapshot <s> recreate: restore the data disk from this snapshot first
   --delete-data       destroy: also delete the data disk and its snapshots
@@ -98,9 +182,13 @@ VERB=${1:-}
 [ -n "$VERB" ] || { usage; exit 1; }
 case "$VERB" in -h|--help|help) usage; exit 0 ;; esac
 shift
-NAME=${1:-}
-case "$NAME" in ""|-*) die "which machine? e.g. provision.sh $VERB mybox --project my-project" ;; esac
-shift
+# The name is a positional, and optional: with a terminal it is asked for. A
+# flag here means it was left out, not that it is called `--project`.
+NAME=""
+case "${1:-}" in
+  ''|-*) : ;;
+  *) NAME=$1; shift ;;
+esac
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -108,9 +196,9 @@ while [ $# -gt 0 ]; do
     --zone) ZONE=$2; shift ;;
     --machine) MACHINE=$2; shift ;;
     --disk-size) DISK_SIZE=$2; shift ;;
-    --alert-email) ALERT_EMAIL=$2; shift ;;
     --domain) DOMAIN=$2; DOMAIN_GIVEN=1; DOMAIN_ASKED=1; shift ;;
     --password-stdin) PASSWORD_STDIN=1 ;;
+    --user) USER_FLAG=$2; shift ;;
     --repo) REPO_URL=$2; shift ;;
     --repo-ref) REPO_REF=$2; shift ;;
     --from-snapshot) FROM_SNAPSHOT=$2; shift ;;
@@ -124,7 +212,22 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Read the piped password **now**, before any other command can touch stdin.
+# `gcloud compute ssh` forwards stdin to the far end exactly as ssh does, so the
+# first ssh -- the loop that waits for the machine to finish installing --
+# swallowed the pipe, and choose_password, reading it minutes later, found
+# nothing and quietly made a password up. Measured with a gcloud shim that eats
+# stdin the way ssh does: the format step was handed a generated password, and
+# `create` printed it as though that were what had been asked for.
+PIPED_PASSWORD=""
+if [ "$PASSWORD_STDIN" -eq 1 ]; then
+  PIPED_PASSWORD=$(cat | tr -d '\n')
+  [ -n "$PIPED_PASSWORD" ] || die "--password-stdin: nothing arrived on stdin"
+fi
+
 valid_domain "$DOMAIN" || die "--domain takes a name like ide.example.com"
+[ -z "$USER_FLAG" ] || valid_user "$USER_FLAG" \
+  || die "--user takes a lowercase login name that is not a system account's"
 have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/docs/install"
 
 # Asked once, plainly, because every lookup below hides its own stderr -- and a
@@ -134,7 +237,31 @@ have gcloud || die "gcloud is not on your PATH. https://cloud.google.com/sdk/doc
 # the reader looking in the wrong place entirely.
 gcloud auth print-access-token >/dev/null 2>&1 \
   || die "gcloud has no usable credentials right now -- run:  gcloud auth login"
-[ -n "$PROJECT" ] || die "--project is required (a project of your own; see --in-org)"
+# What a flag did not say, a terminal is asked for -- which is what keeps the
+# published one-liner to `create` and nothing else. With no terminal (CI, a
+# hook) each of these is still required, and says so.
+if [ -z "$NAME" ]; then
+  have_tty || die "which machine? e.g. provision-gcp.sh $VERB mybox --project my-project"
+  say ""
+  say "A name for this machine. Everything it is made of is called after it:"
+  say "the VM, its disk, its network."
+  while :; do
+    NAME=$(ask_value "  name" "")
+    valid_name "$NAME" && break
+    say "  letters, digits and hyphens, starting with a letter."
+  done
+fi
+valid_name "$NAME" || die "\"$NAME\" cannot name a machine: letters, digits and hyphens, starting with a letter"
+
+if [ -z "$PROJECT" ]; then
+  have_tty || die "--project is required (a project of your own; see --in-org)"
+  current=$(gcloud config get-value project 2>/dev/null)
+  say ""
+  say "The GCP project to build it in. A project of your own is the one that keeps"
+  say "other people out of the machine -- see below."
+  PROJECT=$(ask_value "  project" "$current")
+  [ -n "$PROJECT" ] || die "no project given; nothing was changed"
+fi
 
 PASSWORD_MIN=12   # `MIN_LENGTH` in cli/src/password.js; the IDE refuses less
 REGION=$(printf '%s' "$ZONE" | sed 's/-[a-z]$//')
@@ -150,23 +277,8 @@ POLICY_NAME="switchboard-$NAME-touched"
 g() { gcloud --project "$PROJECT" "$@"; }
 gq() { gcloud --project "$PROJECT" "$@" >/dev/null 2>&1; }
 
-# /dev/tty and not stdin, because this is also piped and redirected -- the same
-# reason install.sh reads from it. Where there is no terminal at all (CI, a
-# hook, a container) that has to be said plainly: the shell's own "cannot open
-# /dev/tty" is otherwise the last thing anyone sees.
-have_tty() { (: </dev/tty) 2>/dev/null; }
 
-ask() {
-  [ "$ASSUME_YES" -eq 1 ] && return 0
-  if ! have_tty; then
-    say "No terminal to ask on. Nothing was changed."
-    say "  re-run with --yes to proceed without asking."
-    exit 1
-  fi
-  printf '%s [y/N] ' "$1"
-  read -r reply </dev/tty || reply=n
-  case "$reply" in y|Y|yes|YES) return 0 ;; *) say "Nothing was changed."; exit 1 ;; esac
-}
+
 
 # --- who else can reach this machine ----------------------------------------
 # Printed before anything is built, because it is the one thing about a cloud
@@ -189,12 +301,23 @@ check_org() {
   say "Encryption keeps the disk unreadable at rest -- snapshots, clones, a stopped VM."
   say "It cannot keep root out of a machine that is running, and nothing can."
   say ""
-  if [ "$IN_ORG" -eq 0 ]; then
-    say "Use a project of your own (one created under a personal account belongs to no"
-    say "organisation), or pass --in-org if that is the trade you want."
+  # Asked rather than refused, where there is somebody to ask: the answer is a
+  # judgement about who those people are, and they are named right above. With
+  # no terminal it is still a refusal, because the safe answer cannot be
+  # assumed and `--yes` means "do not ask me about the ordinary things".
+  if [ "$IN_ORG" -eq 1 ]; then
+    ask "Continue anyway?"
+    return 0
+  fi
+  say "A project of your own -- one created under a personal account belongs to no"
+  say "organisation -- is the only thing that keeps them out."
+  if ! have_tty || [ "$ASSUME_YES" -eq 1 ]; then
+    say ""
+    say "Nothing was changed. Pass --in-org if that is the trade you want."
     exit 1
   fi
-  ask "Continue anyway?"
+  say ""
+  ask "Build it here anyway?"
 }
 
 # --- a name for the address --------------------------------------------------
@@ -335,6 +458,40 @@ ensure_address() {
   IP=$(g compute addresses describe "$ADDRESS" --region="$REGION" --format='value(address)')
 }
 
+# --- who the machine is for --------------------------------------------------
+# Decided once, when the data disk is made, and kept **on that disk** as a label
+# -- never worked out again. The disk is what holds /home/<name>, owned by that
+# user; if `recreate` derived the name afresh, a rebuild run from another
+# laptop, or by somebody else, would make a user who owns none of the data.
+# That is the same kind of mistake the key's salt was, when it lived on the boot
+# disk: state a rebuild depends on has to survive the rebuild, and the thing
+# that survives it here is the disk.
+#
+# The uid goes with it, for the same reason: ownership on the volume is a
+# number. A disk from before either label existed is `switchboard`, with
+# whatever uid it already has, which is what those machines always were.
+resolve_user() {
+  if gq compute disks describe "$DATA_DISK" --zone="$ZONE"; then
+    MACHINE_USER=$(g compute disks describe "$DATA_DISK" --zone="$ZONE" \
+      --format='value(labels.switchboard-user)' 2>/dev/null)
+    MACHINE_UID=$(g compute disks describe "$DATA_DISK" --zone="$ZONE" \
+      --format='value(labels.switchboard-uid)' 2>/dev/null)
+    [ -n "$MACHINE_USER" ] || MACHINE_USER=switchboard
+    if [ -n "$USER_FLAG" ] && [ "$USER_FLAG" != "$MACHINE_USER" ]; then
+      die "this machine's disk belongs to $MACHINE_USER; --user cannot change who a disk is for"
+    fi
+    return 0
+  fi
+  if [ -n "$USER_FLAG" ]; then
+    MACHINE_USER=$USER_FLAG
+  else
+    MACHINE_USER=$(id -un 2>/dev/null | tr 'A-Z' 'a-z')
+    valid_user "$MACHINE_USER" \
+      || die "\"$MACHINE_USER\" cannot be a user on the machine; choose one with --user <name>"
+  fi
+  MACHINE_UID=2000
+}
+
 ensure_data_disk() {
   gq compute disks describe "$DATA_DISK" --zone="$ZONE" || {
     say "data disk $DATA_DISK (${DISK_SIZE}GB)"
@@ -346,6 +503,12 @@ ensure_data_disk() {
         --type=pd-balanced --quiet >/dev/null
     fi
   }
+  # Written every time, not only on creation: a disk made from a snapshot comes
+  # without its labels, and this is what makes the restored machine the same
+  # person's again.
+  labels="switchboard-user=$MACHINE_USER"
+  [ -n "$MACHINE_UID" ] && labels="$labels,switchboard-uid=$MACHINE_UID"
+  g compute disks add-labels "$DATA_DISK" --zone="$ZONE" --labels="$labels" --quiet >/dev/null 2>&1 || true
   gq compute resource-policies describe "$SCHEDULE" --region="$REGION" || {
     say "daily snapshots, kept 14 days"
     g compute resource-policies create snapshot-schedule "$SCHEDULE" --region="$REGION" \
@@ -370,6 +533,9 @@ ensure_machine_files() {
   for f in setup.sh cloud-config.yaml; do
     curl -fsSL "$raw/$REPO_REF/cloud/$f" -o "$DIR/$f" \
       || die "could not fetch cloud/$f from $raw/$REPO_REF -- is --repo-ref right?"
+    # A 200 with nothing in it is not an error to curl, and an empty setup.sh
+    # is a machine that boots into nothing at all.
+    [ -s "$DIR/$f" ] || die "cloud/$f came back empty from $raw/$REPO_REF"
   done
 }
 
@@ -380,7 +546,9 @@ render_user_data() {
   sed -e "s|PLACEHOLDER_SETUP_B64|$b64|" \
       -e "s|PLACEHOLDER_REPO_URL|$REPO_URL|" \
       -e "s|PLACEHOLDER_REPO_REF|$REPO_REF|" \
-      -e "s|PLACEHOLDER_NO_SUDO|$NO_SUDO|" "$DIR/cloud-config.yaml"
+      -e "s|PLACEHOLDER_NO_SUDO|$NO_SUDO|" \
+      -e "s|PLACEHOLDER_USER|$MACHINE_USER|" \
+      -e "s|PLACEHOLDER_UID|$MACHINE_UID|" "$DIR/cloud-config.yaml"
 }
 
 ensure_vm() {
@@ -404,45 +572,6 @@ ensure_vm() {
   rm -f "$tmp"
 }
 
-ensure_alert() {
-  [ -n "$ALERT_EMAIL" ] || ALERT_EMAIL=$(gcloud config get-value account 2>/dev/null || true)
-  [ -n "$ALERT_EMAIL" ] || return 0
-  instance_id=$(g compute instances describe "$VM" --zone="$ZONE" --format='value(id)')
-  channel=$(g beta monitoring channels list --filter="labels.email_address='$ALERT_EMAIL' AND type='email'" \
-    --format='value(name)' 2>/dev/null | head -1)
-  if [ -z "$channel" ]; then
-    channel=$(g beta monitoring channels create --display-name="Switchboard alerts" \
-      --type=email --channel-labels="email_address=$ALERT_EMAIL" --format='value(name)' 2>/dev/null || true)
-  fi
-  [ -n "$channel" ] || { say "note: could not create a notification channel; skipping the alert"; return 0; }
-  g alpha monitoring policies list --filter="displayName='$POLICY_NAME'" --format='value(name)' 2>/dev/null \
-    | grep -q . && return 0
-  me=$(gcloud config get-value account 2>/dev/null)
-  tmp=$(mktemp)
-  # Admin Activity logging is always on and cannot be switched off, so a
-  # takeover of this VM lands here whatever else happens. The alert is the
-  # convenience; `status` reading the same log is the part that cannot be
-  # deleted out from under you.
-  cat > "$tmp" <<EOF
-{
-  "displayName": "$POLICY_NAME",
-  "combiner": "OR",
-  "conditions": [{
-    "displayName": "someone else touched $VM",
-    "conditionMatchedLog": {
-      "filter": "logName:\"cloudaudit.googleapis.com%2Factivity\" AND resource.labels.instance_id=\"$instance_id\" AND protoPayload.authenticationInfo.principalEmail!=\"$me\" AND protoPayload.methodName:(\"instances.setMetadata\" OR \"instances.reset\" OR \"instances.start\" OR \"disks.createSnapshot\" OR \"instances.attachDisk\" OR \"instances.setIamPolicy\")"
-    }
-  }],
-  "alertStrategy": { "notificationRateLimit": { "period": "300s" } },
-  "notificationChannels": ["$channel"]
-}
-EOF
-  g alpha monitoring policies create --policy-from-file="$tmp" --quiet >/dev/null 2>&1 \
-    && say "alert: mail to $ALERT_EMAIL when anyone else touches $VM" \
-    || say "note: the alert could not be created (is the Monitoring API on?); status still reads the log"
-  rm -f "$tmp"
-}
-
 ssh_vm() {
   g compute ssh "$VM" --zone="$ZONE" --tunnel-through-iap --quiet "$@"
 }
@@ -453,7 +582,7 @@ wait_for() {
   printf 'waiting for %s' "$what"
   i=0
   while [ "$i" -lt "$limit" ]; do
-    if "$@" >/dev/null 2>&1; then printf ' ok\n'; return 0; fi
+    if "$@" </dev/null >/dev/null 2>&1; then printf ' ok\n'; return 0; fi
     printf '.'
     sleep 5
     i=$((i + 1))
@@ -486,8 +615,7 @@ read_secret() {
 
 choose_password() {
   if [ "$PASSWORD_STDIN" -eq 1 ]; then
-    PASSWORD=$(cat)
-    PASSWORD=$(printf '%s' "$PASSWORD" | tr -d '\n')
+    PASSWORD=$PIPED_PASSWORD
     CHOSEN=1
   elif have_tty; then
     say ""
@@ -526,6 +654,9 @@ cmd_create() {
   # be fetched after creating a network and a disk is finding out too late.
   ensure_machine_files
   check_org
+  # Before anything is built, so a name that cannot be a user costs nothing --
+  # it only reads the data disk, if there is one.
+  resolve_user
   # Run again on a machine that exists, this updates it -- which is how a
   # domain is added, changed or removed, and the reason `create` has no sibling
   # verb for doing that.
@@ -540,12 +671,17 @@ cmd_create() {
   [ "$EXISTING" -eq 1 ] || say "About to create, in $PROJECT ($ZONE):"
   if [ "$EXISTING" -eq 0 ]; then
     say "  VM $VM            $MACHINE, Ubuntu 24.04, no service account"
+    say "  for               $MACHINE_USER -- your login there, and /home/$MACHINE_USER"
     say "  data disk         ${DISK_SIZE}GB, encrypted, daily snapshots kept 14 days"
     say "  network $NET      80, 443 and 8000-8099 open; ssh only through IAP"
     say "  a static address"
     say ""
-    say "Roughly \$110-130 a month for an e2-standard-4 plus disks, less for $MACHINE,"
-    say "and less again if you stop it."
+    if [ "$MACHINE" = e2-standard-4 ]; then
+      say "Roughly \$110-130 a month for the VM and its disks, less if you stop it."
+    else
+      say "Roughly \$110-130 a month for an e2-standard-4 and its disks; $MACHINE is"
+      say "its own price, and stopping it costs less again."
+    fi
     say ""
     ask "Create it?"
   fi
@@ -556,7 +692,6 @@ cmd_create() {
   say_dns_record
   ensure_data_disk
   ensure_vm
-  ensure_alert
 
   wait_for "the machine to finish installing itself (5-10 minutes)" 180 \
     ssh_vm --command 'test -f /opt/switchboard/server/dist/index.js && systemctl is-active switchboard-unlock.service' \
@@ -600,7 +735,7 @@ cmd_create() {
   #   and only then the IDE, which refuses to start without a password.
   ssh_vm --command 'sudo mount /dev/mapper/switchboard-data /home && sudo systemctl start switchboard-unlocked.service' >/dev/null 2>&1 \
     || die "the volume was formatted but the machine did not come up; ssh in and look at switchboard-unlocked.service"
-  printf '%s' "$PASSWORD" | ssh_vm --command 'sudo -u switchboard env HOME=/home/switchboard /opt/switchboard/cli/bin/swb.js password --stdin --reset' >/dev/null 2>&1 \
+  printf '%s' "$PASSWORD" | ssh_vm --command "sudo -u $MACHINE_USER env HOME=/home/$MACHINE_USER /opt/switchboard/cli/bin/swb.js password --stdin --reset" >/dev/null 2>&1 \
     || die "the password could not be set; nothing is serving yet"
   ssh_vm --command 'sudo systemctl start switchboard.service' >/dev/null 2>&1 \
     || die "the IDE did not start; ssh in and look at switchboard.service"
@@ -647,12 +782,48 @@ cmd_create() {
   say "public, with no password."
 }
 
+# What counts as someone else touching this machine, as an audit-log filter.
+#
+# **By name, never by the VM's instance id**, which is what it was and why it
+# missed most of what it was for. Measured against real audit entries:
+#   - a snapshot of the data disk is logged against the *disk* (`gce_disk`,
+#     `disk_id`) and carries no instance id at all;
+#   - the data disk attached to somebody else's VM is logged against *their*
+#     VM, and ours appears only in `request.source`;
+#   - and `recreate` gives the VM a new instance id, so a filter holding the
+#     old one watched a machine that no longer existed.
+# Names survive a rebuild and name the disk wherever it turns up. No list of
+# methods either: whatever anyone else does to these is worth listing, and a
+# list is a guess about which verbs an attacker will use.
+#
+# A permission change on the project is included because that is how somebody
+# gives themselves ssh -- osAdminLogin is granted on the project, not the VM.
+# Google's own compute-system account is left out: it is what takes the
+# scheduled snapshots, and nobody can act as it. And an operation's closing
+# entry is dropped, since a long one is logged when it starts and again when it
+# ends -- every snapshot and attach came out twice -- while `operation.last`
+# rather than `operation.first` keeps the entries that have no operation at all,
+# which a permission change is.
+touched_filter() {
+  printf '%s' "logName:\"cloudaudit.googleapis.com%2Factivity\" \
+AND protoPayload.authenticationInfo.principalEmail!=\"$1\" \
+AND NOT protoPayload.authenticationInfo.principalEmail:\"compute-system.iam.gserviceaccount.com\" \
+AND NOT operation.last=true \
+AND (protoPayload.resourceName=\"projects/$PROJECT/zones/$ZONE/instances/$VM\" \
+OR protoPayload.resourceName=\"projects/$PROJECT/zones/$ZONE/disks/$DATA_DISK\" \
+OR protoPayload.request.source:\"disks/$DATA_DISK\" \
+OR (resource.type=\"project\" AND protoPayload.methodName=\"SetIamPolicy\"))"
+}
+
 # --- status ------------------------------------------------------------------
 cmd_status() {
   gq compute instances describe "$VM" --zone="$ZONE" || die "no machine called $NAME in $PROJECT"
   IP=$(g compute instances describe "$VM" --zone="$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
   state=$(g compute instances describe "$VM" --zone="$ZONE" --format='value(status)')
   say "$VM  $state  https://$IP"
+  who=$(g compute disks describe "$DATA_DISK" --zone="$ZONE" \
+    --format='value(labels.switchboard-user)' 2>/dev/null || true)
+  say "  for ${who:-switchboard}"
 
   if curl -fsS --max-time 5 -o /dev/null "https://$IP/api/health" 2>/dev/null; then
     say "  unlocked, IDE answering"
@@ -679,9 +850,9 @@ cmd_status() {
   # and kept 400 days, and this reads it from here rather than from the machine.
   me=$(gcloud config get-value account 2>/dev/null)
   say "  touched by others, last 30 days:"
-  g logging read \
-    "logName:\"cloudaudit.googleapis.com%2Factivity\" AND resource.labels.instance_id=\"$(g compute instances describe "$VM" --zone="$ZONE" --format='value(id)')\" AND protoPayload.authenticationInfo.principalEmail!=\"$me\"" \
-    --freshness=30d --limit=20 --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName)' 2>/dev/null \
+  g logging read "$(touched_filter "$me")" \
+    --freshness=30d --limit=20 \
+    --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)' 2>/dev/null \
     | sed 's/^/    /' | grep . || say "    nothing"
 }
 
@@ -692,6 +863,10 @@ cmd_status() {
 cmd_recreate() {
   ensure_machine_files
   gq compute instances describe "$VM" --zone="$ZONE" || die "no machine called $NAME in $PROJECT"
+  # Read off the disk *before* a snapshot restore deletes it: the replacement is
+  # made from a snapshot and arrives with no labels, and ensure_data_disk puts
+  # these back on it.
+  resolve_user
   say "This deletes the VM and its boot disk. The data disk and the address stay."
   [ -n "$FROM_SNAPSHOT" ] && say "The data disk will be REPLACED by snapshot $FROM_SNAPSHOT."
   ask "Recreate $VM?"
@@ -754,6 +929,8 @@ cmd_destroy() {
   gq compute networks subnets delete "$NET" --region="$REGION" --quiet && say "deleted subnet"
   gq compute networks delete "$NET" --quiet && say "deleted network"
   gq compute addresses delete "$ADDRESS" --region="$REGION" --quiet && say "deleted address"
+  # There is no alert any more, but a machine built before that change carries
+  # one, and destroy is the only thing that would ever take it away.
   for p in $(g alpha monitoring policies list --filter="displayName='$POLICY_NAME'" --format='value(name)' 2>/dev/null); do
     gq alpha monitoring policies delete "$p" --quiet && say "deleted alert policy"
   done

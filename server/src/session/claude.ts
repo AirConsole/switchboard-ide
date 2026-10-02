@@ -1,6 +1,7 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { isTask } from '@switchboard/shared'
 
 /**
  * The directory Claude Code keeps a working directory's transcripts in.
@@ -85,47 +86,6 @@ const newestTranscript = async (
   return newest
 }
 
-/**
- * The last thing the user asked Claude in this worktree.
- *
- * Claude Code writes two candidates into the transcript, and this is
- * deliberately the second of them. `ai-title` is Claude's own name for the
- * conversation, but it is written from its opening subject and does not track
- * where the work went -- measured across six live transcripts, including one
- * titled "Worktree topbar project name" whose last prompt was about mouse-wheel
- * phantom typing an hour later. A title that is quietly an hour out of date is
- * worse than none in a dispatcher. `last-prompt` is rewritten every turn, and
- * it is in the user's own words, which is what you recognise fastest.
- *
- * Neither costs anything to read: both are already on disk, so nothing here
- * asks Claude a question or spends a token.
- *
- * Whitespace is collapsed because this lands on one line of a window's bar, and
- * a prompt is often several paragraphs.
- */
-/**
- * A byte range of a file as text, whole lines only, or null.
- *
- * A range that does not start at the beginning starts mid-line, and half a line
- * is not JSON, so the first partial line is dropped.
- */
-const readRange = async (path: string, from: number, to: number): Promise<string | null> => {
-  if (to <= from) return ''
-  try {
-    const handle = await open(path, 'r')
-    try {
-      const buffer = Buffer.alloc(to - from)
-      await handle.read(buffer, 0, buffer.length, from)
-      const text = buffer.toString('utf8')
-      return from > 0 ? text.slice(text.indexOf('\n') + 1) : text
-    } finally {
-      await handle.close()
-    }
-  } catch {
-    return null
-  }
-}
-
 /** The last TAIL_BYTES of a file as text, whole lines only, or null. */
 const readTail = async (path: string): Promise<string | null> => {
   try {
@@ -166,7 +126,8 @@ const readTail = async (path: string): Promise<string | null> => {
  * something.
  */
 type Mark =
-  | { kind: 'prompt'; text: string }
+  /* `steer`: said mid-turn, so it follows the task and never replaces it. */
+  | { kind: 'prompt'; text: string; steer?: true }
   | { kind: 'recorded-prompt'; text: string }
   | { kind: 'turn-end' }
   | null
@@ -204,11 +165,18 @@ const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
  * plus `system-reminder` and `attachment` from before. A slash command opens
  * with a tag too and must survive: `readCommand` runs first and returns it.
  *
+ * An opening tag **with attributes** counts too. `<agent-message from="…">`,
+ * which is how a subagent's hand-back arrives in its parent's transcript, was
+ * missed by a pattern that wanted `>` straight after the name, and a window's
+ * recent prompts read "<agent-message from="abb3…"> [Subagent hand-back] The
+ * text below is the final rep…". Widening it newly skips nothing a person
+ * typed: zero records across every local transcript, measured.
+ *
  * The cost is a paste that opens with markup -- `<div>...</div>` and a question
  * after it -- which reads as machinery and leaves the previous prompt in the
  * bar. A stale line for one turn, against a bar full of XML.
  */
-const INJECTED = /^\s*<[a-z][a-z0-9-]*>/i
+const INJECTED = /^\s*<[a-z][a-z0-9_-]*(?:\s[^<>]*)?>/i
 
 /**
  * The words a person types when they turn a tool use down.
@@ -231,6 +199,20 @@ const INJECTED = /^\s*<[a-z][a-z0-9-]*>/i
 const PLAN_FEEDBACK =
   /^The user doesn['\u2019]t want to proceed with this tool use\.[\s\S]*?\bthe user said:\s*([\s\S]+)$/i
 
+/**
+ * The wrapper Claude Code puts around a paste, which is not something anyone
+ * typed.
+ *
+ * A pasted prompt is recorded as `<pasted_content id="7b6d">` ... `</pasted_content
+ * id="7b6d">` -- the closing tag carries the id too -- while its `last-prompt`
+ * beside it is the bare text. The user record is what this reads, so a window
+ * showed the tags around the words; measured in the worktree the fix was
+ * written in. Only the tags go: the paste is the prompt, and anything typed
+ * around it is part of it. `INJECTED` would not have caught it either way,
+ * because `_` and the attribute are both outside the shape it tests.
+ */
+const PASTE_TAG = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g
+
 const readCommand = (content: string): string | null => {
   const name = COMMAND.exec(content)
   if (!name) return null
@@ -249,7 +231,7 @@ const readCommand = (content: string): string | null => {
  * fixture written by anything else, which is a poor way to find out that a
  * pre-filter is really a parser.
  */
-const INTERESTING = /"(?:last-prompt|turn_duration)"|"type"\s*:\s*"user"/
+const INTERESTING = /"(?:last-prompt|turn_duration|queued_command)"|"type"\s*:\s*"user"/
 
 const markOf = (line: string): Mark => {
   if (!INTERESTING.test(line)) return null
@@ -263,6 +245,7 @@ const markOf = (line: string): Mark => {
   if (typeof row !== 'object' || row === null) return null
   const record = row as {
     type?: unknown
+    attachment?: { type?: unknown; commandMode?: unknown; prompt?: unknown }
     subtype?: unknown
     lastPrompt?: unknown
     isMeta?: unknown
@@ -273,6 +256,36 @@ const markOf = (line: string): Mark => {
   if (record.type === 'last-prompt') {
     if (typeof record.lastPrompt !== 'string' || record.lastPrompt === '') return null
     return { kind: 'recorded-prompt', text: record.lastPrompt }
+  }
+  /*
+   * A message sent while Claude was working.
+   *
+   * It is not a `user` record at all: Claude folds it into the running turn
+   * and records it as a `queued_command` attachment, so every "also make it
+   * italic" said mid-turn was missing from under the task -- measured in the
+   * worktree this was written in. Surveyed over every local transcript: 289 of
+   * these in `prompt` mode, none of them also written as a user record, so
+   * reading both cannot count one twice. `task-notification` is the other
+   * mode, and is machinery like its tag below.
+   *
+   * Never a task, however long: it was said about the work already running,
+   * so it steers that task rather than setting a new one. By the word count
+   * alone "the last prompt display should strip the text so newlines at the
+   * end are ignored" would have replaced the task it was a remark on.
+   */
+  if (record.type === 'attachment') {
+    const queued = record.attachment
+    if (record.isSidechain === true || queued?.type !== 'queued_command') return null
+    if (queued.commandMode !== 'prompt' || typeof queued.prompt !== 'string') return null
+    const said = queued.prompt.replace(PASTE_TAG, '')
+    /*
+     * Machinery can arrive this way too: a hand-back that lands while the
+     * parent is mid-turn is queued like anything else said then. Of 302
+     * `prompt`-mode messages across every local transcript, none a person
+     * typed opens with a tag, so the same test costs nothing here.
+     */
+    if (said.trim() === '' || INJECTED.test(said)) return null
+    return { kind: 'prompt', text: said, steer: true }
   }
   if (record.type !== 'user') return null
   // A subagent's own transcript, or something the harness injected.
@@ -296,11 +309,13 @@ const markOf = (line: string): Mark => {
     }
     return null
   }
-  if (typeof content !== 'string' || content.trim() === '') return null
-  const command = readCommand(content)
+  if (typeof content !== 'string') return null
+  const said = content.replace(PASTE_TAG, '')
+  if (said.trim() === '') return null
+  const command = readCommand(said)
   if (command !== null) return { kind: 'prompt', text: command }
-  if (INJECTED.test(content)) return null
-  return { kind: 'prompt', text: content }
+  if (INJECTED.test(said)) return null
+  return { kind: 'prompt', text: said }
 }
 
 /**
@@ -335,37 +350,93 @@ const SEED_CHUNK_BYTES = 256 * 1024
 const SEED_MAX_BYTES = 8 * 1024 * 1024
 
 /**
- * Enough overlap that a record straddling the last read is not lost.
+ * The whole lines between two offsets, and where the last of them ends.
  *
- * The incremental read starts where the previous one stopped, and a range that
- * starts mid-line drops that line -- so without an overlap a prompt written
- * across the boundary would be skipped once and then never looked at again.
+ * The next incremental read starts exactly there, which is what lets a prompt
+ * be counted once. The prompt used to be a single "newest", and re-reading a
+ * 64KB overlap to catch a record straddling the boundary cost nothing; with a
+ * list of follow-ups the overlap reads every one of them twice. So the read
+ * stops at the last newline instead, and a line still being written is left for
+ * the next look to read whole. `from` must be the start of a line.
  */
-const OVERLAP_BYTES = 64 * 1024
+const readLines = async (
+  path: string,
+  from: number,
+  to: number,
+): Promise<{ text: string; end: number } | null> => {
+  if (to <= from) return { text: '', end: from }
+  try {
+    const handle = await open(path, 'r')
+    try {
+      const buffer = Buffer.alloc(to - from)
+      await handle.read(buffer, 0, buffer.length, from)
+      // Found on the bytes, not the decoded text: a line cut mid-character
+      // decodes to a replacement character of a different length.
+      const whole = buffer.lastIndexOf(0x0a) + 1
+      return { text: buffer.subarray(0, whole).toString('utf8'), end: from + whole }
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return null
+  }
+}
+
+/** What a worktree's transcript says it was asked. */
+export interface PromptSummary {
+  /** The newest prompt, whatever it was. */
+  prompt?: string
+  /** The newest prompt that set a task -- `isTask` -- or the oldest there is. */
+  task?: string
+  /** The prompts since `task`, oldest first. */
+  followUps: string[]
+  /**
+   * Whether `followUps` had older ones dropped from its front. Always written
+   * by `fold`, false included: the incremental read spreads a fold over what
+   * it had, and a key left out kept the old `true` after a new task.
+   */
+  earlierFollowUps?: boolean
+}
+
+/**
+ * How many follow-ups are kept: the newest three. Runs of them between two
+ * tasks, measured over 1,151 prompts: none 318 times, one 155, two 61, three
+ * 22, four or more 26. It was six, every ordinary run whole -- but the strip
+ * is a reminder of where the work is, not its history, and past three the
+ * older ones were only pushing the line onto a second row.
+ */
+const FOLLOW_UPS_MAX = 3
+
+interface Seen extends PromptSummary {
+  path: string
+  /** Where the last whole line ends: the next read starts here. */
+  size: number
+  /** The newest `last-prompt` record, for a session with no real prompt. */
+  recorded?: string
+}
 
 /**
  * What has already been read, per working directory.
  *
- * The prompt is remembered rather than re-derived because a transcript only
- * grows: everything before `size` has been looked at, so the next look reads
- * the new bytes and nothing else. That is what makes this affordable at one
- * poll every couple of seconds per worktree, and it is also what makes it
- * correct -- a prompt is picked up when it is written and kept until a newer
- * one arrives, rather than having to still be inside a window by the time
- * anybody asks.
+ * Remembered rather than re-derived because a transcript only grows:
+ * everything before `size` has been looked at, so the next look reads the new
+ * bytes and nothing else. That is what makes this affordable at one poll every
+ * couple of seconds per worktree, and it is also what makes it correct -- a
+ * prompt is picked up when it is written and kept until a newer task arrives,
+ * rather than having to still be inside a window by the time anybody asks.
  */
-const prompts = new Map<string, { path: string; size: number; prompt: string | undefined }>()
+const prompts = new Map<string, Seen>()
 
-/** A prompt tidied for the one line of a window's bar that shows it. */
+/** A prompt tidied for the few lines a window has for it. */
 const tidy = (text: string): string => {
   const prompt = text.replace(/\s+/g, ' ').trim()
   if (prompt === '') return ''
-  return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}\u2026` : prompt
+  return prompt.length > PROMPT_MAX ? `${prompt.slice(0, PROMPT_MAX)}…` : prompt
 }
 
 /**
- * The newest prompt in a block of transcript, and separately the newest
- * `last-prompt` record in it.
+ * Every prompt in a block of transcript, oldest first, and separately the
+ * newest `last-prompt` record in it.
  *
  * They are kept apart because the second is not to be trusted over the first.
  * `last-prompt` is Claude's own bookkeeping and it is re-stamped every turn with
@@ -375,24 +446,70 @@ const tidy = (text: string): string => {
  * `last-prompt` for. So a real record wins whenever there is one, and the
  * bookkeeping is the fallback for a session that has none in reach.
  */
-const promptsIn = (text: string): { real?: string; recorded?: string } => {
-  const lines = text.split('\n')
-  const found: { real?: string; recorded?: string } = {}
-  for (let index = lines.length - 1; index >= 0; index--) {
-    const line = lines[index]
-    if (line === undefined) continue
+/** A prompt, and whether it was said mid-turn -- see `Mark`. */
+interface Said {
+  text: string
+  steer?: true
+}
+
+const setsTask = (said: Said): boolean => said.steer !== true && isTask(said.text)
+
+const promptsIn = (text: string): { real: Said[]; recorded?: string } => {
+  const found: { real: Said[]; recorded?: string } = { real: [] }
+  for (const line of text.split('\n')) {
     const mark = markOf(line)
     if (mark === null || mark.kind === 'turn-end') continue
     const prompt = tidy(mark.text)
     if (prompt === '') continue
-    if (mark.kind === 'prompt') return { ...found, real: prompt }
-    found.recorded ??= prompt
+    if (mark.kind === 'prompt') {
+      found.real.push(mark.steer ? { text: prompt, steer: true } : { text: prompt })
+    }
+    else found.recorded = prompt
   }
   return found
 }
 
 /**
- * The last thing the user asked Claude in this worktree.
+ * Prompts folded onto what is already known, oldest first.
+ *
+ * A task replaces the one before it and clears its follow-ups; anything else
+ * follows the task it came after. With no task yet the first prompt stands in
+ * for one, so a session that opened with `merge origin master` still has a
+ * line saying so.
+ */
+const fold = (into: PromptSummary, real: Said[]): PromptSummary => {
+  let { task, followUps } = into
+  // Carried across folds, since what was dropped last time is not in `into`.
+  let earlier = into.earlierFollowUps === true
+  for (const said of real) {
+    if (task === undefined || setsTask(said)) {
+      task = said.text
+      followUps = []
+      earlier = false
+    } else {
+      followUps = [...followUps, said.text]
+    }
+  }
+  if (followUps.length > FOLLOW_UPS_MAX) earlier = true
+  return {
+    prompt: real.at(-1)?.text ?? into.prompt,
+    task,
+    earlierFollowUps: earlier,
+    followUps: followUps.slice(-FOLLOW_UPS_MAX),
+  }
+}
+
+const summaryOf = (seen: Seen): PromptSummary => ({
+  prompt: seen.prompt ?? seen.recorded,
+  task: seen.task ?? seen.recorded,
+  followUps: seen.followUps,
+  // Only when true, so a worktree without any says nothing on the wire.
+  ...(seen.earlierFollowUps === true ? { earlierFollowUps: true } : {}),
+})
+
+/**
+ * What the user asked Claude in this worktree: the task, what followed it, and
+ * the newest prompt of all.
  *
  * Not `ai-title`, which is Claude's own name for the conversation: it is written
  * from the opening subject and does not track where the work went -- measured
@@ -402,44 +519,45 @@ const promptsIn = (text: string): { real?: string; recorded?: string } => {
  *
  * Nothing here costs a token: it is all already on disk.
  */
-export const lastPrompt = async (cwd: string): Promise<string | undefined> => {
+export const promptSummary = async (cwd: string): Promise<PromptSummary | undefined> => {
   const newest = await newestTranscript(transcriptDir(cwd))
   if (newest === null) return undefined
   const seen = prompts.get(cwd)
 
   // The same file, longer than last time: read only what has been added.
   if (seen !== undefined && seen.path === newest.path && newest.size >= seen.size) {
-    const from = Math.max(0, seen.size - OVERLAP_BYTES)
-    const text = await readRange(newest.path, from, newest.size)
-    const found = text === null ? {} : promptsIn(text)
-    const prompt = found.real ?? seen.prompt ?? found.recorded
-    prompts.set(cwd, { path: newest.path, size: newest.size, prompt })
-    return prompt
+    const read = await readLines(newest.path, seen.size, newest.size)
+    if (read === null) return summaryOf(seen)
+    const found = promptsIn(read.text)
+    const next: Seen = {
+      ...seen,
+      ...fold(seen, found.real),
+      size: read.end,
+      recorded: found.recorded ?? seen.recorded,
+    }
+    prompts.set(cwd, next)
+    return summaryOf(next)
   }
 
   /*
    * A file this has not seen before -- a fresh server, a new conversation, or
-   * one that was truncated. Walk backwards until a real prompt turns up.
+   * one that was truncated. Widen the window back from the end until a task
+   * turns up, since only one can say what the prompts after it follow.
    */
-  let real: string | undefined
-  let recorded: string | undefined
+  let next: Seen = { path: newest.path, size: 0, followUps: [] }
   for (let window = SEED_CHUNK_BYTES; ; window *= 4) {
     const from = Math.max(0, newest.size - window)
-    const text = await readRange(newest.path, from, newest.size)
-    if (text === null) break
+    const read = await readLines(newest.path, from, newest.size)
+    if (read === null) break
+    // Everything up to the first newline is the tail of a line cut in half.
+    const text = from > 0 ? read.text.slice(read.text.indexOf('\n') + 1) : read.text
     const found = promptsIn(text)
-    recorded ??= found.recorded
-    if (found.real !== undefined) {
-      real = found.real
-      break
-    }
-    if (from === 0 || window >= SEED_MAX_BYTES) break
+    next = { ...next, ...fold({ followUps: [] }, found.real), size: read.end, recorded: found.recorded }
+    if (found.real.some(setsTask) || from === 0 || window >= SEED_MAX_BYTES) break
   }
-  const prompt = real ?? recorded
-  prompts.set(cwd, { path: newest.path, size: newest.size, prompt })
-  return prompt
+  prompts.set(cwd, next)
+  return summaryOf(next)
 }
-
 
 /**
  * Where a worktree's conversation stands: has the last thing asked been

@@ -135,12 +135,14 @@ One command builds a machine on Google Cloud that runs this IDE, and prints a
 URL you can open from anywhere:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/cloud/provision.sh \
-  | sh -s -- create mybox --project my-project
+curl -fsSL https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/cloud/provision-gcp.sh \
+  | sh -s -- create
 ```
 
 It needs `gcloud` signed in, and nothing else — not even a checkout. From one,
-it is `./cloud/provision.sh create mybox --project my-project`.
+it is `./cloud/provision-gcp.sh create`. It asks for what it needs — a name, a
+project, a password — and every answer has a flag if you would rather give it
+outright (`--help` lists them).
 
 It shows what it will create and roughly what it costs, then asks. It also asks
 for a password — the login *and* the key to the disk — and makes one up if you
@@ -160,14 +162,15 @@ pipe instead, for scripts; there is no flag to put it on the command line, where
   volume whose key is derived from the IDE password and stored nowhere. A
   snapshot, a disk clone or a stopped machine is unreadable; anyone with root on
   the *running* machine reads everything, which is why `create` refuses a
-  project owned by an organisation unless you pass `--in-org`.
+  project owned by an organisation: it names the people who could, and asks
+  whether to build there anyway.
 - **Ports 8000–8099 are public.** Anything listening on one of them is at
   `https://<ip>:<port>` with no password — which is how you show somebody what
   an agent just built, and a thing to know before an agent starts a server.
 
-`provision.sh status | recreate | destroy` do the rest — what it is and who
+`provision-gcp.sh status | recreate | destroy` do the rest — what it is and who
 touched it, a new VM on the same data disk, and taking it all down. Their own
-`--help` and the comments at the top of `cloud/provision.sh` have the detail,
+`--help` and the comments at the top of `cloud/provision-gcp.sh` have the detail,
 including what `destroy` keeps unless you ask it not to.
 
 ## Linking another machine

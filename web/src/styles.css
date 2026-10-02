@@ -390,7 +390,8 @@ button {
 
 .app {
   display: grid;
-  grid-template-rows: var(--bar-h) 1fr;
+  /* The bar says its own height -- one row, or two at the ladder's end. */
+  grid-template-rows: auto auto 1fr;
   height: 100%;
   overflow: hidden;
 }
@@ -417,7 +418,27 @@ button {
 }
 
 .app:has(.keybar) {
-  grid-template-rows: 1fr;
+  grid-template-rows: auto 1fr;
+}
+
+/*
+ * What is left when a render throws past every pane's own boundary: the page
+ * says so and offers the reload, instead of going black. The sessions are
+ * tmux's and are untouched by anything the page does, which is worth saying.
+ */
+.crash {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
+  color: var(--bone);
+  background: var(--level-ground);
+  height: 100%;
+}
+
+.crash__note {
+  color: var(--graphite);
 }
 
 /* ---------------------------------------------------------------- top bar -- */
@@ -431,6 +452,7 @@ button {
 .topbar {
   display: flex;
   align-items: stretch;
+  height: var(--bar-h);
   /*
    * The frame, and the darkest thing on screen: everything in the strip is read
    * against it, and the page below it is now the light one. The bottom rule is
@@ -587,6 +609,9 @@ button {
 .tabgroup__pill {
   display: flex;
   align-items: center;
+  /* The shares strip hangs off the bottom edge; see `.tabgroup__shares`. */
+  position: relative;
+  overflow: hidden;
   gap: 4px;
   flex: none;
   align-self: stretch;
@@ -749,8 +774,30 @@ button {
   flex: none;
   gap: 2px;
   padding: 0 12px;
+  /* A button, for the last rung's click, dressed as the readout it is. */
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
   border-left: 1px solid var(--rule);
   cursor: default;
+}
+
+/*
+ * The whole readout, hung under the bar from the last rung's percentages.
+ * `.menu` gives it the surface and the place; the rows are the bar's own at
+ * full width, which is the point -- the same reading, with the room to say it.
+ * Only at that rung: wider, the bar already shows all of it.
+ */
+.usage__pop {
+  min-width: 0;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.topbar:not([data-stage='7']) .usage__pop {
+  display: none;
 }
 
 /* Fixed columns, so three bars line up as a column of bars rather than three
@@ -994,9 +1041,13 @@ button {
    */
   --tab-fill: var(--level-object);
   /*
-   * The status is a bar down the leading edge, where an 11px bullet used to be:
-   * about four times the area, at the edge the eye lands on as it runs along a
-   * row, which is the one thing the top bar exists to make fast.
+   * The status is a bar along the bottom edge, where an 11px bullet used to
+   * be: several times the area, and the full width of the tab, so a row of
+   * them reads as a row of marks at one height -- which is the one thing the
+   * top bar exists to make fast. It ran down the leading edge first, which put
+   * it at the edge the eye lands on but gave each tab a mark as tall as the
+   * tab and as narrow as a hairline; the project head's own strip is drawn
+   * under its name for the same reason, and the two now agree.
    *
    * It is not the fill, and that was the choice. The fill is the loudest
    * channel on the strip -- amber over the sleeve is 9.70:1 where every other
@@ -1009,21 +1060,21 @@ button {
    * looks like anywhere, so the two cannot be read for each other.
    *
    * A background gradient with a hard stop, which is the only one of the three
-   * ways to draw this that gives a straight edge. `inset 4px 0 0` looks right
-   * in a mockup and is wrong on a pill: an inset shadow is the box minus a copy
-   * of itself shifted 4px, so *both* of the band's edges follow the 9px radius
-   * and it bends away along the top and bottom of the tab instead of ending in
-   * a line. A pseudo-element would need `overflow: hidden` on a tab that is a
-   * wrapper around two buttons. A background is painted inside the border box
-   * and clipped by the radius for free, so the outer edge takes the pill's
-   * curve, the inner edge stays vertical, and the menu's stacked tabs inherit
-   * it from this one rule.
+   * ways to draw this that gives a straight edge. An inset shadow is the box
+   * minus a copy of itself shifted, so *both* of the band's edges follow the
+   * 9px radius and it bends away instead of ending in a line. A pseudo-element
+   * would need `overflow: hidden` on a tab that is a wrapper around two
+   * buttons. A background is painted inside the border box and clipped by the
+   * radius for free, so the bar takes the pill's curve at its ends, its top
+   * edge stays straight, and the menu's stacked tabs inherit it from this one
+   * rule.
    *
    * Nothing running keeps a mark of its own -- see `.tab--off`.
    */
   background-color: var(--tab-fill);
   background-image: linear-gradient(var(--tab-state, transparent) 0 100%);
-  background-size: 4px 100%;
+  background-size: 100% 3px;
+  background-position: left bottom;
   background-repeat: no-repeat;
 }
 
@@ -1036,12 +1087,11 @@ button {
   flex: 1;
   min-width: 0;
   /*
-   * 13px of leading inset: the bar's 4px plus the 9px the text has always kept
-   * from the tab's edge. Every tab carries it whether or not it has a bar, so
-   * the names stay on one left edge down the row -- which is what a row is
-   * scanned along.
+   * 9px of leading inset, which is what the text has always kept from the
+   * tab's edge. It was 13 while the bar ran down that edge and took 4 of them;
+   * under the tab now, the name has the edge back.
    */
-  padding: 0 5px 0 13px;
+  padding: 0 5px 0 9px;
   /*
    * Chrome's other half of "which tab am I in": its unselected titles are dim
    * (#9aa0a6) and its selected one is bright (#e8eaed), and that difference is
@@ -1223,7 +1273,9 @@ button {
 /*
  * Nothing running is a dashed bar, which is the old hollow bullet's job: solid
  * against dashed is what told a working agent from a stopped one, the way
- * filled against hollow used to.
+ * filled against hollow used to. `to right`, since the bar runs along the
+ * bottom -- a gradient with no direction runs down the box, which drew one
+ * dash smeared the width of the tab.
  *
  * Absence was tried instead, on the argument that not running is the one state
  * asking for nothing. It is wrong where it matters most: the zZ dropdown is
@@ -1234,7 +1286,11 @@ button {
  * there.
  */
 .tab--off {
-  background-image: repeating-linear-gradient(var(--graphite-dim) 0 3px, transparent 3px 6px);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--graphite-dim) 0 3px,
+    transparent 3px 6px
+  );
 }
 
 /*
@@ -1453,7 +1509,10 @@ button {
  *   2  the `Open project` label; the icon stays
  *   3  the tabs of every project but the one you are in
  *   4  the tabs of that one too
- *   5  the usage readout altogether
+ *   5  a second row: the project heads get the whole of it, and the usage
+ *      readout gets its bars back on the first
+ *   6  those bars again
+ *   7  everything of the usage readout but the percentages; a click shows it
  */
 
 /*
@@ -1464,17 +1523,20 @@ button {
  * reading in three cells. So it is the first thing overboard and the numbers
  * are nearly the last.
  */
-.topbar[data-stage='1'] .usage__track,
-.topbar[data-stage='2'] .usage__track,
-.topbar[data-stage='3'] .usage__track,
-.topbar[data-stage='4'] .usage__track {
+.topbar[data-stage='1'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='2'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='3'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='4'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='6'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='7'] .usage > .usage__row > .usage__track {
   display: none;
 }
 
-.topbar[data-stage='1'] .usage__row,
-.topbar[data-stage='2'] .usage__row,
-.topbar[data-stage='3'] .usage__row,
-.topbar[data-stage='4'] .usage__row {
+.topbar[data-stage='1'] .usage > .usage__row,
+.topbar[data-stage='2'] .usage > .usage__row,
+.topbar[data-stage='3'] .usage > .usage__row,
+.topbar[data-stage='4'] .usage > .usage__row,
+.topbar[data-stage='6'] .usage > .usage__row {
   grid-template-columns: 42px 26px 24px;
 }
 
@@ -1483,16 +1545,80 @@ button {
 .topbar[data-stage='2'] .topbar__label,
 .topbar[data-stage='3'] .topbar__label,
 .topbar[data-stage='4'] .topbar__label,
-.topbar[data-stage='5'] .topbar__label {
+.topbar[data-stage='5'] .topbar__label,
+.topbar[data-stage='6'] .topbar__label,
+.topbar[data-stage='7'] .topbar__label {
   display: none;
 }
 
 .topbar[data-stage='2'] .topbar__open,
 .topbar[data-stage='3'] .topbar__open,
 .topbar[data-stage='4'] .topbar__open,
-.topbar[data-stage='5'] .topbar__open {
+.topbar[data-stage='5'] .topbar__open,
+.topbar[data-stage='6'] .topbar__open,
+.topbar[data-stage='7'] .topbar__open {
   /* Square around the icon rather than the label's 14px either side. */
   padding: 0 11px;
+}
+
+/*
+ * The collapsed head's own reading: its worktrees as shares of one bar.
+ *
+ * Hidden until the tabs are gone, because until then every worktree says its
+ * own state on its own tab and this would be the same sentence twice, in the
+ * one part of the interface that is meant to be scanned.
+ *
+ * Along the bottom edge and out of flow: a head must be no wider collapsed
+ * than the sweep measured it, and the bands read as a quantity under the name
+ * rather than as another thing in the row of names. 3px is the usage tracks'
+ * height, which is the other place here that draws a proportion.
+ */
+.tabgroup__shares {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  /*
+   * A seam between neighbours, so two bands never read as one wider one -- as
+   * a gap rather than a border, since the strip has no ground of its own and
+   * the gap shows the pill's: right on the lit head and the unlit ones alike,
+   * where a fixed border colour would be wrong on one of them.
+   */
+  gap: 1px;
+}
+
+.tabgroup__share {
+  flex-basis: 0;
+}
+
+/*
+ * The two states a row is scanned for keep their colours here; the other two
+ * are the greys they are everywhere else -- present, because a share is a
+ * proportion and leaving them out would make three agents working look like
+ * nothing at all, and quiet, because they are not what you are looking for.
+ */
+.tabgroup__share--needs-you {
+  background: var(--signal);
+}
+
+.tabgroup__share--idle {
+  background: var(--done);
+}
+
+.tabgroup__share--working {
+  background: var(--graphite-dim);
+}
+
+/*
+ * Not running is the quietest band and still has to be a band: at
+ * --rule-bright it was 1.17:1 on the pill and its share could not be read at
+ * all, which makes the whole bar a lie about proportions. Half way to the
+ * working grey, which keeps the two apart and both below the name.
+ */
+.tabgroup__share--off {
+  background: color-mix(in srgb, var(--graphite-dim) 50%, var(--level-object));
 }
 
 /*
@@ -1505,40 +1631,49 @@ button {
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab,
 .topbar[data-stage='4'] .tab,
 .topbar[data-stage='5'] .tab,
+.topbar[data-stage='6'] .tab,
+.topbar[data-stage='7'] .tab,
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__add,
 .topbar[data-stage='4'] .tabgroup__add,
-.topbar[data-stage='5'] .tabgroup__add {
+.topbar[data-stage='5'] .tabgroup__add,
+.topbar[data-stage='6'] .tabgroup__add,
+.topbar[data-stage='7'] .tabgroup__add {
   display: none;
 }
 
 /* And the name takes its own right edge back once the + beside it has gone. */
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__pill,
 .topbar[data-stage='4'] .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup__pill {
+.topbar[data-stage='5'] .tabgroup__pill,
+.topbar[data-stage='6'] .tabgroup__pill,
+.topbar[data-stage='7'] .tabgroup__pill {
   padding-right: 12px;
 }
 
 .topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__count,
 .topbar[data-stage='4'] .tabgroup__count,
-.topbar[data-stage='5'] .tabgroup__count {
+.topbar[data-stage='5'] .tabgroup__count,
+.topbar[data-stage='6'] .tabgroup__count,
+.topbar[data-stage='7'] .tabgroup__count {
   display: inline;
 }
 
 /*
- * Collapsed, the head speaks for every worktree it has rather than only its
- * sleepers -- the awake ones have no tab either now. Both aggregates are on the
- * pill at every rung and this is what chooses between them.
+ * Collapsed, the head grows the strip that says what its windows are doing.
+ *
+ * The two marks on the pill answer different questions and are drawn in
+ * different places, which is what keeps them apart: the bar down the leading
+ * edge is the sleepers -- what has no window at all -- in amber or green, and
+ * the strip along the bottom is the awake ones, as shares. Neither can stand
+ * in for the other, and the strip is the one that could not exist at the
+ * expanded rungs, where every awake worktree has a tab already saying it.
  */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--needs-shut,
-.topbar[data-stage='4'] .tab--needs-shut,
-.topbar[data-stage='5'] .tab--needs-shut {
-  --tab-state: var(--signal);
-}
-
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab--idle-shut,
-.topbar[data-stage='4'] .tab--idle-shut,
-.topbar[data-stage='5'] .tab--idle-shut {
-  --tab-state: var(--done);
+.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
+.topbar[data-stage='4'] .tabgroup__shares,
+.topbar[data-stage='5'] .tabgroup__shares,
+.topbar[data-stage='6'] .tabgroup__shares,
+.topbar[data-stage='7'] .tabgroup__shares {
+  display: flex;
 }
 
 /*
@@ -1550,19 +1685,129 @@ button {
  * and being in one of its worktrees is exactly what collapsing gave up.
  */
 .topbar[data-stage='4'] .tabgroup--current .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill {
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='6'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='7'] .tabgroup--current .tabgroup__pill {
   background-color: var(--level-lit);
   color: var(--bone);
 }
 
 .topbar[data-stage='4'] .tabgroup--current .tabgroup__count,
-.topbar[data-stage='5'] .tabgroup--current .tabgroup__count {
+.topbar[data-stage='5'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='6'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='7'] .tabgroup--current .tabgroup__count {
   color: var(--quiet-on);
 }
 
-/* Rung 5: the last thing the bar has to give. */
-.topbar[data-stage='5'] .usage {
+/*
+ * Rungs 5 to 7: a second row.
+ *
+ * Collapsed, every project is one head, and a row of heads that still does not
+ * fit used to scroll -- on a phone with six projects, three of them were off
+ * the edge, and what was off the edge was whatever might be blocked on you.
+ * So the bar becomes two rows: the heads get the whole of the second, which is
+ * where the strip already stood, and the first keeps the controls. And when
+ * the heads overrun even that, they **wrap**, a row of the bar's height at a
+ * time, rather than scrolling -- the sweep cannot help them otherwise, since
+ * nothing it can still take away is on their row. Only the first row's
+ * overflow moves the ladder past here.
+ *
+ * Which hands the first row the room the heads had, and the usage readout gets
+ * its bars back (rung 5): it was squeezed only because it shared a row with
+ * the strip. If even that row is too narrow, it narrows again the way it did
+ * before -- the bars (6), then all but the percentages (7).
+ *
+ * A grid, not a wrapping flex row, and that is load-bearing: a wrapping row
+ * that is too wide wraps again instead of overflowing, and overflowing is the
+ * only way the sweep can tell. Every item is placed, because the machine
+ * button and sign-out share a class and auto-placement would drop one of them
+ * into the spacer column. The usage panel is `position: fixed` and takes no
+ * cell.
+ *
+ * It costs the row of windows 38px of height a row, so it is the last thing
+ * the bar does rather than the first, and every pty under it is resized once
+ * when it arrives.
+ */
+.topbar[data-stage='5'],
+.topbar[data-stage='6'],
+.topbar[data-stage='7'] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: var(--bar-h) auto;
+  height: auto;
+}
+
+.topbar[data-stage='5'] > .topbar__open,
+.topbar[data-stage='6'] > .topbar__open,
+.topbar[data-stage='7'] > .topbar__open {
+  grid-area: 1 / 1;
+}
+
+.topbar[data-stage='5'] > .usage,
+.topbar[data-stage='6'] > .usage,
+.topbar[data-stage='7'] > .usage {
+  grid-area: 1 / 3;
+}
+
+.topbar[data-stage='5'] > .topbar__signout:nth-last-child(2),
+.topbar[data-stage='6'] > .topbar__signout:nth-last-child(2),
+.topbar[data-stage='7'] > .topbar__signout:nth-last-child(2) {
+  grid-area: 1 / 4;
+}
+
+.topbar[data-stage='5'] > .topbar__signout:last-child,
+.topbar[data-stage='6'] > .topbar__signout:last-child,
+.topbar[data-stage='7'] > .topbar__signout:last-child {
+  grid-area: 1 / 5;
+}
+
+/*
+ * The heads' row, with the same rule above it that the bar has below: two rows
+ * of one instrument rather than a toolbar with a shelf under it.
+ */
+.topbar[data-stage='5'] > .tabstrip,
+.topbar[data-stage='6'] > .tabstrip,
+.topbar[data-stage='7'] > .tabstrip {
+  grid-area: 2 / 1 / 3 / -1;
+  border-top: 1px solid var(--rule);
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+/* A row of heads is the bar's height, the 3px inset above each included. */
+.topbar[data-stage='5'] .tabgroup,
+.topbar[data-stage='6'] .tabgroup,
+.topbar[data-stage='7'] .tabgroup {
+  height: calc(var(--bar-h) - 3px);
+}
+
+/*
+ * Rung 7: the percentages, and a click for the rest.
+ *
+ * It used to go altogether at the bottom of the ladder, which on a phone put
+ * the limits out of sight on the screen with least else to warn you that the
+ * session you are about to start will end early. Now it keeps `82%` alone, one
+ * per limit in the order `/usage` reports them, and a click hangs the whole
+ * readout under the bar (`.usage__pop`). The colour rides on the percent, so
+ * amber and red still say which one to open it for.
+ */
+.topbar[data-stage='7'] .usage {
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.topbar[data-stage='7'] .usage:hover,
+.topbar[data-stage='7'] .usage--open {
+  background: var(--level-hover);
+}
+
+.topbar[data-stage='7'] .usage > .usage__row > .usage__label,
+.topbar[data-stage='7'] .usage > .usage__row > .usage__resets {
   display: none;
+}
+
+.topbar[data-stage='7'] .usage > .usage__row {
+  grid-template-columns: 26px;
 }
 
 /* --------------------------------------------------------------- the tile -- */
@@ -1592,6 +1837,33 @@ button {
    * positioned things in the interface, so nothing else changes ancestor.
    */
   position: relative;
+}
+
+/*
+ * A worktree being removed, from the moment you confirm until it has gone.
+ *
+ * Greyed rather than hidden, because it is still there -- its agents are being
+ * stopped and its directory deleted, which takes seconds -- and a window that
+ * vanished before that was done would come back if git then refused. A wash of
+ * the page's own ground over everything, so whatever the panes held is still
+ * legible as what is going, and the words in --bone over it say which way.
+ * No colour: this is not a state you scan the row for, and nothing moves.
+ */
+.tile--departing {
+  position: relative;
+}
+
+.tile__departing {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--level-ground) 78%, transparent);
+  color: var(--bone);
+  font-size: 13px;
+  letter-spacing: 0.02em;
 }
 
 /*
@@ -1715,7 +1987,8 @@ button {
 .tile--current .tile__project,
 .tile--current .tile__slash,
 .tile--current .tile__branch,
-.tile--current .tile__prompt {
+.tile--current .tile__prompt,
+.tile--current .taskstrip__task {
   color: var(--quiet-on);
 }
 
@@ -2036,13 +2309,10 @@ button {
 }
 
 /*
- * The last prompt, filling whatever the bar has left between the name and the
- * controls.
- *
- * One line, always: a prompt runs to paragraphs and the bar is a bar. Dim and
- * 11px so it stays under the worktree's name -- it says what this window is
- * about, not which window it is -- and it is the interface speaking prose, so
- * --font-ui rather than the mono the identifiers beside it use.
+ * A line of prose filling whatever the bar has left between the name and the
+ * controls -- now only the machine's own window, saying what it is. Dim and
+ * 11px so it stays under the name, and --font-ui because it is the interface
+ * speaking rather than an identifier.
  */
 .tile__prompt {
   flex: 1;
@@ -2054,6 +2324,101 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * The task above Claude, and what followed it.
+ *
+ * It is the interface speaking prose, so --font-ui, and it stays under the
+ * terminal it sits on: the task one rung down the grey ladder, the follow-ups
+ * a rung below that, neither a colour. Three lines of task at most -- enough
+ * for the sentence that says what the work is, never so many that it eats the
+ * terminal's rows -- and the whole of it is in the tooltip.
+ *
+ * The follow-ups flow as one line while they fit, each behind its own arrow,
+ * and wrap only when they do not; any one of them longer than the pane is cut
+ * to a line of its own rather than pushing the rest off the edge.
+ */
+.taskstrip {
+  flex: none;
+  /*
+   * Full bleed: out through the pane's 8px padding to both edges and the bar,
+   * so it reads as a band of its own between the bar and the terminal rather
+   * than as text that landed on the terminal's ground. 20px in from either
+   * side: lined up with the bar's name at 10px it read as cramped against the
+   * window's edges, and prose wants a wider margin than a label does.
+   *
+   * Tight underneath: Claude's own screen opens with a blank row of its own,
+   * so 13px of padding and 10px of margin below the text measured as a 24px
+   * gap *before* that row, and read as the strip floating free of the thing
+   * it describes.
+   */
+  margin: -8px -8px 4px;
+  padding: 10px 20px 7px;
+  background: var(--level-panel);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+  /* Italic, because all of it is quoted: your words, not the interface's. */
+  font-style: italic;
+}
+
+.taskstrip__task {
+  margin: 0;
+  color: var(--graphite);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  /* Room for the italic's lean -- see `.taskstrip__followup`. */
+  padding-right: 0.25em;
+}
+
+.taskstrip__followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--graphite-dim);
+}
+
+.taskstrip__followup {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /*
+   * An italic leans past its own advance, so the last letter's top-right ink
+   * is outside the box, and `overflow: hidden` -- there for the ellipsis --
+   * cut it off: the final letter of every follow-up read clipped. A quarter
+   * of an em is more than the lean at this size.
+   */
+  padding-right: 0.25em;
+}
+
+.taskstrip__followup::before {
+  content: '\2192';
+  margin-right: 6px;
+}
+
+/* The ones before these: a mark with no arrow, since it is not something said. */
+.taskstrip__followup--earlier::before {
+  content: none;
+}
+
+/*
+ * Gone while the soft keys are up, by the same `:has()` the top bar uses and
+ * for the same reason: a phone with its keyboard open has about 380px of
+ * height, and you are typing into the very Claude this reminds you about.
+ */
+.app:has(.keybar) .taskstrip {
+  display: none;
 }
 
 .tile__idle {
@@ -2322,6 +2687,34 @@ button {
   width: auto;
   max-width: none;
   min-height: 30px;
+}
+
+/*
+ * Stacked, the state goes back down the leading edge.
+ *
+ * The strip's tabs sit side by side, so a bar under each one reads as a row of
+ * marks at one height, which is what the top bar is scanned for. These lists
+ * are the same tabs stood on end, and there a bar along the bottom reads as a
+ * rule between two rows instead of as a state -- reported from the project
+ * pane, where four of them in a column drew four dividers. So the shape of the
+ * list decides where the mark goes: side by side underneath, stacked at the
+ * edge, and the 4px it takes comes back out of the name's inset.
+ */
+.projpane__list .tab,
+.menu--tabs .tab {
+  background-size: 4px 100%;
+  background-position: left top;
+}
+
+.projpane__list .tab__body,
+.menu--tabs .tab__body {
+  padding-left: 13px;
+}
+
+/* Dashes down the edge rather than along the bottom; see `.tab--off`. */
+.projpane__list .tab--off,
+.menu--tabs .tab--off {
+  background-image: repeating-linear-gradient(var(--graphite-dim) 0 3px, transparent 3px 6px);
 }
 
 /*
@@ -2720,6 +3113,19 @@ button {
   overflow-wrap: anywhere;
 }
 
+.tile__failure-action {
+  margin-left: auto;
+  flex: none;
+  padding: 3px 10px;
+  color: inherit;
+  border-color: #6a3c42;
+  background: none;
+}
+
+.tile__failure-action + .tile__failure-dismiss {
+  margin-left: 0;
+}
+
 .tile__failure-dismiss {
   margin-left: auto;
   flex: none;
@@ -2748,6 +3154,42 @@ button {
   margin-left: auto;
   color: inherit;
   opacity: 0.7;
+}
+
+/*
+ * A newer version, which is news about the program rather than about any
+ * agent: greyscale, so it cannot be read as blocked or done while scanning the
+ * row. The raised level is the one the top bar's controls sit on.
+ */
+.banner--update {
+  background: var(--level-raised);
+  border-bottom-color: var(--rule-bright);
+  color: var(--bone);
+}
+
+.banner__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.banner__action {
+  margin-left: auto;
+  flex: none;
+  padding: 4px 12px;
+}
+
+.banner__action + .banner__dismiss {
+  margin-left: 0;
+}
+
+/* The tail of `pnpm pull`, which is what says why: git's refusal, the build's error. */
+.banner__output {
+  margin: 6px 0 0;
+  max-height: 11em;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 
 /* ---------------------------------------------------------------- buttons -- */
@@ -3949,15 +4391,21 @@ button {
   --files-tree-min: 158px;
   /*
    * What the editor spends on itself before any code: the line-number gutter
-   * (3ch plus 12px of padding and a 1px rule, 36.5px) and the 14px inset on
-   * each line. Asked for on top of the 80 columns rather than out of them.
+   * and the 14px inset on each line. Asked for on top of the 80 columns rather
+   * than out of them, so the tree beside it is what pays for a wider gutter.
    *
-   * 52 and not 50, which was half a pixel short and cost the column it was
-   * protecting: at 13px Menlo a character is 7.827px, so 80ch is 626.1 and the
-   * old sum left 625.6 of room -- 79.94 columns, which wraps at 79. A file of a
-   * thousand lines still loses one to a four-digit gutter; a constant 4ch
-   * gutter would fix that and cost every short file 8px, which is the worse
-   * trade.
+   * **Overwritten by the pane from the real gutter** while an editor is up --
+   * see `gutter` in `FilesPane`. This value is the three-digit case (3ch plus
+   * 12px of padding and a 1px rule, 36.5px) and is what a diff, a picture or a
+   * rendered page uses, none of which draw one. It was the only value, and a
+   * constant cannot be right: measured, a 1,399-line file's four-digit gutter
+   * is 44.3px, which left 79.19 columns and wrapped an 80-character line onto
+   * two rows. A constant 4ch gutter would fix that file and cost every short
+   * one 8px of code, which is the worse trade.
+   *
+   * 52 and not 50, which was half a pixel short even at three digits: at 13px
+   * Menlo a character is 7.827px, so 80ch is 626.1 and the old sum left 625.6
+   * of room -- 79.94 columns, which wraps at 79.
    */
   --files-editor-chrome: 52px;
   --files-row-h: 20px;
@@ -3985,7 +4433,20 @@ button {
  * half a spot at every width.
  */
 .files__side {
-  flex: 1 1 auto;
+  /*
+   * Its basis is the floor, not its content.
+   *
+   * `auto` measured the rows and the find box, and a basis wider than the
+   * floor is width the tree is *asking* for -- so once the two asks came to
+   * more than the pane, flex took the difference out of both in proportion and
+   * the file lost columns with room going spare beside it. Measured at a 900px
+   * window: a 873px pane, a file asking 685 and a tree asking well past its
+   * 158 floor, and the file came out 645 -- 74.91 columns, wrapping an
+   * 80-character line with the tree sitting at 228. From the floor, the file's
+   * ask is met first and the tree grows into what is left, which is what "the
+   * editor asks for exactly 80 columns and the tree has the rest" meant.
+   */
+  flex: 1 1 var(--files-tree-min);
   min-width: var(--files-tree-min);
   display: flex;
   flex-direction: column;
@@ -4058,10 +4519,14 @@ button {
  */
 .files__find {
   flex: none;
+  display: flex;
+  align-items: center;
   border-top: 1px solid var(--rule-bright);
 }
 
 .files__search {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 5px 8px;
   background: none;
@@ -4080,6 +4545,61 @@ button {
 .files__search:focus {
   outline: none;
   border-bottom-color: var(--pulse);
+}
+
+/*
+ * Name or Text: what the files search looks at. Two words at the box's right
+ * edge, the chosen one bright, in the grey ladder -- which one is on is a
+ * setting, not a state, so it takes no colour.
+ */
+.files__in {
+  flex: none;
+  display: flex;
+  padding-right: 4px;
+}
+
+.files__in-opt {
+  padding: 2px 5px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--graphite-dim);
+  border-radius: 3px;
+}
+
+.files__in-opt:hover {
+  color: var(--bone);
+}
+
+.files__in-opt--on {
+  color: var(--bone);
+  background: var(--level-lit);
+}
+
+/*
+ * A line under its file in a content search: the number, then the line, in
+ * the mono face because it is the file talking. What matched goes bright.
+ */
+.files__line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.files__lineno {
+  flex: none;
+  min-width: 3ch;
+  text-align: right;
+  color: var(--graphite-dim);
+}
+
+/* Under a file cut short: sits in the rows' own rhythm, not a paragraph's. */
+.files__more {
+  padding-top: 2px;
+  padding-bottom: 4px;
+}
+
+.files__match {
+  font-weight: inherit;
+  color: var(--bone);
 }
 
 /*
@@ -4246,6 +4766,33 @@ button {
  */
 .files__row--changed {
   color: var(--bone);
+}
+
+/*
+ * A file still being read. Held back for a moment rather than shown at once:
+ * most reads land in a few milliseconds, and a word that flashes up on every
+ * click is noise. A step, not a fade -- the only motion here is the terminal.
+ */
+.files__loading {
+  visibility: hidden;
+  animation: files-loading-show 0s linear 150ms forwards;
+}
+
+@keyframes files-loading-show {
+  to {
+    visibility: visible;
+  }
+}
+
+/*
+ * Ignored by git: `dist/`, `node_modules`, a `.env`. Listed, because that is
+ * often exactly what you came to look at, and one step down the grey ladder,
+ * because it is not the project's own source. The last step rather than a
+ * lower opacity, so it still clears 4.5:1; hovered or open, it goes to --bone
+ * like any other row, since `:hover` and `--on` outrank this.
+ */
+.files__row--ignored {
+  color: var(--graphite-dim);
 }
 
 

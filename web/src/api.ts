@@ -1,14 +1,17 @@
 import type {
   AppSnapshot,
   FileContent,
+  ContentHit,
   FileHit,
   FileListing,
+  FileListings,
   FileSaved,
   FileUnchanged,
   Project,
   RecentProject,
   Session,
   UiState,
+  UpdateStatus,
   Usage,
   Worktree,
   WorktreeChanges,
@@ -72,6 +75,13 @@ export interface ServerRow {
   refused?: boolean
 }
 
+/** What a removal was told to take with it; see `removalQuestions`. */
+export interface RemoveOptions {
+  force: boolean
+  deleteBranch: boolean
+  deleteRemoteBranch: boolean
+}
+
 export const api = {
   /**
    * A single-use ticket for the next socket upgrade.
@@ -100,6 +110,13 @@ export const api = {
 
   /** Claude's usage limits. The server caches these for five minutes. */
   usage: () => request<Usage>('/api/usage'),
+  /** Whether this machine's Switchboard is behind origin. Fetched at most every ten minutes. */
+  updateStatus: () => request<UpdateStatus>('/api/update'),
+  /** Run `pnpm pull`, which restarts this server if there is anything to pull. */
+  startUpdate: () => request<{ ok: true }>('/api/update', { method: 'POST', body: '{}' }),
+  /** The same on a linked machine, by the key its ids are scoped with. */
+  updateServer: (key: string) =>
+    request<{ ok: true }>(`/api/servers/${encodeURIComponent(key)}/update`, { method: 'POST', body: '{}' }),
   /**
    * Closed projects, newest first; already filtered to ones still on disk.
    *
@@ -161,10 +178,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  removeWorktree: (
-    id: string,
-    opts: { force: boolean; deleteBranch: boolean; deleteRemoteBranch: boolean },
-  ) =>
+  removeWorktree: (id: string, opts: RemoveOptions) =>
     request<{ ok: true }>(
       `/api/worktrees/${id}?force=${opts.force}&deleteBranch=${opts.deleteBranch}` +
         `&deleteRemoteBranch=${opts.deleteRemoteBranch}`,
@@ -238,6 +252,12 @@ export const api = {
       `/api/worktrees/${worktreeId}/find?q=${encodeURIComponent(q)}`,
     ),
 
+  /** Lines that contain `q`, for the finder's content switch. */
+  grep: (worktreeId: string, q: string) =>
+    request<{ hits: ContentHit[]; truncated?: boolean; more?: string[] }>(
+      `/api/worktrees/${worktreeId}/grep?q=${encodeURIComponent(q)}`,
+    ),
+
   /**
    * One file's contents.
    *
@@ -246,6 +266,35 @@ export const api = {
    * `{ unchanged: true }` rather than sending the whole thing back every two
    * seconds.
    */
+  /**
+   * The tree's poll: every directory it shows, in one request.
+   *
+   * A machine from before `/trees` answers it 404 with no code -- the router's
+   * own not-found, where a worktree it does not have carries none either, so
+   * the two are told apart by trying the old route: the directories are then
+   * read one at a time, as they always were, and a gone one comes back in
+   * `missing` exactly as the new route would say it.
+   */
+  trees: async (worktreeId: string, paths: string[]): Promise<FileListings> => {
+    const query = paths.map((path) => `path=${encodeURIComponent(path)}`).join('&')
+    try {
+      return await request<FileListings>(`/api/worktrees/${worktreeId}/trees?${query}`)
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 404 || err.code !== undefined) throw err
+    }
+    const listings: FileListing[] = []
+    const missing: string[] = []
+    for (const path of paths) {
+      try {
+        listings.push(await api.tree(worktreeId, path))
+      } catch (err) {
+        if (path === '' || !(err instanceof ApiError) || err.status !== 404) throw err
+        missing.push(path)
+      }
+    }
+    return { listings, missing }
+  },
+
   readFile: (worktreeId: string, path: string, ifNotRev?: string) =>
     request<FileContent | FileUnchanged>(
       `/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}` +
