@@ -12,6 +12,14 @@ export interface SleepOptions {
 
 export interface SleepWorktreeDialogProps {
   worktree: Worktree
+  /**
+   * Whether this window is a worktree at all.
+   *
+   * False for a folder project's unit, which is the folder itself: there is no
+   * branch behind it, and calling it a worktree in the one place that says what
+   * sleeping costs would be naming a thing the user cannot go and look at.
+   */
+  isWorktree: boolean
   sessions: Session[]
   /** Only for the delete button's label; see `removalAsks`. */
   todos: WorktreeTodo[]
@@ -45,6 +53,7 @@ export interface SleepWorktreeDialogProps {
  */
 export const SleepWorktreeDialog = ({
   worktree,
+  isWorktree,
   sessions,
   todos,
   onClose,
@@ -68,12 +77,14 @@ export const SleepWorktreeDialog = ({
         </div>
         <div className="dialog__body">
           <p className="empty__body">
-            Puts the {worktree.name} worktree to sleep and hides its window. Claude and every
-            terminal in it are stopped, and the machine gets their processes and memory back.
+            Puts {isWorktree ? `the ${worktree.name} worktree` : worktree.name} to sleep and hides
+            its window. Claude and every terminal in it are stopped, and the machine gets their
+            processes and memory back.
           </p>
           <p className="empty__body">
-            Nothing on disk changes — the branch and its files stay exactly as they are, and
-            waking the worktree continues the same conversation rather than starting a new one.
+            Nothing on disk changes — {isWorktree ? 'the branch and its files stay' : 'the folder stays'} exactly as
+            {isWorktree ? ' they are' : ' it is'}, and waking it continues the same conversation
+            rather than starting a new one.
           </p>
           <p className="field__hint">{worktree.path}</p>
           <label className="check">

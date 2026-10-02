@@ -36,6 +36,12 @@ const openProjectBody = z.object({
   create: z.boolean().default(false),
   /** With `create`, put files already in the directory into the first commit. */
   commitExisting: z.boolean().default(true),
+  /**
+   * Open a directory that is not a repository as a folder of them: one Claude
+   * session, no worktrees. Distinct from `create`, which makes it a repository
+   * instead -- the two are the opposite answers to the same refusal.
+   */
+  folder: z.boolean().default(false),
 })
 const createWorktreeBody = z.object({
   projectId: z.string().min(1),
@@ -284,8 +290,8 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/recents', async () => workspace.recentProjects())
 
   app.post('/api/projects', async (request) => {
-    const { path, create, commitExisting } = openProjectBody.parse(request.body)
-    const project = await workspace.openProject(path, { create, commitExisting })
+    const { path, create, commitExisting, folder } = openProjectBody.parse(request.body)
+    const project = await workspace.openProject(path, { create, commitExisting, folder })
     broadcastInvalidate()
     return project
   })

@@ -34,7 +34,8 @@ export const WelcomeTile = ({
           <p className="empty__body">
             A project is any directory inside a git repository. Every branch you work on becomes a
             worktree with its own Claude, its own terminals and its own window in this row — and
-            they keep running whether or not this page is open.
+            they keep running whether or not this page is open. A folder that holds several
+            repositories opens too, as one window across all of them.
           </p>
           <button className="btn" onClick={onOpenProject}>
             Open project

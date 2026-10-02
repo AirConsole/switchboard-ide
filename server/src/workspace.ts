@@ -24,6 +24,7 @@ import { config } from './config.js'
 import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl, plainHttpAllowed } from './remote/peer.js'
 import { hostKeyFor, unscopeId } from './remote/scope.js'
 import {
+  GENERATED_DIRECTORIES,
   findFiles,
   grepFiles,
   listDirectory,
@@ -47,12 +48,14 @@ import {
   enclosingRepoRoot,
   ensureWorktreesIgnored,
   initRepository,
+  containedRepos,
   isGitRepo,
   branchExists,
   isValidBranchName,
   listRawWorktrees,
   listWorktrees,
   projectIdFor,
+  worktreeIdFor,
   pruneWorktrees,
   removeWorktree,
   repoRoot,
@@ -216,6 +219,32 @@ export class Workspace {
     const all: Worktree[] = []
     for (const project of this.store.projects) {
       try {
+        /*
+         * A folder has no `git worktree list` to read, and one unit rather than
+         * a list: the folder itself, with the Claude session that works across
+         * the repositories in it.
+         *
+         * Derived, not stored, like every other worktree here -- there is
+         * exactly one per folder project, so hashing the path gives it a stable
+         * id with nothing to keep in step. `isMain` is what makes
+         * `removeWorktree` refuse it, which is right: a folder project without
+         * its session would be a project with no windows and no way to make
+         * one. `promptSummary` reads Claude's transcript by path, so the unit
+         * gets its prompt and task for free.
+         */
+        if (project.kind === 'folder') {
+          all.push({
+            id: worktreeIdFor(project.root),
+            projectId: project.id,
+            name: project.name,
+            branch: null,
+            path: project.root,
+            isMain: true,
+            ...(await promptSummary(project.root)),
+          })
+          continue
+        }
+
         const list = await listWorktrees(project.id, project.root)
         this.forgetGoneWorktrees(project.id, list)
         // Once per project, not once per worktree: they share a repository and
@@ -490,7 +519,14 @@ export class Workspace {
         .filter((project) => project.host.kind === 'local')
         .map(async (project) => ({
           ...project,
-          defaultBase: await resolveDefaultBase(project.root).catch(() => undefined),
+          // A folder has no default branch, and `resolveDefaultBase` is the one
+          // git helper that does not throw outside a repository -- it falls
+          // through to `HEAD`. Left alone it would name a base for branches
+          // that cannot be cut.
+          defaultBase:
+            project.kind === 'folder'
+              ? undefined
+              : await resolveDefaultBase(project.root).catch(() => undefined),
         })),
     )
   }
@@ -504,7 +540,7 @@ export class Workspace {
    */
   async openProject(
     path: string,
-    opts: { create?: boolean; commitExisting?: boolean } = {},
+    opts: { create?: boolean; commitExisting?: boolean; folder?: boolean } = {},
   ): Promise<Project> {
     const target = resolve(expandHome(path))
 
@@ -522,10 +558,43 @@ export class Workspace {
 
     if (!(await isDirectory(target))) throw new HttpError(400, `Not a directory: ${target}`)
 
+    /*
+     * A folder of repositories, opened as itself.
+     *
+     * Ahead of `isGitRepo` and instead of `repoRoot`, and both matter. A folder
+     * that happens to sit inside an enclosing checkout answers true to
+     * `isGitRepo`, and `repoRoot` then normalises to that ancestor -- so asking
+     * for `~/src/games` would quietly register `~/src`. The path asked for is
+     * the path registered, and nothing walks up from it.
+     */
+    if (opts.folder) {
+      const root = target
+      const project: Project = {
+        id: projectIdFor(root),
+        name: basename(root),
+        kind: 'folder',
+        host: { kind: 'local' },
+        root,
+        // Derived from the root like every project's, and unused: a folder has
+        // no branches to cut, so nothing ever creates a worktree under it.
+        worktreeRoot: defaultWorktreeRoot(root),
+        addedAt: Date.now(),
+      }
+      this.store.addProject(project)
+      this.store.forgetRecent(root)
+      this.invalidate()
+      // No `defaultBase`: there is no repository here to have a default branch,
+      // and `resolveDefaultBase` is the one git helper that answers anyway.
+      return project
+    }
+
     if (!(await isGitRepo(target))) {
       if (!opts.create) {
         throw new HttpError(400, `Not a git repository: ${target}`, 'not-a-repo', {
           path: target,
+          // Holding repositories is what makes it worth offering as a folder,
+          // and what makes initialising one around them the wrong answer.
+          repos: await containedRepos(target),
           ...(await inspectForInit(target)),
         })
       }
@@ -721,6 +790,7 @@ export class Workspace {
   ): Promise<{ valid: boolean; exists: boolean; usedBy?: string }> {
     const project = this.store.project(projectId)
     if (!project) throw new HttpError(404, 'no such project')
+    if (project.kind === 'folder') throw new HttpError(400, 'a folder has no branches')
     const branch = name.trim()
     if (branch === '') return { valid: false, exists: false }
     if (!(await isValidBranchName(project.root, branch))) {
@@ -751,6 +821,15 @@ export class Workspace {
   }): Promise<Worktree> {
     const project = this.store.project(opts.projectId)
     if (!project) throw new HttpError(404, 'no such project')
+    /*
+     * Said plainly rather than let through. A folder is not a repository, so
+     * `isValidBranchName` answers false below and the refusal that reached the
+     * form was "invalid branch name" -- which blames the name for the one thing
+     * about it that is fine.
+     */
+    if (project.kind === 'folder') {
+      throw new HttpError(400, 'a folder has no branches to cut a worktree from')
+    }
     const branch = opts.branch.trim()
     if (!(await isValidBranchName(project.root, branch))) {
       throw new HttpError(400, `invalid branch name: ${branch}`)
@@ -1160,17 +1239,7 @@ export class Workspace {
  * first commit. Reported so the client can warn before `git add -A` sweeps one
  * in, which is tedious to undo once committed.
  */
-const JUNK_DIRECTORIES = [
-  'node_modules',
-  '.venv',
-  'venv',
-  'dist',
-  'build',
-  'target',
-  '.next',
-  'vendor',
-  '__pycache__',
-]
+const JUNK_DIRECTORIES = GENERATED_DIRECTORIES
 
 /** What the client needs to describe initialising an existing directory. */
 const inspectForInit = async (

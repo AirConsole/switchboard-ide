@@ -1185,6 +1185,14 @@ const MODES: readonly { mode: FilesMode; label: string }[] = [
   { mode: 'commits', label: 'Commits' },
 ]
 
+/**
+ * The faces a worktree can show. A folder project's unit is not in a
+ * repository, so two of the three have nothing to answer with -- the switch
+ * drops them rather than offering faces that say "nothing here" for ever.
+ */
+const modesFor = (inRepo: boolean): readonly { mode: FilesMode; label: string }[] =>
+  inRepo ? MODES : MODES.slice(0, 1)
+
 /*
  * Unsaved buffers, by worktree and file, held outside React.
  *
@@ -1244,6 +1252,14 @@ export interface FilesPaneProps {
   markdownPreview: boolean
   /** Named in the commits heading, so it says what the commits are on. */
   branch: string | null
+  /**
+   * Whether this worktree is in a repository at all.
+   *
+   * False for a folder project's unit, which is a directory holding checkouts
+   * rather than one itself: it has files, and no changes and no commits of its
+   * own.
+   */
+  inRepo: boolean
   /** Whether the tile is close enough to the scrollport to build an editor. */
   near: boolean
 }
@@ -1267,9 +1283,11 @@ export const FilesPane = ({
   openFiles,
   markdownPreview,
   branch,
+  inRepo,
   near,
   focus = null,
 }: FilesPaneProps): React.ReactElement => {
+  const modes = modesFor(inRepo)
   const treeRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
   const selectedRef = useRef<HTMLButtonElement | null>(null)
@@ -1717,8 +1735,8 @@ export const FilesPane = ({
     listTarget()?.focus()
   }
   const switchMode = (step: 1 | -1, keyboard: 'list' | 'tabs'): void => {
-    const at = MODES.findIndex((m) => m.mode === mode)
-    const next = MODES[at + step]
+    const at = modes.findIndex((m) => m.mode === mode)
+    const next = modes[at + step]
     if (next === undefined) return
     follow.current = keyboard
     onMode(next.mode)
@@ -2218,7 +2236,7 @@ export const FilesPane = ({
             }
           }}
         >
-          {MODES.map(({ mode: name, label }) => (
+          {modes.map(({ mode: name, label }) => (
             <button
               key={name}
               className={name === mode ? 'files__mode files__mode--on' : 'files__mode'}

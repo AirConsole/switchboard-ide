@@ -57,12 +57,22 @@ export interface RemoteServer {
   addedAt: number
 }
 
-/** A registered git repository. Every registered project is open. */
+/**
+ * A registered git repository, or a folder of them. Every registered project is
+ * open.
+ */
 export interface Project {
   id: string
   name: string
   host: ProjectHost
-  /** Absolute path to the main repository root, on its host. */
+  /**
+   * `folder` is a directory that is not a repository and holds some, opened for
+   * the work that spans them: one Claude session, no branches to cut. Absent is
+   * an ordinary repository -- absent rather than `'repo'` so a machine too old
+   * to say reads as what it always was.
+   */
+  kind?: 'folder'
+  /** Absolute path to the main repository root -- or the folder -- on its host. */
   root: string
   /** Absolute directory that new worktrees are created under. */
   worktreeRoot: string
@@ -92,6 +102,8 @@ export interface RecentProject {
   /** Absolute path to the repository root, as it was registered. */
   root: string
   name: string
+  /** A folder reopens as one; see `Project.kind`. */
+  kind?: 'folder'
   /** Epoch ms it was last closed; the list is newest first. */
   closedAt: number
 }

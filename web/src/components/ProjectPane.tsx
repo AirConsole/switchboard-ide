@@ -80,11 +80,20 @@ export const ProjectPane = ({
     cells: '.tab__body, .tab__close',
     line: '.tab',
   })
-  // Where the caret is not wanted, the pane itself answers -- see `caret`.
+  /*
+   * A folder has no branches to cut, so it has no form -- and then there is no
+   * box for the caret to land in either.
+   *
+   * Which makes this pane one the row's walk could not get past, the failure
+   * `caret` is documented against above: the keyboard would stay wherever it
+   * was, and a step right moved the row and then stopped answering. So the
+   * pane takes it itself, exactly as it does on a phone.
+   */
+  const branches = project.kind !== 'folder'
   useEffect(() => {
-    if (focus === null || caret) return
+    if (focus === null || (caret && branches)) return
     box.current?.focus()
-  }, [focus, caret])
+  }, [focus, caret, branches])
   return (
   <div className="projpane" ref={box} tabIndex={-1}>
     <div className="projpane__bar">
@@ -170,8 +179,12 @@ export const ProjectPane = ({
       * the name.
       */}
     <div className="projpane__foot">
-      <span className="projpane__footlabel">New worktree</span>
-      <NewWorktreeForm project={project} focus={caret ? focus : null} onCreated={onCreated} />
+      {branches && (
+        <>
+          <span className="projpane__footlabel">New worktree</span>
+          <NewWorktreeForm project={project} focus={caret ? focus : null} onCreated={onCreated} />
+        </>
+      )}
       <button className="projpane__close" onClick={() => onCloseProject(project.id)}>
         Close project
       </button>

@@ -158,6 +158,16 @@ const reviveProject = (value: unknown): Project | null => {
      * remote project would send local git at a path on another machine.
      */
     host: { kind: 'local' as const },
+    /*
+     * Named rather than left to the spread above, and validated: this is the
+     * one fact about a project that cannot be rediscovered from the disk. A
+     * repository announces itself -- a folder of them looks exactly like a
+     * directory that is not a project at all -- so a row that lost this would
+     * come back as a repository and every git read against it would fail.
+     * Anything but the one known value reads as a repository, which is what a
+     * row written before this existed is.
+     */
+    kind: row.kind === 'folder' ? ('folder' as const) : undefined,
     worktreeRoot: defaultWorktreeRoot(row.root),
   }
 }
@@ -199,6 +209,10 @@ const reviveRecent = (value: unknown): RecentProject | null => {
   return {
     root: row.root,
     name: typeof row.name === 'string' && row.name !== '' ? row.name : basename(row.root),
+    // Copied out by name because this builds a fresh literal: a key nobody
+    // copies is dropped on read and then erased from disk by the next save, and
+    // the recent would offer a folder back as a repository.
+    ...(row.kind === 'folder' ? { kind: 'folder' as const } : {}),
     closedAt: typeof row.closedAt === 'number' && Number.isFinite(row.closedAt) ? row.closedAt : 0,
   }
 }
@@ -353,7 +367,14 @@ export class StateStore {
    */
   rememberRecent(project: Project): void {
     this.state.recents = [
-      { root: project.root, name: project.name, closedAt: Date.now() },
+      // The kind travels with it: offering a folder back as a repository would
+      // reopen it into the refusal it was opened past in the first place.
+      {
+        root: project.root,
+        name: project.name,
+        ...(project.kind === 'folder' ? { kind: 'folder' as const } : {}),
+        closedAt: Date.now(),
+      },
       ...this.state.recents.filter((r) => r.root !== project.root),
     ].slice(0, RECENT_LIMIT)
     this.scheduleSave()
