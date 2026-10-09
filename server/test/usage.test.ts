@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fullUntil, parseResetAt, parseUsage, stopResetsAt } from '../src/usage.js'
+import { parseResetAt, parseUsage } from '../src/usage.js'
 
 /** `/usage` as it actually prints, banner and prose included. */
 const REPORT = `
@@ -109,65 +109,5 @@ describe('parseResetAt', () => {
     expect(parseResetAt('Sep 15, 9am (PST)', now)).toBe(
       new Date(2026, 8, 15, 9, 0).getTime(),
     )
-  })
-})
-
-describe('stopResetsAt', () => {
-  /** When the measured stop was written: 7 Jul 2026, 15:42:17 UTC. */
-  const at = Date.UTC(2026, 6, 7, 15, 42, 17)
-
-  it('reads the sentence a real stop ended with, which has a time and no date', () => {
-    // Measured, verbatim, from a live transcript.
-    expect(stopResetsAt("You've hit your session limit · resets 4:10pm (UTC)", at)).toBe(
-      Date.UTC(2026, 6, 7, 16, 10),
-    )
-  })
-
-  it('takes a time that has just gone as today, because the time is rounded', () => {
-    // A stop at 4:10:30 saying "resets 4:10pm" is about now, not tomorrow.
-    const justAfter = Date.UTC(2026, 6, 7, 16, 10, 30)
-    expect(stopResetsAt('resets 4:10pm (UTC)', justAfter)).toBe(Date.UTC(2026, 6, 7, 16, 10))
-  })
-
-  it('takes a time well behind the stop as tomorrow', () => {
-    const late = Date.UTC(2026, 6, 7, 23, 30)
-    expect(stopResetsAt("You've hit your session limit · resets 3am (UTC)", late)).toBe(
-      Date.UTC(2026, 6, 8, 3, 0),
-    )
-  })
-
-  it('reads the dated form, which is what a weekly limit says', () => {
-    expect(stopResetsAt("You've hit your weekly limit · resets Jul 13, 9am (UTC)", at)).toBe(
-      Date.UTC(2026, 6, 13, 9, 0),
-    )
-  })
-
-  it('reads the older epoch form', () => {
-    expect(stopResetsAt('Claude AI usage limit reached|1752501600', at)).toBe(1752501600 * 1000)
-  })
-
-  it('says nothing about a sentence it does not recognise', () => {
-    expect(stopResetsAt("You've hit your limit", at)).toBeNull()
-    expect(stopResetsAt('resets soon', at)).toBeNull()
-  })
-})
-
-describe('fullUntil', () => {
-  const limit = (percent: number, resetsAt: number | null) => ({
-    label: 'x',
-    percent,
-    resets: null,
-    resetsAt,
-  })
-
-  it('waits for the latest of the limits that are full', () => {
-    expect(
-      fullUntil({ fetchedAt: 0, limits: [limit(100, 10), limit(40, 99), limit(100, 30)] }),
-    ).toBe(30)
-  })
-
-  it('is null when nothing is full, or a full one has no reset', () => {
-    expect(fullUntil({ fetchedAt: 0, limits: [limit(99, 10)] })).toBeNull()
-    expect(fullUntil({ fetchedAt: 0, limits: [limit(100, null)] })).toBeNull()
   })
 })

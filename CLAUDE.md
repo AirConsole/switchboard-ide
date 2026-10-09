@@ -380,11 +380,8 @@ line below is a mistake made in this codebase, not a hypothetical:
   The one reading that wears a state colour without being an agent is the usage
   bar: amber from 75% and red (`--danger`) from 90%, because a limit about to
   run out is the same verb — something that needs you to act — about the account
-  rather than about one worktree. It is two 3px tracks in the corner of the
-  top bar, nowhere near the row the rule is written to protect. Beside them,
-  *continue automatically* is green while it is on, for the same reason in
-  the other direction: it is what carries a stopped agent on to rest without
-  you, and a brighter grey read the same as off.
+  rather than about one worktree. It is three 3px tracks in the corner of the
+  top bar, nowhere near the row the rule is written to protect.
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the
   interface says in its own voice. Neither names a font that may not be

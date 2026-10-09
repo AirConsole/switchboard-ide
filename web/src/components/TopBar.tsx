@@ -391,7 +391,6 @@ export const TopBar = ({
   onReveal,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
-  const autoContinue = useStore((state) => state.autoContinue)
   const signOut = useStore((state) => state.signOut)
   const bar = useRef<HTMLElement | null>(null)
   const strip = useRef<HTMLElement | null>(null)
@@ -563,7 +562,7 @@ export const TopBar = ({
         />
       ))}
     </nav>
-    {usage !== null && <UsageBars usage={usage} autoContinue={autoContinue} />}
+    {usage !== null && <UsageBars usage={usage} />}
     {/*
       * The way out, in the opposite corner from the way in.
       *

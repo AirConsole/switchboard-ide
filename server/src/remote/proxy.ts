@@ -127,8 +127,6 @@ const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
   '/api/health',
   '/api/ui',
   '/api/servers',
-  // A switch for this machine, which passes it on to the others itself.
-  '/api/auto-continue',
   /*
    * The credential routes, and this is not a formality. `POST /api/login?host=B`
    * would forward the password to whatever machine B is -- you would be typing

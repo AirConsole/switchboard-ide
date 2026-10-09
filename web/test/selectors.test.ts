@@ -19,8 +19,6 @@ import {
   summarySignal,
   terminalSessions,
   worktreeStatus,
-  resetText,
-  todoWaitText,
   worktreeTodos,
 } from '../src/selectors.js'
 
@@ -543,31 +541,5 @@ describe('machineSession', () => {
   it('is not a worktree terminal, and a worktree does not see it', () => {
     expect(terminalSessions([theirs, machine], 'wt-abc').map((s) => s.id)).toEqual(['s1'])
     expect(terminalSessions([theirs, machine], MACHINE_WORKTREE_ID).map((s) => s.id)).toEqual(['m1'])
-  })
-})
-
-describe('a todo held back by a usage limit', () => {
-  const base: WorktreeTodo = { id: 't', worktreeId: 'a', prompt: 'continue', createdAt: 1 }
-  const now = new Date(2026, 9, 2, 14, 0).getTime()
-
-  it("puts the server's continue first, matching the order the server sends in", () => {
-    const todos: WorktreeTodo[] = [
-      { ...base, id: 'mine', prompt: 'next task', queuedAt: 1 },
-      { ...base, id: 'resume', queuedAt: 5, notBefore: now + 1, limitStop: 's' },
-    ]
-    const position = Object.fromEntries(
-      worktreeTodos(todos, 'a').map((view) => [view.todo.id, view.position]),
-    )
-    expect(position).toEqual({ mine: 2, resume: 1 })
-  })
-
-  it('says when it will run while it is waiting, and nothing after', () => {
-    const waiting = { ...base, queuedAt: 1, notBefore: now + 60 * 60_000, limitStop: 's' }
-    expect(todoWaitText(waiting, now)).toBe(
-      `Claude stopped on its usage limit. This continues it at ${resetText(now + 60 * 60_000, now)}, once the limit has reset.`,
-    )
-    expect(todoWaitText(waiting, now + 2 * 60 * 60_000)).toBeNull()
-    // Not queued, nothing is going to happen at that time.
-    expect(todoWaitText({ ...waiting, queuedAt: undefined }, now)).toBeNull()
   })
 })

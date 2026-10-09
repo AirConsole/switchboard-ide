@@ -385,7 +385,6 @@ export class Workspace {
       // The layout is the viewer's. A peer's `ui` never reaches here -- it is
       // dropped in `PeerClient.snapshot` -- and ours is never sent to one.
       ui: local.ui,
-      autoContinue: this.store.autoContinue,
     }
   }
 
@@ -1011,10 +1010,6 @@ export class Workspace {
       throw new HttpError(409, 'that todo is being sent to Claude', 'todo-dispatching')
     }
     const next: Partial<WorktreeTodo> = {}
-    // Touched by a person, the server's `continue` is theirs: it keeps its
-    // wait, since the limit holds whoever queued it, but no longer jumps the
-    // queue or vanishes when they type (see `head` in dispatch.ts).
-    if (todo.limitStop !== undefined) next.limitStop = undefined
     if (patch.prompt !== undefined) {
       const prompt = Workspace.clean(patch.prompt).trim()
       if (prompt === '') throw new HttpError(400, 'a todo needs a prompt')
