@@ -856,6 +856,7 @@ button {
   font-family: var(--font-ui);
   font-size: 8px;
   font-weight: 600;
+  font-style: italic;
   line-height: 1;
   color: var(--graphite-dim);
   background: none;
