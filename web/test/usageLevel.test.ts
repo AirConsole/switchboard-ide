@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shownLimits, usageLevel } from '../src/components/UsageBars.js'
+import { usageLevel } from '../src/components/UsageBars.js'
 
 describe('usageLevel', () => {
   /*
@@ -17,31 +17,5 @@ describe('usageLevel', () => {
   it('is plenty at rest and spent at the end', () => {
     expect(usageLevel(0)).toBe('plenty')
     expect(usageLevel(100)).toBe('spent')
-  })
-})
-
-describe('shownLimits', () => {
-  const at = (session: number, week: number, fable: number) =>
-    shownLimits([
-      { label: 'session', percent: session, resets: null, resetsAt: null },
-      { label: 'week', percent: week, resets: null, resetsAt: null },
-      { label: 'fable', percent: fable, resets: null, resetsAt: null },
-    ]).map((limit) => limit.label)
-
-  it('shows the two most used, in the order /usage reported them', () => {
-    expect(at(30, 55, 0)).toEqual(['session', 'week'])
-    expect(at(30, 55, 40)).toEqual(['week', 'fable'])
-    expect(at(60, 20, 40)).toEqual(['session', 'fable'])
-  })
-
-  it('gives a tie to the limit reported first, so fable never wins one', () => {
-    // Fable at 0% beside another 0% is the ordinary case on a fresh week.
-    expect(at(0, 10, 0)).toEqual(['session', 'week'])
-    expect(at(0, 0, 0)).toEqual(['session', 'week'])
-    expect(at(10, 40, 10)).toEqual(['session', 'week'])
-  })
-
-  it('leaves a shorter report alone', () => {
-    expect(shownLimits([{ label: 'session', percent: 5, resets: null, resetsAt: null }])).toHaveLength(1)
   })
 })

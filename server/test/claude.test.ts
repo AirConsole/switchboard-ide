@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import {
   claudeArgs,
   hasTranscript,
-  limitStop,
   promptSummary,
   transcriptDir,
   turnState,
@@ -567,74 +566,5 @@ describe('turnState', () => {
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'a.jsonl'), '{ "type" : "user", "message": { "content": "hi" } }\n')
     expect(await turnState(cwd)).toBe('in-turn')
-  })
-})
-
-describe('limitStop', () => {
-  /** The record a real limit stop wrote, trimmed to the fields that matter. */
-  const STOP = {
-    type: 'assistant',
-    uuid: 'stop-1',
-    timestamp: '2026-07-07T15:42:17.363Z',
-    error: 'rate_limit',
-    isApiErrorMessage: true,
-    message: { content: [{ type: 'text', text: "You've hit your session limit · resets 4:10pm (UTC)" }] },
-  }
-
-  it('finds the stop a real transcript ended with', async () => {
-    // Measured order: the error record, then the turn end, then nothing.
-    const cwd = freshCwd()
-    await writeTranscript(cwd, 'a.jsonl', [
-      userSays('do the thing'),
-      STOP,
-      TURN_END,
-      { type: 'file-history-snapshot' },
-    ])
-    expect(await limitStop(cwd)).toEqual({
-      id: 'stop-1',
-      text: "You've hit your session limit · resets 4:10pm (UTC)",
-      at: Date.parse('2026-07-07T15:42:17.363Z'),
-    })
-  })
-
-  it('lets a stop go once somebody has spoken since', async () => {
-    // Measured too: the person ran /login after the stop, and the retry that
-    // followed stopped again with a record of its own.
-    const cwd = freshCwd()
-    await writeTranscript(cwd, 'a.jsonl', [
-      STOP,
-      TURN_END,
-      userSays('<command-name>/login</command-name>'),
-    ])
-    expect(await limitStop(cwd)).toBeNull()
-  })
-
-  it('lets a stop go once Claude has answered something since', async () => {
-    const cwd = freshCwd()
-    await writeTranscript(cwd, 'a.jsonl', [
-      STOP,
-      { type: 'assistant', uuid: 'a-2', message: { content: [{ type: 'text', text: 'on it' }] } },
-    ])
-    expect(await limitStop(cwd)).toBeNull()
-  })
-
-  it('is not fooled by another kind of API error', async () => {
-    const cwd = freshCwd()
-    await writeTranscript(cwd, 'a.jsonl', [{ ...STOP, error: 'server_error' }, TURN_END])
-    expect(await limitStop(cwd)).toBeNull()
-  })
-
-  it("reads past a subagent's records to its parent's", async () => {
-    const cwd = freshCwd()
-    await writeTranscript(cwd, 'a.jsonl', [
-      STOP,
-      { ...STOP, uuid: 'side', isSidechain: true },
-      TURN_END,
-    ])
-    expect((await limitStop(cwd))?.id).toBe('stop-1')
-  })
-
-  it('is null with no transcript', async () => {
-    expect(await limitStop(freshCwd())).toBeNull()
   })
 })

@@ -110,9 +110,6 @@ export const api = {
 
   /** Claude's usage limits. The server caches these for five minutes. */
   usage: () => request<Usage>('/api/usage'),
-  /** Whether stopped agents are continued once the limit resets, here and on linked machines. */
-  setAutoContinue: (on: boolean) =>
-    request<{ on: boolean }>('/api/auto-continue', { method: 'PUT', body: JSON.stringify({ on }) }),
   /** Whether this machine's Switchboard is behind origin. Fetched at most every ten minutes. */
   updateStatus: () => request<UpdateStatus>('/api/update'),
   /** Run `pnpm pull`, which restarts this server if there is anything to pull. */

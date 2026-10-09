@@ -84,21 +84,6 @@ screen, a phone, where the ladder bottoms out. `useUsage` keeps polling at every
 you cannot see is one you want the moment the window widens, and the server
 caches it anyway.
 
-**The third row is a switch, not a limit**: *continue automatically*, whether
-an agent stopped by a usage limit is sent `continue` once it resets
-(`server/src/session/resume.ts`). It is the server's setting, not the
-viewer's, because the server is what answers the stop with no browser open, and
-it is passed on to every linked machine. So the bar has two rows of limits, and
-`shownLimits` gives them to the two most used, a tie going to the one `/usage`
-reported first -- a model's own allowance shows only by being ahead of the
-session or the week, never for sitting at 0% beside another 0%. The tooltip
-and the last rung's panel still list every limit. The switch's label is in the
-markup three times and the rung picks one: *continue automatically* while the
-tracks give it 164px, *auto-continue* at the rungs without them, and *cont.* at
-rung 7, which widens that column from 42px to 55px. Measured at every rung:
-`elementFromPoint` lands on it, and it sits inside the readout and the bar's
-38px.
-
 **A limit says how much is left in colour**: `usageLevel` is amber from 75% and
 red from 90%, inclusive, and the class goes on the *row* so the number wears it
 as well as the bar -- the track is the first thing to go at rung 1, and a colour

@@ -263,28 +263,6 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/usage', async () => usage())
 
   /*
-   * Whether agents stopped on a usage limit are continued once it resets.
-   *
-   * The limit is the account's, not this machine's, so the switch is too: it
-   * is passed on to every linked machine, each of which continues its own
-   * agents. Not passed on again from there -- linking is not transitive, and a
-   * request carrying the peer header is a gateway's -- and a machine that is
-   * off or too old to have the route is skipped rather than failing the
-   * switch, since this machine's own agents are answered either way.
-   */
-  app.put('/api/auto-continue', async (request) => {
-    const { on } = z.object({ on: z.boolean() }).strict().parse(request.body)
-    store.setAutoContinue(on)
-    if (request.headers[PEER_READ_HEADER] === undefined) {
-      await Promise.allSettled(
-        workspace.peers().map((peer) => peer.request('PUT', '/api/auto-continue', { on }, 5_000)),
-      )
-    }
-    broadcastInvalidate()
-    return { on }
-  })
-
-  /*
    * Whether this machine's Switchboard is behind origin, and updating it.
    *
    * Local by construction: no id in the path, so the proxy never forwards it,

@@ -762,8 +762,7 @@ button {
  * worktrees are open -- it is a readout, and a readout that scrolls away is one
  * you stop trusting.
  *
- * Three rows in a 38px bar is the whole constraint -- two limits and the switch
- * under them: 10px labels, 3px bars, 2px
+ * Three rows in a 38px bar is the whole constraint: 10px labels, 3px bars, 2px
  * between. Below the 11px micro voice on purpose, because this is the one place
  * in the interface reading a number matters more than reading a word, and the
  * numbers stay in --graphite, which clears 7:1.
@@ -775,92 +774,14 @@ button {
   flex: none;
   gap: 2px;
   padding: 0 12px;
-  border-left: 1px solid var(--rule);
-}
-
-/* A button, for the last rung's click, dressed as the readout it is. */
-.usage__readout {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0;
+  /* A button, for the last rung's click, dressed as the readout it is. */
   font: inherit;
   text-align: left;
   color: inherit;
   background: none;
   border: 0;
+  border-left: 1px solid var(--rule);
   cursor: default;
-}
-
-/*
- * Whether an agent stopped on a usage limit is continued once it resets: the
- * third row, where a model's own allowance used to be (see `shownLimits`).
- *
- * A row's own type and grey, with no colour of its own -- it is a setting,
- * not a state, and the colour rule leaves the chrome nothing else to wear. On
- * is the brighter grey of the two and a filled box; off is the quieter grey,
- * --graphite-dim, which is the same 5.24:1 the countdowns beside it clear.
- *
- * Three labels in the markup, one shown per rung below: the long one while the
- * tracks are there to give it the width, then `auto-continue`, then `cont.`.
- */
-.usage__auto {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  font: inherit;
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  color: var(--graphite-dim);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-.usage__auto:hover,
-.usage__auto--on {
-  color: var(--graphite);
-}
-
-.usage__box {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border: 1px solid currentColor;
-  border-radius: 1px;
-}
-
-.usage__auto--on .usage__box {
-  background: currentColor;
-}
-
-.usage__auto-mid,
-.usage__auto-short {
-  display: none;
-}
-
-.topbar[data-stage='1'] .usage__auto-long,
-.topbar[data-stage='2'] .usage__auto-long,
-.topbar[data-stage='3'] .usage__auto-long,
-.topbar[data-stage='4'] .usage__auto-long,
-.topbar[data-stage='6'] .usage__auto-long,
-.topbar[data-stage='7'] .usage__auto-long {
-  display: none;
-}
-
-.topbar[data-stage='1'] .usage__auto-mid,
-.topbar[data-stage='2'] .usage__auto-mid,
-.topbar[data-stage='3'] .usage__auto-mid,
-.topbar[data-stage='4'] .usage__auto-mid,
-.topbar[data-stage='6'] .usage__auto-mid {
-  display: inline;
-}
-
-.topbar[data-stage='7'] .usage__auto-short {
-  display: inline;
 }
 
 /*
@@ -1602,20 +1523,20 @@ button {
  * reading in three cells. So it is the first thing overboard and the numbers
  * are nearly the last.
  */
-.topbar[data-stage='1'] .usage__readout > .usage__row > .usage__track,
-.topbar[data-stage='2'] .usage__readout > .usage__row > .usage__track,
-.topbar[data-stage='3'] .usage__readout > .usage__row > .usage__track,
-.topbar[data-stage='4'] .usage__readout > .usage__row > .usage__track,
-.topbar[data-stage='6'] .usage__readout > .usage__row > .usage__track,
-.topbar[data-stage='7'] .usage__readout > .usage__row > .usage__track {
+.topbar[data-stage='1'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='2'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='3'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='4'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='6'] .usage > .usage__row > .usage__track,
+.topbar[data-stage='7'] .usage > .usage__row > .usage__track {
   display: none;
 }
 
-.topbar[data-stage='1'] .usage__readout > .usage__row,
-.topbar[data-stage='2'] .usage__readout > .usage__row,
-.topbar[data-stage='3'] .usage__readout > .usage__row,
-.topbar[data-stage='4'] .usage__readout > .usage__row,
-.topbar[data-stage='6'] .usage__readout > .usage__row {
+.topbar[data-stage='1'] .usage > .usage__row,
+.topbar[data-stage='2'] .usage > .usage__row,
+.topbar[data-stage='3'] .usage > .usage__row,
+.topbar[data-stage='4'] .usage > .usage__row,
+.topbar[data-stage='6'] .usage > .usage__row {
   grid-template-columns: 42px 26px 24px;
 }
 
@@ -1872,23 +1793,20 @@ button {
  */
 .topbar[data-stage='7'] .usage {
   padding: 0 8px;
-}
-
-.topbar[data-stage='7'] .usage__readout {
   cursor: pointer;
 }
 
-.topbar[data-stage='7'] .usage__readout:hover,
+.topbar[data-stage='7'] .usage:hover,
 .topbar[data-stage='7'] .usage--open {
   background: var(--level-hover);
 }
 
-.topbar[data-stage='7'] .usage__readout > .usage__row > .usage__label,
-.topbar[data-stage='7'] .usage__readout > .usage__row > .usage__resets {
+.topbar[data-stage='7'] .usage > .usage__row > .usage__label,
+.topbar[data-stage='7'] .usage > .usage__row > .usage__resets {
   display: none;
 }
 
-.topbar[data-stage='7'] .usage__readout > .usage__row {
+.topbar[data-stage='7'] .usage > .usage__row {
   grid-template-columns: 26px;
 }
 

@@ -714,20 +714,6 @@ export class SessionEngine {
     return [...this.sessions.values()].map((live) => live.toRecord())
   }
 
-  /**
-   * Every running Claude's worktree and directory, for reading its transcript.
-   *
-   * The directory is the pane's, from tmux, which is what `refreshAttention`
-   * reads the turn record from; asking `workspace.resolve` instead would list
-   * every project's worktrees with `git status` in each, on a clock that runs
-   * with no browser open.
-   */
-  claudeDirs(): { worktreeId: string; cwd: string }[] {
-    return [...this.sessions.values()]
-      .filter((live) => live.record.kind === 'claude' && !live.dead && live.cwd !== '')
-      .map((live) => ({ worktreeId: live.record.worktreeId, cwd: live.cwd }))
-  }
-
   listForWorktree(worktreeId: string): Session[] {
     return this.list().filter((s) => s.worktreeId === worktreeId)
   }
