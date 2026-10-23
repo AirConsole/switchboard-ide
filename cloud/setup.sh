@@ -93,9 +93,38 @@ apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
-if ! command -v node >/dev/null || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
-  log "installing node 22"
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+# Node 22.23.4 / 24.22.1 / 26.12.1 are the October 2026 security releases
+# (CVE-2026-111497 et al.). Checking only major >= 22 left existing VMs on the
+# 22.x build they first booted with when setup.sh re-ran.
+node_ok() {
+  local v="${1-$(command -v node >/dev/null && node -v || true)}" major minor patch
+  IFS=. read -r major minor patch <<<"${v#v}"
+  patch="${patch%%[-+]*}"
+  [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]] || return 1
+  (( (major == 22 && (minor > 23 || (minor == 23 && patch >= 4))) ||
+     (major == 24 && (minor > 22 || (minor == 22 && patch >= 1))) ||
+     (major >= 26 && (major > 26 || minor > 12 || (minor == 12 && patch >= 1))) ))
+}
+
+# Match the installed major (or step an odd release line up to the next LTS/current
+# line) so `apt-get install -y nodejs` always sees a newer candidate version.
+node_track() {
+  local v="${1-$(command -v node >/dev/null && node -v || true)}" major
+  major="${v#v}"
+  major="${major%%.*}"
+  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 25 )); then
+    echo 26
+  elif [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 23 )); then
+    echo 24
+  else
+    echo 22
+  fi
+}
+
+if ! node_ok; then
+  NODE_TRACK=$(node_track)
+  log "installing node ${NODE_TRACK}"
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_TRACK}.x" | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 fi
 corepack enable pnpm >/dev/null 2>&1 || true
