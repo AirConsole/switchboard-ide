@@ -93,9 +93,9 @@ apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
-if ! command -v node >/dev/null || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
-  log "installing node 22"
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+if ! command -v node >/dev/null || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 26 ]; then
+  log "installing node 26"
+  curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 fi
 corepack enable pnpm >/dev/null 2>&1 || true
