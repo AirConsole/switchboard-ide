@@ -124,15 +124,6 @@ const TOGGLES: readonly PanelName[] = ['terminals', 'todo', 'files']
 const PANEL_KEYS: Record<PanelName, string> = { terminals: 'i', todo: 'o', files: 'f' }
 
 /** The same table read the way a keystroke arrives. */
-/**
- * The key that puts a worktree away: the × at the end of its own bar.
- *
- * Not in `PANEL_KEYS`, because it is not a panel -- it opens the dialog that
- * asks whether to sleep or delete. It is in the same handler for the thing they
- * do share, which is that all four act on the window the keyboard is in.
- */
-const AWAY_KEY = 'x'
-
 const PANEL_FOR_KEY = new Map<string, PanelName>(
   Object.entries(PANEL_KEYS).map(([panel, key]) => [key, panel as PanelName]),
 )
@@ -1103,22 +1094,16 @@ const WorktreeTile = ({
       <button
         className="tile__toggle tile__away"
         onClick={onSleep}
-        title={`Put this worktree away (${modChord('X')})`}
+        title="Put this worktree away"
       >
         {/*
-          * Lit with the three letters, because it is a shortcut like they are:
-          * Cmd+X is AWAY_KEY, and the legend's promise is that what lights up
-          * is what the key you are holding would reach. It wears `tile__key`
-          * over the whole glyph rather than a letter inside a word, which is
-          * the same case as a label with no letter to light -- there is nothing
-          * here to dim around it.
-          *
-          * The span is there in both states, like the labels': markup that
-          * changed at the threshold would move the bar when the key went down.
+          * No shortcut, so not lit with the three letters: the legend's
+          * promise is that what lights up is what the held key reaches. It was
+          * Cmd+X once, and that is cut -- taken in the capture phase, it put a
+          * worktree away every time somebody cut text from a file or a dialog
+          * field instead of cutting it.
           */}
-        <span aria-hidden="true" className={keysLit && current ? 'tile__key' : undefined}>
-          ×
-        </span>
+        <span aria-hidden="true">×</span>
       </button>
     </div>
   )
@@ -2481,15 +2466,7 @@ export const Overview = ({
     const open = (event: KeyboardEvent): void => {
       if (!isModHeld(event)) return
       const panel = PANEL_FOR_KEY.get(event.key)
-      /*
-       * X puts the worktree away, which is the fourth control in the same row
-       * and so the fourth key in the same handler: every one of these acts on
-       * the window the keyboard is in, and finding that window is the whole
-       * body below. X because it *is* the ×, which is the only name that
-       * control has.
-       */
-      const away = event.key === AWAY_KEY
-      if (panel === undefined && !away) return
+      if (panel === undefined) return
       // A dialog keeps its keys for the same reason it keeps Cmd+arrow: it is
       // modal, and opening a panel behind the scrim acts on something nobody
       // asked about.
@@ -2512,12 +2489,11 @@ export const Overview = ({
 
       event.preventDefault()
       event.stopPropagation()
-      if (panel === undefined) onSleep(here.id)
-      else onTogglePanel(here.id, panel)
+      onTogglePanel(here.id, panel)
     }
     document.addEventListener('keydown', open, true)
     return () => document.removeEventListener('keydown', open, true)
-  }, [stops, cells, active, onTogglePanel, onSleep])
+  }, [stops, cells, active, onTogglePanel])
 
   /*
    * Keep your place across a resize.
