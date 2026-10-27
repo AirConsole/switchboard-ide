@@ -70,17 +70,35 @@ for candidate in brew apt-get dnf pacman zypper apk; do
 done
 
 # --- what is missing --------------------------------------------------------
-# Node is checked by *version*, not presence: `engines` wants >= 22 and several
-# distributions still ship 18, so "nodejs is installed" is not the question.
+# Check the Node *version*, not only its presence: Debian 12 ships Node 18.
+# NODE_MIN is a full version because 26.11 and older have CVE-2026-111497, a
+# Brotli decoder RCE that 26.12.1 fixes. NODE_MIN must equal `engines` in
+# package.json.
+NODE_MIN="26.12.1"
+
+# node_version_ok <found> <minimum>: return 0 when <found> (such as "v26.12.1")
+# is the same as or newer than <minimum> (such as "26.12.1"). POSIX sh only.
+node_version_ok() {
+  IFS=. read -r f1 f2 f3 <<EOF
+${1#v}
+EOF
+  IFS=. read -r m1 m2 m3 <<EOF
+$2
+EOF
+  # Return 1 for a pre-release suffix, or for empty output from a failed `node -v`.
+  for n in "$f1" "$f2" "$f3"; do
+    case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  done
+  [ "$f1" -ne "$m1" ] && { [ "$f1" -gt "$m1" ]; return; }
+  [ "$f2" -ne "$m2" ] && { [ "$f2" -gt "$m2" ]; return; }
+  [ "$f3" -ge "$m3" ]
+}
+
 NODE_OK=0
 NODE_FOUND=""
 if have node; then
   NODE_FOUND="$(node -v 2>/dev/null || true)"
-  NODE_MAJOR="$(printf '%s' "$NODE_FOUND" | sed 's/^v//; s/\..*//')"
-  case "$NODE_MAJOR" in
-    ''|*[!0-9]*) NODE_OK=0 ;;
-    *) [ "$NODE_MAJOR" -ge 22 ] && NODE_OK=1 ;;
-  esac
+  node_version_ok "$NODE_FOUND" "$NODE_MIN" && NODE_OK=1
 fi
 
 MISSING=""
@@ -92,7 +110,7 @@ MISSING="${MISSING# }"
 
 say "Switchboard install"
 say "  platform   $PLATFORM${PM:+ (}${PM}${PM:+)}"
-say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo '   <- needs 22 or newer')"
+say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo "   <- needs $NODE_MIN or newer")"
 say "  git        $(have git && echo ok || echo missing)"
 say "  tmux       $(have tmux && echo ok || echo 'missing   <- every session lives in one')"
 say "  pnpm       $(have pnpm && echo ok || echo missing)"
@@ -148,13 +166,13 @@ install_pkgs() {
   [ -z "$pkgs" ] && return 0
   case "$PM" in
     brew) brew install $pkgs ;;
-    # Not apt's nodejs: Debian 12 ships 18 and this needs 22, so installing it
+    # Not apt's nodejs: Debian 12 ships 18, which is older than NODE_MIN, so installing it
     # would produce a machine that looks ready and cannot build. Say so instead.
     apt-get)
       for p in $pkgs; do
         if [ "$p" = node ]; then
           say ""
-          say "node: your distribution's package is too old for this (needs 22+)."
+          say "node: the package from your distribution is older than $NODE_MIN."
           say "  use nodesource, nvm, or fnm, then run this again:"
           say "    curl -fsSL https://fnm.vercel.app/install | bash"
           exit 1

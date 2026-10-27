@@ -34,8 +34,8 @@ browser open at all.
 
 ## Install
 
-macOS or Linux. Needs Node 22+, git, tmux, pnpm, and the `claude` CLI on your
-`PATH`.
+macOS or Linux. Needs Node 26.12.1 or newer, git, tmux, pnpm, and the `claude`
+CLI on your `PATH`.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AirConsole/switchboard-ide/master/install.sh | sh
