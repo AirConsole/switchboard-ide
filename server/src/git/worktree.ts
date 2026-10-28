@@ -170,8 +170,28 @@ export const listRawWorktrees = async (root: string): Promise<RawWorktree[]> => 
   return out
 }
 
+/**
+ * A worktree Claude Code made for one of its own subagents (`isolation:
+ * "worktree"`), which belongs to the agent that spawned it rather than to you.
+ *
+ * Measured by spawning two: each lands in `.claude/worktrees/agent-<hex>` on a
+ * branch `worktree-agent-<hex>`, locked "claude agent agent-<hex> (pid …)"
+ * while it runs. One that changed nothing is removed when the subagent ends;
+ * one that changed something is kept -- and **unlocked**, so the lock cannot be
+ * the test, or every leftover would turn up in the row as an asleep worktree
+ * whose window, woken, starts a second Claude on another agent's work. The
+ * directory and the branch together are what both cases share, and asking for
+ * both keeps a branch somebody happened to name `agent-x` in the row.
+ */
+const SUBAGENT_DIR = /^agent-[0-9a-f]+$/
+
+export const isSubagentWorktree = (w: Pick<RawWorktree, 'path' | 'branch'>): boolean => {
+  const dir = basename(w.path)
+  return SUBAGENT_DIR.test(dir) && w.branch === `worktree-${dir}`
+}
+
 export const listWorktrees = async (projectId: string, root: string): Promise<Worktree[]> => {
-  const raw = await listRawWorktrees(root)
+  const raw = (await listRawWorktrees(root)).filter((w) => !isSubagentWorktree(w))
   const mainPath = resolve(root)
   return raw.map((w) => {
     const isMain = resolve(w.path) === mainPath

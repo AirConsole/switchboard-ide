@@ -18,7 +18,9 @@ getting it wrong once.
 A **project** is a registered git repository. Every registered project is open;
 there is no "active" one. A project's **worktrees** are discovered from
 `git worktree list`, never stored, so dropping the IDE on a repo finds its
-worktrees already there.
+worktrees already there -- except the ones Claude Code makes for its own
+subagents, which belong to the agent that spawned them; see
+`isSubagentWorktree`.
 
 A project can also be a **folder of repositories** -- a directory that is not a
 checkout and holds several, for the work that spans them or comes before any of
