@@ -130,6 +130,23 @@ describe('against a real repository', () => {
     expect(feature?.id).toBe(worktreeIdFor(path))
   })
 
+  it("leaves out a Claude Code subagent's worktree, and only that", async () => {
+    /*
+     * Seen on a linked machine: every subagent that left changes behind sat in
+     * the row as an asleep `agent-*` worktree. The shape is the one Claude Code
+     * was measured creating; a kept one is unlocked, so it is not locked here.
+     */
+    const agent = join(repo.path, '.claude', 'worktrees', 'agent-a1c07194671e212a')
+    await addWorktree({ root: repo.path, path: agent, branch: 'worktree-agent-a1c07194671e212a' })
+    // Either half alone is somebody's own naming, and stays.
+    const named = join(repo.path, '.claude', 'worktrees', 'agent-beef')
+    await addWorktree({ root: repo.path, path: named, branch: 'agent-beef' })
+
+    expect(await listRawWorktrees(repo.path)).toHaveLength(3)
+    const names = (await listWorktrees('p-1', repo.path)).map((w) => w.name)
+    expect(names).toEqual(['main', 'agent-beef'])
+  })
+
   it('parses a worktree whose path contains a newline', async () => {
     /*
      * The reason the parse is `-z`. The line-oriented form prints the path raw
