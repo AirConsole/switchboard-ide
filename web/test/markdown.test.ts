@@ -148,6 +148,19 @@ describe('Markdown', () => {
     expect(root.textContent).not.toContain('sh')
   })
 
+  it('keeps every line of a block nested in a list item or a quote', () => {
+    /*
+     * Nested, the parser hands over one CodeText per line, and the first was
+     * all that was drawn: a setup guide's four-line script under a bullet read
+     * as `#!/bin/bash` alone. The container's indent is not the code's.
+     */
+    const { root } = draw(
+      '- the script:\n\n  ```bash\n  #!/bin/bash\n  set -e\n    indented\n  ```\n\n> ```\n> a\n> b\n> ```\n',
+    )
+    const blocks = [...root.querySelectorAll('pre')].map((pre) => pre.textContent)
+    expect(blocks).toEqual(['#!/bin/bash\nset -e\n  indented', 'a\nb'])
+  })
+
   it('drops a definition, which is how the link above it was written', () => {
     const { root } = draw('[a][1]\n\n[1]: https://example.com\n')
     expect(root.textContent).toBe('a')

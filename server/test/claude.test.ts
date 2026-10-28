@@ -561,6 +561,28 @@ describe('turnState', () => {
     expect(await turnState(cwd)).toBe('between-turns')
   })
 
+  it('is between-turns after compacting while idle', async () => {
+    /*
+     * Measured on builders: Claude Code compacted on its own after the turn,
+     * and its summary -- a plain user record flagged isCompactSummary -- read
+     * as a prompt, so the window never went green.
+     */
+    const cwd = freshCwd()
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('do the thing'),
+      TURN_END,
+      { type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted' },
+      {
+        type: 'user',
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+        message: { content: 'This session is being continued from a previous conversation.' },
+      },
+      { type: 'system', subtype: 'informational', content: 'Compacted while idle' },
+    ])
+    expect(await turnState(cwd)).toBe('between-turns')
+  })
+
   it('is in-turn after a slash command that runs a turn', async () => {
     // `/plan <task>` writes command output too, and then runs; no caveat.
     const cwd = freshCwd()

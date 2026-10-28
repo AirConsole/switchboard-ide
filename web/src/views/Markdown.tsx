@@ -292,10 +292,22 @@ const image = (node: SyntaxNode, ctx: Ctx, key: number): React.ReactNode => {
   )
 }
 
-/** The lines of a code block: its `CodeText`, or the fence's inside. */
+/**
+ * The lines of a code block: its `CodeText`, or the fence's inside.
+ *
+ * Every `CodeText`, not the first. At the top level the parser gives a block
+ * one, but inside a list item or a quote it gives one per line -- each ending
+ * in its newline, with the container's indent left out between them -- so
+ * reading the first drew a four-line setup script nested under a bullet as its
+ * `#!/bin/bash` alone. Measured on a real setup guide, which was rewritten
+ * unindented to get round it.
+ */
 const codeOf = (node: SyntaxNode, ctx: Ctx): string => {
-  const body = child(node, 'CodeText')
-  return body === null ? '' : src(body, ctx)
+  let out = ''
+  for (let it = node.firstChild; it !== null; it = it.nextSibling) {
+    if (it.name === 'CodeText') out += src(it, ctx)
+  }
+  return out
 }
 
 /**
