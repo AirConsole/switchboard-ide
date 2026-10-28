@@ -127,7 +127,7 @@ const readTail = async (path: string): Promise<string | null> => {
  */
 type Mark =
   /* `steer`: said mid-turn, so it follows the task and never replaces it. */
-  | { kind: 'prompt'; text: string; steer?: true }
+  | { kind: 'prompt'; text: string; steer?: true; command?: true }
   | { kind: 'recorded-prompt'; text: string }
   | { kind: 'turn-end' }
   | null
@@ -313,7 +313,7 @@ const markOf = (line: string): Mark => {
   const said = content.replace(PASTE_TAG, '')
   if (said.trim() === '') return null
   const command = readCommand(said)
-  if (command !== null) return { kind: 'prompt', text: command }
+  if (command !== null) return { kind: 'prompt', text: command, command: true }
   if (INJECTED.test(said)) return null
   return { kind: 'prompt', text: said }
 }
@@ -332,9 +332,39 @@ const newestMark = (text: string): { kind: 'prompt' | 'turn-end' } | null => {
     if (line === undefined) continue
     const mark = markOf(line)
     if (mark === null || mark.kind === 'recorded-prompt') continue
+    if (mark.kind === 'prompt' && mark.command === true && ranLocally(lines, index)) continue
     return mark
   }
   return null
+}
+
+/**
+ * Whether the slash command on line `at` was one Claude Code answered itself.
+ *
+ * `/login`, `/effort`, `/model` and the rest never reach the model, so they
+ * start no turn and no `turn_duration` follows them -- and read as a prompt,
+ * one of them made the newest mark a submission nobody was answering. A window
+ * that had finished its turn and then had `/login` typed into it stayed grey
+ * for good: `in-turn` for thirty seconds, `unknown` after, and the screen alone
+ * cannot call it done because the command's own `⎿ Login successful` sits
+ * after the done line.
+ *
+ * The harness says which kind it was, one record earlier: a command it runs
+ * itself is preceded by a `<local-command-caveat>` user record. Surveyed over
+ * every transcript on this machine, 1,722 commands: all 1,704 behind a caveat
+ * (`/usage`, `/login`, `/model`, `/clear`, `/plugin`, an empty `/plan` ...) ran
+ * no turn, and every one that did run one -- `/plan <task>`, `/goal`, a
+ * skill -- had none. Not `<local-command-stdout>`, which looks like the obvious
+ * signal and is wrong: `/plan <task>` writes "Enabled plan mode" there and then
+ * runs the turn.
+ */
+const ranLocally = (lines: string[], at: number): boolean => {
+  for (let index = at - 1; index >= 0 && index >= at - 4; index--) {
+    const line = lines[index] ?? ''
+    if (!/"type"\s*:\s*"user"/.test(line)) continue
+    return line.includes('<local-command-caveat>')
+  }
+  return false
 }
 
 /**

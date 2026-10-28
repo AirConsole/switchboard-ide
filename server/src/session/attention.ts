@@ -333,6 +333,15 @@ const CHROME: RegExp[] = [
   /^\s*⚠/,
   /\bTip:/,
   /\bUpdate (installed|available)\b/,
+  // The rating survey Claude Code shows after a turn, answered by typing the
+  // digit into the input box -- so the box stays and nothing is blocked. Its
+  // question opens a block like a message does, and read as one it made a
+  // finished window busy. The wordings are Claude Code v2.1.306's own strings,
+  // `How is Claude doing this session? (optional)` over `1: Bad 2: Fine
+  // 3: Good 0: Dismiss`; the other notices drawn the same way end their option
+  // row in `0: Dismiss` too.
+  /How is Claude doing this session\?/,
+  /\b1: \S.*\b0: Dismiss\s*$/,
   // The box's own rules, and the mode hint under it.
   /^[─╌\s]*$/,
   /shift\+tab to cycle/,

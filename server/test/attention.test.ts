@@ -395,6 +395,21 @@ describe('screenState', () => {
     expect(screenState(away)).toBe('done')
   })
 
+  it('steps over the rating survey shown after a turn', () => {
+    // Its question opens a block, so read as a message it made a finished
+    // window busy; the strings are the ones in Claude Code v2.1.306.
+    const surveyed = screen(
+      '● Did the thing',
+      '✻ Baked for 2s · done 3:01 PM',
+      '',
+      '● How is Claude doing this session? (optional)',
+      '  1: Bad    2: Fine   3: Good   0: Dismiss',
+      INPUT,
+      HINT,
+    )
+    expect(screenState(surveyed)).toBe('done')
+  })
+
   it('steps over chrome above the box', () => {
     const withChrome = screen(
       '● Did the thing',
