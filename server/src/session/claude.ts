@@ -249,6 +249,7 @@ const markOf = (line: string): Mark => {
     subtype?: unknown
     lastPrompt?: unknown
     isMeta?: unknown
+    isCompactSummary?: unknown
     isSidechain?: unknown
     message?: { content?: unknown }
   }
@@ -290,6 +291,18 @@ const markOf = (line: string): Mark => {
   if (record.type !== 'user') return null
   // A subagent's own transcript, or something the harness injected.
   if (record.isMeta === true || record.isSidechain === true) return null
+  /*
+   * The summary a compaction leaves behind, "This session is being continued
+   * from a previous conversation...", written as a plain user record with
+   * nothing but this flag to say nobody typed it. Read as a prompt, a session
+   * that compacted while idle -- which Claude Code now does on its own, before
+   * the prompt cache expires -- was mid-turn for thirty seconds and unknown for
+   * good after, and its window never went green: measured on builders, whose
+   * screen has `● Compacted while idle` below the done line, so the screen
+   * cannot settle it either. A compaction inside a turn loses nothing by this:
+   * the prompt that started the turn is still the newest mark behind it.
+   */
+  if (record.isCompactSummary === true) return null
   const content = record.message?.content
   /*
    * An array is tool results -- with one exception worth digging out, which is
