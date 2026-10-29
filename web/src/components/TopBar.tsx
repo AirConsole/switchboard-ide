@@ -150,6 +150,7 @@ const Group = ({
   todos,
   activeId,
   current,
+  lastIn,
   onRevealProject,
   onWake,
   onReveal,
@@ -159,6 +160,8 @@ const Group = ({
   todos: WorktreeTodo[]
   /** Holds the row or its own pane -- see `isCurrent`. */
   current: boolean
+  /** The worktree of this project you were last in, if you have been in one. */
+  lastIn: string | undefined
 } & Pick<
   TopBarProps,
   'activeId' | 'onRevealProject' | 'onWake' | 'onReveal'
@@ -250,7 +253,24 @@ const Group = ({
         ]
           .filter(Boolean)
           .join(' ')}
-        onClick={() => onRevealProject(project)}
+        onClick={(event) => {
+          /*
+           * Folded away, the head is standing in for its tabs, so it goes
+           * where one of them would: the worktree you were last in here. Its
+           * own pane is what it opens while the tabs are showing beside it.
+           *
+           * Asked of the stylesheet at the moment of the click rather than
+           * worked out from the rung, because which rungs fold which projects
+           * is CSS's to say (`data-stage` and `tabgroup--current`) and the
+           * rung is written after React has run -- a second copy of that rule
+           * here would be the one that went stale.
+           */
+          const tab = event.currentTarget.parentElement?.querySelector('.tab')
+          const folded = tab != null && getComputedStyle(tab).display === 'none'
+          if (folded && lastIn !== undefined && awake.some((w) => w.id === lastIn)) {
+            onReveal(lastIn)
+          } else onRevealProject(project)
+        }}
         /* True at every rung, because the tabs that used to say it are the
            first thing the bar gives up -- and a title that described only the
            expanded bar would be a lie exactly when it was the only thing left
@@ -262,7 +282,8 @@ const Group = ({
           // to holds only the way out.
           project.kind === 'folder'
             ? "Click for this folder's window, and closing it"
-            : "Click for this project's worktrees, a new one, and closing it"
+            : "Click for this project's worktrees, a new one, and closing it" +
+              (lastIn === undefined ? '' : ' -- or, while its tabs are folded away, for the worktree you were last in')
         }`}
       >
         {/*
@@ -392,6 +413,17 @@ export const TopBar = ({
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
   const signOut = useStore((state) => state.signOut)
+  /*
+   * The worktree you were last in, by project, for a head whose tabs are
+   * folded away -- see its click. Written during render, since it is read in
+   * the same one and nothing renders differently for it changing; a ref
+   * rather than state for the same reason. Not kept across a reload: the row
+   * forgets where you were too.
+   */
+  const lastIn = useRef(new Map<string, string>())
+  for (const group of groups) {
+    if (group.awake.some((w) => w.id === activeId)) lastIn.current.set(group.project.id, activeId as string)
+  }
   const bar = useRef<HTMLElement | null>(null)
   const strip = useRef<HTMLElement | null>(null)
   /*
@@ -556,6 +588,7 @@ export const TopBar = ({
           todos={todos}
           activeId={activeId}
           current={isCurrent(group, activeId)}
+          lastIn={lastIn.current.get(group.project.id)}
           onRevealProject={onRevealProject}
           onWake={onWake}
           onReveal={onReveal}
