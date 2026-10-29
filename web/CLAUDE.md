@@ -336,6 +336,14 @@ The pieces, and why each is the way it is:
   exactly what collapsing gives up. `.tabgroup--current` is "holds the row or is
   its own pane", and it is also what rung 3 uses to decide which project keeps
   its tabs.
+- **Collapsed, the head goes where its tabs would.** Clicking a head whose tabs
+  are folded away goes to the worktree of that project you were last in, not
+  to the project's pane: the head is standing in for those tabs, and the tab
+  you would have clicked is the one you left. With the tabs showing, or before
+  you have been in any of its worktrees, it opens the pane as it always has.
+  Whether they are folded is asked of the stylesheet at the click, not worked
+  out from the rung, because which rungs fold which projects is CSS's to say.
+  The memory is the top bar's and does not survive a reload.
 - **A tab means "take me to this agent", and now keeps that promise.** It closes
   whatever panel that worktree has open and lands the keyboard in Claude. It
   used to ask for Claude's pane and nothing more, which on a narrow window asked
