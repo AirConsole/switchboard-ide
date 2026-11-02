@@ -90,6 +90,16 @@ export const startDispatcher = (opts: {
       )
       .sort((a, b) => (a.queuedAt ?? 0) - (b.queuedAt ?? 0))[0]
 
+  /**
+   * What Claude Code shows in the box instead of a long paste: the paste
+   * collapsed to a placeholder, with none of its text. Measured on 2.1:
+   * seven lines gave `[Pasted text #1 +6 lines]`, one 1500-character line
+   * `[Pasted text #2]`. Matching the opening alone handed every long todo
+   * back as "did not appear". Anchored, so it is the whole box -- a dialog
+   * row never reads like this.
+   */
+  const COLLAPSED = /^\[Pasted text #\d+(?: \+\d+ lines?)?\]$/
+
   /** The first line of the prompt, which is what the box should be showing. */
   const opening = (prompt: string): string =>
     (prompt.split('\n')[0] ?? '').trim().slice(0, 24)
@@ -133,12 +143,6 @@ export const startDispatcher = (opts: {
     await new Promise((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS))
 
     /*
-     * Look before submitting. The paste is in the box or it is not; if the
-     * screen does not show it, sending Return would submit whatever *is* there.
-     * Verified as "the box is no longer empty" rather than by matching the text,
-     * because Claude Code collapses a long paste to `[Pasted text +N lines]`.
-     */
-    /*
      * Look again before pressing Return, and look harder than "is something
      * there".
      *
@@ -150,7 +154,7 @@ export const startDispatcher = (opts: {
      * trust dialog preselects **No, exit**.
      *
      * Now: no dialog on screen, and the box is showing the beginning of this
-     * prompt. Anything else and the Return is withheld, which leaves a paste
+     * prompt, or the placeholder a long paste collapses to. Anything else and the Return is withheld, which leaves a paste
      * sitting in a box for a human to deal with -- recoverable, unlike a
      * Return.
      */
@@ -161,7 +165,7 @@ export const startDispatcher = (opts: {
       after !== undefined &&
       !looksLikePrompt(after.tail) &&
       box !== null &&
-      (start === '' ? box !== '' : box.includes(start))
+      (start === '' ? box !== '' : box.includes(start) || COLLAPSED.test(box))
     if (!landed) {
       store.patchTodo(todo.id, {
         dispatchingAt: undefined,
