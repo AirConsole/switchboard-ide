@@ -350,17 +350,33 @@ describe('the dispatcher', () => {
     expect(fake.typed).toEqual(['\x1b[200~rework the bar\x1b[201~', '\r'])
   })
 
-  it('accepts the summary Claude collapses a long paste to', async () => {
-    // Verified as "the box is showing this prompt's opening", and Claude Code
-    // renders a long paste as `[Pasted text +N lines]` -- so the opening is
-    // matched against a box that may be showing either.
-    const prompt = `${'a'.repeat(40)}\nand more`
-    store.addTodo(todo({ id: 't-1', prompt, queuedAt: 1 }))
+  it('accepts the placeholder Claude collapses a long paste to', async () => {
+    /*
+     * The box then shows none of the prompt's text, so matching its opening
+     * handed every long todo back as "did not appear in Claude". Measured
+     * against a real Claude Code 2.1: a seven-line paste showed
+     * `❯ [Pasted text #1 +6 lines]`, one 1500-character line
+     * `❯ [Pasted text #2]`.
+     */
+    const sends = async (prompt: string, shown: string): Promise<number> => {
+      stop?.()
+      store.removeTodo('t-1')
+      store.addTodo(todo({ id: 't-1', prompt, queuedAt: 1 }))
+      const fake = fakeEngine({ onPaste: () => fake.setScreen(`● work\n❯ ${shown}`) })
+      await run(fake.engine)
+      return fake.typed.length
+    }
+    expect(await sends('fix the bar\n'.repeat(6) + 'and the rest', '[Pasted text #18 +6 lines]')).toBe(2)
+    expect(await sends('word '.repeat(300), '[Pasted text #2]')).toBe(2)
+  })
+
+  it('still withholds the Return when the placeholder is not the whole box', async () => {
+    store.addTodo(todo({ id: 't-1', prompt: 'fix the bar\nand more', queuedAt: 1 }))
     const fake = fakeEngine({
-      onPaste: () => fake.setScreen(`● work\n❯ ${'a'.repeat(40)}`),
+      onPaste: () => fake.setScreen('● work\n❯ half a draft [Pasted text #3 +1 lines]'),
     })
     await run(fake.engine)
-    expect(fake.typed).toHaveLength(2)
+    expect(fake.typed).toHaveLength(1)
   })
 
   it('keeps the todo when the Return itself goes nowhere', async () => {
