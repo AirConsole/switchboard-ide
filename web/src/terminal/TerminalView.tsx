@@ -10,6 +10,7 @@ import { BAR_KEYS, ctrlByte, type BarKey } from './keyBar.js'
 import { enterPutsKeyboardAway, softKeys, useSoftKeyboard } from './softKeyboard.js'
 import { RowStep } from '../views/rowStep.js'
 import { isHoverReport } from './mouseReports.js'
+import { brokenUrlsAt } from './brokenUrls.js'
 import '@xterm/xterm/css/xterm.css'
 
 /**
@@ -195,6 +196,26 @@ export const TerminalView = ({
 
     const fit = new FitAddon()
     term.loadAddon(fit)
+    // Before the addon: of two providers with a link under the pointer, xterm
+    // takes the one registered first, and the addon's is the first half of a
+    // URL Claude Code broke across lines -- see brokenUrls.ts.
+    term.registerLinkProvider({
+      provideLinks: (y, callback) => {
+        const buffer = term.buffer.active
+        const row = (at: number) => {
+          const line = buffer.getLine(at - 1)
+          if (line === undefined) return undefined
+          const last = line.getCell(term.cols - 1)?.getChars() ?? ''
+          return { text: line.translateToString(true), full: last.trim() !== '', wrapped: line.isWrapped }
+        }
+        const links = brokenUrlsAt(row, y, term.cols).map(({ url, start, end }) => ({
+          range: { start, end },
+          text: url,
+          activate: () => void window.open(url, '_blank', 'noopener'),
+        }))
+        callback(links.length > 0 ? links : undefined)
+      },
+    })
     term.loadAddon(new WebLinksAddon())
     const unicode = new Unicode11Addon()
     term.loadAddon(unicode)

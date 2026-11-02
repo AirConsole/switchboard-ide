@@ -1314,6 +1314,16 @@ Only plain-text URLs are clickable in a Claude pane, and that is tmux, not this:
 3.3a drops OSC 8 hyperlinks (`hyperlinks` is a 3.4 terminal feature, see
 `server/tmux.conf`), so the link never reaches the browser, only its text.
 
+**A URL Claude Code broke across lines is one link.** Claude Code writes its
+own line breaks, indenting each continuation to its margin, so a URL longer
+than the room left on its line arrives as two unrelated lines -- not
+`isWrapped`, and `capture-pane -J` keeps them apart -- and the web-links addon
+linked the first half alone: a click opened a URL cut off at the right edge.
+`terminal/brokenUrls.ts` joins a URL that runs into the last cell with the
+margin-then-URL line under it, and is registered *before* the addon because
+xterm takes the first provider's link where two overlap. A soft wrap is still
+the addon's.
+
 **The wheel never becomes keystrokes.** On the alternate screen with no tracking
 mode, xterm.js translates a notch into an Up or Down arrow and sends it as
 input; in Claude, Up recalls the last prompt. `attachCustomWheelEventHandler`
