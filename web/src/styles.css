@@ -1984,7 +1984,6 @@ button {
   background: var(--level-lit);
 }
 
-.tile--current .tile__project,
 .tile--current .tile__slash,
 .tile--current .tile__branch,
 .tile--current .tile__prompt,
@@ -2255,24 +2254,30 @@ button {
 }
 
 /*
- * The project a worktree belongs to, said in front of its name.
+ * The project a worktree belongs to, said in front of its name -- and the
+ * larger of the two.
  *
- * Dimmer and smaller than the name, with a slash between them, so the pair
- * reads as one address whose second half is the part you were looking for.
+ * The project is what you place a window by first: with several open, which
+ * project this is decides where it sits, and the worktree is which one of
+ * those. So the project takes the title's size and weight and the worktree
+ * steps down to 13px (below), both in --bone, with a slash between them so the
+ * pair still reads as one address. It was 11px of --graphite-dim, the metadata
+ * grey, and too faint to say which project a window belonged to at all.
  */
 .tile__project {
-  font-size: 11px;
-  color: var(--graphite-dim);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bone);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Shrinks before the worktree's own name does: with the bar tight, the half
-     you already know is the half that can go. */
+  /* Shrinks before the worktree's own name does: with the bar tight, the
+     project is the half the windows beside it are already saying. */
   flex-shrink: 8;
 }
 
 .tile__slash {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--graphite-dim);
   /* Pulled in on both sides: the label's 8px gap is the spacing between two
      names, and this is punctuation inside one address. */
@@ -2289,7 +2294,8 @@ button {
  * work: --bone is already the brightest the palette has, and amber belongs to
  * attention alone. So it is carried by size and weight, with the branch and
  * dirty count dropping to the same 11px as the status label so the gap between
- * a title and its metadata is unmistakable.
+ * a title and its metadata is unmistakable. Behind a project it shares the
+ * title with it, and the project takes the larger half -- see `.tile__project`.
  */
 .tile__name {
   font-size: 15px;
@@ -2298,6 +2304,13 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Behind a project, the second half of the address. Alone -- the main
+   checkout, whose name is the project's -- it keeps the title's size. */
+.tile__slash + .tile__name {
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .tile__branch {
