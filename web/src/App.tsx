@@ -8,7 +8,15 @@ import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
 import { CloseProjectDialog } from './components/CloseProjectDialog.js'
 import { RemoveWorktreeDialog } from './components/RemoveWorktreeDialog.js'
-import { MACHINE_KEY, Overview, WELCOME_KEY, projectKey, type PaneKind } from './views/Overview.js'
+import {
+  MACHINE_KEY,
+  Overview,
+  WELCOME_KEY,
+  isMachineKey,
+  machineKeyFor,
+  projectKey,
+  type PaneKind,
+} from './views/Overview.js'
 import { useWakeLock } from './wakeLock.js'
 import { ancestorsOf } from './views/FilesPane.js'
 import { SleepWorktreeDialog, type SleepOptions } from './components/SleepWorktreeDialog.js'
@@ -207,7 +215,7 @@ export const App = (): React.ReactElement => {
    */
   useEffect(() => {
     const where = failure?.where
-    if (where === undefined || where === null || where === MACHINE_KEY) return
+    if (where === undefined || where === null || isMachineKey(where)) return
     if (!worktrees.some((worktree) => worktree.id === where)) setFailure(null)
   }, [failure, worktrees, setFailure])
 
@@ -462,6 +470,11 @@ export const App = (): React.ReactElement => {
         ? null
         : id === MACHINE_KEY
           ? 'machine'
+          : // A second terminal's window: back to the machine's own, which
+            // is the one sure to be there -- its shell may not have outlived
+            // the reload's absence, and its window goes with it.
+            isMachineKey(id)
+            ? 'machine'
           : groups.some((group) => projectKey(group.project.id) === id)
             ? 'project'
             : rowWorktrees.some((worktree) => worktree.id === id)
@@ -470,7 +483,7 @@ export const App = (): React.ReactElement => {
     const first = rowWorktrees[0]
     if (pane === null && first === undefined) return
     started.current = true
-    if (id !== null && pane !== null) reveal(id, pane)
+    if (id !== null && pane !== null) reveal(isMachineKey(id) ? MACHINE_KEY : id, pane)
     else if (first !== undefined) reveal(first.id)
     // `reveal` is rebuilt every render and this fires once, so it is not a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -578,6 +591,26 @@ export const App = (): React.ReactElement => {
       .createSession({ worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
       .then(refresh)
       .catch(failIn(MACHINE_KEY))
+  }
+
+  /**
+   * Another terminal on the machine, in a window of its own at the far end of
+   * the row, which is then where you are: you asked for it to type in it.
+   */
+  const anotherMachineTerminal = (): void => {
+    void api
+      .createSession({ worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
+      .then(async (session) => {
+        await refresh()
+        reveal(machineKeyFor(session.id), 'machine')
+      })
+      .catch(failIn(MACHINE_KEY))
+  }
+
+  /** End one of the machine's later terminals, and go back to its first. */
+  const closeMachineTerminal = (sessionId: string): void => {
+    if (active?.id === machineKeyFor(sessionId)) reveal(MACHINE_KEY, 'machine')
+    void api.killSession(sessionId).then(refresh).catch(failIn(MACHINE_KEY))
   }
 
   const newTerminal = (worktreeId: string): void => {
@@ -1112,6 +1145,8 @@ export const App = (): React.ReactElement => {
         onDismissFailure={() => setFailure(null)}
         departing={departing}
         onMachineTerminal={machineTerminal}
+        onAnotherMachineTerminal={anotherMachineTerminal}
+        onCloseMachineTerminal={closeMachineTerminal}
         onOpenProject={() => setShowOpenProject(true)}
         worktrees={rowWorktrees}
         projects={projects}

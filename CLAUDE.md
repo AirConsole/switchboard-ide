@@ -48,8 +48,9 @@ continues the conversation it was having rather than starting a new one. Which
 of the two it is belongs to the worktree, recorded on the machine it lives on,
 so every browser and every machine linking that one shows the same answer.
 
-**The row ends with the machine itself**: one shell in your home directory,
-belonging to no worktree and no project. It is where the work that comes before
+**The row ends with the machine itself**: a shell in your home directory,
+belonging to no worktree and no project -- and more of them, each a window to
+its right, when you want two side by side. It is where the work that comes before
 a worktree happens -- cloning the repository you are about to open, looking at a
 disk, killing something -- and before it existed a fresh install had nowhere to
 type at all, since every other terminal here belongs to a worktree. With nothing

@@ -20,7 +20,7 @@ import { TaskStrip } from '../components/TaskStrip.js'
 import {
   claudeSession,
   isRunning,
-  machineSession,
+  machineSessions,
   terminalSessions,
   worktreeTodos,
   type TodoView,
@@ -402,6 +402,15 @@ export const projectKey = (projectId: string): string => `project:${projectId}`
  */
 export const MACHINE_KEY = 'machine'
 export const WELCOME_KEY = 'welcome'
+
+/**
+ * A second or later terminal on the machine: a window of its own, to the right
+ * of the machine's, keyed by its session so it keeps its place while the ones
+ * beside it come and go. See `machineSessions`.
+ */
+export const machineKeyFor = (sessionId: string): string => `${MACHINE_KEY}:${sessionId}`
+export const isMachineKey = (key: string | null | undefined): boolean =>
+  key === MACHINE_KEY || (key?.startsWith(`${MACHINE_KEY}:`) ?? false)
 
 /**
  * Whether the modifier is down right now -- Cmd on a Mac, Alt elsewhere.
@@ -1419,6 +1428,10 @@ export interface OverviewProps {
   departing: ReadonlySet<string>
   /** Start the machine's own terminal; it has none. */
   onMachineTerminal: () => void
+  /** Another terminal on the machine, in a window of its own at the far end. */
+  onAnotherMachineTerminal: () => void
+  /** End one of the machine's terminals; its window goes with it. */
+  onCloseMachineTerminal: (sessionId: string) => void
   /** The open-project dialog, for the welcome window's button. */
   onOpenProject: () => void
   /** A worktree was just made in one of the row's project panes. */
@@ -1495,6 +1508,8 @@ export const Overview = ({
   onDismissFailure,
   departing,
   onMachineTerminal,
+  onAnotherMachineTerminal,
+  onCloseMachineTerminal,
   onOpenProject,
   onCreated,
   groups,
@@ -1865,9 +1880,19 @@ export const Overview = ({
    * or after the work rather than during it. It is always here, so the row's
    * far end is a fixed thing you can learn.
    */
+  const onMachine = machineSessions(sessions)
   push(MACHINE_KEY, null, null, [
     { kind: 'machine', key: MACHINE_KEY, units: Math.min(PANE_UNITS.machine, units) },
   ])
+  /*
+   * Its other terminals, each a window to its right rather than a tab: this is
+   * a place you go to do one thing, and two of those side by side -- a build
+   * in one, a `top` in the other -- is what a second one is for.
+   */
+  for (const session of onMachine.slice(1)) {
+    const key = machineKeyFor(session.id)
+    push(key, null, null, [{ kind: 'machine', key, units: Math.min(PANE_UNITS.machine, units) }])
+  }
   const totalUnits = next
   /*
    * The far end is a resting place whether or not a pane begins there.
@@ -2667,24 +2692,27 @@ export const Overview = ({
                  * the nearest `data-pane`, which both the bar segments and the
                  * pane bodies carry.
                  */
-                onFocus={
-                  worktree === null
-                    ? undefined
-                    : (event) => {
-                        const key = (event.target as HTMLElement)
-                          .closest('[data-pane]')
-                          ?.getAttribute('data-pane')
-                        const pane = slot.data.panes.find((one) => one.key === key)
-                        onActivate(
-                          worktree.id,
-                          pane === undefined || pane.kind === 'project' ? 'claude' : pane.kind,
-                        )
-                        // Not for a tile on its way out: it is held at its old
-                        // place by the motion, and its `at` names a run of the
-                        // row the rest of the windows have already closed over.
-                        if (!slot.leaving) revealTile(slot.data)
-                      }
-                }
+                onFocus={(event) => {
+                  // A window that belongs to no worktree -- the machine's, a
+                  // project's -- says where you are from its own pane, so here
+                  // it only needs bringing over. It used to get nothing, and a
+                  // click into the machine's terminal hanging off the edge
+                  // left it hanging there.
+                  if (worktree !== null) {
+                    const key = (event.target as HTMLElement)
+                      .closest('[data-pane]')
+                      ?.getAttribute('data-pane')
+                    const pane = slot.data.panes.find((one) => one.key === key)
+                    onActivate(
+                      worktree.id,
+                      pane === undefined || pane.kind === 'project' ? 'claude' : pane.kind,
+                    )
+                  }
+                  // Not for a tile on its way out: it is held at its old
+                  // place by the motion, and its `at` names a run of the
+                  // row the rest of the windows have already closed over.
+                  if (!slot.leaving) revealTile(slot.data)
+                }}
                 className={slot.leaving ? 'slot slot--leaving' : 'slot'}
                 // Its own width either way; a closing tile is taken to nothing
                 // by the keyframe, which is the only thing that can animate a
@@ -2705,28 +2733,35 @@ export const Overview = ({
                    * are told apart by the key rather than by asking a cell what
                    * it is not.
                    */}
-                  {slot.key === MACHINE_KEY ? (
+                  {isMachineKey(slot.key) ? (
                     <div
                       className={
                         here?.id === slot.key ? 'tile__pane--here slot__machine' : 'slot__machine'
                       }
-                      data-pane={paneKey(MACHINE_KEY, 'machine')}
-                      onFocus={() => onActivate(MACHINE_KEY, 'machine')}
+                      data-pane={paneKey(slot.key, 'machine')}
+                      onFocus={() => onActivate(slot.key, 'machine')}
                     >
                       {((h) =>
                         h === null ? null : stepHintFor(h.dir, h.pane, h.teaching))(
                         hintFor(slot.key),
                       )}
                       <MachineTile
-                        failure={failure?.where === MACHINE_KEY ? failure : null}
+                        failure={failure?.where === slot.key ? failure : null}
                         onDismissFailure={onDismissFailure}
-                        session={machineSession(sessions)}
+                        session={
+                          slot.key === MACHINE_KEY
+                            ? onMachine[0]
+                            : onMachine.find((one) => machineKeyFor(one.id) === slot.key)
+                        }
+                        extra={slot.key !== MACHINE_KEY}
                         fontSize={TERMINAL_FONT_SIZE}
                         scroller={gridRef}
                         focus={scrollTo?.id === slot.key && scrollTo.focus ? scrollTo.nonce : null}
-                        current={active?.id === MACHINE_KEY}
+                        current={active?.id === slot.key}
                         onStart={onMachineTerminal}
-                        onReveal={() => onReveal(MACHINE_KEY, 'machine')}
+                        onAnother={onAnotherMachineTerminal}
+                        onClose={onCloseMachineTerminal}
+                        onReveal={() => onReveal(slot.key, 'machine')}
                       />
                     </div>
                   ) : slot.key === WELCOME_KEY ? (

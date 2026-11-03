@@ -4,7 +4,7 @@ import type { ProjectGroup } from '../App.js'
 import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
 import { UsageBars, useUsage } from './UsageBars.js'
 import { LinkIcon } from './LinkIcon.js'
-import { MACHINE_KEY, projectKey } from '../views/Overview.js'
+import { isMachineKey, projectKey } from '../views/Overview.js'
 import { PanelIcon } from './PanelIcon.js'
 import { useStore } from '../store.js'
 import {
@@ -621,7 +621,7 @@ export const TopBar = ({
       */}
     <button
       className={
-        activeId === MACHINE_KEY ? 'topbar__signout topbar__machine--on' : 'topbar__signout'
+        isMachineKey(activeId) ? 'topbar__signout topbar__machine--on' : 'topbar__signout'
       }
       onClick={onRevealMachine}
       title="A terminal on this machine"

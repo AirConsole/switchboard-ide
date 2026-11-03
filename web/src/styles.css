@@ -2541,6 +2541,12 @@ button {
   padding: 0 12px;
 }
 
+/* Flush with the bar's far edge and its full height, as on a worktree's. */
+.tile--machine .tile__controls {
+  align-self: stretch;
+  margin-right: -12px;
+}
+
 .tile--machine .tile__seg {
   display: flex;
   align-items: center;
