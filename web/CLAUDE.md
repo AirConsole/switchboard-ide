@@ -63,7 +63,12 @@ now.
 (`UsageRings`). One ring per limit in the order `/usage` reports them -- the
 session outside, the week, and the model with its own allowance (Fable) in the
 middle -- each an outline that fills clockwise from twelve, which is the shape
-Claude's own web app gives a limit. 28px of SVG in a 49px button that is the
+Claude's own web app gives a limit. **One set per Claude account**: this
+machine's, then each linked machine signed in to a different one, 8px apart --
+the server leaves out machines that repeat an account (see `server/CLAUDE.md`),
+so every machine on one subscription is still one set. With more than one, the
+panel names each machine above its rows and the title prefixes each line with
+it. 28px of SVG a set, in a button (49px for one set) that is the
 bar's full height, so the target is the bar's and not the ring's. The rings
 are flat-ended: a round cap reaches half a stroke past each end, and on the
 innermost ring, 22 units round, that is 14% the reading would claim and not

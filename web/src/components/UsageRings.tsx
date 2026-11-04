@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Usage } from '@switchboard/shared'
+import type { MachineUsage, Usage } from '@switchboard/shared'
 import { api } from '../api.js'
 import { useAnchoredMenu } from './useAnchoredMenu.js'
 
@@ -15,14 +15,14 @@ import { useAnchoredMenu } from './useAnchoredMenu.js'
  */
 const USAGE_POLL_MS = 5 * 60 * 1000
 
-export const useUsage = (): Usage | null => {
-  const [usage, setUsage] = useState<Usage | null>(null)
+export const useUsage = (): MachineUsage[] | null => {
+  const [usage, setUsage] = useState<MachineUsage[] | null>(null)
   useEffect(() => {
     let live = true
     const read = (): void => {
       if (document.hidden) return
       void api
-        .usage()
+        .usageMachines()
         .then((next) => {
           if (live) setUsage(next)
         })
@@ -107,6 +107,44 @@ const RING_SIZE = 28
 const RING_STROKE = 3
 const RING_RADII = [12.5, 8.5, 4.5]
 
+/** One machine's rings: the limits nested, outermost first. */
+const Rings = ({ usage }: { usage: Usage }): React.ReactElement => {
+  const center = RING_SIZE / 2
+  return (
+    <svg
+      className={`usage__rings${usage.error === undefined ? '' : ' usage--stale'}`}
+      width={RING_SIZE}
+      height={RING_SIZE}
+      viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
+      aria-hidden="true"
+    >
+      {/* A fourth limit, should `/usage` ever report one, is in the panel. */}
+      {usage.limits.slice(0, RING_RADII.length).map((limit, index) => (
+        <g className={`usage__ring usage__ring--${usageLevel(limit.percent)}`} key={limit.label}>
+          <circle className="usage__groove" cx={center} cy={center} r={RING_RADII[index]} strokeWidth={RING_STROKE} />
+          {limit.percent > 0 && (
+            /*
+             * `pathLength` makes the dash a percentage, whatever the radius,
+             * and the rotation starts it at twelve o'clock: a circle's stroke
+             * begins at three.
+             */
+            <circle
+              className="usage__arc"
+              cx={center}
+              cy={center}
+              r={RING_RADII[index]}
+              strokeWidth={RING_STROKE}
+              pathLength={100}
+              strokeDasharray={`${limit.percent} 100`}
+              transform={`rotate(-90 ${center} ${center})`}
+            />
+          )}
+        </g>
+      ))}
+    </svg>
+  )
+}
+
 /**
  * Claude's usage limits, as rings inside each other.
  *
@@ -117,6 +155,12 @@ const RING_RADII = [12.5, 8.5, 4.5]
  * moves within a day, and the longest stroke is the easiest to read a change
  * in.
  *
+ * One set per machine whose limits are its own: this one first, then each
+ * linked machine signed in to a different Claude account. Machines sharing an
+ * account share one allowance, and the server leaves their repeats out (see
+ * `distinctUsages`), so the common case -- every machine on your one
+ * subscription -- is still one set of rings.
+ *
  * It replaced three rows of bars, 189px of the top bar with a label, a track,
  * a percentage and a countdown each. That was the whole reading always on
  * screen and it was the bar's widest thing, so the ladder spent three of its
@@ -125,7 +169,7 @@ const RING_RADII = [12.5, 8.5, 4.5]
  * a click hangs the whole reading under it, where it has the room to say when
  * each limit comes back as a time and not only a countdown.
  */
-export const UsageRings = ({ usage }: { usage: Usage }): React.ReactElement | null => {
+export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.ReactElement | null => {
   /*
    * A countdown that does not count is a small lie, and the reading itself is
    * only taken every five minutes -- so `12m` would sit there for five of them
@@ -139,7 +183,8 @@ export const UsageRings = ({ usage }: { usage: Usage }): React.ReactElement | nu
     return () => window.clearInterval(timer)
   }, [])
   const pop = useAnchoredMenu<HTMLButtonElement>()
-  if (usage.limits.length === 0) return null
+  const shown = machines.filter((machine) => machine.usage.limits.length > 0)
+  if (shown.length === 0) return null
   const resetsOf = (limit: Usage['limits'][number]): string => {
     if (limit.resetsAt !== null) {
       const until = untilText(limit.resetsAt, now)
@@ -150,79 +195,66 @@ export const UsageRings = ({ usage }: { usage: Usage }): React.ReactElement | nu
     // The prose did not parse, so it is repeated as it came.
     return limit.resets === null ? '' : `resets ${limit.resets}`
   }
-  const read =
+  const clock = (at: number): string =>
+    new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const readOf = (usage: Usage): string =>
     usage.error === undefined
-      ? `read ${new Date(usage.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-      : `last read ${new Date(usage.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — ${usage.error}`
-  const summary = usage.limits.map((limit) => `${limit.label} ${limit.percent}%`).join(', ')
-  const stale = usage.error === undefined ? '' : ' usage--stale'
-  const center = RING_SIZE / 2
+      ? `read ${clock(usage.fetchedAt)}`
+      : `last read ${clock(usage.fetchedAt)} — ${usage.error}`
+  // Named only when there is more than one, since one set needs no name.
+  const named = shown.length > 1
+  const summary = shown
+    .map((machine) => {
+      const limits = machine.usage.limits.map((limit) => `${limit.label} ${limit.percent}%`).join(', ')
+      return named ? `${machine.name}: ${limits}` : limits
+    })
+    .join('\n')
   return (
     <>
       <button
         type="button"
         ref={pop.anchor}
-        className={`usage${stale}${pop.at === null ? '' : ' usage--open'}`}
+        className={`usage${pop.at === null ? '' : ' usage--open'}`}
         // The numbers without a click, for a pointer that rests on it.
         title={summary}
-        aria-label={`Claude usage: ${summary}`}
+        aria-label={`Claude usage: ${summary.replace(/\n/g, '; ')}`}
         aria-expanded={pop.at !== null}
         onClick={pop.toggle}
       >
-        <svg
-          className="usage__rings"
-          width={RING_SIZE}
-          height={RING_SIZE}
-          viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-          aria-hidden="true"
-        >
-          {/* A fourth limit, should `/usage` ever report one, is in the panel. */}
-          {usage.limits.slice(0, RING_RADII.length).map((limit, index) => (
-            <g className={`usage__ring usage__ring--${usageLevel(limit.percent)}`} key={limit.label}>
-              <circle className="usage__groove" cx={center} cy={center} r={RING_RADII[index]} strokeWidth={RING_STROKE} />
-              {limit.percent > 0 && (
-                /*
-                 * `pathLength` makes the dash a percentage, whatever the radius,
-                 * and the rotation starts it at twelve o'clock: a circle's
-                 * stroke begins at three.
-                 */
-                <circle
-                  className="usage__arc"
-                  cx={center}
-                  cy={center}
-                  r={RING_RADII[index]}
-                  strokeWidth={RING_STROKE}
-                  pathLength={100}
-                  strokeDasharray={`${limit.percent} 100`}
-                  transform={`rotate(-90 ${center} ${center})`}
-                />
-              )}
-            </g>
-          ))}
-        </svg>
+        {shown.map((machine) => (
+          <Rings usage={machine.usage} key={machine.key ?? ''} />
+        ))}
       </button>
       {pop.at !== null && (
         <div
           ref={pop.menu}
-          className={`menu usage__pop${stale}`}
+          className="menu usage__pop"
           style={{ left: pop.at.left, top: pop.at.top }}
           aria-label="Claude usage limits"
         >
-          {usage.limits.map((limit) => (
-            /*
-             * The level goes on the row rather than on the fill, because the
-             * number wears it too.
-             */
-            <div className={`usage__row usage__row--${usageLevel(limit.percent)}`} key={limit.label}>
-              <span className="usage__label">{limit.label}</span>
-              <span className="usage__track">
-                <i className="usage__fill" style={{ width: `${limit.percent}%` }} />
-              </span>
-              <span className="usage__percent">{limit.percent}%</span>
-              <span className="usage__resets">{resetsOf(limit)}</span>
+          {shown.map((machine) => (
+            <div
+              className={`usage__machine${machine.usage.error === undefined ? '' : ' usage--stale'}`}
+              key={machine.key ?? ''}
+            >
+              {named && <div className="usage__name">{machine.name}</div>}
+              {machine.usage.limits.map((limit) => (
+                /*
+                 * The level goes on the row rather than on the fill, because
+                 * the number wears it too.
+                 */
+                <div className={`usage__row usage__row--${usageLevel(limit.percent)}`} key={limit.label}>
+                  <span className="usage__label">{limit.label}</span>
+                  <span className="usage__track">
+                    <i className="usage__fill" style={{ width: `${limit.percent}%` }} />
+                  </span>
+                  <span className="usage__percent">{limit.percent}%</span>
+                  <span className="usage__resets">{resetsOf(limit)}</span>
+                </div>
+              ))}
+              <div className="usage__read">{readOf(machine.usage)}</div>
             </div>
           ))}
-          <div className="usage__read">{read}</div>
         </div>
       )}
     </>

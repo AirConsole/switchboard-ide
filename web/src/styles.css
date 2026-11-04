@@ -768,6 +768,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Between one machine's rings and the next's: wider than a ring's own 1px
+     gaps, so two sets read as two and not as one with a missing ring. */
+  gap: 8px;
   flex: none;
   align-self: stretch;
   padding: 0 10px;
@@ -821,8 +824,23 @@ button {
   /* Measured: 365px wide at full length, 5px past a 360px phone. The track is
      the column that gives, so the numbers stay whole. */
   max-width: calc(100vw - 16px);
-  gap: 6px;
+  gap: 12px;
   padding: 10px 12px;
+}
+
+/* One machine's reading. A gap of their own, half the one between machines. */
+.usage__machine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Which machine, when there is more than one. */
+.usage__name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bone);
+  letter-spacing: 0.04em;
 }
 
 .usage__row {

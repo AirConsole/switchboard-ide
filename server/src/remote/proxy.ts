@@ -145,6 +145,8 @@ const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
    */
   '/api/update',
   '/api/servers/:key/update',
+  /* Every machine's usage at once, gathered here; each peer's own is `/api/usage`. */
+  '/api/usage/machines',
 ])
 
 /**

@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-import { PROTOCOL_VERSION, type AppSnapshot } from '@switchboard/shared'
+import { PROTOCOL_VERSION, type AppSnapshot, type Usage } from '@switchboard/shared'
 import { HttpError } from '../http-error.js'
 import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
 
@@ -345,7 +345,7 @@ export class PeerClient {
     path: string,
     body?: unknown,
     timeoutMs = 10_000,
-    /** Off for the one request whose purpose is to end a mismatch. See `startUpdate`. */
+    /** Off for a request that must work across a mismatch: `startUpdate`, `usage`. */
     checkProtocol = true,
   ): Promise<T> {
     const controller = new AbortController()
@@ -645,6 +645,17 @@ export class PeerClient {
       }
       throw err
     }
+  }
+
+  /**
+   * That machine's Claude usage, from its own five-minute cache.
+   *
+   * Without the protocol check, like `startUpdate`: `/api/usage` has kept its
+   * shape across versions, and a machine one version behind is still signed in
+   * to an account whose limits are worth showing.
+   */
+  async usage(timeoutMs: number): Promise<Usage> {
+    return this.request<Usage>('GET', '/api/usage', undefined, timeoutMs, false)
   }
 
   async identify(): Promise<PeerIdentity> {

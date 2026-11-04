@@ -1,5 +1,9 @@
 import { execFile } from 'node:child_process'
-import type { Usage, UsageLimit } from '@switchboard/shared'
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import type { MachineUsage, Usage, UsageLimit } from '@switchboard/shared'
 import { config } from './config.js'
 
 /**
@@ -166,6 +170,31 @@ let cached: Usage | null = null
 /** The read in flight, so two clients asking at once spawn one process. */
 let reading: Promise<Usage> | null = null
 
+/**
+ * Which Claude account `claude` is signed in to, as a short hash.
+ *
+ * Read from Claude Code's own config, `oauthAccount.accountUuid` in
+ * `.claude.json` -- under `CLAUDE_CONFIG_DIR` when that is set, as Claude Code
+ * itself does, and in the home directory otherwise. Hashed because this goes
+ * to every machine linking this one and the id is all it needs to compare;
+ * twelve hex digits make two accounts colliding a non-event. Null rather than
+ * a guess when the file or the field is missing: an unknown account is one the
+ * similarity of the numbers has to decide.
+ */
+const accountFingerprint = async (): Promise<string | null> => {
+  const dir = process.env.CLAUDE_CONFIG_DIR ?? homedir()
+  try {
+    const parsed = JSON.parse(await readFile(join(dir, '.claude.json'), 'utf8')) as {
+      oauthAccount?: { accountUuid?: unknown }
+    }
+    const id = parsed.oauthAccount?.accountUuid
+    if (typeof id !== 'string' || id === '') return null
+    return createHash('sha256').update(id).digest('hex').slice(0, 12)
+  } catch {
+    return null
+  }
+}
+
 const read = async (): Promise<Usage> => {
   try {
     const limits = parseUsage(await run())
@@ -173,7 +202,8 @@ const read = async (): Promise<Usage> => {
     // entirely when it cannot answer (not signed in, or on the API rather than
     // a subscription), and blank bars would look like a limit of zero.
     if (limits.length === 0) throw new Error('no usage limits in the output')
-    cached = { limits, fetchedAt: Date.now() }
+    const account = await accountFingerprint()
+    cached = { limits, fetchedAt: Date.now(), ...(account === null ? {} : { account }) }
     return cached
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -182,7 +212,12 @@ const read = async (): Promise<Usage> => {
     // next attempt may well clear.
     // Stamped now, so the TTL applies to the failure as well: keeping the old
     // timestamp is what made an error re-enter read() on every single poll.
-    cached = { limits: cached?.limits ?? [], fetchedAt: Date.now(), error: message }
+    cached = {
+      limits: cached?.limits ?? [],
+      fetchedAt: Date.now(),
+      error: message,
+      ...(cached?.account === undefined ? {} : { account: cached.account }),
+    }
     return cached
   } finally {
     reading = null
@@ -197,4 +232,53 @@ export const usage = async (): Promise<Usage> => {
   if (cached && Date.now() - cached.fetchedAt < TTL_MS) return cached
   reading ??= read()
   return reading
+}
+
+/** How far apart two readings' percentages may be and still be the same account's. */
+const SAME_PERCENT = 2
+/** And their reset times, which `/usage` gives to the minute and each machine parses. */
+const SAME_RESET_MS = 15 * 60 * 1000
+
+/**
+ * Whether two readings say the same thing: the same limits, each within two
+ * points and its reset within a quarter of an hour.
+ *
+ * The test for a machine whose account is not known -- one older than the
+ * `account` field, or whose `.claude.json` could not be read. The same account
+ * read on two machines a few minutes apart differs by a point or so as one of
+ * them works, and its resets are the same moments; two different accounts
+ * almost never reset in the same quarter hour on every limit at once.
+ */
+export const sameReading = (a: Usage, b: Usage): boolean =>
+  a.limits.length === b.limits.length &&
+  a.limits.every((limit, index) => {
+    const other = b.limits[index]
+    if (other === undefined || other.label !== limit.label) return false
+    if (Math.abs(other.percent - limit.percent) > SAME_PERCENT) return false
+    if (limit.resetsAt === null || other.resetsAt === null) return limit.resetsAt === other.resetsAt
+    return Math.abs(other.resetsAt - limit.resetsAt) <= SAME_RESET_MS
+  })
+
+/**
+ * The machines whose usage is worth a ring of its own, in the order given.
+ *
+ * A machine is left out when an earlier one is signed in to the same Claude
+ * account, or -- when either account is unknown -- reads the same numbers.
+ * Linking machines that share one subscription is the common case, and two
+ * sets of identical rings would say there were two allowances. A reading with
+ * no limits at all says nothing and is left out too.
+ */
+export const distinctUsages = (machines: MachineUsage[]): MachineUsage[] => {
+  const kept: MachineUsage[] = []
+  for (const machine of machines) {
+    if (machine.usage.limits.length === 0) continue
+    const duplicate = kept.some(({ usage }) => {
+      if (usage.account !== undefined && machine.usage.account !== undefined) {
+        return usage.account === machine.usage.account
+      }
+      return sameReading(usage, machine.usage)
+    })
+    if (!duplicate) kept.push(machine)
+  }
+  return kept
 }

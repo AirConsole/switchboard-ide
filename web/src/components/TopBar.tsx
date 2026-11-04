@@ -591,7 +591,7 @@ export const TopBar = ({
         />
       ))}
     </nav>
-    {usage !== null && <UsageRings usage={usage} />}
+    {usage !== null && <UsageRings machines={usage} />}
     {/*
       * The way out, in the opposite corner from the way in.
       *

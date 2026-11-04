@@ -726,6 +726,21 @@ export interface Usage {
   limits: UsageLimit[]
   fetchedAt: number
   error?: string
+  /**
+   * Which Claude account the limits are for, as a short hash of its id -- so
+   * two machines signed in to the same account show one reading, not two of
+   * the same numbers. Absent when the account could not be read, and from a
+   * machine older than the field.
+   */
+  account?: string
+}
+
+/** One machine's usage, as `/api/usage/machines` lists them. */
+export interface MachineUsage {
+  /** The linked machine's key, or null for the machine that served the page. */
+  key: string | null
+  name: string
+  usage: Usage
 }
 
 /** A commit the running build does not have yet. */
