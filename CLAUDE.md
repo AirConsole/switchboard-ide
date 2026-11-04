@@ -381,9 +381,9 @@ line below is a mistake made in this codebase, not a hypothetical:
   interface itself draws — the patch and the syntax — may not reach for amber or green: the files pane's palette is the terminal's own, minus its green, so that a
   string constant cannot catch the eye that is scanning a row of agents.
   The one reading that wears a state colour without being an agent is the usage
-  bar: amber from 75% and red (`--danger`) from 90%, because a limit about to
+  ring: amber from 75% and red (`--danger`) from 90%, because a limit about to
   run out is the same verb — something that needs you to act — about the account
-  rather than about one worktree. It is three 3px tracks in the corner of the
+  rather than about one worktree. It is a 28px ring in the corner of the
   top bar, nowhere near the row the rule is written to protect.
 - **Two faces, one job each.** `--font-mono` for the terminal, patch lines, and
   identifiers read character by character. `--font-ui` for everything the

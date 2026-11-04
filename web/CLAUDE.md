@@ -8,13 +8,13 @@ object, and that is enough.
 App.tsx              projects -> groups -> the row; every dialog; UI state writes
 store.ts / socket.ts the snapshot, and the one WebSocket
 api.ts               REST calls, typed against shared/
-components/TopBar    the tab strip: project heads, tabs, usage bars
+components/TopBar    the tab strip: project heads, tabs, usage rings
 components/WorktreeTab  one worktree as a row: the strip, the project pane, Move to
 components/ProjectPane  a project's own pane: its worktrees, a new one, closing it
 components/useAnchoredMenu  a menu hung under its trigger, kept on screen
 components/useDialogKeys    a dialog's foot, walked with the arrows
 components/useListKeys      a pane that is a list, walked with the arrows
-components/UsageBars    Claude's limits, as bars; polled once for both bars
+components/UsageRings    Claude's limits, as rings; a click for the numbers
 components/useNarrow    is this a phone -- one threshold, asked once
 views/Overview       the row: spot arithmetic, scrolling, what fits
 views/TodoPane       a worktree's todos, RUN NEXT, and Move to
@@ -34,71 +34,67 @@ views/tileMotion       keeps a departing tile alive while it animates out
 ## The top bar is Chrome's tab strip
 
 **It gives things up in order as it runs out of room.** A 390px screen cannot
-hold `Open project` (~125px), a project head, its tabs and 189px of usage bars
-in a 38px band -- and what used to get squeezed out was the tabs, which are the
-part the bar is *for*. So `data-stage` on the header is a rung, and the bar
-walks down them: **1** drops the usage tracks, **2** the `Open project` label
-(the icon stays), **3** the tabs of every project but the one you are in, **4**
-the tabs of that one too. **5** gives the bar a second row: the project heads
-get the whole of it and wrap onto more rows of the bar's height when even that
-is not enough, and the usage readout gets its bars back on the first row, since
-it was only squeezed for sharing a row with them. **6** takes those bars again
-and **7** takes the readout down to its percentages, which a click opens in
-full under the bar. Past 7 nothing is left to give and the first row overflows.
+hold `Open project` (~125px), a project head and its tabs in a 38px band --
+and what used to get squeezed out was the tabs, which are the part the bar is
+*for*. So `data-stage` on the header is a rung, and the bar walks down them:
+**1** drops the `Open project` label (the icon stays), **2** the tabs of every
+project but the one you are in, **3** the tabs of that one too. **4** gives the
+bar a second row: the project heads get the whole of it and wrap onto more rows
+of the bar's height when even that is not enough. Past 4 nothing is left to
+give and the first row overflows.
 
-Rung 5 is a **grid**, not a wrapping flex row, and that is load-bearing: a
+Rung 4 is a **grid**, not a wrapping flex row, and that is load-bearing: a
 wrapping row that is too wide wraps again instead of overflowing, and overflow
-is the only signal the sweep has. So the first row overflows honestly and moves
-the ladder to 6 and 7, while the heads' row wraps and never does -- nothing the
-sweep could still take away is on that row, and before the heads wrapped it
-walked straight to 7 and shrank the readout for nothing. Every item is placed
+is the only signal the sweep has. The heads' row wraps and never overflows --
+nothing the sweep could still take away is on that row. Every item is placed
 explicitly: the machine button and sign-out share a class, and auto-placement
 dropped one of them into the spacer column. Each row costs the windows 38px of
 height, which is why this is the last thing the bar does.
 
-Measured with six projects, three of them awake in one: rung 0 at 1600, 4 at
-900, 5 at 700 (two rows, 77px), 5 still at 540 to 360 with the heads on two
-rows of their own (121px) and the full readout above them, 6 at 300, 7 at 240
-(209px, four rows of heads). At every width each head was on screen and under
-`elementFromPoint`, and sweeping back up gave 6, 5, 5, 5, 4, 0.
+Measured with two projects holding three and one awake worktrees: rung 0 from
+700px up, 1 at 640, 2 at 540, 3 at 420 and 360, 4 at 300 and 240 (two rows,
+77px) -- and at *every* width the bar has no overflow and the usage ring is on
+screen and under `elementFromPoint`, which is the whole claim. The ladder had
+seven rungs while the usage readout was three rows of bars, and that readout
+was 189px of the bar: it reached the second row at 700px then, and does at 300
+now.
 
-Measured with two projects holding three and one awake worktrees: stage 0 from
-900px up, 1 at 800, 2 at 700, 3 at 640, 4 from 540 down -- and at *every* width
-the strip has no overflow, which is the whole claim. The ladder is
-monotone, it never collapses more than it must (at each width, forcing it one
-rung up overflows), and a sweep back up the widths reproduces the same rungs
-exactly.
+**Claude's usage is rings inside each other, and a click for the numbers**
+(`UsageRings`). One ring per limit in the order `/usage` reports them -- the
+session outside, the week, and the model with its own allowance (Fable) in the
+middle -- each an outline that fills clockwise from twelve, which is the shape
+Claude's own web app gives a limit. 28px of SVG in a 49px button that is the
+bar's full height, so the target is the bar's and not the ring's. The rings
+are flat-ended: a round cap reaches half a stroke past each end, and on the
+innermost ring, 22 units round, that is 14% the reading would claim and not
+have. At 26px the inner ring's hole was 4px and rendered as a disc at one
+device pixel to the CSS pixel; at 28 it is 6 and stays a ring.
 
-**The usage block narrows in two bites, first and last, and never goes.** The
-tracks are 54px of its 189 and the least of it -- a bar with no number beside it
-is hard to act on, where `session 34% 4h` is the whole reading -- so the picture
-goes at rung 1. At rung 5 the bar has a row to spare and the readout is whole
-again; rung 6 takes the bars once more, and rung 7 everything but the
-percentages, a column of `34%` in about 42px. **A click there hangs the whole readout under the bar**
-(`.usage__pop`, through `useAnchoredMenu`), and another click, Escape or a click
-elsewhere puts it away. Which rung it is gets read off the DOM at the click
-rather than rendered from, and CSS hides the panel at every other rung, so a
-window widened with it open does not show the readout twice. It used to go
-altogether at the ladder's last rung, which put the limits out of sight on exactly the
-screen, a phone, where the ladder bottoms out. `useUsage` keeps polling at every rung: a reading
-you cannot see is one you want the moment the window widens, and the server
-caches it anyway.
+It is on no rung of the ladder. As bars it had three -- the tracks went first,
+came back on the second row, then went again with everything but the
+percentages -- because the whole reading was always on screen and was the
+bar's widest thing. A ring says what a glance needs at every width, and the
+rest is one click away: **a click hangs the whole reading under it**
+(`.usage__pop`, through `useAnchoredMenu`), a bar, a percentage and when it
+comes back -- `resets Sun 07:37 (in 4d)` -- per limit, and when it was read.
+Another click, Escape or a click elsewhere puts it away. The panel is held to
+the window less 16px with the bar as the column that gives: at full length it
+measured 365px, 5px past a 360px phone, and now 344 there. The numbers without
+a click are the button's `title`. `useUsage` keeps polling whether or not the
+panel is open, and the server caches it anyway.
 
 **A limit says how much is left in colour**: `usageLevel` is amber from 75% and
-red from 90%, inclusive, and the class goes on the *row* so the number wears it
-as well as the bar -- the track is the first thing to go at rung 1, and a colour
-that lived only on the fill would go out exactly when the window is too small to
-show it. Measured at each boundary against a stubbed `/api/usage`: 74 grey, 75
-amber, 89 amber, 90 red, on the fill and the number alike, and read 1:1 off the
-rendered pixels (`#ffb454` and `#e5707a` across a 3px track, over `#222833`
-where the fill stops).
+red from 90%, inclusive -- on the ring's arc, and in the panel on the bar and
+the number alike. Measured against a stubbed `/api/usage` of 34, 75 and 92: the
+arcs computed `rgb(159,166,178)`, `rgb(255,180,84)` and `rgb(229,112,122)`, and
+the boundaries themselves are `usageLevel`'s test.
 
 This is the one thing in the chrome that wears amber without being an agent that
 wants you, and it replaced a step up the grey ladder at 80% where the fill went
 `--bone`. That step was the wrong instrument twice: it arrived after the number
 that matters, and one rung of grey is not visible without the other two bars
 beside it to compare against. Both colours clear the floor where they are drawn
--- amber 11.03:1 and red 6.42 on the frame, 8.39 and 4.88 on the track.
+-- amber 11.03:1 and red 6.42 on the frame, 8.39 and 4.88 on the panel's track.
 
 **How the rung is chosen, and why it is not React state.** `.tabstrip` is
 `flex: 1; min-width: 0`, so it takes what the other two leave, and it says it is
@@ -108,8 +104,8 @@ returns the least sufficient rung and cannot oscillate. A layout effect with no
 dependency array sweeps it on every commit -- which is exactly the set of things
 that can change a width -- and a `ResizeObserver` on the **header** does the
 same on a resize. The header, not the strip: the header's width is the app's and
-never moves in answer to a rung, while the strip's grows by 189px the moment the
-usage bars go, so observing it would fire the observer on the consequence of its
+never moves in answer to a rung, while the strip's grows the moment the `Open
+project` label goes, so observing it would fire the observer on the consequence of its
 own callback.
 
 Two things follow and are load-bearing. **Nothing React renders may depend on

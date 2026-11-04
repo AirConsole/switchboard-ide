@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { usageLevel } from '../src/components/UsageBars.js'
+import { usageLevel } from '../src/components/UsageRings.js'
 
 describe('usageLevel', () => {
   /*
