@@ -1,10 +1,18 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { Session } from '@switchboard/shared'
 import { PanelIcon } from '../components/PanelIcon.js'
+import { useAnchoredMenu } from '../components/useAnchoredMenu.js'
+import { machineHostOf } from '../selectors.js'
 import { TerminalView } from '../terminal/TerminalView.js'
 import { useNearViewport } from './useNearViewport.js'
 import { TileFailure } from './Overview.js'
 import type { Failure } from '../store.js'
+
+/** A machine a terminal can be opened on: this one (null), or a linked one's key. */
+export interface MachineChoice {
+  key: string | null
+  name: string
+}
 
 export interface MachineTileProps {
   /** An action about this window that failed, if there is one. */
@@ -26,8 +34,10 @@ export interface MachineTileProps {
   /** Whether this is the window the row says you are in. */
   current: boolean
   onStart: () => void
-  /** Another terminal, in a new window at the far end. */
-  onAnother: () => void
+  /** Another terminal, in a new window at the far end, on the machine given. */
+  onAnother: (host: string | null) => void
+  /** Where the + can open one: this machine first, then each linked one. */
+  machines: MachineChoice[]
   /** End this terminal; its window goes with it. */
   onClose: (sessionId: string) => void
   onReveal: () => void
@@ -62,9 +72,24 @@ export const MachineTile = ({
   current,
   onStart,
   onAnother,
+  machines,
   onClose,
   onReveal,
 }: MachineTileProps): React.ReactElement => {
+  /*
+   * Which machine this window's terminal is on. A linked machine's terminals
+   * are windows here as well, named by that machine, since "This machine" on
+   * a shell somewhere else is the one thing it must not say.
+   */
+  const host = session === undefined ? null : (machineHostOf(session) ?? null)
+  const where =
+    host === null ? 'This machine' : (machines.find((one) => one.key === host)?.name ?? 'A linked machine')
+  /*
+   * With a machine linked, the + asks which: a terminal there is the reason
+   * to link one as often as its projects are. With none it opens one here
+   * straight away, as it always did -- a menu of one is a click for nothing.
+   */
+  const pick = useAnchoredMenu<HTMLButtonElement>()
   const startRef = useRef<HTMLButtonElement | null>(null)
   const tileRef = useRef<HTMLDivElement | null>(null)
   /*
@@ -85,19 +110,23 @@ export const MachineTile = ({
 
   return (
     <div className={`tile tile--machine${current ? ' tile--current' : ''}`} ref={tileRef}>
-      {/* No hostname: this is always the machine serving the page, and a linked
-          machine's own terminal is not merged into this row. "This machine" is
-          the true and shortest thing it can say. */}
+      {/* No hostname for this one: it is always the machine serving the page,
+          and "This machine" is the true and shortest thing it can say. A
+          linked machine's terminal says that machine's name. */}
       <div
         className="tile__bar"
-        title="A terminal on this machine, in your home directory"
+        title={
+          host === null
+            ? 'A terminal on this machine, in your home directory'
+            : `A terminal on ${where}, in your home directory there`
+        }
         onClick={onReveal}
       >
         <div className="tile__seg">
           <span className="tile__machine-icon" aria-hidden="true">
             <PanelIcon panel="terminals" className="topbar__icon" />
           </span>
-          <span className="tile__name">This machine</span>
+          <span className="tile__name">{where}</span>
           {/* What it is for, in the words of what you do in it: the only window
               in the row that is not a worktree says so rather than being told
               apart by its shape alone. */}
@@ -108,16 +137,47 @@ export const MachineTile = ({
         <div className="tile__controls">
           <button
             className="tile__toggle"
+            ref={pick.anchor}
+            aria-expanded={machines.length > 1 ? pick.at !== null : undefined}
             onClick={(event) => {
               // The new window takes the row and the keyboard; this one's
               // reveal would only race it there.
               event.stopPropagation()
-              onAnother()
+              if (machines.length > 1) pick.toggle()
+              else onAnother(null)
             }}
-            title="Another terminal on this machine, in a window to the right"
+            title={
+              machines.length > 1
+                ? 'Another terminal, on this machine or a linked one, in a window to the right'
+                : 'Another terminal on this machine, in a window to the right'
+            }
           >
             <span aria-hidden="true">+</span>
           </button>
+          {pick.at !== null && (
+            <div
+              ref={pick.menu}
+              className="menu"
+              role="menu"
+              style={{ left: pick.at.left, top: pick.at.top }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="menu__label">New terminal on</div>
+              {machines.map((machine) => (
+                <button
+                  key={machine.key ?? ''}
+                  className="menu__item"
+                  role="menuitem"
+                  onClick={() => {
+                    pick.close()
+                    onAnother(machine.key)
+                  }}
+                >
+                  {machine.name}
+                </button>
+              ))}
+            </div>
+          )}
           {extra && session !== undefined && (
             <button
               className="tile__toggle tile__away"

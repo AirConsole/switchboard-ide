@@ -12,7 +12,7 @@ import type {
   Session,
   UiState,
   UpdateStatus,
-  Usage,
+  MachineUsage,
   Worktree,
   WorktreeChanges,
   WorktreeTodo,
@@ -108,8 +108,11 @@ export const api = {
 
   snapshot: () => request<AppSnapshot>('/api/snapshot'),
 
-  /** Claude's usage limits. The server caches these for five minutes. */
-  usage: () => request<Usage>('/api/usage'),
+  /**
+   * Claude's usage limits, this machine's and each linked one's that is not
+   * the same account. Every machine caches its own for five minutes.
+   */
+  usageMachines: () => request<MachineUsage[]>('/api/usage/machines'),
   /** Whether this machine's Switchboard is behind origin. Fetched at most every ten minutes. */
   updateStatus: () => request<UpdateStatus>('/api/update'),
   /** Run `pnpm pull`, which restarts this server if there is anything to pull. */

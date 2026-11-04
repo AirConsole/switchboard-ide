@@ -24,7 +24,9 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
                 working on")
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
 usage.ts        Claude's own limits, read from `claude -p /usage` and cached
-update.ts       whether this build is behind origin, and running `swb pull` for it
+update.ts       whether this build is behind origin, and running `swb pull` for it,
+                by itself once nobody has typed for five minutes
+typing.ts       when anyone last typed into a terminal through this server
 config.ts       every SWB_* env var, in one place
 ```
 
@@ -495,7 +497,7 @@ out from 256KB to a cap of 8MB, which stops at the first real prompt. Measured:
 ## Claude's usage limits
 
 `GET /api/usage` answers with what `claude -p /usage` last said, parsed into
-`{ label, percent, resets }` rows for the bars in the top bar.
+`{ label, percent, resets }` rows for the rings in the top bar.
 
 Print mode is why this is small: `-p` answers a slash command as plain text, so
 there is no pty to drive and no TUI to scrape. `--bare` does **not** work — it
@@ -512,7 +514,29 @@ Parsing keys on `% used`, because the rest of that report is full of percentages
 that are not limits ("96% of your usage came from subagent-heavy sessions"). An
 empty parse counts as a failure rather than a reading — `/usage` says something
 else entirely when it cannot answer — and a failure keeps the previous numbers
-and adds `error`, so the bars can show stale figures instead of vanishing.
+and adds `error`, so the rings can show stale figures instead of vanishing.
+
+**Every linked machine's usage, once per account.** `GET /api/usage/machines`
+is this machine's reading and each linked machine's own `/api/usage`, answered
+here (`ALWAYS_LOCAL`) and without the protocol check, since that route has kept
+its shape. A reading carries `account`: the first twelve hex digits of the
+SHA-256 of `oauthAccount.accountUuid` in Claude Code's `.claude.json` (under
+`CLAUDE_CONFIG_DIR` when set). That is enough to compare and nothing a linked
+machine can use. `distinctUsages` then keeps one reading per account, so
+machines sharing one subscription -- the usual arrangement -- show one set of
+rings and not several of the same allowance. Where either account is unknown,
+from a machine older than the field or one whose config could not be read, two
+readings are the same when every limit is within 2 points and resets within 15
+minutes. Two different accounts are both shown even when their numbers agree.
+A peer gets 20s to answer and is left out of that answer otherwise: its first
+read spawns `claude`, and the page asks again only every five minutes.
+
+Measured with two scratch instances, each with a stand-in `claude` on `PATH`
+printing different numbers. Signed in to different accounts, the gateway's
+list had both and the bar drew two sets. With the peer on the gateway's account,
+it answered its own `/api/usage` with the same fingerprint and the list had one.
+A scratch instance strips `SWB_*` from its environment, so `SWB_USAGE_CMD`
+cannot point one at a stand-in; `PATH` and `CLAUDE_CONFIG_DIR` can.
 
 ## Adding to the API
 

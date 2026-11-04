@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseResetAt, parseUsage } from '../src/usage.js'
+import type { MachineUsage, Usage } from '@switchboard/shared'
+import { distinctUsages, parseResetAt, parseUsage } from '../src/usage.js'
 
 /** `/usage` as it actually prints, banner and prose included. */
 const REPORT = `
@@ -109,5 +110,61 @@ describe('parseResetAt', () => {
     expect(parseResetAt('Sep 15, 9am (PST)', now)).toBe(
       new Date(2026, 8, 15, 9, 0).getTime(),
     )
+  })
+})
+
+/*
+ * Which linked machines get rings of their own. Machines sharing one Claude
+ * subscription are the common case, and two sets of the same numbers would
+ * say there were two allowances to spend.
+ */
+describe('distinctUsages', () => {
+  const H = 3_600_000
+  const reading = (percents: number[], resetsAt: number[], account?: string): Usage => ({
+    limits: percents.map((percent, i) => ({
+      label: ['session', 'week', 'fable'][i] ?? `limit ${i}`,
+      percent,
+      resets: null,
+      resetsAt: resetsAt[i] ?? null,
+    })),
+    fetchedAt: 0,
+    ...(account === undefined ? {} : { account }),
+  })
+  const machine = (key: string | null, usage: Usage): MachineUsage => ({ key, name: key ?? 'here', usage })
+  const keys = (list: MachineUsage[]): (string | null)[] => list.map((m) => m.key)
+
+  it('shows one set for machines signed in to the same account', () => {
+    expect(
+      keys(distinctUsages([
+        machine(null, reading([34, 18, 0], [3 * H, 90 * H, 90 * H], 'aaa')),
+        machine('mac', reading([60, 40, 5], [1 * H, 20 * H, 20 * H], 'aaa')),
+      ])),
+    ).toEqual([null])
+  })
+
+  it('shows both for different accounts, even when their numbers agree', () => {
+    expect(
+      keys(distinctUsages([
+        machine(null, reading([34, 18, 0], [3 * H, 90 * H, 90 * H], 'aaa')),
+        machine('mac', reading([34, 18, 0], [3 * H, 90 * H, 90 * H], 'bbb')),
+      ])),
+    ).toEqual([null, 'mac'])
+  })
+
+  it('goes by the numbers when an account is not known', () => {
+    // An older machine sends no account. The same account read minutes
+    // apart: a point of drift and resets a few minutes off.
+    const here = reading([34, 18, 0], [3 * H, 90 * H, 90 * H], 'aaa')
+    const same = reading([35, 18, 0], [3 * H + 120_000, 90 * H, 90 * H])
+    const other = reading([34, 18, 0], [5 * H, 90 * H, 90 * H])
+    expect(keys(distinctUsages([machine(null, here), machine('old', same)]))).toEqual([null])
+    expect(keys(distinctUsages([machine(null, here), machine('old', other)]))).toEqual([null, 'old'])
+    // Three points apart is not drift.
+    const busier = reading([37, 18, 0], [3 * H, 90 * H, 90 * H])
+    expect(keys(distinctUsages([machine(null, here), machine('old', busier)]))).toEqual([null, 'old'])
+  })
+
+  it('leaves out a machine with nothing to show', () => {
+    expect(keys(distinctUsages([machine(null, reading([], [])), machine('mac', reading([5], [H]))]))).toEqual(['mac'])
   })
 })

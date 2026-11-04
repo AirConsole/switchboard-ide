@@ -74,7 +74,7 @@ const defaultArgs = (kind: SessionKind): string[] => (kind === 'claude' ? [] : [
  * is text, Return or backspace -- the things a person actually produces while
  * drafting a prompt.
  */
-const looksTyped = (data: string): boolean =>
+export const looksTyped = (data: string): boolean =>
   data
     // CSI (with its private-mode and intermediate bytes), then OSC, then SS3.
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')

@@ -63,7 +63,12 @@ now.
 (`UsageRings`). One ring per limit in the order `/usage` reports them -- the
 session outside, the week, and the model with its own allowance (Fable) in the
 middle -- each an outline that fills clockwise from twelve, which is the shape
-Claude's own web app gives a limit. 28px of SVG in a 49px button that is the
+Claude's own web app gives a limit. **One set per Claude account**: this
+machine's, then each linked machine signed in to a different one, 8px apart --
+the server leaves out machines that repeat an account (see `server/CLAUDE.md`),
+so every machine on one subscription is still one set. With more than one, the
+panel names each machine above its rows and the title prefixes each line with
+it. 28px of SVG a set, in a button (49px for one set) that is the
 bar's full height, so the target is the bar's and not the ring's. The rings
 are flat-ended: a round cap reaches half a stroke past each end, and on the
 innermost ring, 22 units round, that is 14% the reading would claim and not
@@ -576,6 +581,20 @@ pane key lives on the slot alone: `MachineTile` once hard-coded
 `data-pane="machine:machine"` on its body, and the walk, which reads the
 nearest one, counted every machine window as the first and stepped straight
 past the others.
+
+**The + also opens one on a linked machine.** With a machine linked, it asks
+which -- this machine or that one -- and with none it opens one here at once.
+The terminal is made with that machine's scoped machine id
+(`machineWorktreeIdOn(key)`, `h1a2b3c4d~machine`), which the proxy routes there
+like any other scoped id; the peer's own branch for `MACHINE_WORKTREE_ID` does
+the rest. Its window is named by that machine rather than "This machine", and
+`machineSession` -- the window that is always here -- is the oldest terminal
+on *this* machine only, so a linked machine's older one can never take that
+place and then vanish with its machine. The list of machines is `/api/servers`,
+read again on every invalidate, since a machine linked for its terminal alone
+has no project here to be found by. Measured with two scratch instances: the
+menu offered both, a terminal opened from it ran on the peer's tmux socket
+(`echo $SWB_PORT` printed the peer's port), and its × ended that session there.
 
 `WelcomeTile` replaced a full-screen empty state that said *No project open* --
 a statement of absence where an instruction belongs, and the first sentence this

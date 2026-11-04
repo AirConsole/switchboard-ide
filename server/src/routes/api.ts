@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import type { FastifyInstance } from 'fastify'
 import type { Readable } from 'node:stream'
-import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type SessionKind } from '@switchboard/shared'
+import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type MachineUsage, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -13,8 +13,8 @@ import { config } from '../config.js'
 import { sendRaw } from '../raw.js'
 import { hostKeyFor } from '../remote/scope.js'
 import { PEER_READ_HEADER } from '../remote/peer.js'
-import { usage } from '../usage.js'
-import { startUpdate, updateStatus } from '../update.js'
+import { distinctUsages, usage } from '../usage.js'
+import { startUpdate, updateStatus, updateWhenQuiet } from '../update.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -26,6 +26,15 @@ import { startUpdate, updateStatus } from '../update.js'
  * Comfortably longer than the measured failure, and paid only in the background.
  */
 const CONTINUE_GRACE_MS = 5000
+
+/**
+ * How long a linked machine's usage may take before the list goes without it.
+ *
+ * Four times the 4.3-4.6s its first read was measured at, because the page
+ * asks again only every five minutes: a machine dropped from one answer stays
+ * out of the bar for that long, so the wait is cheaper than the gap.
+ */
+const PEER_USAGE_TIMEOUT_MS = 20_000
 
 /** Lines of a dead session's output the UI is given to explain the exit. */
 const TAIL_LINES = 20
@@ -263,6 +272,33 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
   app.get('/api/usage', async () => usage())
 
   /*
+   * This machine's usage and every linked machine's, less the ones that would
+   * repeat another's: the same Claude account, or the same numbers when the
+   * account is not known (see `distinctUsages`). Answered here rather than
+   * proxied, since it is a question for every machine at once (`ALWAYS_LOCAL`).
+   *
+   * A machine that does not answer in time is left out rather than holding
+   * the rest for ever; see `PEER_USAGE_TIMEOUT_MS`.
+   */
+  app.get('/api/usage/machines', async (): Promise<MachineUsage[]> => {
+    const peers = store.servers.filter((server) => !workspace.linkRefused(server.baseUrl))
+    const read = await Promise.all([
+      usage().then((reading): MachineUsage => ({ key: null, name: config.serverName, usage: reading })),
+      ...peers.map(async (server): Promise<MachineUsage | null> => {
+        const key = hostKeyFor(server.baseUrl)
+        const peer = workspace.peerFor(key)
+        if (peer === null) return null
+        try {
+          return { key, name: server.name, usage: await peer.usage(PEER_USAGE_TIMEOUT_MS) }
+        } catch {
+          return null
+        }
+      }),
+    ])
+    return distinctUsages(read.filter((machine): machine is MachineUsage => machine !== null))
+  })
+
+  /*
    * Whether this machine's Switchboard is behind origin, and updating it.
    *
    * Local by construction: no id in the path, so the proxy never forwards it,
@@ -272,8 +308,15 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * See server/src/update.ts.
    */
   app.get('/api/update', async () => updateStatus())
-  app.post('/api/update', async (_request, reply) => {
-    await startUpdate()
+  /*
+   * `whenQuiet` is a linked machine passing on that origin has moved: look,
+   * and update once nobody here has typed for a while. Without it, a click on
+   * Update, which means now.
+   */
+  app.post('/api/update', async (request, reply) => {
+    const { whenQuiet } = z.object({ whenQuiet: z.boolean().optional() }).parse(request.body ?? {})
+    if (whenQuiet === true) await updateWhenQuiet()
+    else await startUpdate()
     return reply.status(202).send({ ok: true })
   })
 

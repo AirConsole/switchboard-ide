@@ -7,6 +7,7 @@ import { SessionEngine } from './session/engine.js'
 import { StateStore } from './state.js'
 import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
+import { onOriginAhead } from './update.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs, wsPluginOptions } from './routes/ws.js'
 import { registerGate } from './gate.js'
@@ -71,6 +72,17 @@ registerProxy(app, workspace)
 
 const { broadcastInvalidate, clientCount } = registerWs(app, engine, workspace)
 registerApi(app, { store, engine, workspace, broadcastInvalidate })
+
+/*
+ * When this machine finds origin ahead -- because a page here asked -- every
+ * machine linked to it hears so, and updates by its own rules: the same quiet
+ * wait, the same refusals. A linked machine is often one nobody has a page of
+ * open, and it would otherwise never look. A machine that does not answer is
+ * told nothing more; the next commit tells it again.
+ */
+onOriginAhead(() => {
+  for (const peer of workspace.peers()) void peer.startUpdate({ whenQuiet: true }).catch(() => {})
+})
 
 // Session changes alter the snapshot (a session dying, for instance), so drop
 // the worktree cache when they happen.

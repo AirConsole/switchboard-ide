@@ -223,6 +223,8 @@ export const UpdateBanner = (): React.ReactElement | null => {
       <span className="banner__text" title={list}>
         A newer Switchboard is on {status.branch ?? 'origin'}: {count}, the latest “{newest.subject}”.
         {status.blocked !== null && <> It cannot be pulled here: {status.blocked}.</>}
+        {status.auto === 'waiting' && <> It updates itself once nobody has typed for 5 minutes.</>}
+        {status.auto === 'skipped' && <> It did not start the last time, so it is not updated by itself.</>}
       </span>
       {status.blocked === null && (
         <button className="btn banner__action" onClick={update}>

@@ -29,9 +29,12 @@ import {
   removalLanding,
   removalAsks,
   removalQuestions,
+  machineWorktreeIdOn,
   terminalSessions,
   worktreeStatus,
 } from './selectors.js'
+import { terminalSocket } from './socket.js'
+import type { MachineChoice } from './views/MachineTile.js'
 import type { MoveTarget } from './views/TodoPane.js'
 import { softKeys, useSoftKeyboard } from './terminal/softKeyboard.js'
 import {
@@ -593,13 +596,36 @@ export const App = (): React.ReactElement => {
       .catch(failIn(MACHINE_KEY))
   }
 
-  /**
-   * Another terminal on the machine, in a window of its own at the far end of
-   * the row, which is then where you are: you asked for it to type in it.
+  /*
+   * The machines a terminal can be opened on: this one, then every linked one
+   * that still accepts this one. Read from the server's list rather than from
+   * the projects, because a machine linked for its terminal alone has no
+   * project open here to be found by. Again on every invalidate, which is how
+   * linking or unlinking a machine announces itself.
    */
-  const anotherMachineTerminal = (): void => {
+  const [linked, setLinked] = useState<MachineChoice[]>([])
+  useEffect(() => {
+    const read = (): void => {
+      void api
+        .servers()
+        .then((servers) =>
+          setLinked(servers.filter((server) => server.refused !== true).map(({ key, name }) => ({ key, name }))),
+        )
+        .catch(() => {})
+    }
+    read()
+    return terminalSocket.onInvalidate(read)
+  }, [])
+  const machines = useMemo<MachineChoice[]>(() => [{ key: null, name: 'This machine' }, ...linked], [linked])
+
+  /**
+   * Another terminal in a home directory -- this machine's, or a linked one's
+   * -- in a window of its own at the far end of the row, which is then where
+   * you are: you asked for it to type in it.
+   */
+  const anotherMachineTerminal = (host: string | null): void => {
     void api
-      .createSession({ worktreeId: MACHINE_WORKTREE_ID, kind: 'shell' })
+      .createSession({ worktreeId: machineWorktreeIdOn(host), kind: 'shell' })
       .then(async (session) => {
         await refresh()
         reveal(machineKeyFor(session.id), 'machine')
@@ -1147,6 +1173,7 @@ export const App = (): React.ReactElement => {
         onMachineTerminal={machineTerminal}
         onAnotherMachineTerminal={anotherMachineTerminal}
         onCloseMachineTerminal={closeMachineTerminal}
+        machines={machines}
         onOpenProject={() => setShowOpenProject(true)}
         worktrees={rowWorktrees}
         projects={projects}

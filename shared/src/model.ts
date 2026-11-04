@@ -726,6 +726,21 @@ export interface Usage {
   limits: UsageLimit[]
   fetchedAt: number
   error?: string
+  /**
+   * Which Claude account the limits are for, as a short hash of its id -- so
+   * two machines signed in to the same account show one reading, not two of
+   * the same numbers. Absent when the account could not be read, and from a
+   * machine older than the field.
+   */
+  account?: string
+}
+
+/** One machine's usage, as `/api/usage/machines` lists them. */
+export interface MachineUsage {
+  /** The linked machine's key, or null for the machine that served the page. */
+  key: string | null
+  name: string
+  usage: Usage
 }
 
 /** A commit the running build does not have yet. */
@@ -771,4 +786,11 @@ export interface UpdateStatus {
   checkedAt: number | null
   /** The fetch failed; `commits` is what the last one that worked found. */
   error?: string
+  /**
+   * What this machine will do about it by itself: `waiting` to update once
+   * nobody has typed for a few minutes, `skipped` because the newest commit
+   * would not start the last time it was pulled. Null when there is nothing
+   * to do, or it cannot pull at all.
+   */
+  auto: 'waiting' | 'skipped' | null
 }

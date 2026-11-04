@@ -19,10 +19,11 @@ import type {
   RemoteServer,
   RemoteCache,
 } from '@switchboard/shared'
+import { MACHINE_WORKTREE_ID } from '@switchboard/shared'
 import { HttpError } from './http-error.js'
 import { config } from './config.js'
 import { PeerClient, PeerUnreachable, basicFrom, normalizeBaseUrl, plainHttpAllowed } from './remote/peer.js'
-import { hostKeyFor, unscopeId } from './remote/scope.js'
+import { hostKeyFor, scopeId, unscopeId } from './remote/scope.js'
 import {
   GENERATED_DIRECTORIES,
   findFiles,
@@ -102,10 +103,20 @@ const localTo = (
   const mine = new Set(projects.map((project) => project.id))
   const worktrees = snapshot.worktrees.filter((worktree) => mine.has(worktree.projectId))
   const worktreeIds = new Set(worktrees.map((worktree) => worktree.id))
+  /*
+   * And the terminals in its home directory, which belong to no project there:
+   * the machine itself is what was linked. They were filtered out with the
+   * rest of what no local project owns, so a terminal on that machine could not
+   * be opened from here at all -- the + on this machine's window had nowhere
+   * else to put one.
+   */
+  const machine = scopeId(hostKeyFor(baseUrl), MACHINE_WORKTREE_ID)
   return {
     projects,
     worktrees,
-    sessions: snapshot.sessions.filter((session) => worktreeIds.has(session.worktreeId)),
+    sessions: snapshot.sessions.filter(
+      (session) => worktreeIds.has(session.worktreeId) || session.worktreeId === machine,
+    ),
     todos: snapshot.todos.filter((todo) => worktreeIds.has(todo.worktreeId)),
   }
 }

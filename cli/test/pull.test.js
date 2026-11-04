@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { fastForward } from '../src/pull.js'
+import { failedPath, fastForward, rollBack } from '../src/pull.js'
 
 /*
  * Real git against throwaway repositories, like the server's git tests: every
@@ -124,5 +124,27 @@ describe('fastForward', () => {
       hint: 'if nothing here is yours to keep: git reset --hard origin/master, then pnpm pull',
     })
     expect(git(here, ['rev-parse', 'HEAD'])).toBe(before)
+  })
+})
+
+/*
+ * A pull whose new version does not come up goes back to the one that was
+ * running. Once a server pulls by itself, a version that builds and then
+ * fails to start would otherwise leave a machine dark that nobody is at --
+ * and, if it were not remembered, be pulled again on the next page's poll.
+ */
+describe('rollBack', () => {
+  it('puts the checkout back and remembers the commit that failed', () => {
+    const before = git(here, ['rev-parse', 'HEAD'])
+    pushFromElsewhere('README', 'broken')
+    const result = fastForward(here)
+    if (!result.ok) throw new Error('expected a fast-forward')
+    const dir = join(root, 'state')
+    rollBack({ cwd: here, dir, before, after: result.after })
+    expect(git(here, ['rev-parse', 'HEAD'])).toBe(before)
+    expect(readFileSync(join(here, 'README'), 'utf8')).toBe('one')
+    expect(JSON.parse(readFileSync(failedPath(dir), 'utf8')).sha).toBe(result.after)
+    // Still on the branch, so the next pull is an ordinary fast-forward.
+    expect(git(here, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('master')
   })
 })

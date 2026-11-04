@@ -137,6 +137,19 @@ describe('a machine you have linked', () => {
     expect(snapshot.sessions.map((s) => s.id)).not.toContain(scoped('s-c'))
   })
 
+  /*
+   * And the terminals in its home directory, which no project there owns.
+   * They were filtered out with everything else no local project owned, so a
+   * terminal on a linked machine could not be opened from here at all.
+   */
+  it('brings the terminals in its home directory', async () => {
+    peerSnapshot.sessions.push({ id: 's-home', worktreeId: 'machine', kind: 'shell' } as Session)
+    await link()
+    const snapshot = await workspace.snapshot()
+    expect(snapshot.sessions.map((s) => s.id)).toEqual([scoped('s-a'), scoped('s-home')])
+    expect(snapshot.sessions.find((s) => s.id === scoped('s-home'))?.worktreeId).toBe(scoped('machine'))
+  })
+
   it('keeps its own layout and never adopts the other machine’s', async () => {
     await link()
     const snapshot = await workspace.snapshot()

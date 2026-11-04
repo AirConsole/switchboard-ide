@@ -50,7 +50,7 @@ so every browser and every machine linking that one shows the same answer.
 
 **The row ends with the machine itself**: a shell in your home directory,
 belonging to no worktree and no project -- and more of them, each a window to
-its right, when you want two side by side. It is where the work that comes before
+its right, when you want two side by side, on this machine or a linked one. It is where the work that comes before
 a worktree happens -- cloning the repository you are about to open, looking at a
 disk, killing something -- and before it existed a fresh install had nowhere to
 type at all, since every other terminal here belongs to a worktree. With nothing
@@ -122,6 +122,37 @@ instead of offering the button; one that fails shows the tail of its output,
 and what is running stays running. A linked machine out of step offers the same
 from its windows, through `POST /api/servers/:key/update`. See
 `server/src/update.ts`.
+
+**And it updates itself.** Finding origin ahead is enough: the machine pulls
+once nobody has typed into any terminal through it for five minutes
+(`autoDecision`; keystrokes are marked in `routes/ws.ts`, linked machines'
+terminals included, and xterm's own query replies are not keystrokes). It
+also tells every machine linked to it (`POST /api/update {whenQuiet: true}`),
+which looks for itself and updates by the same rules. A linked machine is
+often one nobody has a page of open, and nothing else would make it look.
+There is still no timer polling GitHub. The only timer is the 30s re-check
+while an update waits for quiet. So merging to master reaches every machine
+that has, or is linked from, an open page.
+
+That is only safe because **a pull that does not come up goes back**. `swb
+pull` builds before it stops anything, so a broken build was always harmless,
+but a build that crashes on start left the machine dark -- and on a machine
+nobody is at, nothing here could reach it again. Now a failed restart resets
+the checkout to the commit that was running, rebuilds and starts it, and
+records the bad commit in `update-failed.json`. The server will not pull that
+commit again by itself (the banner says so); the next commit on master it
+will. A pull you type ignores the record and clears it when it succeeds. One
+pull at a time, by `pull.lock` in the state directory: a page's update and a
+`pnpm pull` typed a minute later would otherwise build into one `dist/`.
+
+Measured with two throwaway clones run as machine instances, B linked from A,
+sharing a bare origin. A harmless commit pushed, then one `GET /api/update` on
+A: both ran it within 15s. A commit that throws at start: both pulled it,
+failed, went back and answered `/api/health` within 30s, and both recorded it.
+The next poll said `skipped` and the instance stayed the same for 40s. A
+fixing commit: both took it within 10s and cleared the record. Not measured
+end to end is the wait itself under real typing; `autoDecision` is tested
+alone.
 
 Each is an alias for one command, `cli/bin/swb.js`; `pnpm swb` prints its usage.
 It is plain JavaScript with no build step,
