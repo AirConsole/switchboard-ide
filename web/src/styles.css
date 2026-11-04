@@ -756,66 +756,88 @@ button {
  * the only unambiguous way to say which one a new worktree belongs to.
  */
 /*
- * Claude's usage limits, at the right of the bar.
+ * Claude's usage limits, at the right of the bar: rings inside each other,
+ * and a click for the numbers. See `UsageRings`.
  *
  * `flex: none` after the scrolling tab strip, so it stays put however many
  * worktrees are open -- it is a readout, and a readout that scrolls away is one
- * you stop trusting.
- *
- * Three rows in a 38px bar is the whole constraint: 10px labels, 3px bars, 2px
- * between. Below the 11px micro voice on purpose, because this is the one place
- * in the interface reading a number matters more than reading a word, and the
- * numbers stay in --graphite, which clears 7:1.
+ * you stop trusting. The full height of the bar, so the target is the bar's
+ * height and not the ring's 28px.
  */
 .usage {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
   flex: none;
-  gap: 2px;
-  padding: 0 12px;
-  /* A button, for the last rung's click, dressed as the readout it is. */
+  align-self: stretch;
+  padding: 0 10px;
   font: inherit;
-  text-align: left;
   color: inherit;
   background: none;
   border: 0;
   border-left: 1px solid var(--rule);
-  cursor: default;
+  cursor: pointer;
+}
+
+.usage:hover,
+.usage--open {
+  background: var(--level-hover);
+}
+
+.usage__rings {
+  display: block;
+}
+
+.usage__groove {
+  fill: none;
+  stroke: var(--level-object);
 }
 
 /*
- * The whole readout, hung under the bar from the last rung's percentages.
- * `.menu` gives it the surface and the place; the rows are the bar's own at
- * full width, which is the point -- the same reading, with the room to say it.
- * Only at that rung: wider, the bar already shows all of it.
+ * Flat ends, though round ones look softer: a round cap reaches half a stroke
+ * past each end of the arc, and on the innermost ring, 22 units round, that is
+ * 14% of the circle the reading would claim and not have.
+ */
+.usage__arc {
+  fill: none;
+  stroke: var(--graphite);
+}
+
+.usage__ring--low .usage__arc {
+  stroke: var(--signal);
+}
+
+.usage__ring--spent .usage__arc {
+  stroke: var(--danger);
+}
+
+/*
+ * The whole reading, hung under the ring. `.menu` gives it the surface and the
+ * place; the rows line up as a column of bars, with tabular numerals so 8% and
+ * 88% do not move the bar beside them.
  */
 .usage__pop {
   min-width: 0;
-  gap: 4px;
-  padding: 8px 12px;
+  /* Measured: 365px wide at full length, 5px past a 360px phone. The track is
+     the column that gives, so the numbers stay whole. */
+  max-width: calc(100vw - 16px);
+  gap: 6px;
+  padding: 10px 12px;
 }
 
-.topbar:not([data-stage='7']) .usage__pop {
-  display: none;
-}
-
-/* Fixed columns, so three bars line up as a column of bars rather than three
-   separate widgets. Tabular numerals for the same reason: 8% and 88% must not
-   move the bar beside them. */
 .usage__row {
   display: grid;
-  grid-template-columns: 42px 54px 26px 24px;
+  grid-template-columns: 52px minmax(24px, 96px) 30px auto;
   align-items: center;
-  gap: 6px;
-  font-size: 10px;
+  gap: 8px;
+  font-size: 11px;
   line-height: 1;
   color: var(--graphite);
+  white-space: nowrap;
 }
 
 .usage__label {
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
   letter-spacing: 0.04em;
 }
@@ -837,10 +859,8 @@ button {
  * Running out, and nearly gone. See `usageLevel` for the two numbers and for
  * why this is the one reading in the chrome allowed to wear amber.
  *
- * The number takes the colour as well as the bar, and that is not decoration:
- * the track is the first thing the top bar gives up as it runs out of room
- * (rung 1, below), so a colour that lived only on the fill would go out exactly
- * when the window is too small to show it. Both clear the floor on the ground
+ * In the panel the number takes the colour as well as the bar, so the one to
+ * read is the one that stands out of the column. Both clear the floor on the ground
  * each sits on -- amber 11.03:1 and red 6.42 on the frame the readout is drawn
  * against, 8.39 and 4.88 on the track behind the fill.
  *
@@ -871,7 +891,7 @@ button {
 }
 
 /*
- * How long until this limit comes back.
+ * When this limit comes back, as a time and a countdown.
  *
  * A step quieter than the percent beside it, because it answers the second
  * question rather than the first: --graphite-dim measures 5.24:1 on --level-panel,
@@ -879,9 +899,15 @@ button {
  * meant to read first.
  */
 .usage__resets {
-  text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--graphite-dim);
+}
+
+/* When the numbers were read, and what went wrong if the last read failed. */
+.usage__read {
+  font-size: 11px;
+  color: var(--graphite-dim);
+  padding-top: 2px;
 }
 
 /*
@@ -1505,58 +1531,30 @@ button {
  * than asking for "3 or more", which CSS cannot say about an attribute. That is
  * the `data-tight` arrangement two rules up, and the same reason.
  *
- *   1  the usage tracks -- the 54px bars, the picture rather than the reading
- *   2  the `Open project` label; the icon stays
- *   3  the tabs of every project but the one you are in
- *   4  the tabs of that one too
- *   5  a second row: the project heads get the whole of it, and the usage
- *      readout gets its bars back on the first
- *   6  those bars again
- *   7  everything of the usage readout but the percentages; a click shows it
- */
-
-/*
- * Rung 1: the picture goes, the reading stays.
+ *   1  the `Open project` label; the icon stays
+ *   2  the tabs of every project but the one you are in
+ *   3  the tabs of that one too
+ *   4  a second row: the project heads get the whole of it
  *
- * The track is 54px of the block's 189 and the least of it -- a bar with no
- * number beside it is hard to act on, while `session 82% 4h` is the whole
- * reading in three cells. So it is the first thing overboard and the numbers
- * are nearly the last.
+ * The usage readout is on no rung. It had three of its own while it was three
+ * rows of bars, 189px wide -- the tracks, then the tracks again on the second
+ * row, then everything but the percentages -- and it is a 28px ring now, which
+ * costs less than the last of those ever did.
  */
-.topbar[data-stage='1'] .usage > .usage__row > .usage__track,
-.topbar[data-stage='2'] .usage > .usage__row > .usage__track,
-.topbar[data-stage='3'] .usage > .usage__row > .usage__track,
-.topbar[data-stage='4'] .usage > .usage__row > .usage__track,
-.topbar[data-stage='6'] .usage > .usage__row > .usage__track,
-.topbar[data-stage='7'] .usage > .usage__row > .usage__track {
-  display: none;
-}
 
-.topbar[data-stage='1'] .usage > .usage__row,
-.topbar[data-stage='2'] .usage > .usage__row,
-.topbar[data-stage='3'] .usage > .usage__row,
-.topbar[data-stage='4'] .usage > .usage__row,
-.topbar[data-stage='6'] .usage > .usage__row {
-  grid-template-columns: 42px 26px 24px;
-}
-
-/* Rung 2: the label. The icon is the part that says what the button does to
+/* Rung 1: the label. The icon is the part that says what the button does to
    anyone who has seen it once, and `title` carries the words either way. */
+.topbar[data-stage='1'] .topbar__label,
 .topbar[data-stage='2'] .topbar__label,
 .topbar[data-stage='3'] .topbar__label,
-.topbar[data-stage='4'] .topbar__label,
-.topbar[data-stage='5'] .topbar__label,
-.topbar[data-stage='6'] .topbar__label,
-.topbar[data-stage='7'] .topbar__label {
+.topbar[data-stage='4'] .topbar__label {
   display: none;
 }
 
+.topbar[data-stage='1'] .topbar__open,
 .topbar[data-stage='2'] .topbar__open,
 .topbar[data-stage='3'] .topbar__open,
-.topbar[data-stage='4'] .topbar__open,
-.topbar[data-stage='5'] .topbar__open,
-.topbar[data-stage='6'] .topbar__open,
-.topbar[data-stage='7'] .topbar__open {
+.topbar[data-stage='4'] .topbar__open {
   /* Square around the icon rather than the label's 14px either side. */
   padding: 0 11px;
 }
@@ -1570,8 +1568,8 @@ button {
  *
  * Along the bottom edge and out of flow: a head must be no wider collapsed
  * than the sweep measured it, and the bands read as a quantity under the name
- * rather than as another thing in the row of names. 3px is the usage tracks'
- * height, which is the other place here that draws a proportion.
+ * rather than as another thing in the row of names. 3px is the usage rings'
+ * stroke, the other place up here that draws a proportion.
  */
 .tabgroup__shares {
   display: none;
@@ -1622,39 +1620,31 @@ button {
 }
 
 /*
- * Rungs 3 and 4: a project becomes its head.
+ * Rungs 2 and 3: a project becomes its head.
  *
- * Three first, and the one you are in last, because the tabs worth keeping
+ * Two first, and the one you are in last, because the tabs worth keeping
  * longest are the ones you are working among. `--current` is "holds the row or
- * its own pane"; at rung 4 it keeps nothing but its light.
+ * its own pane"; at rung 3 it keeps nothing but its light.
  */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tab,
+.topbar[data-stage='2'] .tabgroup:not(.tabgroup--current) .tab,
+.topbar[data-stage='3'] .tab,
 .topbar[data-stage='4'] .tab,
-.topbar[data-stage='5'] .tab,
-.topbar[data-stage='6'] .tab,
-.topbar[data-stage='7'] .tab,
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__add,
-.topbar[data-stage='4'] .tabgroup__add,
-.topbar[data-stage='5'] .tabgroup__add,
-.topbar[data-stage='6'] .tabgroup__add,
-.topbar[data-stage='7'] .tabgroup__add {
+.topbar[data-stage='2'] .tabgroup:not(.tabgroup--current) .tabgroup__add,
+.topbar[data-stage='3'] .tabgroup__add,
+.topbar[data-stage='4'] .tabgroup__add {
   display: none;
 }
 
 /* And the name takes its own right edge back once the + beside it has gone. */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__pill,
-.topbar[data-stage='4'] .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup__pill,
-.topbar[data-stage='6'] .tabgroup__pill,
-.topbar[data-stage='7'] .tabgroup__pill {
+.topbar[data-stage='2'] .tabgroup:not(.tabgroup--current) .tabgroup__pill,
+.topbar[data-stage='3'] .tabgroup__pill,
+.topbar[data-stage='4'] .tabgroup__pill {
   padding-right: 12px;
 }
 
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__count,
-.topbar[data-stage='4'] .tabgroup__count,
-.topbar[data-stage='5'] .tabgroup__count,
-.topbar[data-stage='6'] .tabgroup__count,
-.topbar[data-stage='7'] .tabgroup__count {
+.topbar[data-stage='2'] .tabgroup:not(.tabgroup--current) .tabgroup__count,
+.topbar[data-stage='3'] .tabgroup__count,
+.topbar[data-stage='4'] .tabgroup__count {
   display: inline;
 }
 
@@ -1668,11 +1658,9 @@ button {
  * in for the other, and the strip is the one that could not exist at the
  * expanded rungs, where every awake worktree has a tab already saying it.
  */
-.topbar[data-stage='3'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
-.topbar[data-stage='4'] .tabgroup__shares,
-.topbar[data-stage='5'] .tabgroup__shares,
-.topbar[data-stage='6'] .tabgroup__shares,
-.topbar[data-stage='7'] .tabgroup__shares {
+.topbar[data-stage='2'] .tabgroup:not(.tabgroup--current) .tabgroup__shares,
+.topbar[data-stage='3'] .tabgroup__shares,
+.topbar[data-stage='4'] .tabgroup__shares {
   display: flex;
 }
 
@@ -1684,23 +1672,19 @@ button {
  * lit tab has always meant here -- the distinction between being in the pane
  * and being in one of its worktrees is exactly what collapsing gave up.
  */
-.topbar[data-stage='4'] .tabgroup--current .tabgroup__pill,
-.topbar[data-stage='5'] .tabgroup--current .tabgroup__pill,
-.topbar[data-stage='6'] .tabgroup--current .tabgroup__pill,
-.topbar[data-stage='7'] .tabgroup--current .tabgroup__pill {
+.topbar[data-stage='3'] .tabgroup--current .tabgroup__pill,
+.topbar[data-stage='4'] .tabgroup--current .tabgroup__pill {
   background-color: var(--level-lit);
   color: var(--bone);
 }
 
-.topbar[data-stage='4'] .tabgroup--current .tabgroup__count,
-.topbar[data-stage='5'] .tabgroup--current .tabgroup__count,
-.topbar[data-stage='6'] .tabgroup--current .tabgroup__count,
-.topbar[data-stage='7'] .tabgroup--current .tabgroup__count {
+.topbar[data-stage='3'] .tabgroup--current .tabgroup__count,
+.topbar[data-stage='4'] .tabgroup--current .tabgroup__count {
   color: var(--quiet-on);
 }
 
 /*
- * Rungs 5 to 7: a second row.
+ * Rung 4: a second row.
  *
  * Collapsed, every project is one head, and a row of heads that still does not
  * fit used to scroll -- on a phone with six projects, three of them were off
@@ -1710,12 +1694,7 @@ button {
  * the heads overrun even that, they **wrap**, a row of the bar's height at a
  * time, rather than scrolling -- the sweep cannot help them otherwise, since
  * nothing it can still take away is on their row. Only the first row's
- * overflow moves the ladder past here.
- *
- * Which hands the first row the room the heads had, and the usage readout gets
- * its bars back (rung 5): it was squeezed only because it shared a row with
- * the strip. If even that row is too narrow, it narrows again the way it did
- * before -- the bars (6), then all but the percentages (7).
+ * overflow could move the ladder past here, and there is nothing past here.
  *
  * A grid, not a wrapping flex row, and that is load-bearing: a wrapping row
  * that is too wide wraps again instead of overflowing, and overflowing is the
@@ -1728,36 +1707,26 @@ button {
  * the bar does rather than the first, and every pty under it is resized once
  * when it arrives.
  */
-.topbar[data-stage='5'],
-.topbar[data-stage='6'],
-.topbar[data-stage='7'] {
+.topbar[data-stage='4'] {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: var(--bar-h) auto;
   height: auto;
 }
 
-.topbar[data-stage='5'] > .topbar__open,
-.topbar[data-stage='6'] > .topbar__open,
-.topbar[data-stage='7'] > .topbar__open {
+.topbar[data-stage='4'] > .topbar__open {
   grid-area: 1 / 1;
 }
 
-.topbar[data-stage='5'] > .usage,
-.topbar[data-stage='6'] > .usage,
-.topbar[data-stage='7'] > .usage {
+.topbar[data-stage='4'] > .usage {
   grid-area: 1 / 3;
 }
 
-.topbar[data-stage='5'] > .topbar__signout:nth-last-child(2),
-.topbar[data-stage='6'] > .topbar__signout:nth-last-child(2),
-.topbar[data-stage='7'] > .topbar__signout:nth-last-child(2) {
+.topbar[data-stage='4'] > .topbar__signout:nth-last-child(2) {
   grid-area: 1 / 4;
 }
 
-.topbar[data-stage='5'] > .topbar__signout:last-child,
-.topbar[data-stage='6'] > .topbar__signout:last-child,
-.topbar[data-stage='7'] > .topbar__signout:last-child {
+.topbar[data-stage='4'] > .topbar__signout:last-child {
   grid-area: 1 / 5;
 }
 
@@ -1765,9 +1734,7 @@ button {
  * The heads' row, with the same rule above it that the bar has below: two rows
  * of one instrument rather than a toolbar with a shelf under it.
  */
-.topbar[data-stage='5'] > .tabstrip,
-.topbar[data-stage='6'] > .tabstrip,
-.topbar[data-stage='7'] > .tabstrip {
+.topbar[data-stage='4'] > .tabstrip {
   grid-area: 2 / 1 / 3 / -1;
   border-top: 1px solid var(--rule);
   flex-wrap: wrap;
@@ -1775,39 +1742,8 @@ button {
 }
 
 /* A row of heads is the bar's height, the 3px inset above each included. */
-.topbar[data-stage='5'] .tabgroup,
-.topbar[data-stage='6'] .tabgroup,
-.topbar[data-stage='7'] .tabgroup {
+.topbar[data-stage='4'] .tabgroup {
   height: calc(var(--bar-h) - 3px);
-}
-
-/*
- * Rung 7: the percentages, and a click for the rest.
- *
- * It used to go altogether at the bottom of the ladder, which on a phone put
- * the limits out of sight on the screen with least else to warn you that the
- * session you are about to start will end early. Now it keeps `82%` alone, one
- * per limit in the order `/usage` reports them, and a click hangs the whole
- * readout under the bar (`.usage__pop`). The colour rides on the percent, so
- * amber and red still say which one to open it for.
- */
-.topbar[data-stage='7'] .usage {
-  padding: 0 8px;
-  cursor: pointer;
-}
-
-.topbar[data-stage='7'] .usage:hover,
-.topbar[data-stage='7'] .usage--open {
-  background: var(--level-hover);
-}
-
-.topbar[data-stage='7'] .usage > .usage__row > .usage__label,
-.topbar[data-stage='7'] .usage > .usage__row > .usage__resets {
-  display: none;
-}
-
-.topbar[data-stage='7'] .usage > .usage__row {
-  grid-template-columns: 26px;
 }
 
 /* --------------------------------------------------------------- the tile -- */

@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
 import type { ProjectGroup } from '../App.js'
 import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
-import { UsageBars, useUsage } from './UsageBars.js'
+import { UsageRings, useUsage } from './UsageRings.js'
 import { LinkIcon } from './LinkIcon.js'
 import { isMachineKey, projectKey } from '../views/Overview.js'
 import { PanelIcon } from './PanelIcon.js'
@@ -17,14 +17,12 @@ import {
 /**
  * The last rung of the ladder -- see the sweep in `TopBar`.
  *
- * 0 the bar as it is, 1 without the usage tracks, 2 without the `Open project`
- * label, 3 with every project but the current one collapsed to its head, 4 with
- * all of them collapsed, 5 with those heads on a second row and the usage bars
- * back on the first, 6 without those bars again, 7 with the usage readout down
- * to its percentages. Past it the strip scrolls, which is what it has always
- * done and the honest end of the ladder.
+ * 0 the bar as it is, 1 without the `Open project` label, 2 with every project
+ * but the current one collapsed to its head, 3 with all of them collapsed, 4
+ * with those heads on a second row. Past it the first row overflows, which is
+ * the honest end of the ladder.
  */
-const LAST_STAGE = 7
+const LAST_STAGE = 4
 
 /**
  * Is this the project you are in?
@@ -32,7 +30,7 @@ const LAST_STAGE = 7
  * Either one of its worktrees has the row, or its own pane does -- `activeId`
  * carries both, and a project whose *pane* you are looking at is as much where
  * you are as one whose terminal you are typing in. It decides which project
- * keeps its tabs at rung 3, and which head lights up once the tabs are gone.
+ * keeps its tabs at rung 2, and which head lights up once the tabs are gone.
  */
 const isCurrent = (group: ProjectGroup, activeId: string | null): boolean =>
   activeId !== null &&
@@ -448,11 +446,9 @@ export const TopBar = ({
    * The bar gives things up in order, as it runs out of room.
    *
    * `data-stage` on the header is the rung, and every rung is a CSS
-   * consequence of it: 1 drops the usage tracks, 2 the `Open project` label, 3
-   * the tabs of every project but the one you are in, 4 the rest of them, 5
-   * puts the heads on a second row and gives the usage its bars back, 6 takes
-   * them again, 7 the usage readout down to its percentages, which a click
-   * opens. The strip is what runs out -- it is `flex: 1;
+   * consequence of it: 1 drops the `Open project` label, 2 the tabs of every
+   * project but the one you are in, 3 the rest of them, 4 puts the heads on a
+   * second row. The strip is what runs out -- it is `flex: 1;
    * min-width: 0`, so it takes whatever the other two leave -- and it says so
    * by `scrollWidth > clientWidth`.
    *
@@ -468,8 +464,8 @@ export const TopBar = ({
    * the document.
    *
    * So the rung is written on the DOM, once, inside one synchronous block --
-   * and **nothing React renders may depend on it**. The count, the tabs and the
-   * usage rows are always in the markup; CSS is what hides them. Otherwise a
+   * and **nothing React renders may depend on it**. The count and the tabs are
+   * always in the markup; CSS is what hides them. Otherwise a
    * pass would measure rung n against the text of rung n-1.
    *
    * No dependency array, so it runs after every commit -- which is exactly the
@@ -482,7 +478,7 @@ export const TopBar = ({
    * Walk down the rungs until the strip fits, from the top every time.
    *
    * The header is measured too, not only the strip: squeezed hard enough --
-   * `Open project` and the usage bars are 314px between them -- the strip is
+   * `Open project` and the usage rings are 171px between them -- the strip is
    * given a clientWidth of 0 and stops being able to report an overflow at all,
    * while the header's own flex line is the thing that has overrun.
    */
@@ -551,7 +547,7 @@ export const TopBar = ({
    *
    * The header's width is the app's, since `.app` is a two-row grid of one
    * column, so it never moves in answer to a rung. The strip's does: dropping
-   * the usage bars widens it by 189px, so an observer on it would fire on the
+   * the `Open project` label widens it by the label's width, so an observer on it would fire on the
    * consequence of its own callback and earn a "ResizeObserver loop completed
    * with undelivered notifications", which drops the rest of that frame's
    * notifications on the floor.
@@ -595,7 +591,7 @@ export const TopBar = ({
         />
       ))}
     </nav>
-    {usage !== null && <UsageBars usage={usage} />}
+    {usage !== null && <UsageRings usage={usage} />}
     {/*
       * The way out, in the opposite corner from the way in.
       *
