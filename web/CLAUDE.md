@@ -582,6 +582,20 @@ pane key lives on the slot alone: `MachineTile` once hard-coded
 nearest one, counted every machine window as the first and stepped straight
 past the others.
 
+**The + also opens one on a linked machine.** With a machine linked, it asks
+which -- this machine or that one -- and with none it opens one here at once.
+The terminal is made with that machine's scoped machine id
+(`machineWorktreeIdOn(key)`, `h1a2b3c4d~machine`), which the proxy routes there
+like any other scoped id; the peer's own branch for `MACHINE_WORKTREE_ID` does
+the rest. Its window is named by that machine rather than "This machine", and
+`machineSession` -- the window that is always here -- is the oldest terminal
+on *this* machine only, so a linked machine's older one can never take that
+place and then vanish with its machine. The list of machines is `/api/servers`,
+read again on every invalidate, since a machine linked for its terminal alone
+has no project here to be found by. Measured with two scratch instances: the
+menu offered both, a terminal opened from it ran on the peer's tmux socket
+(`echo $SWB_PORT` printed the peer's port), and its × ended that session there.
+
 `WelcomeTile` replaced a full-screen empty state that said *No project open* --
 a statement of absence where an instruction belongs, and the first sentence this
 interface said to anybody. It is a window rather than a screen because the

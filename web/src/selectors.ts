@@ -15,27 +15,52 @@ export const terminalSessions = (sessions: Session[], worktreeId: string): Sessi
   sessions.filter((s) => s.worktreeId === worktreeId && s.kind === 'shell')
 
 /**
- * The machine's own terminal: the one shell that belongs to no worktree.
+ * The worktree id a machine's own terminals carry here: the reserved literal
+ * for the machine serving the page, and the same behind a linked machine's key
+ * for one of its -- the server scopes every id a peer sends that way, so a
+ * terminal there is `h1a2b3c4d~machine`, and creating one with that id routes
+ * the request to that machine.
+ */
+export const machineWorktreeIdOn = (host: string | null): string =>
+  host === null ? MACHINE_WORKTREE_ID : `${host}~${MACHINE_WORKTREE_ID}`
+
+const REMOTE_MACHINE = new RegExp(`^(h[0-9a-f]{8})~${MACHINE_WORKTREE_ID}$`)
+
+/**
+ * Which machine a session is a home-directory terminal on: null for this one,
+ * a linked machine's key for one of its, undefined for any other session.
+ */
+export const machineHostOf = (session: Session): string | null | undefined => {
+  if (session.kind !== 'shell') return undefined
+  if (session.worktreeId === MACHINE_WORKTREE_ID) return null
+  return REMOTE_MACHINE.exec(session.worktreeId)?.[1]
+}
+
+/**
+ * The machine's own terminal: the oldest shell on this machine that belongs to
+ * no worktree.
  *
  * It is found the way every other session is, by the worktree id it recorded --
  * `MACHINE_WORKTREE_ID` is a reserved literal precisely so that this stays one
- * filter rather than a second shape of session.
+ * filter rather than a second shape of session. This machine's only: the
+ * machine's window is the one that is always there, and a linked machine that
+ * goes away takes its terminals with it.
  */
 export const machineSession = (sessions: Session[]): Session | undefined =>
-  machineSessions(sessions)[0]
+  machineSessions(sessions).find((s) => machineHostOf(s) === null)
 
 /**
- * Every terminal on the machine, oldest first.
+ * Every home-directory terminal, on this machine and the linked ones, oldest
+ * first.
  *
- * The oldest is the machine's window -- the one that is always there, and
- * offers to start a terminal when it has none -- and each one after it has a
+ * The machine's window holds `machineSession`, and each of the others has a
  * window of its own to its right, gone when its shell is. Oldest first so the
  * window a new one opens in is always the far end, and the ones already open
  * keep their places.
  */
 export const machineSessions = (sessions: Session[]): Session[] =>
   sessions
-    .filter((s) => s.worktreeId === MACHINE_WORKTREE_ID && s.kind === 'shell')
+    .filter((s) => machineHostOf(s) !== undefined)
     .sort((a, b) => a.createdAt - b.createdAt)
 
 /**

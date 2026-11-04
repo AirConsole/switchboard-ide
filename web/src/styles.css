@@ -4306,6 +4306,35 @@ button {
 }
 
 /*
+ * A plain list of choices, for a menu whose rows are words: which machine the
+ * machine window's + opens a terminal on.
+ */
+.menu__label {
+  padding: 6px 8px 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--graphite-dim);
+}
+
+.menu__item {
+  padding: 7px 8px;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: none;
+  color: var(--bone);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu__item:hover,
+.menu__item:focus-visible {
+  background: var(--level-hover);
+  outline: none;
+}
+
+/*
  * A dropdown whose rows are worktrees: the same tabs, stacked.
  *
  * It was the sleeping-worktrees dropdown first, and the todo panel's Move to

@@ -50,7 +50,7 @@ so every browser and every machine linking that one shows the same answer.
 
 **The row ends with the machine itself**: a shell in your home directory,
 belonging to no worktree and no project -- and more of them, each a window to
-its right, when you want two side by side. It is where the work that comes before
+its right, when you want two side by side, on this machine or a linked one. It is where the work that comes before
 a worktree happens -- cloning the repository you are about to open, looking at a
 disk, killing something -- and before it existed a fresh install had nowhere to
 type at all, since every other terminal here belongs to a worktree. With nothing

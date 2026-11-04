@@ -20,6 +20,7 @@ import { TaskStrip } from '../components/TaskStrip.js'
 import {
   claudeSession,
   isRunning,
+  machineSession,
   machineSessions,
   terminalSessions,
   worktreeTodos,
@@ -59,7 +60,7 @@ import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
 import { PanelIcon } from '../components/PanelIcon.js'
 import { useNearViewport } from './useNearViewport.js'
-import { MachineTile } from './MachineTile.js'
+import { MachineTile, type MachineChoice } from './MachineTile.js'
 import { WelcomeTile } from './WelcomeTile.js'
 import { RowStep } from './rowStep.js'
 
@@ -1428,8 +1429,13 @@ export interface OverviewProps {
   departing: ReadonlySet<string>
   /** Start the machine's own terminal; it has none. */
   onMachineTerminal: () => void
-  /** Another terminal on the machine, in a window of its own at the far end. */
-  onAnotherMachineTerminal: () => void
+  /**
+   * Another terminal in a home directory, in a window of its own at the far
+   * end: on this machine (null) or the linked one with that key.
+   */
+  onAnotherMachineTerminal: (host: string | null) => void
+  /** The machines a terminal can be opened on, this one first. */
+  machines: MachineChoice[]
   /** End one of the machine's terminals; its window goes with it. */
   onCloseMachineTerminal: (sessionId: string) => void
   /** The open-project dialog, for the welcome window's button. */
@@ -1510,6 +1516,7 @@ export const Overview = ({
   onMachineTerminal,
   onAnotherMachineTerminal,
   onCloseMachineTerminal,
+  machines,
   onOpenProject,
   onCreated,
   groups,
@@ -1881,15 +1888,17 @@ export const Overview = ({
    * far end is a fixed thing you can learn.
    */
   const onMachine = machineSessions(sessions)
+  const machineOwn = machineSession(sessions)
   push(MACHINE_KEY, null, null, [
     { kind: 'machine', key: MACHINE_KEY, units: Math.min(PANE_UNITS.machine, units) },
   ])
   /*
    * Its other terminals, each a window to its right rather than a tab: this is
    * a place you go to do one thing, and two of those side by side -- a build
-   * in one, a `top` in the other -- is what a second one is for.
+   * in one, a `top` in the other -- is what a second one is for. A linked
+   * machine's terminals come here too, in the order they were opened.
    */
-  for (const session of onMachine.slice(1)) {
+  for (const session of onMachine.filter((one) => one !== machineOwn)) {
     const key = machineKeyFor(session.id)
     push(key, null, null, [{ kind: 'machine', key, units: Math.min(PANE_UNITS.machine, units) }])
   }
@@ -2750,10 +2759,11 @@ export const Overview = ({
                         onDismissFailure={onDismissFailure}
                         session={
                           slot.key === MACHINE_KEY
-                            ? onMachine[0]
+                            ? machineOwn
                             : onMachine.find((one) => machineKeyFor(one.id) === slot.key)
                         }
                         extra={slot.key !== MACHINE_KEY}
+                        machines={machines}
                         fontSize={TERMINAL_FONT_SIZE}
                         scroller={gridRef}
                         focus={scrollTo?.id === slot.key && scrollTo.focus ? scrollTo.nonce : null}

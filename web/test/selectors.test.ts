@@ -5,8 +5,10 @@ import {
   machineHasProjects,
   claudeSession,
   drainTakesKeyboard,
+  machineHostOf,
   machineSession,
   machineSessions,
+  machineWorktreeIdOn,
   isRunning,
   mostUrgentStatus,
   orderWorktrees,
@@ -548,6 +550,24 @@ describe('machineSession', () => {
     const third = session({ id: 'm3', worktreeId: MACHINE_WORKTREE_ID, kind: 'shell', createdAt: 30 })
     expect(machineSessions([third, theirs, second, first]).map((s) => s.id)).toEqual(['m1', 'm2', 'm3'])
     expect(machineSession([third, second, first])?.id).toBe('m1')
+  })
+
+  it("keeps a linked machine's terminals out of this machine's window", () => {
+    // Linked, a machine's own terminals arrive scoped by its key. One older
+    // than this machine's must not take the window that is always here: that
+    // window would then go when the other machine did.
+    const there = session({ id: 'h1a2b3c4d~r1', worktreeId: 'h1a2b3c4d~machine', kind: 'shell', createdAt: 5 })
+    const here = session({ id: 'm1', worktreeId: MACHINE_WORKTREE_ID, kind: 'shell', createdAt: 10 })
+    expect(machineSession([there, here])?.id).toBe('m1')
+    expect(machineSession([there])).toBeUndefined()
+    expect(machineSessions([here, there, theirs]).map((s) => s.id)).toEqual(['h1a2b3c4d~r1', 'm1'])
+    expect(machineHostOf(there)).toBe('h1a2b3c4d')
+    expect(machineHostOf(here)).toBe(null)
+    expect(machineHostOf(theirs)).toBeUndefined()
+    // A worktree on that machine is not its home directory.
+    expect(machineHostOf(session({ id: 'x', worktreeId: 'h1a2b3c4d~wt-abc', kind: 'shell' }))).toBeUndefined()
+    expect(machineWorktreeIdOn('h1a2b3c4d')).toBe('h1a2b3c4d~machine')
+    expect(machineWorktreeIdOn(null)).toBe(MACHINE_WORKTREE_ID)
   })
 
   it('is not a worktree terminal, and a worktree does not see it', () => {
