@@ -179,16 +179,23 @@ export const listRawWorktrees = async (root: string): Promise<RawWorktree[]> => 
  * while it runs. One that changed nothing is removed when the subagent ends;
  * one that changed something is kept -- and **unlocked**, so the lock cannot be
  * the test, or every leftover would turn up in the row as an asleep worktree
- * whose window, woken, starts a second Claude on another agent's work. The
- * directory and the branch together are what both cases share, and asking for
- * both keeps a branch somebody happened to name `agent-x` in the row.
+ * whose window, woken, starts a second Claude on another agent's work.
+ *
+ * Nor can the branch. Asking for `worktree-agent-<hex>` as well missed the two
+ * left in builders: each subagent had checked out a branch of its own
+ * (`approval-at-make-live`, `dev-data-plane`) and committed there, reflog
+ * "checkout: moving from worktree-agent-a489100815d07172b to ...". The folder
+ * is the one thing it does not change, so it is the whole test -- made narrow
+ * instead by what Claude Code puts in it: an id of 16 or 17 hex digits
+ * (measured), inside `.claude/worktrees/`. A worktree of yours lands there
+ * named after its branch, so it would need a branch called `agent-` and
+ * sixteen hex digits to be taken for one.
  */
-const SUBAGENT_DIR = /^agent-[0-9a-f]+$/
+const SUBAGENT_DIR = /^agent-[0-9a-f]{16,}$/
 
-export const isSubagentWorktree = (w: Pick<RawWorktree, 'path' | 'branch'>): boolean => {
-  const dir = basename(w.path)
-  return SUBAGENT_DIR.test(dir) && w.branch === `worktree-${dir}`
-}
+export const isSubagentWorktree = (w: Pick<RawWorktree, 'path'>): boolean =>
+  SUBAGENT_DIR.test(basename(w.path)) && basename(dirname(w.path)) === 'worktrees' &&
+  basename(dirname(dirname(w.path))) === '.claude'
 
 export const listWorktrees = async (projectId: string, root: string): Promise<Worktree[]> => {
   const raw = (await listRawWorktrees(root)).filter((w) => !isSubagentWorktree(w))
