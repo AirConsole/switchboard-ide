@@ -134,7 +134,7 @@ let nextStreamId = 1
  * One live terminal: its tmux session, the pty attached to it, the server-side
  * mirror of its screen, and everyone currently watching.
  */
-class LiveSession {
+export class LiveSession {
   /** Not readonly: `revive()` replaces it, because `markDead` disposes it. */
   mirror: TerminalMirror
   readonly attachments = new Map<Sink, Attachment>()
@@ -980,10 +980,31 @@ export class SessionEngine {
     if (live.sizeOwner === sink) live.sizeOwner = null
   }
 
+  /**
+   * The view you are using takes the keyboard -- and the size, when it is one
+   * that sizes the pty at all.
+   *
+   * Size used to follow only the last view to attach or resize, so with the
+   * same Claude open on two machines the one you were not looking at could own
+   * it: the other machine's window was larger, and the one in front of you drew
+   * that geometry into a smaller pane and cut off its right side and its input
+   * box. Clicking in, typing or switching back to the window claimed the
+   * keyboard and changed nothing else, so it stayed cut off until that window
+   * happened to resize. Focus is the moment that says which one is in use --
+   * a click, a keystroke's first landing, the window coming to the front (the
+   * browser refocuses the terminal it left) -- so it is the one that sizes.
+   * Not pointer movement: passing the mouse over the machine beside you would
+   * reflow Claude under whoever is typing on the other.
+   */
   focus(sink: Sink, sessionId: string): void {
     const live = this.sessions.get(sessionId)
-    if (!live || !live.attachments.has(sink)) return
+    const attachment = live?.attachments.get(sink)
+    if (!live || !attachment) return
     live.inputOwner = sink
+    if (attachment.primary) {
+      live.sizeOwner = sink
+      live.applySize()
+    }
   }
 
   /**

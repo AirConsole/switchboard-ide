@@ -59,8 +59,13 @@ attachments. Three rules keep several viewers of one terminal sane:
 
 - **`sizeOwner`** — one attachment decides the geometry, and it is the most
   recently added *primary*, not the first. "First primary wins" was a real bug:
-  a leaked attachment froze every later viewer at its size. With no primary
-  attached, the pty's size is left alone entirely.
+  a leaked attachment froze every later viewer at its size. Focusing a primary
+  claims it too, alongside the keyboard: with Claude open on two machines the
+  one you were not using could own the size, and the one in front of you drew
+  that larger geometry into its smaller pane, cut off at the right and bottom,
+  however much you clicked and typed there. The view you are not using is the
+  one that is cut off now, until you click into it. With no primary attached,
+  the pty's size is left alone entirely.
 - **`inputOwner`** — one attachment may type. Terminal apps emit queries
   (cursor position, device attributes) that xterm.js answers on its own, so two
   writers inject duplicate replies into the app's stdin. Claiming happens on
