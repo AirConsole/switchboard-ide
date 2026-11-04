@@ -6,6 +6,7 @@ import {
   claudeSession,
   drainTakesKeyboard,
   machineSession,
+  machineSessions,
   isRunning,
   mostUrgentStatus,
   orderWorktrees,
@@ -536,6 +537,17 @@ describe('machineSession', () => {
 
   it('answers nothing where there is none', () => {
     expect(machineSession([theirs, claude])).toBeUndefined()
+  })
+
+  it('puts the oldest first, whatever order the list came in', () => {
+    // The oldest is the machine's own window and every later one opens to its
+    // right, so a list that arrived newest first would have swapped which
+    // window was the one that stays.
+    const second = session({ id: 'm2', worktreeId: MACHINE_WORKTREE_ID, kind: 'shell', createdAt: 20 })
+    const first = session({ id: 'm1', worktreeId: MACHINE_WORKTREE_ID, kind: 'shell', createdAt: 10 })
+    const third = session({ id: 'm3', worktreeId: MACHINE_WORKTREE_ID, kind: 'shell', createdAt: 30 })
+    expect(machineSessions([third, theirs, second, first]).map((s) => s.id)).toEqual(['m1', 'm2', 'm3'])
+    expect(machineSession([third, second, first])?.id).toBe('m1')
   })
 
   it('is not a worktree terminal, and a worktree does not see it', () => {

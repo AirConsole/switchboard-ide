@@ -570,6 +570,17 @@ offers to start another, because the row's far end is a shape you learn, and a
 window that came and went would not be one. The dead-shell reaper takes the
 session away; nothing in the engine has a special case for this.
 
+**A second machine terminal is a second window**, to the right, from the + in
+the bar -- never a tab, since what you want two of these for is to watch both.
+The oldest session is the machine's window (`machineSessions` sorts by
+`createdAt`); each later one is a cell keyed `machine:<sessionId>`
+(`machineKeyFor`, `isMachineKey`), so the walk, the reveal and the top bar's
+button treat it as one more window. It has a × and goes with its shell. The
+pane key lives on the slot alone: `MachineTile` once hard-coded
+`data-pane="machine:machine"` on its body, and the walk, which reads the
+nearest one, counted every machine window as the first and stepped straight
+past the others.
+
 `WelcomeTile` replaced a full-screen empty state that said *No project open* --
 a statement of absence where an instruction belongs, and the first sentence this
 interface said to anybody. It is a window rather than a screen because the

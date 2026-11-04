@@ -138,13 +138,20 @@ describe('against a real repository', () => {
      */
     const agent = join(repo.path, '.claude', 'worktrees', 'agent-a1c07194671e212a')
     await addWorktree({ root: repo.path, path: agent, branch: 'worktree-agent-a1c07194671e212a' })
-    // Either half alone is somebody's own naming, and stays.
+    // Seen in builders: the subagent checked out a branch of its own and
+    // committed there, so only the folder still says whose it is.
+    const moved = join(repo.path, '.claude', 'worktrees', 'agent-a489100815d07172b')
+    await addWorktree({ root: repo.path, path: moved, branch: 'approval-at-make-live' })
+    // A short name is somebody's own, and so is the shape outside the folder
+    // Claude Code uses; both stay.
     const named = join(repo.path, '.claude', 'worktrees', 'agent-beef')
     await addWorktree({ root: repo.path, path: named, branch: 'agent-beef' })
+    const elsewhere = join(repo.path, 'trees', 'agent-a1c07194671e212b')
+    await addWorktree({ root: repo.path, path: elsewhere, branch: 'elsewhere' })
 
-    expect(await listRawWorktrees(repo.path)).toHaveLength(3)
+    expect(await listRawWorktrees(repo.path)).toHaveLength(5)
     const names = (await listWorktrees('p-1', repo.path)).map((w) => w.name)
-    expect(names).toEqual(['main', 'agent-beef'])
+    expect(names.sort()).toEqual(['agent-a1c07194671e212b', 'agent-beef', 'main'])
   })
 
   it('parses a worktree whose path contains a newline', async () => {

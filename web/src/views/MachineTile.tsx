@@ -10,8 +10,14 @@ export interface MachineTileProps {
   /** An action about this window that failed, if there is one. */
   failure: Failure | null
   onDismissFailure: () => void
-  /** The machine's one terminal, while it is running. */
+  /** This window's terminal, while it is running. */
   session: Session | undefined
+  /**
+   * A second or later terminal, in a window of its own. It closes rather than
+   * offering to start again: the machine's first window is the one that is
+   * always there.
+   */
+  extra: boolean
   fontSize: number
   /** The row, so this window can tell whether it is worth building a terminal. */
   scroller: RefObject<HTMLElement | null>
@@ -20,6 +26,10 @@ export interface MachineTileProps {
   /** Whether this is the window the row says you are in. */
   current: boolean
   onStart: () => void
+  /** Another terminal, in a new window at the far end. */
+  onAnother: () => void
+  /** End this terminal; its window goes with it. */
+  onClose: (sessionId: string) => void
   onReveal: () => void
 }
 
@@ -32,21 +42,27 @@ export interface MachineTileProps {
  * nothing on screen but an invitation to open a project that is not on the
  * machine yet. So the row ends with the box the row is running on.
  *
- * One terminal and no tab strip, deliberately. A worktree's terminals are a
- * place you work, and you want several; this is a place you go to do one thing
- * and leave. If it exits, the pane offers to start another rather than
- * disappearing -- the window is part of the row's shape, and a row whose far
- * end comes and went would be a row you cannot learn.
+ * One terminal and no tab strip, deliberately: this is a place you go to do
+ * one thing and leave. A second one is a second *window*, to the right, made
+ * by the + in the bar -- side by side is what you want two of these for, a
+ * build in one and something watching it in the other, and a tab would hide
+ * the one you are not typing in. If the first exits, its pane offers to start
+ * another rather than disappearing -- the window is part of the row's shape,
+ * and a row whose far end comes and went would be a row you cannot learn. The
+ * ones after it do go, with their shell or their ×.
  */
 export const MachineTile = ({
   failure,
   onDismissFailure,
   session,
+  extra,
   fontSize,
   scroller,
   focus,
   current,
   onStart,
+  onAnother,
+  onClose,
   onReveal,
 }: MachineTileProps): React.ReactElement => {
   const startRef = useRef<HTMLButtonElement | null>(null)
@@ -85,12 +101,40 @@ export const MachineTile = ({
           {/* What it is for, in the words of what you do in it: the only window
               in the row that is not a worktree says so rather than being told
               apart by its shape alone. */}
-          <span className="tile__prompt">a terminal in your home directory</span>
+          <span className="tile__prompt">
+            {extra ? (session?.command ?? 'another terminal') : 'a terminal in your home directory'}
+          </span>
+        </div>
+        <div className="tile__controls">
+          <button
+            className="tile__toggle"
+            onClick={(event) => {
+              // The new window takes the row and the keyboard; this one's
+              // reveal would only race it there.
+              event.stopPropagation()
+              onAnother()
+            }}
+            title="Another terminal on this machine, in a window to the right"
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+          {extra && session !== undefined && (
+            <button
+              className="tile__toggle tile__away"
+              onClick={(event) => {
+                event.stopPropagation()
+                onClose(session.id)
+              }}
+              title="Close this terminal"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          )}
         </div>
       </div>
       {failure !== null && <TileFailure failure={failure} onDismiss={onDismissFailure} />}
       <div className="tile__body">
-        <div className="tile__pane" data-pane="machine:machine">
+        <div className="tile__pane">
           {session === undefined ? (
             <div className="tile__idle">
               <p className="tile__idle-text">

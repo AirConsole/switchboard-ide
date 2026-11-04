@@ -19,11 +19,24 @@ export const terminalSessions = (sessions: Session[], worktreeId: string): Sessi
  *
  * It is found the way every other session is, by the worktree id it recorded --
  * `MACHINE_WORKTREE_ID` is a reserved literal precisely so that this stays one
- * `find` rather than a second shape of session. At most one: the window offers
- * to start another only when this answers nothing.
+ * filter rather than a second shape of session.
  */
 export const machineSession = (sessions: Session[]): Session | undefined =>
-  sessions.find((s) => s.worktreeId === MACHINE_WORKTREE_ID && s.kind === 'shell')
+  machineSessions(sessions)[0]
+
+/**
+ * Every terminal on the machine, oldest first.
+ *
+ * The oldest is the machine's window -- the one that is always there, and
+ * offers to start a terminal when it has none -- and each one after it has a
+ * window of its own to its right, gone when its shell is. Oldest first so the
+ * window a new one opens in is always the far end, and the ones already open
+ * keep their places.
+ */
+export const machineSessions = (sessions: Session[]): Session[] =>
+  sessions
+    .filter((s) => s.worktreeId === MACHINE_WORKTREE_ID && s.kind === 'shell')
+    .sort((a, b) => a.createdAt - b.createdAt)
 
 /**
  * What a worktree's Claude is doing, as one value.
