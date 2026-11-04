@@ -14,7 +14,7 @@ import { sendRaw } from '../raw.js'
 import { hostKeyFor } from '../remote/scope.js'
 import { PEER_READ_HEADER } from '../remote/peer.js'
 import { distinctUsages, usage } from '../usage.js'
-import { startUpdate, updateStatus } from '../update.js'
+import { startUpdate, updateStatus, updateWhenQuiet } from '../update.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -308,8 +308,15 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
    * See server/src/update.ts.
    */
   app.get('/api/update', async () => updateStatus())
-  app.post('/api/update', async (_request, reply) => {
-    await startUpdate()
+  /*
+   * `whenQuiet` is a linked machine passing on that origin has moved: look,
+   * and update once nobody here has typed for a while. Without it, a click on
+   * Update, which means now.
+   */
+  app.post('/api/update', async (request, reply) => {
+    const { whenQuiet } = z.object({ whenQuiet: z.boolean().optional() }).parse(request.body ?? {})
+    if (whenQuiet === true) await updateWhenQuiet()
+    else await startUpdate()
     return reply.status(202).send({ ok: true })
   })
 

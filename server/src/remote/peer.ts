@@ -632,9 +632,11 @@ export class PeerClient {
    * A 404 is a machine from before there was a route to ask, and the one
    * thing left is to go there -- so that is what the error says.
    */
-  async startUpdate(): Promise<void> {
+  async startUpdate(opts: { whenQuiet?: boolean } = {}): Promise<void> {
     try {
-      await this.request('POST', '/api/update', {}, 15_000, false)
+      // `whenQuiet` is ignored by a machine older than it, which pulls at once:
+      // the one way left for that machine to learn to wait.
+      await this.request('POST', '/api/update', opts.whenQuiet === true ? { whenQuiet: true } : {}, 15_000, false)
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
         throw new HttpError(

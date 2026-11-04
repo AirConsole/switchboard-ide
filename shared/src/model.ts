@@ -786,4 +786,11 @@ export interface UpdateStatus {
   checkedAt: number | null
   /** The fetch failed; `commits` is what the last one that worked found. */
   error?: string
+  /**
+   * What this machine will do about it by itself: `waiting` to update once
+   * nobody has typed for a few minutes, `skipped` because the newest commit
+   * would not start the last time it was pulled. Null when there is nothing
+   * to do, or it cannot pull at all.
+   */
+  auto: 'waiting' | 'skipped' | null
 }

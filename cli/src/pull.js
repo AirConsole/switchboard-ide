@@ -10,9 +10,9 @@
  * either to a checkout it should not touch, and saying exactly why.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { inLinkedWorktree, repoRoot } from './instance.js'
+import { inLinkedWorktree, repoRoot, stateDir } from './instance.js'
 
 /**
  * @param {string} cwd
@@ -121,6 +121,68 @@ const lockOf = (cwd, commit) => {
   }
 }
 
+/**
+ * The commit a pull last went back from, because it would not start.
+ *
+ * Read by the server, which updates itself when a browser finds origin ahead
+ * (`server/src/update.ts`): without it a commit that builds and then fails to
+ * start is pulled, rolled back, seen as new again, and pulled again, every time
+ * a page asks. A pull typed by hand ignores it -- you may have fixed whatever
+ * it was -- and a pull that succeeds clears it.
+ * @param {string} dir
+ */
+export const failedPath = (dir) => join(dir, 'update-failed.json')
+
+/**
+ * The new version did not come up: remember it, and put the checkout back on
+ * the commit that was running, so the restart after this builds that again.
+ *
+ * `--keep` rather than `--hard`: the pull refused uncommitted changes before
+ * it moved anything, so there are none, and if that ever stops being true this
+ * fails rather than discarding them.
+ * @param {{ cwd: string, dir: string, before: string, after: string }} opts
+ */
+export const rollBack = ({ cwd, dir, before, after }) => {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(failedPath(dir), `${JSON.stringify({ sha: after, at: Date.now() })}\n`)
+  git(cwd, ['reset', '--quiet', '--keep', before])
+}
+
+/**
+ * One pull at a time on this machine.
+ *
+ * Two are easy to start once a server can start its own -- a page that finds
+ * origin ahead, and you typing `pnpm pull` a minute later -- and two builds in
+ * one `dist/` and two restarts racing for the port leave whichever lost. A
+ * lock left by a pull that died is taken over: its pid is gone.
+ * @param {string} dir
+ */
+const takeLock = (dir) => {
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, 'pull.lock')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(path, 'wx', 0o600)
+      writeFileSync(fd, String(process.pid))
+      closeSync(fd)
+      process.on('exit', () => rmSync(path, { force: true }))
+      return
+    } catch {
+      const holder = Number(readFileSync(path, 'utf8').trim())
+      let alive = false
+      try {
+        process.kill(holder, 0)
+        alive = Number.isInteger(holder) && holder > 0
+      } catch {
+        alive = false
+      }
+      if (alive) fail(`another pull is running (pid ${holder})`, 'wait for it to finish')
+      rmSync(path, { force: true })
+    }
+  }
+  fail('could not take the pull lock')
+}
+
 /** @param {string} message @param {string} [hint] */
 const fail = (message, hint) => {
   console.error(`swb pull: ${message}`)
@@ -144,6 +206,7 @@ export const pull = (opts) => {
       'pull and restart from the main checkout (--force overrides)',
     )
   }
+  takeLock(stateDir())
   let result
   try {
     result = fastForward(repoRoot)
@@ -189,5 +252,26 @@ export const pull = (opts) => {
    */
   const args = [join(repoRoot, 'cli', 'bin', 'swb.js'), 'restart']
   if (opts.host !== undefined) args.push('--host', opts.host)
-  process.exit(run(process.execPath, args))
+  if (run(process.execPath, args) === 0) {
+    rmSync(failedPath(stateDir()), { force: true })
+    process.exit(0)
+  }
+  if (before === after) process.exit(1)
+  /*
+   * It did not come up, and what to do next is the same whichever half failed.
+   * A failed build stopped nothing, but it may have written half of `dist/` --
+   * the web build first -- so what is on disk is no longer what is running. A
+   * failed start left nothing running at all, which on a machine nobody is
+   * sitting at is a machine nothing can reach any more. Either way the answer
+   * is the commit that was running, built and started again.
+   */
+  console.error(`swb pull: ${short(after)} did not come up; going back to ${short(before)}`)
+  rollBack({ cwd: repoRoot, dir: stateDir(), before, after })
+  if (lockChanged && run('pnpm', ['install', '--frozen-lockfile']) !== 0) {
+    fail(`pnpm install failed going back to ${short(before)}`, 'run pnpm install, then pnpm restart')
+  }
+  if (run(process.execPath, args) !== 0) {
+    fail(`${short(before)} did not come back either`, 'see the log above, then pnpm restart')
+  }
+  fail(`${short(after)} would not start, so ${short(before)} is running again`, 'a page will not try it again; the next commit on master it will')
 }

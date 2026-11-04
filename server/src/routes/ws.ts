@@ -4,7 +4,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import '@fastify/websocket'
 import { WebSocket } from 'ws'
 import type { ClientMsg, ServerMsg, Session } from '@switchboard/shared'
-import type { SessionEngine, Sink } from '../session/engine.js'
+import { looksTyped, type SessionEngine, type Sink } from '../session/engine.js'
+import { markTyped } from '../typing.js'
 import { config } from '../config.js'
 import { spendTicket, verifySession } from '../auth.js'
 import { allowSocket } from '../gate.js'
@@ -289,6 +290,7 @@ export const registerWs = (
         sink.sendJson({ t: 'error', message: 'malformed message' })
         return
       }
+      if (msg.t === 'input' && looksTyped(msg.data)) markTyped()
       // A frame naming another machine never reaches the local engine, which
       // would answer "no such session" about an id that was never its.
       if (relay?.handle(msg) === true) return

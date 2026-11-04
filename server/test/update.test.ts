@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { behindOrigin } from '../src/update.js'
+import { autoDecision, behindOrigin } from '../src/update.js'
 import { makeRepoWithRemote, type TempRemoteRepo } from './helpers/repo.js'
 
 /*
@@ -77,5 +77,44 @@ describe('behindOrigin', () => {
     await landOnOrigin(repo, 'Upstream')
     const result = await behindOrigin(repo.path, 'f'.repeat(40))
     expect(result.behind).toBe(0)
+  })
+})
+
+/*
+ * A machine updates itself once a page has found origin ahead, or a linked
+ * machine has said so -- but never under somebody typing, never into a pull
+ * that would refuse, and never again into the commit it had to roll back
+ * from, which would otherwise be pulled and rolled back on every poll.
+ */
+describe('autoDecision', () => {
+  const MIN = 60_000
+  const base = {
+    behind: 2,
+    blocked: null,
+    updating: false,
+    head: 'abc',
+    failed: null,
+    lastTypedAt: 0,
+    now: 60 * MIN,
+  }
+
+  it('goes once nobody has typed for five minutes', () => {
+    expect(autoDecision(base)).toBe('now')
+    expect(autoDecision({ ...base, lastTypedAt: base.now - 5 * MIN })).toBe('now')
+  })
+
+  it('waits while somebody is typing', () => {
+    expect(autoDecision({ ...base, lastTypedAt: base.now - 4 * MIN })).toBe('wait')
+  })
+
+  it('does nothing with nothing to pull, a pull that would refuse, or one running', () => {
+    expect(autoDecision({ ...base, behind: 0 })).toBe('none')
+    expect(autoDecision({ ...base, blocked: 'on "ui", not "master"' })).toBe('none')
+    expect(autoDecision({ ...base, updating: true })).toBe('none')
+  })
+
+  it('skips the commit it went back from, and tries the next one', () => {
+    expect(autoDecision({ ...base, failed: 'abc' })).toBe('skipped')
+    expect(autoDecision({ ...base, failed: 'older' })).toBe('now')
   })
 })

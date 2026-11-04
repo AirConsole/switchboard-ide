@@ -24,7 +24,9 @@ session/        engine (sessions, attachments, sizing) -> tmux -> node-pty
                 working on")
 git/            worktree.ts (discovery, add, remove) and changes.ts (status, log, diff)
 usage.ts        Claude's own limits, read from `claude -p /usage` and cached
-update.ts       whether this build is behind origin, and running `swb pull` for it
+update.ts       whether this build is behind origin, and running `swb pull` for it,
+                by itself once nobody has typed for five minutes
+typing.ts       when anyone last typed into a terminal through this server
 config.ts       every SWB_* env var, in one place
 ```
 

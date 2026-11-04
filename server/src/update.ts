@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import type { UpdateCommit, UpdateStatus } from '@switchboard/shared'
 import { config } from './config.js'
 import { HttpError } from './http-error.js'
+import { lastTypedAt } from './typing.js'
 
 const exec = promisify(execFile)
 
@@ -154,6 +155,59 @@ export const behindOrigin = async (cwd: string, running: string | null): Promise
   return { branch, commits, behind: lines.length, blocked }
 }
 
+/**
+ * How long nobody has typed before a machine updates itself.
+ *
+ * A restart costs every open page its socket for a few seconds and the agents
+ * nothing, since they live in tmux. So the one thing worth waiting for is a
+ * person: five minutes without a keystroke is somebody reading, thinking or
+ * gone, and none of those is interrupted by a reconnect.
+ */
+const QUIET_MS = 5 * 60 * 1000
+
+/**
+ * How often an update that is waiting for quiet looks again.
+ *
+ * The one timer here, and it exists only while an update waits. Checking for
+ * one still happens only when a page asks, as before -- what changed is that a
+ * page finding one is enough to have it happen.
+ */
+const QUIET_RETRY_MS = 30 * 1000
+
+/**
+ * What to do about an update, by itself: nothing, wait for quiet, or go.
+ *
+ * Not when the pull would refuse, nor while one runs, and not when the newest
+ * commit is the one that would not start last time (`update-failed.json`,
+ * written by `swb pull` as it rolled back) -- that one would be pulled, fail
+ * and be rolled back on every page's poll. A newer commit than that is tried.
+ */
+export const autoDecision = (a: {
+  behind: number
+  blocked: string | null
+  updating: boolean
+  head: string | null
+  failed: string | null
+  lastTypedAt: number
+  now: number
+}): 'none' | 'skipped' | 'wait' | 'now' => {
+  if (a.behind === 0 || a.head === null || a.blocked !== null || a.updating) return 'none'
+  if (a.failed === a.head) return 'skipped'
+  return a.now - a.lastTypedAt >= QUIET_MS ? 'now' : 'wait'
+}
+
+/** The commit `swb pull` last went back from; see `cli/src/pull.js`. */
+const readFailed = (): string | null => {
+  try {
+    const parsed = JSON.parse(readFileSync(join(config.stateDir, 'update-failed.json'), 'utf8')) as {
+      sha?: unknown
+    }
+    return typeof parsed.sha === 'string' ? parsed.sha : null
+  } catch {
+    return null
+  }
+}
+
 let checked: (Behind & { at: number }) | null = null
 let checking: Promise<void> | null = null
 let fetchError: string | undefined
@@ -172,6 +226,80 @@ const check = async (): Promise<void> => {
   checked = { ...(await behindOrigin(repoRoot, runningCommit)), at: Date.now() }
 }
 
+/**
+ * Tell the machines linked here that origin has moved. Set by the server's
+ * wiring, which knows them; see `onOriginAhead`.
+ */
+let announce: (() => void) | null = null
+/** The origin commit they were last told about, so each is told once. */
+let announced: string | null = null
+let retry: NodeJS.Timeout | null = null
+let auto: UpdateStatus['auto'] = null
+
+/**
+ * Called with nothing whenever this machine first sees origin at a commit it
+ * is behind: the moment to tell the machines linked to it, which may have no
+ * page open to find out for themselves.
+ */
+export const onOriginAhead = (listener: () => void): void => {
+  announce = listener
+}
+
+/**
+ * Act on the last check: tell the linked machines, and update, now or once
+ * nobody has typed for a while.
+ */
+const consider = (): void => {
+  if (isMachineInstance() === undefined || checked === null) return
+  const head = checked.commits[0]?.sha ?? null
+  /*
+   * Told whether or not this machine can pull it: a checkout here on a branch,
+   * or with changes of its own, says nothing about the machines linked to it,
+   * and each of them decides for itself.
+   */
+  if (head !== null && head !== announced) {
+    announced = head
+    announce?.()
+  }
+  const decision = autoDecision({
+    behind: checked.behind,
+    blocked: checked.blocked,
+    updating: state === 'updating',
+    head,
+    failed: readFailed(),
+    lastTypedAt: lastTypedAt(),
+    now: Date.now(),
+  })
+  auto = decision === 'wait' || decision === 'now' ? 'waiting' : decision === 'skipped' ? 'skipped' : null
+  if (decision !== 'wait' && retry !== null) {
+    clearTimeout(retry)
+    retry = null
+  }
+  if (decision === 'now') {
+    // A refusal here has nobody to tell; the next page's poll shows the state.
+    void startUpdate().catch(() => {})
+  } else if (decision === 'wait' && retry === null) {
+    retry = setTimeout(() => {
+      retry = null
+      consider()
+    }, QUIET_RETRY_MS)
+    retry.unref()
+  }
+}
+
+/**
+ * A linked machine says origin has moved: look now, rather than when a page
+ * here next asks -- there may be none -- and update by the same rules.
+ */
+export const updateWhenQuiet = async (): Promise<void> => {
+  if (isMachineInstance() === undefined) {
+    throw new HttpError(409, 'this server is not the machine instance `pnpm pull` restarts')
+  }
+  if (state === 'updating') return
+  checked = null
+  await updateStatus()
+}
+
 export const updateStatus = async (): Promise<UpdateStatus> => {
   const base = { instance: config.instanceId, running: runningCommit }
   if (isMachineInstance() === undefined) {
@@ -185,6 +313,7 @@ export const updateStatus = async (): Promise<UpdateStatus> => {
       state: 'idle',
       failure: null,
       checkedAt: null,
+      auto: null,
     }
   }
   if (state !== 'updating' && (checked === null || Date.now() - checked.at > TTL_MS)) {
@@ -197,6 +326,7 @@ export const updateStatus = async (): Promise<UpdateStatus> => {
         checking = null
       })
     await checking
+    consider()
   }
   return {
     ...base,
@@ -208,6 +338,7 @@ export const updateStatus = async (): Promise<UpdateStatus> => {
     state,
     failure,
     checkedAt: checked?.at ?? null,
+    auto,
     ...(fetchError === undefined ? {} : { error: fetchError }),
   }
 }
