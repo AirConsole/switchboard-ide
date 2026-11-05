@@ -24,4 +24,11 @@ describe('the ui patch shape', () => {
     expect(uiShape.safeParse({ stepsTaken: 1.5 }).success).toBe(false)
     expect(uiShape.safeParse({ stepsTaken: 'lots' }).success).toBe(false)
   })
+
+  it('refuses work days that are not a week of distinct days', () => {
+    expect(uiShape.safeParse({ workDays: [1, 2, 3, 4, 5] }).success).toBe(true)
+    expect(uiShape.safeParse({ workDays: [] }).success).toBe(false)
+    expect(uiShape.safeParse({ workDays: [7] }).success).toBe(false)
+    expect(uiShape.safeParse({ workDays: [1, 1] }).success).toBe(false)
+  })
 })

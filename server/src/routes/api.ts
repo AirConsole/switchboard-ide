@@ -201,6 +201,17 @@ export const uiShape = z
      */
     stepsTaken: z.number().int().min(0),
     activeWorktree: z.string().nullable(),
+    /*
+     * The days the weekly usage limits are paced over, as `getDay()` numbers.
+     * At least one, because a week with none has no pace, and each once.
+     * Missing from here, the key was stripped without a word and the switch
+     * forgot itself on every reload.
+     */
+    workDays: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => new Set(days).size === days.length),
   })
   .partial()
 

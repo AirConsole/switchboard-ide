@@ -921,6 +921,53 @@ button {
   color: var(--graphite-dim);
 }
 
+/*
+ * The days you work, which the weekly limits are paced over. Seven letters
+ * after a label in the rows' own first column, so it reads as one more row
+ * of the reading rather than a form. A day you work is lit the way a pressed
+ * switch is elsewhere in the chrome -- grey on a raised ground, no colour,
+ * since this is a setting and not a state.
+ */
+.usage__days {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 2px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--graphite);
+}
+
+/* Its own width rather than the rows' 52px, which wrapped it onto two lines. */
+.usage__days .usage__label {
+  white-space: nowrap;
+  margin-right: 6px;
+}
+
+.usage__day {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--graphite-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.usage__day:hover {
+  background: var(--level-hover);
+}
+
+.usage__day--on {
+  background: var(--level-lit);
+  color: var(--bone);
+}
+
+.usage__day:disabled {
+  cursor: default;
+}
+
 /* When the numbers were read, and what went wrong if the last read failed. */
 .usage__read {
   font-size: 11px;

@@ -436,6 +436,17 @@ export interface UiState {
    * window back.
    */
   activeWorktree: string | null
+  /**
+   * The days of the week you work, as `Date.getDay()` numbers (0 is Sunday),
+   * in the reader's own time zone.
+   *
+   * What the weekly usage limits are paced against: a week used only Monday
+   * to Friday is not behind on Wednesday evening for having spent 60%, because
+   * the weekend will spend nothing. Every day by default, which is the pace
+   * the rings had before there was a choice. About the reader, like
+   * `markdownPreview`, so it is not per machine either.
+   */
+  workDays: number[]
 }
 
 export const defaultUiState = (): UiState => ({
@@ -448,6 +459,7 @@ export const defaultUiState = (): UiState => ({
   markdownPreview: true,
   stepsTaken: 0,
   activeWorktree: null,
+  workDays: [0, 1, 2, 3, 4, 5, 6],
 })
 
 /** Full snapshot the client fetches on load and re-fetches after mutations. */

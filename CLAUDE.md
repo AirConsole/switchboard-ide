@@ -413,7 +413,9 @@ line below is a mistake made in this codebase, not a hypothetical:
   string constant cannot catch the eye that is scanning a row of agents.
   The one reading that wears a state colour without being an agent is the usage
   ring: amber when its pace would spend it before the reset and red
-  (`--danger`) when it would by a fifth or more, because a limit about to
+  (`--danger`) when it would by a fifth or more -- the weekly limits paced
+  over only the days you say you work, so a weekend off is not counted as time
+  falling behind -- because a limit about to
   run out is the same verb — something that needs you to act — about the account
   rather than about one worktree. It is a 28px ring in the corner of the
   top bar, nowhere near the row the rule is written to protect.

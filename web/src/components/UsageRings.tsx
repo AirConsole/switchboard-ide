@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MachineUsage, Usage, UsageLimit } from '@switchboard/shared'
 import { api } from '../api.js'
+import { useStore } from '../store.js'
 import { useAnchoredMenu } from './useAnchoredMenu.js'
 
 /**
@@ -77,6 +78,7 @@ const resetText = (at: number, now: number): string => {
  */
 const WINDOW_MS: Record<string, number> = { session: 5 * 60 * 60 * 1000 }
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
 const windowOf = (label: string): number => WINDOW_MS[label] ?? WEEK_MS
 
 /*
@@ -88,20 +90,57 @@ const windowOf = (label: string): number => WINDOW_MS[label] ?? WEEK_MS
 const MIN_ELAPSED = 0.1
 
 /**
+ * How much of `from`..`to` falls on one of `days`, in the reader's time zone.
+ *
+ * Walked a local midnight at a time rather than in steps of 24 hours, so a
+ * daylight-saving change -- a 23- or 25-hour day -- is counted as the day it
+ * is. A week is eight steps at most.
+ */
+export const workedMs = (from: number, to: number, days: readonly number[]): number => {
+  let total = 0
+  let at = from
+  while (at < to) {
+    const day = new Date(at)
+    const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime()
+    const end = Math.min(next, to)
+    if (days.includes(day.getDay())) total += end - at
+    at = end
+  }
+  return total
+}
+
+/**
  * Where a limit ends up at its reset if it keeps being spent the way it has
  * been: the percentage over the share of the window that has gone. Null when
  * the window cannot be known (see `windowOf`).
  *
+ * A weekly limit counts only the days you work (`UiState.workDays`): the
+ * share gone is the working time gone over the working time in the week, so
+ * a weekend off neither pads the pace on Friday nor makes Monday look
+ * behind. Not the session, which is five hours and lasts as long as you are
+ * working anyway. A week with none of your days in it -- every day switched
+ * off is refused, but the time zone could still do it -- is paced by the
+ * clock.
+ *
  * Taken at `at`, the moment of the reading, rather than now: the percentage
  * is from then, and the two must be from the same moment.
  */
-export const usagePace = (limit: UsageLimit, at: number): number | null => {
+export const usagePace = (
+  limit: UsageLimit,
+  at: number,
+  workDays: readonly number[] = ALL_DAYS,
+): number | null => {
   if (limit.resetsAt === null) return null
   const window = windowOf(limit.label)
   const left = limit.resetsAt - at
   if (left < 0 || left > window) return null
-  const elapsed = Math.max(MIN_ELAPSED, 1 - left / window)
-  return limit.percent / elapsed
+  let gone = 1 - left / window
+  if (window === WEEK_MS && workDays.length < 7) {
+    const start = limit.resetsAt - window
+    const working = workedMs(start, limit.resetsAt, workDays)
+    if (working > 0) gone = workedMs(start, at, workDays) / working
+  }
+  return limit.percent / Math.max(MIN_ELAPSED, gone)
 }
 
 /**
@@ -128,12 +167,27 @@ export const usagePace = (limit: UsageLimit, at: number): number | null => {
  * is written to protect. Red is `--danger`, which already means "this one is
  * different, look before you act".
  */
-export const usageLevel = (limit: UsageLimit, at: number): 'plenty' | 'low' | 'spent' => {
+export const usageLevel = (
+  limit: UsageLimit,
+  at: number,
+  workDays: readonly number[] = ALL_DAYS,
+): 'plenty' | 'low' | 'spent' => {
   if (limit.percent >= 100) return 'spent'
-  const pace = usagePace(limit, at)
+  const pace = usagePace(limit, at, workDays)
   if (pace === null) return limit.percent >= 90 ? 'spent' : limit.percent >= 75 ? 'low' : 'plenty'
   return pace >= 120 ? 'spent' : pace > 100 ? 'low' : 'plenty'
 }
+
+/** The week as the work-days switch lays it out, Monday first. */
+const WEEK = [
+  { day: 1, short: 'M', name: 'Monday' },
+  { day: 2, short: 'T', name: 'Tuesday' },
+  { day: 3, short: 'W', name: 'Wednesday' },
+  { day: 4, short: 'T', name: 'Thursday' },
+  { day: 5, short: 'F', name: 'Friday' },
+  { day: 6, short: 'S', name: 'Saturday' },
+  { day: 0, short: 'S', name: 'Sunday' },
+]
 
 /*
  * The rings' geometry, in the SVG's own units: a 28px square, three 3px
@@ -146,7 +200,7 @@ const RING_STROKE = 3
 const RING_RADII = [12.5, 8.5, 4.5]
 
 /** One machine's rings: the limits nested, outermost first. */
-const Rings = ({ usage }: { usage: Usage }): React.ReactElement => {
+const Rings = ({ usage, workDays }: { usage: Usage; workDays: readonly number[] }): React.ReactElement => {
   const center = RING_SIZE / 2
   return (
     <svg
@@ -158,7 +212,7 @@ const Rings = ({ usage }: { usage: Usage }): React.ReactElement => {
     >
       {/* A fourth limit, should `/usage` ever report one, is in the panel. */}
       {usage.limits.slice(0, RING_RADII.length).map((limit, index) => (
-        <g className={`usage__ring usage__ring--${usageLevel(limit, usage.fetchedAt)}`} key={limit.label}>
+        <g className={`usage__ring usage__ring--${usageLevel(limit, usage.fetchedAt, workDays)}`} key={limit.label}>
           <circle className="usage__groove" cx={center} cy={center} r={RING_RADII[index]} strokeWidth={RING_STROKE} />
           {limit.percent > 0 && (
             /*
@@ -220,6 +274,8 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
     return () => window.clearInterval(timer)
   }, [])
+  const workDays = useStore((state) => state.ui.workDays)
+  const setUi = useStore((state) => state.setUi)
   const pop = useAnchoredMenu<HTMLButtonElement>()
   const shown = machines.filter((machine) => machine.usage.limits.length > 0)
   if (shown.length === 0) return null
@@ -235,7 +291,7 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
   }
   // Why a ring is the colour it is, for a pointer that rests on its row.
   const paceOf = (limit: UsageLimit, at: number): string | undefined => {
-    const pace = usagePace(limit, at)
+    const pace = usagePace(limit, at, workDays)
     return pace === null ? undefined : `at this pace, ${Math.round(pace)}% by the reset`
   }
   const clock = (at: number): string =>
@@ -265,7 +321,7 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
         onClick={pop.toggle}
       >
         {shown.map((machine) => (
-          <Rings usage={machine.usage} key={machine.key ?? ''} />
+          <Rings usage={machine.usage} workDays={workDays} key={machine.key ?? ''} />
         ))}
       </button>
       {pop.at !== null && (
@@ -287,7 +343,7 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
                  * the number wears it too.
                  */
                 <div
-                  className={`usage__row usage__row--${usageLevel(limit, machine.usage.fetchedAt)}`}
+                  className={`usage__row usage__row--${usageLevel(limit, machine.usage.fetchedAt, workDays)}`}
                   key={limit.label}
                   title={paceOf(limit, machine.usage.fetchedAt)}
                 >
@@ -302,6 +358,38 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
               <div className="usage__read">{readOf(machine.usage)}</div>
             </div>
           ))}
+          {/*
+           * Once, under every machine's reading, because it is about you and
+           * not about an account. Monday first: a working week reads as the
+           * first five, and the weekend as the two it ends on.
+           */}
+          <div className="usage__days" role="group" aria-label="Days you work, for the weekly limits">
+            <span className="usage__label" title="The weekly limits are paced over these days only">
+              work days
+            </span>
+            {WEEK.map(({ day, short, name }) => {
+              const on = workDays.includes(day)
+              return (
+                <button
+                  type="button"
+                  key={day}
+                  className={`usage__day${on ? ' usage__day--on' : ''}`}
+                  aria-pressed={on}
+                  aria-label={name}
+                  // Not the last one: a week with no working time in it has
+                  // no pace to read.
+                  disabled={on && workDays.length === 1}
+                  onClick={() =>
+                    setUi({
+                      workDays: on ? workDays.filter((d) => d !== day) : [...workDays, day].sort((a, b) => a - b),
+                    })
+                  }
+                >
+                  {short}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </>
