@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { UsageLimit } from '@switchboard/shared'
-import { usageLevel, usagePace } from '../src/components/UsageRings.js'
+import { usageLevel, usagePace, workedMs } from '../src/components/UsageRings.js'
 
 const HOUR = 60 * 60 * 1000
 const AT = Date.UTC(2026, 10, 5, 12)
@@ -58,5 +58,61 @@ describe('usageLevel', () => {
     expect(usageLevel(limit('session', 74, null), AT)).toBe('plenty')
     expect(usageLevel(limit('session', 75, null), AT)).toBe('low')
     expect(usageLevel(limit('session', 90, 6 * HOUR), AT)).toBe('spent')
+  })
+})
+
+describe('the weekly pace over the days you work', () => {
+  const WEEKDAYS = [1, 2, 3, 4, 5]
+  // A week that resets the Monday after next at 09:00 local, read at `at`.
+  const reset = new Date(2026, 10, 16, 9).getTime()
+  const week = (percent: number, at: Date): [UsageLimit, number] => [
+    { label: 'week', percent, resets: null, resetsAt: reset },
+    at.getTime(),
+  ]
+
+  /*
+   * Friday 22:00, 60% spent by someone who does not work weekends. By the
+   * clock 109 of 168 hours have gone and 60% is on course for 92; but the
+   * weekend will spend nothing, and 109 of the week's 120 working hours are
+   * gone (Monday from 09:00, Tuesday to Friday, Monday to 09:00).
+   */
+  it('reads a weekend off as no time passing', () => {
+    const [friday, at] = week(60, new Date(2026, 10, 13, 22))
+    expect(Math.round(usagePace(friday, at, WEEKDAYS) ?? 0)).toBe(66)
+    // And the clock stops at midnight: Sunday night is where Saturday morning was.
+    const [saturday, early] = week(60, new Date(2026, 10, 14, 8))
+    const [sunday, late] = week(60, new Date(2026, 10, 15, 22))
+    expect(usagePace(sunday, late, WEEKDAYS)).toBe(usagePace(saturday, early, WEEKDAYS))
+    expect(usagePace(saturday, early, WEEKDAYS)).toBeCloseTo(60 / (111 / 120))
+  })
+
+  // The case that asked for this: amber at the end of the working week.
+  it('lets a week that is on course for Friday stay grey', () => {
+    const [limit, at] = week(75, new Date(2026, 10, 13, 22))
+    expect(usageLevel(limit, at)).toBe('low')
+    expect(usageLevel(limit, at, WEEKDAYS)).toBe('plenty')
+  })
+
+  it('leaves the session and an every-day week alone', () => {
+    const [limit, at] = week(50, new Date(2026, 10, 11, 9))
+    expect(usagePace(limit, at, [0, 1, 2, 3, 4, 5, 6])).toBe(usagePace(limit, at))
+    const session: UsageLimit = { label: 'session', percent: 50, resets: null, resetsAt: at + 2.5 * HOUR }
+    expect(usagePace(session, at, WEEKDAYS)).toBe(100)
+  })
+
+  /*
+   * In a zone that has a clock change: this machine and CI run in UTC, where
+   * every day is 24 hours and walking in 24-hour steps would pass. Zurich
+   * goes to summer time on Sunday 29 March 2026, a day of 23 hours -- and a
+   * walk in 24-hour steps counts it as 24, running an hour into Monday.
+   */
+  it('counts a day by the calendar, not by 24 hours, across a clock change', () => {
+    vi.stubEnv('TZ', 'Europe/Zurich')
+    try {
+      const sundays = workedMs(new Date(2026, 2, 23).getTime(), new Date(2026, 3, 1).getTime(), [0])
+      expect(sundays).toBe(23 * HOUR)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

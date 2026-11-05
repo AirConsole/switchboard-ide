@@ -8,10 +8,10 @@ describe('defaultUiState', () => {
     const ui = defaultUiState()
     for (const [key, value] of Object.entries(ui)) {
       // The ones that are not per-worktree maps, named rather than detected by
-      // their type: `markdownPreview` and `stepsTaken` are both about the
-      // reader rather than about any worktree, and `activeWorktree` is where
-      // the reader is. Another has to be added here on purpose.
-      if (key === 'markdownPreview' || key === 'stepsTaken' || key === 'activeWorktree') continue
+      // their type: `markdownPreview`, `stepsTaken` and `workDays` are about
+      // the reader rather than about any worktree, and `activeWorktree` is
+      // where the reader is. Another has to be added here on purpose.
+      if (['markdownPreview', 'stepsTaken', 'workDays', 'activeWorktree'].includes(key)) continue
       expect(value, key).toEqual({})
     }
   })
