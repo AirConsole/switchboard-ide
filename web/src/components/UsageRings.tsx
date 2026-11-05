@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { MachineUsage, Usage } from '@switchboard/shared'
+import type { MachineUsage, Usage, UsageLimit } from '@switchboard/shared'
 import { api } from '../api.js'
 import { useAnchoredMenu } from './useAnchoredMenu.js'
 
@@ -69,33 +69,71 @@ const resetText = (at: number, now: number): string => {
 }
 
 /**
- * Plenty, running out, nearly gone.
+ * How long each limit's window is, so that how far into it we are can be read
+ * off the reset: Claude's session is five hours and every weekly limit seven
+ * days. `/usage` says neither, so it is the label. A label we do not know, or
+ * a reset further off than its window could be, is a window we do not know,
+ * and that limit falls back to its percentage alone.
+ */
+const WINDOW_MS: Record<string, number> = { session: 5 * 60 * 60 * 1000 }
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const windowOf = (label: string): number => WINDOW_MS[label] ?? WEEK_MS
+
+/*
+ * Before a tenth of the window has gone, one long turn is most of the reading
+ * and a projection from it says nothing: 4% in the first ten minutes of a
+ * session "projects" to 120%. So the pace is never taken over less than a
+ * tenth of the window -- early on it is the percentage against a tenth.
+ */
+const MIN_ELAPSED = 0.1
+
+/**
+ * Where a limit ends up at its reset if it keeps being spent the way it has
+ * been: the percentage over the share of the window that has gone. Null when
+ * the window cannot be known (see `windowOf`).
  *
- * **From 75% it is amber and from 90% it is red**, which are the two numbers a
- * reader of this bar actually acts on: three quarters spent is when it starts
- * to matter what the rest goes on, and nine tenths is when the next long
- * session is the one that ends early.
+ * Taken at `at`, the moment of the reading, rather than now: the percentage
+ * is from then, and the two must be from the same moment.
+ */
+export const usagePace = (limit: UsageLimit, at: number): number | null => {
+  if (limit.resetsAt === null) return null
+  const window = windowOf(limit.label)
+  const left = limit.resetsAt - at
+  if (left < 0 || left > window) return null
+  const elapsed = Math.max(MIN_ELAPSED, 1 - left / window)
+  return limit.percent / elapsed
+}
+
+/**
+ * On pace, running out before the reset, clearly running out.
+ *
+ * **By pace, not by percentage.** 60% three quarters of the way through a
+ * session is fine -- it ends at 80 -- and 80% at the same point is not: it
+ * runs out before the reset. A percentage alone could not tell those two
+ * apart, and turned amber at 75 for a week that had a day left. So it is
+ * amber when the pace ends past 100%, and red from 120% -- out with a sixth
+ * of the window still to go, which is clearly over and not a rounding. A
+ * limit already spent is red whatever its pace. Without a window it is the
+ * percentage, at the old 75 and 90.
+ *
+ * On pace is grey, not green. Green is an agent that has come to rest, and a
+ * ring that is green most of the day would be the one green thing in sight
+ * that is not done.
  *
  * This is the one thing in the chrome that wears amber without being an agent
  * that wants you, and it is a considered exception rather than a lapse. What
  * amber means here is the same verb -- something needs you to act -- about the
- * account rather than about one worktree, and the reading it sits in is three
- * 54px tracks in the corner of the top bar, nowhere near the row of windows the
- * colour rule is written to protect. Red is new to the chrome as a state, and
- * is `--danger`, which already means "this one is different, look before you
- * act".
- *
- * Inclusive: 75 is amber and 90 is red. The threshold is the number you say out
- * loud -- "I am at seventy-five per cent" -- and a bar that waited for 76 would
- * be a bar that disagreed with the number printed beside it.
- *
- * It replaces a step up the grey ladder at 80% -- the fill went `--bone` -- and
- * that step was the wrong instrument twice over. It arrived after the number
- * that matters, and "slightly brighter grey" is not a thing you can see without
- * the other two bars beside it to compare against.
+ * account rather than about one worktree, and the ring it sits in is 28px in
+ * the corner of the top bar, nowhere near the row of windows the colour rule
+ * is written to protect. Red is `--danger`, which already means "this one is
+ * different, look before you act".
  */
-export const usageLevel = (percent: number): 'plenty' | 'low' | 'spent' =>
-  percent >= 90 ? 'spent' : percent >= 75 ? 'low' : 'plenty'
+export const usageLevel = (limit: UsageLimit, at: number): 'plenty' | 'low' | 'spent' => {
+  if (limit.percent >= 100) return 'spent'
+  const pace = usagePace(limit, at)
+  if (pace === null) return limit.percent >= 90 ? 'spent' : limit.percent >= 75 ? 'low' : 'plenty'
+  return pace >= 120 ? 'spent' : pace > 100 ? 'low' : 'plenty'
+}
 
 /*
  * The rings' geometry, in the SVG's own units: a 28px square, three 3px
@@ -120,7 +158,7 @@ const Rings = ({ usage }: { usage: Usage }): React.ReactElement => {
     >
       {/* A fourth limit, should `/usage` ever report one, is in the panel. */}
       {usage.limits.slice(0, RING_RADII.length).map((limit, index) => (
-        <g className={`usage__ring usage__ring--${usageLevel(limit.percent)}`} key={limit.label}>
+        <g className={`usage__ring usage__ring--${usageLevel(limit, usage.fetchedAt)}`} key={limit.label}>
           <circle className="usage__groove" cx={center} cy={center} r={RING_RADII[index]} strokeWidth={RING_STROKE} />
           {limit.percent > 0 && (
             /*
@@ -195,6 +233,11 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
     // The prose did not parse, so it is repeated as it came.
     return limit.resets === null ? '' : `resets ${limit.resets}`
   }
+  // Why a ring is the colour it is, for a pointer that rests on its row.
+  const paceOf = (limit: UsageLimit, at: number): string | undefined => {
+    const pace = usagePace(limit, at)
+    return pace === null ? undefined : `at this pace, ${Math.round(pace)}% by the reset`
+  }
   const clock = (at: number): string =>
     new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const readOf = (usage: Usage): string =>
@@ -243,7 +286,11 @@ export const UsageRings = ({ machines }: { machines: MachineUsage[] }): React.Re
                  * The level goes on the row rather than on the fill, because
                  * the number wears it too.
                  */
-                <div className={`usage__row usage__row--${usageLevel(limit.percent)}`} key={limit.label}>
+                <div
+                  className={`usage__row usage__row--${usageLevel(limit, machine.usage.fetchedAt)}`}
+                  key={limit.label}
+                  title={paceOf(limit, machine.usage.fetchedAt)}
+                >
                   <span className="usage__label">{limit.label}</span>
                   <span className="usage__track">
                     <i className="usage__fill" style={{ width: `${limit.percent}%` }} />
