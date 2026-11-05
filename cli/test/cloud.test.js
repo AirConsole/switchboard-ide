@@ -42,6 +42,38 @@ describe('the scripts parse', () => {
     expect(() => execFileSync(shell, ['-n', join(CLOUD, file)])).not.toThrow()
   })
 
+  it('upgrades node when an existing VM is below the October 2026 security release', () => {
+    const setup = readFileSync(join(CLOUD, 'setup.sh'), 'utf8')
+    const fn = setup.match(/^node_ok\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
+    const trackFn = setup.match(/^node_track\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
+    /** @param {string} version */
+    const ok = (version) => {
+      try {
+        execFileSync('bash', ['-c', `${fn}\nnode_ok "$1"`, '_', version])
+        return true
+      } catch {
+        return false
+      }
+    }
+    /** @param {string} version */
+    const track = (version) =>
+      execFileSync('bash', ['-c', `${trackFn}\nnode_track "$1"`, '_', version], { encoding: 'utf8' }).trim()
+
+    for (const bad of ['', 'v18.20.4', 'v20.18.0', 'v22.0.0', 'v22.23.2', 'v22.23.3', 'v23.9.0', 'v24.18.0', 'v24.22.0', 'v25.1.0', 'v26.12.0']) {
+      expect(ok(bad), bad).toBe(false)
+    }
+    for (const good of ['v22.23.4', 'v22.24.0', 'v24.22.1', 'v24.23.0', 'v26.12.1', 'v26.13.0']) {
+      expect(ok(good), good).toBe(true)
+    }
+    expect(track('')).toBe('22')
+    expect(track('v20.18.0')).toBe('22')
+    expect(track('v22.23.2')).toBe('22')
+    expect(track('v23.9.0')).toBe('24')
+    expect(track('v24.18.0')).toBe('24')
+    expect(track('v25.1.0')).toBe('26')
+    expect(track('v26.12.0')).toBe('26')
+  })
+
   it('cloud-config carries the placeholders provision-gcp.sh fills in', () => {
     const yaml = readFileSync(join(CLOUD, 'cloud-config.yaml'), 'utf8')
     expect(yaml.startsWith('#cloud-config')).toBe(true)
