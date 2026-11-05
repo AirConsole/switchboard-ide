@@ -427,7 +427,12 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
 
   app.patch('/api/ui', async (request) => {
     const patch = uiPatchBody.parse(request.body)
-    return store.patchUi(patch)
+    const saved = await store.patchUi(patch)
+    // The one part of `ui` every open page follows rather than only the next
+    // one to load: the days you work are about you, not about this browser's
+    // layout, and a ring left red in the other window is a ring that is wrong.
+    if (patch.workDays !== undefined) broadcastInvalidate()
+    return saved
   })
 
   /*

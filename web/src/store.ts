@@ -219,14 +219,27 @@ export const useStore = create<AppState>((set, get) => ({
        * record it can index.
        */
       const adopted = migrateUi({ ...defaultUiState(), ...storedUi })
+      /*
+       * Except the days you work, which follow the server on every refresh:
+       * they describe you rather than this browser's layout, so two windows
+       * showing different paces for one account is a bug, not drift. The
+       * server announces a change to them (`PATCH /api/ui`), which is what
+       * brings this refresh. A change of this page's own still waiting to be
+       * sent wins over the snapshot, which cannot have it yet.
+       */
+      const ui = firstLoad
+        ? adopted
+        : 'workDays' in pendingUiPatch
+          ? get().ui
+          : { ...get().ui, workDays: adopted.workDays }
       set({
         ...rest,
-        ui: firstLoad ? adopted : get().ui,
+        ui,
         loaded: true,
         adopted: true,
         error: null,
       })
-      if (firstLoad) localStorage.setItem(UI_CACHE_KEY, JSON.stringify(adopted))
+      localStorage.setItem(UI_CACHE_KEY, JSON.stringify(ui))
     } catch (err) {
       /*
        * A 401 is not an error, it is a different screen. Setting `error` here

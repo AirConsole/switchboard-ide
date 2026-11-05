@@ -358,7 +358,9 @@ app's stdin.
 client adopts it only on first load, which is why two open tabs drift apart —
 that is deliberate, and it fixed a bug where a debounced write raced a refresh.
 Writes are debounced 200ms and fire-and-forget, so a change made immediately
-before a reload can be lost.
+before a reload can be lost. The one exception is the days you work, which
+pace the usage rings: they describe you rather than a layout, so changing them
+tells every open page and each takes the server's copy on its next refresh.
 
 ## Verifying changes
 
