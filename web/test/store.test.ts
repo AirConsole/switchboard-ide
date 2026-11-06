@@ -130,6 +130,28 @@ describe('the store', () => {
     expect(useStore.getState().ui.panels).toEqual({ 'wt-2': ['todo'] })
   })
 
+  it('follows the days you work from the server on every refresh', async () => {
+    /*
+     * Switching the weekend off in one browser left the ring red in the other
+     * until it was reloaded: the server's copy is only adopted once. The days
+     * you work describe you, not the layout, so they follow.
+     */
+    api.snapshot.mockResolvedValue(emptySnapshot())
+    await useStore.getState().refresh()
+    api.snapshot.mockResolvedValue(emptySnapshot({ workDays: [1, 2, 3, 4, 5] }))
+    await useStore.getState().refresh()
+    expect(useStore.getState().ui.workDays).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('keeps a day you just switched over a snapshot that cannot have it yet', async () => {
+    api.snapshot.mockResolvedValue(emptySnapshot())
+    await useStore.getState().refresh()
+    useStore.getState().setUi({ workDays: [1, 2, 3, 4, 5] })
+    await useStore.getState().refresh()
+    expect(useStore.getState().ui.workDays).toEqual([1, 2, 3, 4, 5])
+    await vi.advanceTimersByTimeAsync(250)
+  })
+
   it('adopts on the first load that actually succeeds, not the first attempt', async () => {
     /*
      * `loaded` went true in the catch, so a load during a deploy left the
