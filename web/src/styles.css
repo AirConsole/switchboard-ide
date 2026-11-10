@@ -499,6 +499,47 @@ button {
 }
 
 /*
+ * Dragging a project or a worktree to another place in the bar (see
+ * `useDragOrder`). The one being dragged dims where it is; where it would go
+ * is a bar at that edge of the tab it would land beside, in --bone -- a place
+ * and not a state, so no colour, and outside the tab so it never hides the
+ * state bar down a tab's own leading edge. The cursor says it everywhere
+ * while the drag lasts, and no text is selected on the way.
+ */
+[data-drag-item] {
+  position: relative;
+}
+
+[data-drag-item][data-dragging] {
+  opacity: 0.45;
+}
+
+[data-drag-item][data-drop]::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--bone);
+  pointer-events: none;
+}
+
+[data-drag-item][data-drop='before']::after {
+  left: -4px;
+}
+
+[data-drag-item][data-drop='after']::after {
+  right: -4px;
+}
+
+html[data-dragging],
+html[data-dragging] * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/*
  * One project, as a Chrome tab group: a sleeve behind its tabs, with the
  * project's name in a pill at the left.
  *

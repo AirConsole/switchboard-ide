@@ -50,6 +50,12 @@ export interface PersistedState {
    * losing these silently locks you out of every remote project at once.
    */
   servers: RemoteServer[]
+  /**
+   * The projects in the order they were dragged into, by id -- this
+   * machine's and linked ones' alike, since the tab bar mixes them. Those not
+   * in it follow in the order they were opened. Required, like the rest.
+   */
+  projectOrder: string[]
   /** See `RemoteCache`: what each machine last said, so its absence is not a deletion. */
   remoteCache: RemoteCache[]
   /**
@@ -79,6 +85,7 @@ const emptyState = (): PersistedState => ({
   todos: [],
   recents: [],
   servers: [],
+  projectOrder: [],
   remoteCache: [],
   awake: null,
   ui: defaultUiState(),
@@ -140,6 +147,10 @@ const reviveRemoteCache = (value: unknown): RemoteCache | null => {
   }
 }
 
+/** A list of strings, or nothing: a hand-edited file is not trusted further. */
+const stringList = (value: unknown): string[] | undefined =>
+  Array.isArray(value) && value.every((one) => typeof one === 'string') ? (value as string[]) : undefined
+
 const reviveProject = (value: unknown): Project | null => {
   if (typeof value !== 'object' || value === null) return null
   const row = value as Partial<Project>
@@ -169,6 +180,7 @@ const reviveProject = (value: unknown): Project | null => {
      */
     kind: row.kind === 'folder' ? ('folder' as const) : undefined,
     paneHidden: row.paneHidden === true ? true : undefined,
+    worktreeOrder: stringList(row.worktreeOrder),
     worktreeRoot: defaultWorktreeRoot(row.root),
   }
 }
@@ -268,6 +280,7 @@ export class StateStore {
           servers: (Array.isArray(candidate.servers) ? candidate.servers : [])
             .map(reviveServer)
             .filter((server): server is RemoteServer => server !== null),
+          projectOrder: stringList(candidate.projectOrder) ?? [],
           remoteCache: (Array.isArray(candidate.remoteCache) ? candidate.remoteCache : [])
             .map(reviveRemoteCache)
             .filter((entry): entry is RemoteCache => entry !== null),
@@ -316,6 +329,24 @@ export class StateStore {
     else delete project.paneHidden
     this.scheduleSave()
     return true
+  }
+
+  /** The order you dragged a project's worktrees into. False if there is no such project. */
+  setWorktreeOrder(id: string, order: string[]): boolean {
+    const project = this.project(id)
+    if (project === undefined) return false
+    project.worktreeOrder = [...new Set(order)]
+    this.scheduleSave()
+    return true
+  }
+
+  get projectOrder(): string[] {
+    return this.state.projectOrder
+  }
+
+  setProjectOrder(ids: string[]): void {
+    this.state.projectOrder = [...new Set(ids)]
+    this.scheduleSave()
   }
 
   removeProject(id: string): void {

@@ -92,6 +92,19 @@ const newTodoId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 10)
  * a remote project is known by the peer's own id, which is what lets every
  * route address it through the ordinary proxy.
  */
+/**
+ * Projects in the order they were dragged into, the rest after them in the
+ * order they came: the order they were opened. Stable, so a project nobody
+ * moved never jumps.
+ */
+export const inOrder = <T extends { id: string }>(items: T[], order: readonly string[]): T[] => {
+  const at = new Map(order.map((id, index) => [id, index]))
+  return items
+    .map((item, index) => ({ item, index, rank: at.get(item.id) ?? order.length }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ item }) => item)
+}
+
 const localTo = (
   snapshot: Omit<AppSnapshot, 'ui'>,
   baseUrl: string,
@@ -389,7 +402,7 @@ export class Workspace {
     }
     const remote = opts.localOnly === true ? [] : await this.remoteSlices()
     return {
-      projects: [...local.projects, ...remote.flatMap((r) => r.projects)],
+      projects: inOrder([...local.projects, ...remote.flatMap((r) => r.projects)], this.store.projectOrder),
       worktrees: [...local.worktrees, ...remote.flatMap((r) => r.worktrees)],
       sessions: [...local.sessions, ...remote.flatMap((r) => r.sessions)],
       todos: [...local.todos, ...remote.flatMap((r) => r.todos)],

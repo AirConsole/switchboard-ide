@@ -118,6 +118,7 @@ export const WorktreeTab = ({
   title,
   onPick,
   onClose,
+  draggable = false,
 }: {
   worktree: Worktree
   status: WorktreeStatus
@@ -131,8 +132,12 @@ export const WorktreeTab = ({
   onPick: () => void
   /** The ×, where there is something to put away. */
   onClose?: { title: string; run: () => void }
+  /** Whether it can be dragged to another place among its project's tabs. See `useDragOrder`. */
+  draggable?: boolean
 }): React.ReactElement => (
   <span
+    data-drag-item={draggable ? 'worktree' : undefined}
+    data-drag-id={draggable ? worktree.id : undefined}
     className={[
       'tab',
       sleeping ? 'tab--asleep' : 'tab--awake',
@@ -142,7 +147,12 @@ export const WorktreeTab = ({
       .filter(Boolean)
       .join(' ')}
   >
-    <button className="tab__body" onClick={onPick} title={title}>
+    <button
+      className="tab__body"
+      onClick={onPick}
+      title={title}
+      data-drag-handle={draggable ? '' : undefined}
+    >
       {/* The state is the bar down the tab's leading edge, drawn by `.tab`
           itself rather than by anything in here -- see styles.css. It is on
           every tab, asleep or not: sleeping does not mean stopped, Claude

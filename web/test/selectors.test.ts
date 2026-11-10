@@ -594,3 +594,22 @@ describe('projectPaneFolded', () => {
     expect(projectPaneFolded({ project: {}, awake: ['a'] })).toBe(false)
   })
 })
+
+describe('orderWorktrees, once something was dragged', () => {
+  const wt = (id: string, name: string, isMain = false) => ({ id, name, isMain }) as unknown as Worktree
+
+  it('is the main worktree, then by name, when nothing was placed', () => {
+    const order = orderWorktrees([wt('b', 'beta'), wt('m', 'main', true), wt('a', 'alpha')])
+    expect(order.map((w) => w.id)).toEqual(['m', 'a', 'b'])
+  })
+
+  /*
+   * Placed first, in the order dragged; one made since lands after them
+   * rather than in among them by name, and the main worktree can be moved
+   * like any other.
+   */
+  it('puts what was dragged first, and the rest after it by the old rule', () => {
+    const all = [wt('m', 'main', true), wt('a', 'alpha'), wt('b', 'beta'), wt('n', 'aaa-new')]
+    expect(orderWorktrees(all, ['b', 'm']).map((w) => w.id)).toEqual(['b', 'm', 'n', 'a'])
+  })
+})

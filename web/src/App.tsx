@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type RemoveOptions } from './api.js'
 import { bindSocketToStore, useStore } from './store.js'
+import { moveIn, type DragMove } from './components/useDragOrder.js'
 import { TopBar } from './components/TopBar.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
 import { useNarrow } from './components/useNarrow.js'
@@ -351,7 +352,10 @@ export const App = (): React.ReactElement => {
   const groups = useMemo<ProjectGroup[]>(
     () =>
       projects.map((project) => {
-        const mine = orderWorktrees(worktrees.filter((w) => w.projectId === project.id))
+        const mine = orderWorktrees(
+          worktrees.filter((w) => w.projectId === project.id),
+          project.worktreeOrder,
+        )
         return {
           project,
           awake: mine.filter((w) => awake.has(w.id)),
@@ -539,6 +543,46 @@ export const App = (): React.ReactElement => {
         fail(err)
         void refresh()
       })
+  }
+
+  /**
+   * A project or a worktree dragged to another place in the top bar.
+   *
+   * Applied here at once and then saved, like folding a pane: the server's
+   * announcement brings every other page along, and a refusal puts this one
+   * back. The whole order is saved, not the one move, so what is stored is
+   * exactly what you were looking at when you let go.
+   */
+  const move = ({ kind, from, to, after, parent }: DragMove): void => {
+    if (kind === 'project') {
+      const order = moveIn(groups.map((group) => group.project.id), from, to, after)
+      const rank = new Map(order.map((id, index) => [id, index]))
+      useStore.setState((state) => ({
+        projects: [...state.projects].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)),
+      }))
+      void api.setProjectOrder(order).catch((err: unknown) => {
+        fail(err)
+        void refresh()
+      })
+      return
+    }
+    const group = groups.find((one) => one.project.id === parent)
+    if (kind !== 'worktree' || group === undefined) return
+    /*
+     * Among every worktree of the project, asleep ones included: they keep
+     * their places, and waking one puts it back where it was.
+     */
+    const all = orderWorktrees([...group.awake, ...group.asleep], group.project.worktreeOrder)
+    const order = moveIn(all.map((worktree) => worktree.id), from, to, after)
+    useStore.setState((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === group.project.id ? { ...project, worktreeOrder: order } : project,
+      ),
+    }))
+    void api.setWorktreeOrder(group.project.id, order).catch((err: unknown) => {
+      fail(err)
+      void refresh()
+    })
   }
 
   const wake = (worktreeId: string): void => {
@@ -1040,6 +1084,7 @@ export const App = (): React.ReactElement => {
       onRevealMachine={() => reveal(MACHINE_KEY, 'machine')}
       onWake={wake}
       onReveal={revealClaude}
+      onMove={move}
       activeId={active?.id ?? null}
     />
   )

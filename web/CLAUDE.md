@@ -59,6 +59,25 @@ seven rungs while the usage readout was three rows of bars, and that readout
 was 189px of the bar: it reached the second row at 700px then, and does at 300
 now.
 
+**Projects and worktrees are dragged into the order you want** (`useDragOrder`).
+A project by its name, its tabs with it; a worktree among its own project's
+tabs, and the row of windows follows, since the bar is its index. The bar never
+scrolls -- the ladder above gives tabs up instead -- so there is no edge to
+scroll along while dragging; a tab the bar has given up is simply not a place
+to drop until there is room for it again. Pointer events and a mouse only: on
+a touch screen the same gesture swipes the bar. A press becomes a drag after
+5px, and the click that follows a drop is swallowed so the tab you let go of
+does not open. Where it would land is a --bone bar outside the tab, never over
+the state bar down a tab's own edge; Escape puts it back.
+
+Both orders are the server's, so every page follows them: the projects' on the
+machine serving the page (`PUT /api/project-order`, never forwarded, since the
+bar mixes every machine's), and each project's worktrees on the project's own
+machine (`Project.worktreeOrder`, through the proxy, its ids rewritten both
+ways by `ID_LIST_FIELDS`). What was never placed keeps the old rule after what
+was: projects in the order opened, worktrees main first then by name -- so a
+worktree made since lands after the ones you arranged.
+
 **Claude's usage is rings inside each other, and a click for the numbers**
 (`UsageRings`). One ring per limit in the order `/usage` reports them -- the
 session outside, the week, and the model with its own allowance (Fable) in the
