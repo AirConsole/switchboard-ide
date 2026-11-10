@@ -183,3 +183,18 @@ describe('credentials that people actually type', () => {
     expect(decoded('http://box')).toBeUndefined()
   })
 })
+
+describe('a list of ids', () => {
+  /*
+   * A project's worktree order is a list of its machine's worktree ids. Left
+   * alone by the walk, the gateway would sort scoped worktrees by unscoped
+   * ids -- every one of them unplaced -- and send scoped ids back for the
+   * peer to store, which its own pages would match against nothing.
+   */
+  it('is scoped and unscoped one by one', () => {
+    const host = hostKeyFor('http://peer:7999')
+    const scoped = scopeTree(host, { id: 'p1', worktreeOrder: ['wt-a', 'wt-b'] })
+    expect(scoped.worktreeOrder).toEqual([scopeId(host, 'wt-a'), scopeId(host, 'wt-b')])
+    expect(unscopeTree(scoped)).toEqual({ id: 'p1', worktreeOrder: ['wt-a', 'wt-b'] })
+  })
+})

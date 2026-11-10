@@ -17,7 +17,7 @@ import {
 const stateDir = await mkdtemp(join(tmpdir(), 'swb-workspace-'))
 process.env.SWB_STATE_DIR = stateDir
 const { StateStore } = await import('../src/state.js')
-const { Workspace } = await import('../src/workspace.js')
+const { Workspace, inOrder } = await import('../src/workspace.js')
 type SessionEngine = ConstructorParameters<typeof Workspace>[1]
 
 /** What was killed, so the ordering against git's removal can be asserted. */
@@ -940,5 +940,14 @@ describe('fileTrees', () => {
     // Only "gone" is tolerated per directory; containment is the request's answer.
     await workspace.openProject(repo.path)
     expect(await statusOf(workspace.fileTrees(worktreeIdFor(repo.path), ['', '../..']))).toBe(403)
+  })
+})
+
+describe('inOrder', () => {
+  // Stable for whatever was never placed: a project nobody moved never jumps.
+  it('puts the placed first, in their order, and the rest as they came', () => {
+    const items = ['a', 'b', 'c', 'd'].map((id) => ({ id }))
+    expect(inOrder(items, ['c', 'x', 'a']).map((one) => one.id)).toEqual(['c', 'a', 'b', 'd'])
+    expect(inOrder(items, []).map((one) => one.id)).toEqual(['a', 'b', 'c', 'd'])
   })
 })

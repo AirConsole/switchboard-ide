@@ -4,6 +4,7 @@ import type { ProjectGroup } from '../App.js'
 import { WorktreeTab, summaryClass, worktreeTitle } from './WorktreeTab.js'
 import { UsageRings, useUsage } from './UsageRings.js'
 import { LinkIcon } from './LinkIcon.js'
+import { useDragOrder, type DragMove } from './useDragOrder.js'
 import { isMachineKey, projectKey } from '../views/Overview.js'
 import { PanelIcon } from './PanelIcon.js'
 import { useStore } from '../store.js'
@@ -37,7 +38,7 @@ const isCurrent = (group: ProjectGroup, activeId: string | null): boolean =>
   (activeId === projectKey(group.project.id) || group.awake.some((w) => w.id === activeId))
 
 export interface TopBarProps {
-  /** Every open project, in the order they were opened. */
+  /** Every open project, in the order they were dragged into, then opened. */
   groups: ProjectGroup[]
   sessions: Session[]
   /** Every todo, so a tab can say how much is queued behind it. */
@@ -59,6 +60,8 @@ export interface TopBarProps {
    * Claude has the keyboard. Null before anything has been navigated to.
    */
   activeId: string | null
+  /** A project or a worktree was dragged to another place in the bar. See `useDragOrder`. */
+  onMove: (move: DragMove) => void
 }
 
 /**
@@ -209,6 +212,7 @@ const Group = ({
         active={!sleeping && worktree.id === activeId}
         title={worktreeTitle(worktree, sessions, queued, sleeping)}
         onPick={() => (sleeping ? onWake(worktree.id) : onReveal(worktree.id))}
+        draggable
         /*
          * No × up here any more: it is in the window's own bar, at the end of
          * the panel toggles.
@@ -226,7 +230,11 @@ const Group = ({
   }
 
   return (
-    <div className={current ? 'tabgroup tabgroup--current' : 'tabgroup'}>
+    <div
+      className={current ? 'tabgroup tabgroup--current' : 'tabgroup'}
+      data-drag-item="project"
+      data-drag-id={project.id}
+    >
       {/*
         * The project's name is its pane's tab.
         *
@@ -244,6 +252,8 @@ const Group = ({
         * Collapsed, all of that is replaced by the shares strip below.
         */}
       <button
+        // Where the whole project is picked up to be dragged.
+        data-drag-handle=""
         className={[
           'tabgroup__pill',
           activeId === projectKey(project.id) ? 'tabgroup__pill--on' : '',
@@ -408,6 +418,7 @@ export const TopBar = ({
   onRevealMachine,
   onWake,
   onReveal,
+  onMove,
 }: TopBarProps): React.ReactElement => {
   const usage = useUsage()
   const signOut = useStore((state) => state.signOut)
@@ -424,6 +435,7 @@ export const TopBar = ({
   }
   const bar = useRef<HTMLElement | null>(null)
   const strip = useRef<HTMLElement | null>(null)
+  useDragOrder(strip, onMove)
   /*
    * How much a tab may say, from how many there are.
    *

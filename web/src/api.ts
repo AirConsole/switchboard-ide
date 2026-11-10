@@ -170,6 +170,15 @@ export const api = {
   /** Close a project. `sleep` stops every session it is running on the way out. */
   closeProject: (id: string, opts: { sleep: boolean }) =>
     request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
+  /** The order the tab bar's projects were dragged into. */
+  setProjectOrder: (ids: string[]) =>
+    request<{ ok: true }>('/api/project-order', { method: 'PUT', body: JSON.stringify({ ids }) }),
+  /** The order a project's worktrees were dragged into. */
+  setWorktreeOrder: (id: string, worktreeOrder: string[]) =>
+    request<{ ok: true }>(`/api/projects/${id}/worktree-order`, {
+      method: 'PUT',
+      body: JSON.stringify({ worktreeOrder }),
+    }),
   /** Fold a project's pane away, or bring it back. */
   setProjectPane: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/projects/${id}/pane`, { method: 'PUT', body: JSON.stringify({ hidden }) }),

@@ -366,3 +366,24 @@ describe("a project's folded pane", () => {
     expect(store.setProjectPaneHidden('nope', true)).toBe(false)
   })
 })
+
+describe('the order things were dragged into', () => {
+  it('keeps the project order and each project worktree order across a restart', async () => {
+    const store = await newStore()
+    store.addProject(project({ id: 'p1', root: '/r1' }))
+    store.setProjectOrder(['p2', 'p1', 'p2'])
+    expect(store.setWorktreeOrder('p1', ['wt-b', 'wt-a'])).toBe(true)
+    await store.flush()
+    const again = await newStore()
+    expect(again.projectOrder).toEqual(['p2', 'p1'])
+    expect(again.project('p1')?.worktreeOrder).toEqual(['wt-b', 'wt-a'])
+  })
+
+  it('drops an order that is not a list of strings', async () => {
+    const store = await loadedFrom(
+      JSON.stringify({ projectOrder: 'p1', projects: [{ id: 'p1', root: '/r1', worktreeOrder: [1, 2] }] }),
+    )
+    expect(store.projectOrder).toEqual([])
+    expect(store.project('p1')?.worktreeOrder).toBeUndefined()
+  })
+})

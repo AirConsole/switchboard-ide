@@ -80,13 +80,25 @@ export const isScoped = (id: string): boolean => SCOPED.test(id)
  */
 export const ID_FIELDS = ['id', 'projectId', 'worktreeId', 'sessionId'] as const
 
+/**
+ * Fields holding a *list* of ids, mapped one by one. A project's chosen
+ * worktree order is a list of its machine's worktree ids, and unscoped on
+ * its way here it would name no worktree this side knows -- nor would a
+ * gateway's scoped list on its way there.
+ */
+export const ID_LIST_FIELDS = ['worktreeOrder'] as const
+
 const walk = (value: unknown, map: (id: string) => string): unknown => {
   if (Array.isArray(value)) return value.map((v) => walk(v, map))
   if (typeof value !== 'object' || value === null) return value
   const out: Record<string, unknown> = {}
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
     out[key] =
-      typeof v === 'string' && (ID_FIELDS as readonly string[]).includes(key) ? map(v) : walk(v, map)
+      typeof v === 'string' && (ID_FIELDS as readonly string[]).includes(key)
+        ? map(v)
+        : Array.isArray(v) && (ID_LIST_FIELDS as readonly string[]).includes(key)
+          ? v.map((one) => (typeof one === 'string' ? map(one) : one))
+          : walk(v, map)
   }
   return out
 }

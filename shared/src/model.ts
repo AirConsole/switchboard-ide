@@ -96,6 +96,13 @@ export interface Project {
    * so every browser and every machine linking it shows the same row.
    */
   paneHidden?: boolean
+  /**
+   * The worktrees in the order you dragged them into, by id. Those not in it
+   * -- made since, or never moved -- follow in the old order: the main
+   * worktree, then by name. Kept with the project on its own machine, like
+   * `paneHidden`, so every page and every machine linking it agrees.
+   */
+  worktreeOrder?: string[]
 }
 
 /**

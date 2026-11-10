@@ -139,17 +139,23 @@ export const summarySignal = (
   statuses.includes('needs-you') ? 'needs-you' : statuses.includes('idle') ? 'idle' : null
 
 /**
- * Main worktree first, then alphabetical, within one project.
+ * Within one project: the order you dragged them into, then the rest with the
+ * main worktree first and the others by name.
  *
  * A stable order is the point: a tile is where you last saw it, which is what
- * lets the top bar be an index into a row that scrolls. The reorderable version
- * this replaces read a `tabOrder` that nothing ever wrote.
+ * lets the top bar be an index into a row that scrolls. So a worktree you
+ * never moved keeps the rule it always had, and one made since lands after
+ * those you placed rather than somewhere in the middle of them.
  */
-export const orderWorktrees = (worktrees: Worktree[]): Worktree[] =>
-  [...worktrees].sort((a, b) => {
+export const orderWorktrees = (worktrees: Worktree[], order: readonly string[] = []): Worktree[] => {
+  const at = new Map(order.map((id, index) => [id, index]))
+  return [...worktrees].sort((a, b) => {
+    const placed = (at.get(a.id) ?? Infinity) - (at.get(b.id) ?? Infinity)
+    if (placed !== 0 && !Number.isNaN(placed)) return placed
     if (a.isMain !== b.isMain) return a.isMain ? -1 : 1
     return a.name.localeCompare(b.name)
   })
+}
 
 export const stateLabel = (session: Session | undefined): string => {
   if (!session) return 'not running'

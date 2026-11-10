@@ -429,6 +429,33 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return { ok: true }
   })
 
+  /*
+   * The order you dragged the projects into, kept here whatever machine each
+   * is on, since the tab bar that mixes them is this machine's. Never
+   * forwarded (see `ALWAYS_LOCAL`).
+   */
+  app.put('/api/project-order', async (request) => {
+    const { ids } = z.object({ ids: z.array(z.string().min(1)).max(500) }).parse(request.body)
+    store.setProjectOrder(ids)
+    broadcastInvalidate()
+    return { ok: true }
+  })
+
+  /*
+   * The order you dragged a project's worktrees into. A linked machine's
+   * project is answered there, by the proxy, with the ids made its own on the
+   * way (`ID_LIST_FIELDS`).
+   */
+  app.put('/api/projects/:id/worktree-order', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { worktreeOrder } = z
+      .object({ worktreeOrder: z.array(z.string().min(1)).max(500) })
+      .parse(request.body)
+    if (!store.setWorktreeOrder(id, worktreeOrder)) return reply.code(404).send({ error: 'no such project' })
+    broadcastInvalidate()
+    return { ok: true }
+  })
+
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }
     const { sleep } = closeProjectQuery.parse(request.query)
