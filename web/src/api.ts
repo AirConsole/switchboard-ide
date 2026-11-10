@@ -170,6 +170,9 @@ export const api = {
   /** Close a project. `sleep` stops every session it is running on the way out. */
   closeProject: (id: string, opts: { sleep: boolean }) =>
     request<{ ok: true }>(`/api/projects/${id}?sleep=${opts.sleep}`, { method: 'DELETE' }),
+  /** Fold a project's pane away, or bring it back. */
+  setProjectPane: (id: string, hidden: boolean) =>
+    request<{ ok: true }>(`/api/projects/${id}/pane`, { method: 'PUT', body: JSON.stringify({ hidden }) }),
   patchUi: (patch: Partial<UiState>) =>
     request<UiState>('/api/ui', { method: 'PATCH', body: JSON.stringify(patch) }),
   /** Whether that branch is already there, so the form can say what it will do. */

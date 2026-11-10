@@ -24,6 +24,7 @@ import {
   machineSessions,
   terminalSessions,
   worktreeTodos,
+  projectPaneFolded,
   type TodoView,
 } from '../selectors.js'
 import { TodoBar, TodoPane, type MoveTarget } from './TodoPane.js'
@@ -58,6 +59,7 @@ import {
 } from './overviewLayout.js'
 import { useTileMotion, type Slot } from './tileMotion.js'
 import { ProjectPane } from '../components/ProjectPane.js'
+import { FoldIcon } from '../components/FoldIcon.js'
 import { PanelIcon } from '../components/PanelIcon.js'
 import { useNearViewport } from './useNearViewport.js'
 import { MachineTile, type MachineChoice } from './MachineTile.js'
@@ -655,6 +657,11 @@ const IdleClaude = ({
 }
 
 interface WorktreeTileProps {
+  /**
+   * Its project's pane is folded away and this is the window standing in for
+   * it: bring the pane back. Absent everywhere else.
+   */
+  onUnfoldProject?: () => void
   /** An action about *this* worktree that failed, if there is one. */
   failure: Failure | null
   onDismissFailure: () => void
@@ -809,6 +816,7 @@ interface WorktreeTileProps {
  * belong.
  */
 const WorktreeTile = ({
+  onUnfoldProject,
   failure,
   onDismissFailure,
   departing,
@@ -1002,6 +1010,19 @@ const WorktreeTile = ({
 
   const identity = (
     <span className="tile__label">
+      {/* First, at the window's leading edge, which is where the pane it
+          brings back will appear. */}
+      {onUnfoldProject !== undefined && (
+        <button
+          type="button"
+          className="tile__unfold"
+          title={`Show ${project?.name ?? 'the project'}'s pane`}
+          aria-label={`Show ${project?.name ?? 'the project'}'s pane`}
+          onClick={onUnfoldProject}
+        >
+          <FoldIcon dir="out" />
+        </button>
+      )}
       {/* Dropped when the worktree already carries the project's name, since
           saying it twice tells you nothing the once did not. */}
       {project && project.name !== worktree.name && (
@@ -1447,6 +1468,8 @@ export interface OverviewProps {
   onWake: (worktreeId: string) => void
   onSleep: (worktreeId: string) => void
   onCloseProject: (projectId: string) => void
+  /** Fold a project's pane away, or bring it back. See `Project.paneHidden`. */
+  onFoldProject: (projectId: string, hidden: boolean) => void
   onStart: (worktreeId: string) => void
   /** Bring that worktree wholly into view, and hand one of its panes the keyboard. */
   onReveal: (worktreeId: string, pane?: PaneKind) => void
@@ -1523,6 +1546,7 @@ export const Overview = ({
   onWake,
   onSleep,
   onCloseProject,
+  onFoldProject,
   onStart,
   onReveal,
   onRevealClaude,
@@ -1874,9 +1898,16 @@ export const Overview = ({
      * row would come to rest showing half this pane beside half a worktree,
      * which is exactly the landing `rest` exists to prevent.
      */
-    push(key, null, group, [
-      { kind: 'project', key, units: Math.min(narrow ? 2 : PANE_UNITS.project, units) },
-    ])
+    /*
+     * Not at all while it is folded: its one window stands alone, and carries
+     * the way back in its corner. Left out of the row rather than drawn at no
+     * width, so the walk, the resting places and the units never meet it.
+     */
+    if (!projectPaneFolded(group)) {
+      push(key, null, group, [
+        { kind: 'project', key, units: Math.min(narrow ? 2 : PANE_UNITS.project, units) },
+      ])
+    }
     for (const worktree of group.awake) push(worktree.id, worktree, null, panesOf(worktree, units))
   }
   /*
@@ -2837,11 +2868,16 @@ export const Overview = ({
                           onSleep={onSleep}
                           onCreated={onCreated}
                           onCloseProject={onCloseProject}
+                          onFold={() => onFoldProject(slot.data.group!.project.id, true)}
                         />
                       )}
                     </div>
                   ) : (
                     <WorktreeTile
+                      onUnfoldProject={((group) =>
+                        group === undefined ? undefined : () => onFoldProject(group.project.id, false))(
+                        groups.find((g) => g.project.id === worktree.projectId && projectPaneFolded(g)),
+                      )}
                       failure={failure?.where === worktree.id ? failure : null}
                       onDismissFailure={onDismissFailure}
                       departing={departing.has(worktree.id)}

@@ -32,6 +32,7 @@ import {
   machineWorktreeIdOn,
   terminalSessions,
   worktreeStatus,
+  projectPaneFolded,
 } from './selectors.js'
 import { terminalSocket } from './socket.js'
 import type { MachineChoice } from './views/MachineTile.js'
@@ -180,7 +181,20 @@ export const App = (): React.ReactElement => {
    * a keyboard is attached, and the alternative -- opening the on-screen
    * keyboard on every swipe -- is the complaint this fixes.
    */
-  const reveal = (id: string, pane: PaneKind = 'claude'): void => {
+  const reveal = (to: string, kind: PaneKind = 'claude'): void => {
+    /*
+     * A folded project's pane is not in the row, so going to it -- its head
+     * in the top bar, a reload that left you there, a removal or a close that
+     * lands on it -- goes to the one window standing in for it. The fold is
+     * read from the store rather than from `groups`, because unfolding sets
+     * it and reveals the pane in the same handler, before this render's
+     * `groups` could know.
+     */
+    const group = groups.find((one) => projectKey(one.project.id) === to)
+    const project = group && useStore.getState().projects.find((one) => one.id === group.project.id)
+    const folded = group !== undefined && project !== undefined && projectPaneFolded({ project, awake: group.awake })
+    const id = folded ? group.awake[0]!.id : to
+    const pane: PaneKind = folded ? 'claude' : kind
     setActive({ id, pane })
     const takeKeyboard = !softKeys() || keyboardUp
     setScrollTo((previous) => ({
@@ -499,6 +513,34 @@ export const App = (): React.ReactElement => {
    * was stopped rather than starting a blank one -- and we scroll to it, since
    * with several worktrees awake it may well arrive off the side of the row.
    */
+  /**
+   * Fold a project's pane away, or bring it back.
+   *
+   * Said here at once rather than after the round trip, since a button that
+   * does nothing for a moment is a button you press twice; the server's
+   * announcement then brings every other page along (`PUT
+   * /api/projects/:id/pane`), and a refusal puts this one back with the
+   * reason.
+   */
+  const foldProject = (projectId: string, hidden: boolean): void => {
+    useStore.setState((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectId ? { ...project, paneHidden: hidden || undefined } : project,
+      ),
+    }))
+    const group = groups.find((one) => one.project.id === projectId)
+    if (hidden) {
+      // Out of the pane that is going, into the window that is left.
+      if (active?.id === projectKey(projectId) && group?.awake[0] !== undefined) reveal(group.awake[0].id)
+    } else reveal(projectKey(projectId), 'project')
+    void api
+      .setProjectPane(projectId, hidden)
+      .catch((err: unknown) => {
+        fail(err)
+        void refresh()
+      })
+  }
+
   const wake = (worktreeId: string): void => {
     changeAwake([worktreeId], true, api.wakeWorktree(worktreeId))
     reveal(worktreeId)
@@ -1192,6 +1234,7 @@ export const App = (): React.ReactElement => {
         onWake={wake}
         onSleep={setSleeping}
         onCloseProject={setClosingProject}
+        onFoldProject={foldProject}
         scrollTo={scrollTo}
         active={active}
         onActivate={activate}

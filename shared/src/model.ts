@@ -83,6 +83,19 @@ export interface Project {
    */
   defaultBase?: string
   addedAt: number
+  /**
+   * Whether the project's own pane is folded away while it has one window.
+   *
+   * A project with a single worktree awake spends a pane on a list of one,
+   * so its pane can be put away and the window stands alone, with a way back
+   * in its corner. Only while there is exactly one: with none the pane is all
+   * there is of the project, and with two it is how you move between them.
+   * The flag outlives that -- the pane folds again when you are back to one.
+   *
+   * Recorded with the project on its own machine, like a worktree's awake,
+   * so every browser and every machine linking it shows the same row.
+   */
+  paneHidden?: boolean
 }
 
 /**

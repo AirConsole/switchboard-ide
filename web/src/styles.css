@@ -2622,6 +2622,47 @@ button {
   overflow: hidden;
 }
 
+/*
+ * Folding the project's pane into its one window, and back out of it.
+ *
+ * The same small grey square both ways -- a setting of the row, not a state,
+ * so no colour -- lit under the pointer the way the chrome's other glyph
+ * buttons are. The fold sits at the pane's far right because that is where
+ * the pane goes; the unfold at the window's far left because that is where
+ * it comes back.
+ */
+.projpane__fold,
+.tile__unfold {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--graphite);
+  cursor: pointer;
+}
+
+.projpane__fold:hover,
+.tile__unfold:hover {
+  background: var(--level-hover);
+  color: var(--bone);
+}
+
+.projpane__fold {
+  margin-left: auto;
+  margin-right: -6px;
+}
+
+/* Into the label's own 10px inset, so the name does not move far. */
+.tile__unfold {
+  margin-left: -6px;
+}
+
 .projpane__name {
   overflow: hidden;
   text-overflow: ellipsis;
