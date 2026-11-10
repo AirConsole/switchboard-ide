@@ -98,6 +98,7 @@ export const useDragOrder = (
 
     const end = (): void => {
       press?.item.removeAttribute('data-dragging')
+      press?.item.style.removeProperty('transform')
       mark(null)
       document.documentElement.removeAttribute('data-dragging')
       press = null
@@ -121,14 +122,23 @@ export const useDragOrder = (
         // The cursor says so everywhere, not only over the tabs.
         document.documentElement.setAttribute('data-dragging', '')
       }
-      const items = siblings(press.item)
+      /*
+       * It follows the pointer, so you see what you are holding: measured as
+       * missing, a drag whose only sign was a dimmed tab and a marker at the
+       * far end read as nothing happening. A transform, so nothing in the bar
+       * reflows under it. Its own box, which now rides under the pointer, is
+       * left out of where it could land: measured among the others alone.
+       */
+      press.item.style.transform = `translate(${event.clientX - press.x}px, ${event.clientY - press.y}px)`
+      const held = press.item
+      const items = siblings(held).filter((one) => one !== held)
       const drop = dropAt(
         items.map((one) => one.getBoundingClientRect()),
         event.clientX,
         event.clientY,
       )
       const over = drop === null ? undefined : items[drop.index]
-      mark(over === undefined || over === press.item || drop === null ? null : { item: over, after: drop.after })
+      mark(over === undefined || drop === null ? null : { item: over, after: drop.after })
     }
 
     const up = (event: PointerEvent): void => {
