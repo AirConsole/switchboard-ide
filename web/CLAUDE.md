@@ -67,7 +67,10 @@ scroll along while dragging; a tab the bar has given up is simply not a place
 to drop until there is room for it again. Pointer events and a mouse only: on
 a touch screen the same gesture swipes the bar. A press becomes a drag after
 5px, and the click that follows a drop is swallowed so the tab you let go of
-does not open. Where it would land is a --bone bar outside the tab, never over
+does not open. The tab you hold follows the pointer, solid and over its
+neighbours -- a dimmed tab left in place read as nothing happening -- and is
+left out of the boxes a drop is measured against, since its own box now rides
+under the pointer. Where it would land is a --bone bar outside the tab, never over
 the state bar down a tab's own edge; Escape puts it back.
 
 Both orders are the server's, so every page follows them: the projects' on the

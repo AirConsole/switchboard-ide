@@ -500,7 +500,7 @@ button {
 
 /*
  * Dragging a project or a worktree to another place in the bar (see
- * `useDragOrder`). The one being dragged dims where it is; where it would go
+ * `useDragOrder`). The one being dragged follows the pointer; where it would go
  * is a bar at that edge of the tab it would land beside, in --bone -- a place
  * and not a state, so no colour, and outside the tab so it never hides the
  * state bar down a tab's own leading edge. The cursor says it everywhere
@@ -510,8 +510,15 @@ button {
   position: relative;
 }
 
+/* Over its neighbours as it passes them, and solid: an idle tab has no
+   ground of its own, and see-through it read as two names on top of each
+   other (measured, "two-terms" over "main"). */
 [data-drag-item][data-dragging] {
-  opacity: 0.45;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--level-lit);
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.5);
 }
 
 [data-drag-item][data-drop]::after {
