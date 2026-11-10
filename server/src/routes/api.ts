@@ -417,6 +417,18 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
     return { ok: true }
   })
 
+  /*
+   * The project's pane folded away or back. Every page follows it, since it
+   * is the project's and not one browser's layout -- see `Project.paneHidden`.
+   */
+  app.put('/api/projects/:id/pane', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { hidden } = z.object({ hidden: z.boolean() }).parse(request.body)
+    if (!store.setProjectPaneHidden(id, hidden)) return reply.code(404).send({ error: 'no such project' })
+    broadcastInvalidate()
+    return { ok: true }
+  })
+
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string }
     const { sleep } = closeProjectQuery.parse(request.query)

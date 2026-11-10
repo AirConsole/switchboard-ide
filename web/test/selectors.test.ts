@@ -23,6 +23,7 @@ import {
   terminalSessions,
   worktreeStatus,
   worktreeTodos,
+  projectPaneFolded,
 } from '../src/selectors.js'
 
 const session = (over: Partial<Session> & Pick<Session, 'id' | 'worktreeId' | 'kind'>): Session => ({
@@ -573,5 +574,23 @@ describe('machineSession', () => {
   it('is not a worktree terminal, and a worktree does not see it', () => {
     expect(terminalSessions([theirs, machine], 'wt-abc').map((s) => s.id)).toEqual(['s1'])
     expect(terminalSessions([theirs, machine], MACHINE_WORKTREE_ID).map((s) => s.id)).toEqual(['m1'])
+  })
+})
+
+describe('projectPaneFolded', () => {
+  /*
+   * Folded only while it is a list of one. With no window the pane is all
+   * there is of the project -- folding it then would leave nothing in the row
+   * to unfold it from -- and with two it is how you move between them.
+   */
+  it('folds only with exactly one window open', () => {
+    const asked = { paneHidden: true }
+    expect(projectPaneFolded({ project: asked, awake: [] })).toBe(false)
+    expect(projectPaneFolded({ project: asked, awake: ['a'] })).toBe(true)
+    expect(projectPaneFolded({ project: asked, awake: ['a', 'b'] })).toBe(false)
+  })
+
+  it('is unfolded by default', () => {
+    expect(projectPaneFolded({ project: {}, awake: ['a'] })).toBe(false)
   })
 })

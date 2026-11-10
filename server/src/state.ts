@@ -168,6 +168,7 @@ const reviveProject = (value: unknown): Project | null => {
      * row written before this existed is.
      */
     kind: row.kind === 'folder' ? ('folder' as const) : undefined,
+    paneHidden: row.paneHidden === true ? true : undefined,
     worktreeRoot: defaultWorktreeRoot(row.root),
   }
 }
@@ -305,6 +306,16 @@ export class StateStore {
     if (existing === -1) this.state.projects.push(project)
     else this.state.projects[existing] = project
     this.scheduleSave()
+  }
+
+  /** Fold a project's pane away, or bring it back. False if there is no such project. */
+  setProjectPaneHidden(id: string, hidden: boolean): boolean {
+    const project = this.project(id)
+    if (project === undefined) return false
+    if (hidden) project.paneHidden = true
+    else delete project.paneHidden
+    this.scheduleSave()
+    return true
   }
 
   removeProject(id: string): void {

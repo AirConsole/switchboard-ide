@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Project, Session, Worktree, WorktreeTodo } from '@switchboard/shared'
+import { FoldIcon } from './FoldIcon.js'
 import { NewWorktreeForm } from './NewWorktreeForm.js'
 import { WorktreeTab, worktreeTitle } from './WorktreeTab.js'
 import { useListKeys } from './useListKeys.js'
@@ -33,6 +34,8 @@ export interface ProjectPaneProps {
   onSleep: (worktreeId: string) => void
   onCreated: (worktreeId: string) => void
   onCloseProject: (projectId: string) => void
+  /** Put the pane away and let the one window stand alone. */
+  onFold: () => void
 }
 
 /**
@@ -68,6 +71,7 @@ export const ProjectPane = ({
   onSleep,
   onCreated,
   onCloseProject,
+  onFold,
 }: ProjectPaneProps): React.ReactElement => {
   const box = useRef<HTMLDivElement | null>(null)
   /*
@@ -100,6 +104,22 @@ export const ProjectPane = ({
       <span className="projpane__name" title={project.root}>
         {project.name}
       </span>
+      {/*
+        * Only with exactly one window: that is when the pane is a list of one
+        * and worth folding, and the only time the row knows where it goes --
+        * into that window, to its right, whose corner brings it back.
+        */}
+      {awake.length === 1 && (
+        <button
+          type="button"
+          className="projpane__fold"
+          title={`Hide this pane; ${awake[0]!.name} keeps a button to bring it back`}
+          aria-label="Hide the project's pane"
+          onClick={onFold}
+        >
+          <FoldIcon dir="in" />
+        </button>
+      )}
     </div>
     <div className="projpane__body">
       <section className="projpane__section">

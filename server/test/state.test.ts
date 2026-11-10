@@ -340,3 +340,29 @@ describe('saving', () => {
     expect([after.ino, after.mtimeNs]).toEqual([before.ino, before.mtimeNs])
   })
 })
+
+describe("a project's folded pane", () => {
+  /*
+   * The one place it lives, so it has to come back from the file: a pane put
+   * away in one browser that reappeared after the server restarted would be a
+   * fold that every device agreed on until a deploy.
+   */
+  it('survives a restart, and unfolding leaves no trace', async () => {
+    const store = await newStore()
+    store.addProject(project({ id: 'p1', root: '/r1' }))
+    expect(store.setProjectPaneHidden('p1', true)).toBe(true)
+    await store.flush()
+    expect((await newStore()).project('p1')?.paneHidden).toBe(true)
+
+    store.setProjectPaneHidden('p1', false)
+    await store.flush()
+    const row = ((await onDisk()).projects as Record<string, unknown>[])[0]
+    expect(row).not.toHaveProperty('paneHidden')
+  })
+
+  it('reads anything but true as unfolded, and refuses a project it does not have', async () => {
+    const store = await loadedFrom(JSON.stringify({ projects: [{ id: 'p1', root: '/r1', paneHidden: 'yes' }] }))
+    expect(store.project('p1')?.paneHidden).toBeUndefined()
+    expect(store.setProjectPaneHidden('nope', true)).toBe(false)
+  })
+})

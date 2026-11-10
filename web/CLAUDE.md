@@ -618,6 +618,18 @@ dropdown and a `+`. A menu is the wrong home for a list you want to scan, and a
 modal the wrong shape for "and one more", which is a standing offer rather than
 a question.
 
+**With exactly one window it can be folded away** -- `>|` at the pane's right
+-- and that one window then stands alone with `|<` at its left to bring it
+back. A list of one is a pane spent on nothing; with none the pane is all
+there is of the project, and with two it is how you move between them, so
+the button exists only at one and the fold applies only at one
+(`projectPaneFolded`). The flag is the project's, kept on its machine and
+announced to every page (`Project.paneHidden`), not a line in `ui`: what the
+row looks like should not depend on which browser you are in. A folded pane
+is left out of the row entirely rather than drawn at no width, and `reveal`
+sends anything aimed at it -- its head in the top bar, a reload, a removal
+that lands there -- to the window standing in for it.
+
 It is a pane you can walk to: `PaneKind` includes `'project'`, cells are keyed
 by `projectKey(projectId)`, and the Cmd+arrow stops are keyed by the cell rather
 than by a worktree, so the walk reaches it with no special case. Arriving puts

@@ -426,3 +426,14 @@ export const worktreeToWakeOnOpen = (
  */
 export const machineHasProjects = (projects: readonly Project[], baseUrl: string): boolean =>
   projects.some((project) => project.host.kind === 'remote' && project.host.baseUrl === baseUrl)
+
+/**
+ * Whether a project's pane is folded away: asked for, and the project has
+ * exactly one window open. With none the pane is all there is of it; with
+ * two it is how you move between them -- so the fold only applies while
+ * there is one, and comes back by itself when there is one again.
+ */
+export const projectPaneFolded = (group: {
+  project: Pick<Project, 'paneHidden'>
+  awake: readonly unknown[]
+}): boolean => group.project.paneHidden === true && group.awake.length === 1
