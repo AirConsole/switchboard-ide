@@ -231,7 +231,7 @@ const readCommand = (content: string): string | null => {
  * fixture written by anything else, which is a poor way to find out that a
  * pre-filter is really a parser.
  */
-const INTERESTING = /"(?:last-prompt|turn_duration|queued_command)"|"type"\s*:\s*"user"/
+const INTERESTING = /"(?:last-prompt|turn_duration|queued_command)"|"type"\s*:\s*"user"|Compacted while idle/
 
 const markOf = (line: string): Mark => {
   if (!INTERESTING.test(line)) return null
@@ -251,9 +251,28 @@ const markOf = (line: string): Mark => {
     isMeta?: unknown
     isCompactSummary?: unknown
     isSidechain?: unknown
+    content?: unknown
     message?: { content?: unknown }
   }
   if (record.subtype === 'turn_duration') return { kind: 'turn-end' }
+  /*
+   * A compaction Claude Code ran because nothing was happening, which says the
+   * turn is over as plainly as `turn_duration` does -- and it has to, because
+   * it buries that one. The compaction re-attaches the session's skills, tool
+   * and agent listings and MCP instructions behind its summary, about 250KB of
+   * it: measured on appmcp, the turn's end sat 270,770 bytes from the end of
+   * the file, just past the tail this reads, so the window read unknown and
+   * stayed grey over a Claude at rest. Surveyed over every local transcript,
+   * all 29 of these notices came after a turn end with no prompt between.
+   */
+  if (
+    record.type === 'system' &&
+    record.subtype === 'informational' &&
+    typeof record.content === 'string' &&
+    record.content.startsWith('Compacted while idle')
+  ) {
+    return { kind: 'turn-end' }
+  }
   if (record.type === 'last-prompt') {
     if (typeof record.lastPrompt !== 'string' || record.lastPrompt === '') return null
     return { kind: 'recorded-prompt', text: record.lastPrompt }

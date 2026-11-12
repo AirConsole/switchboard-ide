@@ -583,6 +583,26 @@ describe('turnState', () => {
     expect(await turnState(cwd)).toBe('between-turns')
   })
 
+  it('is between-turns when an idle compaction buries the turn end past the tail', async () => {
+    /*
+     * Measured on appmcp: the compaction wrote ~250KB of re-attached listings
+     * after the turn, pushing `turn_duration` out of the 256KB tail.
+     */
+    const cwd = freshCwd()
+    const listing = { type: 'attachment', attachment: { type: 'skill_listing', content: 'x'.repeat(100_000) } }
+    await writeTranscript(cwd, 'a.jsonl', [
+      userSays('do the thing'),
+      TURN_END,
+      { type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted' },
+      listing,
+      listing,
+      listing,
+      { type: 'system', subtype: 'informational', content: 'Compacted while idle, before the prompt cache expired' },
+      { type: 'last-prompt', lastPrompt: 'do the thing' },
+    ])
+    expect(await turnState(cwd)).toBe('between-turns')
+  })
+
   it('is in-turn after a slash command that runs a turn', async () => {
     // `/plan <task>` writes command output too, and then runs; no caveat.
     const cwd = freshCwd()
