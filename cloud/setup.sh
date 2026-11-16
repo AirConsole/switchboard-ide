@@ -93,40 +93,30 @@ apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
-# Node 22.23.4 / 24.22.1 / 26.12.1 are the October 2026 security releases
-# (CVE-2026-111497 et al.). Checking only major >= 22 left existing VMs on the
-# 22.x build they first booted with when setup.sh re-ran.
+# The November 2026 security release. A full-version check, not a major one:
+# checking only the major left every existing machine on the Node it first
+# booted with. Must equal NODE_MIN in install.sh and `engines` in package.json.
+NODE_MIN=26.13.1
 node_ok() {
-  local v="${1-$(command -v node >/dev/null && node -v || true)}" major minor patch
-  IFS=. read -r major minor patch <<<"${v#v}"
-  patch="${patch%%[-+]*}"
-  [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]] || return 1
-  (( (major == 22 && (minor > 23 || (minor == 23 && patch >= 4))) ||
-     (major == 24 && (minor > 22 || (minor == 22 && patch >= 1))) ||
-     (major >= 26 && (major > 26 || minor > 12 || (minor == 12 && patch >= 1))) ))
+  local v="${1-$(command -v node >/dev/null && node -v || true)}" a b c x y z
+  IFS=. read -r a b c <<<"${v#v}"
+  IFS=. read -r x y z <<<"$NODE_MIN"
+  [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[0-9]+$ && "$c" =~ ^[0-9]+$ ]] || return 1
+  (( 10#$a != 10#$x ? 10#$a > 10#$x : 10#$b != 10#$y ? 10#$b > 10#$y : 10#$c >= 10#$z ))
 }
-
-# Match the installed major (or step an odd release line up to the next LTS/current
-# line) so `apt-get install -y nodejs` always sees a newer candidate version.
-node_track() {
-  local v="${1-$(command -v node >/dev/null && node -v || true)}" major
-  major="${v#v}"
-  major="${major%%.*}"
-  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 25 )); then
-    echo 26
-  elif [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 23 )); then
-    echo 24
-  else
-    echo 22
-  fi
-}
-
+NODE_UPGRADED=0
 if ! node_ok; then
-  NODE_TRACK=$(node_track)
-  log "installing node ${NODE_TRACK}"
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_TRACK}.x" | bash -
+  log "installing node 26"
+  curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+  hash -r # paths cached from the package just replaced, such as corepack's
+  NODE_UPGRADED=1
+  # NodeSource can lag nodejs.org; this then retries on every boot.
+  node_ok || log "node $(node -v) is still older than $NODE_MIN"
 fi
+# Node 25 and newer no longer bundle corepack: a machine moved to 26 lost it, and
+# with it the pnpm that the IDE unit and `pnpm pull` run.
+command -v corepack >/dev/null || npm install -g corepack
 corepack enable pnpm >/dev/null 2>&1 || true
 
 if ! command -v caddy >/dev/null; then
@@ -328,6 +318,10 @@ if [ ! -f "$IDE_DIR/server/dist/index.js" ] || [ ! -f "$IDE_DIR/web/dist/index.h
   log "building the IDE"
   as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
 fi
+# A new Node major can leave node-pty unloadable; ensure-native rebuilds it only then.
+if [ "$NODE_UPGRADED" = 1 ] && [ -d "$IDE_DIR/node_modules" ]; then
+  as_swb bash -c "cd $IDE_DIR && pnpm ensure-native"
+fi
 
 if ! command -v claude >/dev/null; then
   log "installing the claude CLI"
@@ -454,5 +448,10 @@ systemctl daemon-reload
 # half built and nothing saying so. The unit is for the next boot.
 systemctl enable switchboard-setup.service >/dev/null 2>&1 || true
 systemctl enable --now switchboard-unlock.service
+# The public unlock page starts at boot alongside this script, so it may still
+# be running the Node that was just replaced.
+if [ "$NODE_UPGRADED" = 1 ]; then
+  systemctl try-restart switchboard-unlock.service
+fi
 
 log "done"
