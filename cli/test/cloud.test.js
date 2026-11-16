@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,6 +65,95 @@ describe('the scripts parse', () => {
     for (const good of ['v26.13.1', 'v26.13.10', 'v26.14.0', 'v27.0.0']) {
       expect(ok(good), good).toBe(true)
     }
+  })
+
+  /**
+   * setup.sh's Node block, run with logging stand-ins for what it calls. Their
+   * effects are the ones measured on ubuntu:24.04: installing NodeSource 26 over
+   * 22 replaces node and removes corepack, and `npm install -g corepack` brings
+   * it back. Only the stand-ins and bash/sh/chmod/rm are on PATH, so a real node
+   * or corepack on this machine cannot answer for a missing one.
+   * @param {{ node?: string, corepack?: boolean, failCurl?: boolean, failNpm?: boolean }} m
+   */
+  const runNodeBlock = (m) => {
+    const block = readFileSync(join(CLOUD, 'setup.sh'), 'utf8').match(/^NODE_MIN=[\s\S]*?^corepack enable pnpm.*$/m)?.[0]
+    expect(block).toBeTruthy()
+    const dir = mkdtempSync(join(tmpdir(), 'swb-node-'))
+    try {
+      const bin = join(dir, 'bin')
+      const log = join(dir, 'log')
+      mkdirSync(bin)
+      for (const tool of ['bash', 'sh', 'chmod', 'rm']) {
+        symlinkSync(execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(), join(bin, tool))
+      }
+      /**
+       * @param {string} name
+       * @param {string} body
+       */
+      const put = (name, body) => {
+        writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
+        chmodSync(join(bin, name), 0o755)
+      }
+      const logged = (/** @type {string} */ name) => `echo "${name} $*" >> ${log}`
+      const corepack = `printf '#!/bin/sh\\n${logged('corepack')}\\n' > ${bin}/corepack; chmod 755 ${bin}/corepack`
+      if (m.node) put('node', `echo ${m.node}`)
+      if (m.corepack) put('corepack', logged('corepack'))
+      put('curl', `${logged('curl')}\n${m.failCurl ? 'exit 7' : 'echo true'}`)
+      put('apt-get', `${logged('apt-get')}\nprintf '#!/bin/sh\\necho v26.13.1\\n' > ${bin}/node; chmod 755 ${bin}/node; rm -f ${bin}/corepack`)
+      put('npm', `${logged('npm')}\n${m.failNpm ? 'exit 1' : corepack}`)
+      let status = 0
+      try {
+        execFileSync(bin + '/bash', ['-c', `set -euo pipefail\nlog() { echo "log $*" >> ${log}; }\n${block}`], {
+          env: { PATH: bin },
+          stdio: 'ignore',
+        })
+      } catch (e) {
+        status = /** @type {{ status: number }} */ (e).status
+      }
+      let calls = ''
+      try {
+        calls = readFileSync(log, 'utf8')
+      } catch {}
+      return { status, calls }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  it('moves a machine on Node 22 to 26 and gives it corepack back', () => {
+    const { status, calls } = runNodeBlock({ node: 'v22.23.5', corepack: true })
+    expect(status).toBe(0)
+    expect(calls).toContain('curl -fsSL https://deb.nodesource.com/setup_26.x')
+    expect(calls).toContain('apt-get install -y nodejs')
+    expect(calls).toContain('npm install -g corepack')
+    expect(calls).toContain('corepack enable pnpm')
+    expect(calls).not.toContain('still older')
+  })
+
+  it('leaves a machine already on NODE_MIN alone', () => {
+    const { status, calls } = runNodeBlock({ node: 'v26.13.1', corepack: true })
+    expect(status).toBe(0)
+    expect(calls).not.toContain('curl')
+    expect(calls).not.toContain('apt-get')
+    expect(calls).not.toContain('npm install')
+    expect(calls).toContain('corepack enable pnpm')
+  })
+
+  // Before the upgrade existed, a machine with a Node needed no network here; a
+  // failed download must not now stop the rest of its boot.
+  it('finishes booting when the upgrade or corepack cannot be fetched, if a Node exists', () => {
+    const offline = runNodeBlock({ node: 'v22.23.5', corepack: true, failCurl: true })
+    expect(offline.status).toBe(0)
+    expect(offline.calls).toContain('node upgrade failed')
+    expect(offline.calls).not.toContain('apt-get')
+
+    const noRegistry = runNodeBlock({ node: 'v22.23.5', corepack: true, failNpm: true })
+    expect(noRegistry.status).toBe(0)
+    expect(noRegistry.calls).toContain('corepack install failed')
+  })
+
+  it('stops when there is no Node and none could be installed', () => {
+    expect(runNodeBlock({ failCurl: true }).status).not.toBe(0)
   })
 
   // Three places name the minimum; one left behind is a machine or a laptop

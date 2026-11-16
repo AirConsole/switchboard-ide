@@ -104,19 +104,24 @@ node_ok() {
   [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[0-9]+$ && "$c" =~ ^[0-9]+$ ]] || return 1
   (( 10#$a != 10#$x ? 10#$a > 10#$x : 10#$b != 10#$y ? 10#$b > 10#$y : 10#$c >= 10#$z ))
 }
-NODE_UPGRADED=0
 if ! node_ok; then
   log "installing node 26"
-  curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
-  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+  # A machine that already has a Node finishes booting when this fails and tries
+  # again at the next boot; one without cannot run the IDE, so it stops here.
+  if ! { curl -fsSL https://deb.nodesource.com/setup_26.x | bash - &&
+         DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs; }; then
+    hash -r
+    command -v node >/dev/null || exit 1
+    log "node upgrade failed; trying again at the next boot"
+  fi
   hash -r # paths cached from the package just replaced, such as corepack's
-  NODE_UPGRADED=1
   # NodeSource can lag nodejs.org; this then retries on every boot.
   node_ok || log "node $(node -v) is still older than $NODE_MIN"
 fi
 # Node 25 and newer no longer bundle corepack: a machine moved to 26 lost it, and
 # with it the pnpm that the IDE unit and `pnpm pull` run.
-command -v corepack >/dev/null || npm install -g corepack
+command -v corepack >/dev/null || npm install -g corepack ||
+  log "corepack install failed; pnpm is missing until the next boot"
 corepack enable pnpm >/dev/null 2>&1 || true
 
 if ! command -v caddy >/dev/null; then
@@ -318,9 +323,11 @@ if [ ! -f "$IDE_DIR/server/dist/index.js" ] || [ ! -f "$IDE_DIR/web/dist/index.h
   log "building the IDE"
   as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
 fi
-# A new Node major can leave node-pty unloadable; ensure-native rebuilds it only then.
-if [ "$NODE_UPGRADED" = 1 ] && [ -d "$IDE_DIR/node_modules" ]; then
-  as_swb bash -c "cd $IDE_DIR && pnpm ensure-native"
+# A new Node major can leave node-pty unloadable. Every boot rather than only the
+# one that upgraded, which may have stopped before reaching this line; it is a
+# load check that rebuilds only when the load fails.
+if [ -d "$IDE_DIR/node_modules" ]; then
+  as_swb bash -c "cd $IDE_DIR && pnpm ensure-native" || log "node-pty does not load; the IDE will not start"
 fi
 
 if ! command -v claude >/dev/null; then
@@ -448,10 +455,12 @@ systemctl daemon-reload
 # half built and nothing saying so. The unit is for the next boot.
 systemctl enable switchboard-setup.service >/dev/null 2>&1 || true
 systemctl enable --now switchboard-unlock.service
-# The public unlock page starts at boot alongside this script, so it may still
-# be running the Node that was just replaced.
-if [ "$NODE_UPGRADED" = 1 ]; then
-  systemctl try-restart switchboard-unlock.service
+# The public unlock page starts at boot alongside this script, so it can still be
+# running a Node binary that apt has since replaced. Read from the process, not
+# remembered from the upgrade, which may have been a run that stopped early.
+UNLOCK_PID=$(systemctl show -p MainPID --value switchboard-unlock.service)
+if [ "${UNLOCK_PID:-0}" != 0 ] && [[ "$(readlink "/proc/$UNLOCK_PID/exe")" == *" (deleted)" ]]; then
+  systemctl restart switchboard-unlock.service
 fi
 
 log "done"
