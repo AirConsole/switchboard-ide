@@ -1,5 +1,9 @@
+import { execFileSync, spawn } from 'node:child_process'
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { autoDecision, behindOrigin } from '../src/update.js'
+import { autoDecision, behindOrigin, nodeReplaced, nodeRestartDecision } from '../src/update.js'
 import { makeRepoWithRemote, type TempRemoteRepo } from './helpers/repo.js'
 
 /*
@@ -116,5 +120,48 @@ describe('autoDecision', () => {
   it('skips the commit it went back from, and tries the next one', () => {
     expect(autoDecision({ ...base, failed: 'abc' })).toBe('skipped')
     expect(autoDecision({ ...base, failed: 'older' })).toBe('now')
+  })
+})
+
+/*
+ * Unattended upgrades replace /usr/bin/node under a running IDE, which goes on
+ * running the old one -- unpatched -- until it restarts.
+ */
+describe('nodeRestartDecision', () => {
+  const MIN = 60_000
+  const base = { replaced: true, updating: false, lastTypedAt: 0, now: 60 * MIN }
+
+  it('restarts once nobody has typed for five minutes, and not before', () => {
+    expect(nodeRestartDecision(base)).toBe('now')
+    expect(nodeRestartDecision({ ...base, lastTypedAt: base.now - 4 * MIN })).toBe('wait')
+  })
+
+  it('does nothing while Node is the one it started with, or while an update runs', () => {
+    expect(nodeRestartDecision({ ...base, replaced: false })).toBe('none')
+    expect(nodeRestartDecision({ ...base, updating: true })).toBe('none')
+  })
+})
+
+describe.runIf(existsSync('/proc/self/exe'))('nodeReplaced', () => {
+  it('sees a running binary replaced the way dpkg replaces one, by rename', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'swb-exe-'))
+    const binary = join(dir, 'sleep')
+    copyFileSync(execFileSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).trim(), binary)
+    chmodSync(binary, 0o755)
+    const running = spawn(binary, ['30'], { stdio: 'ignore' })
+    try {
+      await new Promise((resolve) => running.once('spawn', resolve))
+      expect(nodeReplaced(`/proc/${String(running.pid)}/exe`)).toBe(false)
+      copyFileSync(binary, `${binary}.new`)
+      renameSync(`${binary}.new`, binary)
+      expect(nodeReplaced(`/proc/${String(running.pid)}/exe`)).toBe(true)
+    } finally {
+      running.kill()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('is false where there is nothing to read', () => {
+    expect(nodeReplaced('/nonexistent/exe')).toBe(false)
   })
 })

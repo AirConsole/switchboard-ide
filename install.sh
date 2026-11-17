@@ -83,6 +83,36 @@ if have node; then
   esac
 fi
 
+# The newest release of the major it is on, which is where security fixes land:
+# Node patches 22, 24 and 26 alike, so a laptop on 24.14.0 needs 24.22.3 and
+# not a new major. Said, never required -- pnpm does not enforce `engines`
+# either (measured on 11.1.1) -- and nothing at all when offline.
+# node_newer <found> <other>: whether <other> (such as "24.22.3") is newer.
+node_newer() {
+  IFS=. read -r f1 f2 f3 <<EOF
+${1#v}
+EOF
+  IFS=. read -r o1 o2 o3 <<EOF
+$2
+EOF
+  for n in "$f1" "$f2" "$f3" "$o1" "$o2" "$o3"; do
+    case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  done
+  [ "$o1" -ne "$f1" ] && { [ "$o1" -gt "$f1" ]; return; }
+  [ "$o2" -ne "$f2" ] && { [ "$o2" -gt "$f2" ]; return; }
+  [ "$o3" -gt "$f3" ]
+}
+# nodejs.org lists every release newest first, so the first of a major is its newest.
+node_latest() {
+  curl -fsS --max-time 5 https://nodejs.org/dist/index.json 2>/dev/null |
+    grep -o "\"version\":\"v$1\.[0-9]*\.[0-9]*\"" | head -n 1 | sed 's/.*"v//; s/"$//'
+}
+NODE_LATEST=""
+if [ "$NODE_OK" -eq 1 ] && have curl; then
+  NODE_LATEST="$(node_latest "$NODE_MAJOR" || true)"
+  node_newer "$NODE_FOUND" "$NODE_LATEST" || NODE_LATEST=""
+fi
+
 MISSING=""
 [ "$NODE_OK" -eq 1 ] || MISSING="$MISSING node"
 have git  || MISSING="$MISSING git"
@@ -92,7 +122,7 @@ MISSING="${MISSING# }"
 
 say "Switchboard install"
 say "  platform   $PLATFORM${PM:+ (}${PM}${PM:+)}"
-say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo '   <- needs 22 or newer')"
+say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo '   <- needs 22 or newer')${NODE_LATEST:+   <- $NODE_LATEST is the newest of its line; update to it}"
 say "  git        $(have git && echo ok || echo missing)"
 say "  tmux       $(have tmux && echo ok || echo 'missing   <- every session lives in one')"
 say "  pnpm       $(have pnpm && echo ok || echo missing)"

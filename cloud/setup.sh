@@ -100,6 +100,39 @@ if ! command -v node >/dev/null || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 2
 fi
 corepack enable pnpm >/dev/null 2>&1 || true
 
+# Node's security fixes, as they ship, on a machine that may run for months.
+# The check above only ever installed a Node: one that was there was left at
+# the version it first booted with, through every security release since.
+# Unattended-upgrades already patches Ubuntu's own packages daily; this adds
+# NodeSource's, matched by site because its Release file names its origin
+# ". nodistro" (measured with unattended-upgrade's own matcher). The repository
+# is one major's, so this moves 22.x to the newest 22.x and never to 24 or 26.
+cat > /etc/apt/apt.conf.d/52switchboard-nodesource <<'EOF'
+Unattended-Upgrade::Origins-Pattern:: "site=deb.nodesource.com";
+EOF
+
+# Replacing /usr/bin/node does not patch what is running it: a process keeps
+# the binary it started with, which /proc shows as "/usr/bin/node (deleted)"
+# (measured by replacing a running node the way dpkg does, by rename). So after
+# every dpkg run, the public unlock page is restarted if it is on the old one --
+# it holds nothing, so at any hour. The IDE is not restarted here: it has
+# people's sockets on it, and restarts itself once nobody is typing
+# (`server/src/update.ts`).
+mkdir -p /etc/switchboard
+cat > /etc/switchboard/node-replaced.sh <<'EOF'
+#!/bin/sh
+pid=$(systemctl show -p MainPID --value switchboard-unlock.service 2>/dev/null)
+[ "${pid:-0}" != 0 ] || exit 0
+case "$(readlink "/proc/$pid/exe" 2>/dev/null)" in
+  *" (deleted)") systemctl restart switchboard-unlock.service ;;
+esac
+exit 0
+EOF
+chmod 755 /etc/switchboard/node-replaced.sh
+cat > /etc/apt/apt.conf.d/52switchboard-node-replaced <<'EOF'
+DPkg::Post-Invoke { "/etc/switchboard/node-replaced.sh || true"; };
+EOF
+
 if ! command -v caddy >/dev/null; then
   log "installing caddy"
   curl -1fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \

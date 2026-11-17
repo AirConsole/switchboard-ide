@@ -134,6 +134,19 @@ There is still no timer polling GitHub. The only timer is the 30s re-check
 while an update waits for quiet. So merging to master reaches every machine
 that has, or is linked from, an open page.
 
+**Node is kept patched the same way.** A security fix ships on every
+supported major at once, so the fix for a machine on 24 is the newest 24, not
+a move to 26. A cloud machine's unattended upgrades install NodeSource's
+releases daily (`cloud/setup.sh`), and replacing `/usr/bin/node` patches
+nothing already running, so the machine instance looks every five minutes for
+its own binary replaced (`/proc/self/exe` reading `(deleted)`) and restarts
+onto the new one by the same quiet rule (`watchNode`); a dpkg hook does the
+same for the unlock page at once. That is a timer, unlike the rest, because
+those machines are the ones nobody has a page of open, and a look is one
+readlink. Measured on a throwaway machine instance: its node replaced by
+rename at 11:16:19, running the new one at 11:21:24. A laptop is not patched
+for you; `install.sh` names the newest release of the major it has.
+
 That is only safe because **a pull that does not come up goes back**. `swb
 pull` builds before it stops anything, so a broken build was always harmless,
 but a build that crashes on start left the machine dark -- and on a machine
