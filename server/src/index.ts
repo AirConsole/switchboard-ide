@@ -7,7 +7,7 @@ import { SessionEngine } from './session/engine.js'
 import { StateStore } from './state.js'
 import { Workspace } from './workspace.js'
 import { registerApi } from './routes/api.js'
-import { onOriginAhead } from './update.js'
+import { onOriginAhead, watchNode } from './update.js'
 import { startDispatcher } from './session/dispatch.js'
 import { registerWs, wsPluginOptions } from './routes/ws.js'
 import { registerGate } from './gate.js'
@@ -83,6 +83,10 @@ registerApi(app, { store, engine, workspace, broadcastInvalidate })
 onOriginAhead(() => {
   for (const peer of workspace.peers()) void peer.startUpdate({ whenQuiet: true }).catch(() => {})
 })
+
+// A security release of Node installed under us patches nothing until we
+// restart onto it; see `watchNode`.
+watchNode()
 
 // Session changes alter the snapshot (a session dying, for instance), so drop
 // the worktree cache when they happen.

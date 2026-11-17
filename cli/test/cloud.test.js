@@ -1,6 +1,6 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,6 +40,76 @@ describe('the scripts parse', () => {
     ['unlocked.sh', 'bash'],
   ])('%s', (file, shell) => {
     expect(() => execFileSync(shell, ['-n', join(CLOUD, file)])).not.toThrow()
+  })
+
+  it('lets unattended-upgrades patch Node from NodeSource', () => {
+    // A Node that was already there was never upgraded: every machine stayed on
+    // the release it first booted with, through every security release since.
+    const setup = readFileSync(join(CLOUD, 'setup.sh'), 'utf8')
+    expect(setup).toContain('Unattended-Upgrade::Origins-Pattern:: "site=deb.nodesource.com";')
+    expect(setup).toContain('DPkg::Post-Invoke { "/etc/switchboard/node-replaced.sh || true"; };')
+  })
+
+  /*
+   * The hook setup.sh installs, run against a real process whose binary is
+   * replaced the way dpkg replaces one, by rename. /proc is Linux's, and so are
+   * the machines this runs on.
+   */
+  it.runIf(existsSync('/proc/self/exe'))('restarts the unlock page only once its Node was replaced', async () => {
+    const hook = readFileSync(join(CLOUD, 'setup.sh'), 'utf8').match(
+      /^cat > \/etc\/switchboard\/node-replaced\.sh <<'EOF'\n([\s\S]*?)^EOF$/m,
+    )?.[1]
+    expect(hook).toBeTruthy()
+    const dir = mkdtempSync(join(tmpdir(), 'swb-hook-'))
+    const binary = join(dir, 'sleep')
+    copyFileSync(execFileSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).trim(), binary)
+    chmodSync(binary, 0o755)
+    const unlock = spawn(binary, ['30'], { stdio: 'ignore' })
+    try {
+      await new Promise((resolve) => unlock.once('spawn', resolve))
+      const log = join(dir, 'log')
+      writeFileSync(
+        join(dir, 'systemctl'),
+        `#!/bin/sh\ncase "$1" in show) echo ${unlock.pid} ;; *) echo "$*" >> ${log} ;; esac\n`,
+      )
+      chmodSync(join(dir, 'systemctl'), 0o755)
+      writeFileSync(join(dir, 'hook.sh'), hook ?? '')
+      const run = () => {
+        execFileSync('sh', [join(dir, 'hook.sh')], { env: { PATH: `${dir}:/usr/bin:/bin` } })
+        return existsSync(log) ? readFileSync(log, 'utf8') : ''
+      }
+
+      expect(run()).toBe('')
+      copyFileSync(binary, `${binary}.new`)
+      renameSync(`${binary}.new`, binary)
+      expect(run()).toBe('restart switchboard-unlock.service\n')
+    } finally {
+      unlock.kill()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // install.sh names the newest release of the major a laptop is on: a
+  // security fix ships on 22, 24 and 26 alike, so that is the one to move to.
+  it("install.sh's node_newer compares full versions, and refuses what is not one", () => {
+    const install = readFileSync(join(CLOUD, '..', 'install.sh'), 'utf8')
+    const fn = install.match(/^node_newer\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
+    expect(fn).toBeTruthy()
+    /** @param {string} found @param {string} other */
+    const newer = (found, other) => {
+      try {
+        execFileSync('sh', ['-c', `${fn}\nnode_newer "$1" "$2"`, '_', found, other])
+        return true
+      } catch {
+        return false
+      }
+    }
+    expect(newer('v24.14.0', '24.22.3')).toBe(true)
+    expect(newer('v24.14.0', '24.14.1')).toBe(true)
+    expect(newer('v24.22.3', '24.22.3')).toBe(false)
+    expect(newer('v24.22.3', '24.9.9')).toBe(false)
+    expect(newer('v24.22.3', '')).toBe(false)
+    expect(newer('v24.22.3-pre', '24.22.3')).toBe(false)
   })
 
   it('cloud-config carries the placeholders provision-gcp.sh fills in', () => {

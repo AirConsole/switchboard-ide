@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { closeSync, openSync, readFileSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -196,6 +196,50 @@ export const autoDecision = (a: {
   return a.now - a.lastTypedAt >= QUIET_MS ? 'now' : 'wait'
 }
 
+/**
+ * Whether the Node running this process has been replaced on disk since it
+ * started -- by a security release, on a cloud machine, where unattended
+ * upgrades patch NodeSource's package daily (`cloud/setup.sh`).
+ *
+ * Replacing the binary patches nothing that is already running: the process
+ * keeps the one it started with, and /proc names it `<path> (deleted)` --
+ * measured by replacing a running node by rename, which is how dpkg does it.
+ * Linux only, and false everywhere else, including a laptop under nvm, which
+ * installs a new version beside the old one rather than over it.
+ */
+export const nodeReplaced = (exe = '/proc/self/exe'): boolean => {
+  try {
+    return readlinkSync(exe).endsWith(' (deleted)')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * What to do about a replaced Node: the same quiet rule as an update, because
+ * a restart costs the same -- every page its socket for a few seconds, and the
+ * agents nothing.
+ */
+export const nodeRestartDecision = (a: {
+  replaced: boolean
+  updating: boolean
+  lastTypedAt: number
+  now: number
+}): 'none' | 'wait' | 'now' => {
+  if (!a.replaced || a.updating) return 'none'
+  return a.now - a.lastTypedAt >= QUIET_MS ? 'now' : 'wait'
+}
+
+/**
+ * How often a machine instance asks whether its Node was replaced.
+ *
+ * A timer, unlike everything else here, because the machines this is for are
+ * the ones nobody has a page of open -- and a look costs one readlink, not a
+ * round trip. A restart waiting for quiet is noticed on the next look, so this
+ * is also how long one can wait past the five minutes.
+ */
+const NODE_CHECK_MS = 5 * 60 * 1000
+
 /** The commit `swb pull` last went back from; see `cli/src/pull.js`. */
 const readFailed = (): string | null => {
   try {
@@ -374,11 +418,19 @@ export const startUpdate = async (): Promise<void> => {
   // Asked again: two clicks can both have been waiting on that fetch.
   if ((state as UpdateStatus['state']) === 'updating') throw new HttpError(409, 'an update is already running')
 
+  launch(['pull'], machine)
+}
+
+/**
+ * Run `swb <verb>` detached, as `startUpdate` describes, with its output in
+ * `update.log` and its failure shown the way a pull's is.
+ */
+const launch = (verb: string[], machine: { host?: string }): void => {
   const logFile = join(config.stateDir, 'update.log')
   const log = openSync(logFile, 'w', 0o600)
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(process.env)) if (!key.startsWith('npm_')) env[key] = value
-  const args = [join(repoRoot, 'cli', 'bin', 'swb.js'), 'pull']
+  const args = [join(repoRoot, 'cli', 'bin', 'swb.js'), ...verb]
   // What this server was started with, which may have been a flag and not the
   // config file -- `restart` would otherwise fall back to the file and lose it.
   if (machine.host !== undefined) args.push('--host', machine.host)
@@ -407,10 +459,31 @@ export const startUpdate = async (): Promise<void> => {
     } catch {
       // the log is gone; the code is all there is
     }
-    failure = tail === '' ? `pnpm pull exited with ${String(code)}` : tail
+    failure = tail === '' ? `swb ${verb.join(' ')} exited with ${String(code)}` : tail
   })
   child.on('error', (err) => {
     state = 'failed'
     failure = err.message
   })
+}
+
+/**
+ * Restart this machine instance onto the Node now on disk, once nobody is
+ * typing. `--skip-build`: the build is JavaScript, which a patch release of
+ * the same Node runs as it is, and building would only make the gap longer.
+ */
+export const watchNode = (): void => {
+  const look = (): void => {
+    const machine = isMachineInstance()
+    if (machine === undefined) return
+    const decision = nodeRestartDecision({
+      replaced: nodeReplaced(),
+      updating: state === 'updating',
+      lastTypedAt: lastTypedAt(),
+      now: Date.now(),
+    })
+    if (decision !== 'now') return
+    launch(['restart', '--skip-build'], machine)
+  }
+  setInterval(look, NODE_CHECK_MS).unref()
 }
