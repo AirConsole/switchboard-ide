@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-import { PROTOCOL_VERSION, type AppSnapshot, type Usage } from '@switchboard/shared'
+import { PROTOCOL_VERSION, type AppSnapshot, type NodeAdvice, type Usage } from '@switchboard/shared'
 import { HttpError } from '../http-error.js'
 import { hostKeyFor, scopeTree, unscopeTree, type HostKey } from './scope.js'
 
@@ -658,6 +658,16 @@ export class PeerClient {
    */
   async usage(timeoutMs: number): Promise<Usage> {
     return this.request<Usage>('GET', '/api/usage', undefined, timeoutMs, false)
+  }
+
+  /**
+   * The Node that machine runs and the security release it lacks, if any.
+   * Without the protocol check, like `usage`: it is the same small shape on
+   * every version that has the route, and one without it answers 404, which
+   * the caller takes as "nothing known".
+   */
+  async node(timeoutMs: number): Promise<NodeAdvice> {
+    return this.request<NodeAdvice>('GET', '/api/node', undefined, timeoutMs, false)
   }
 
   async identify(): Promise<PeerIdentity> {
