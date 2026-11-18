@@ -70,7 +70,7 @@ for candidate in brew apt-get dnf pacman zypper apk; do
 done
 
 # --- what is missing --------------------------------------------------------
-# Node is checked by *version*, not presence: `engines` wants >= 22 and several
+# Node is checked by *version*, not presence: `engines` wants >= 26 and several
 # distributions still ship 18, so "nodejs is installed" is not the question.
 NODE_OK=0
 NODE_FOUND=""
@@ -79,7 +79,7 @@ if have node; then
   NODE_MAJOR="$(printf '%s' "$NODE_FOUND" | sed 's/^v//; s/\..*//')"
   case "$NODE_MAJOR" in
     ''|*[!0-9]*) NODE_OK=0 ;;
-    *) [ "$NODE_MAJOR" -ge 22 ] && NODE_OK=1 ;;
+    *) [ "$NODE_MAJOR" -ge 26 ] && NODE_OK=1 ;;
   esac
 fi
 
@@ -122,7 +122,7 @@ MISSING="${MISSING# }"
 
 say "Switchboard install"
 say "  platform   $PLATFORM${PM:+ (}${PM}${PM:+)}"
-say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo '   <- needs 22 or newer')${NODE_LATEST:+   <- $NODE_LATEST is the newest of its line; update to it}"
+say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo '   <- needs 26 or newer')${NODE_LATEST:+   <- $NODE_LATEST is the newest of its line; update to it}"
 say "  git        $(have git && echo ok || echo missing)"
 say "  tmux       $(have tmux && echo ok || echo 'missing   <- every session lives in one')"
 say "  pnpm       $(have pnpm && echo ok || echo missing)"
@@ -178,13 +178,13 @@ install_pkgs() {
   [ -z "$pkgs" ] && return 0
   case "$PM" in
     brew) brew install $pkgs ;;
-    # Not apt's nodejs: Debian 12 ships 18 and this needs 22, so installing it
+    # Not apt's nodejs: Debian 12 ships 18 and this needs 26, so installing it
     # would produce a machine that looks ready and cannot build. Say so instead.
     apt-get)
       for p in $pkgs; do
         if [ "$p" = node ]; then
           say ""
-          say "node: your distribution's package is too old for this (needs 22+)."
+          say "node: your distribution's package is too old for this (needs 26+)."
           say "  use nodesource, nvm, or fnm, then run this again:"
           say "    curl -fsSL https://fnm.vercel.app/install | bash"
           exit 1

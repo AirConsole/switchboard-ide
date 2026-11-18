@@ -34,7 +34,7 @@ browser open at all.
 
 ## Install
 
-macOS or Linux. Needs Node 22+, git, tmux, pnpm, and the `claude` CLI on your
+macOS or Linux. Needs Node 26+, git, tmux, pnpm, and the `claude` CLI on your
 `PATH`.
 
 ```sh
