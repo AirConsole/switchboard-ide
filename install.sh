@@ -70,35 +70,47 @@ for candidate in brew apt-get dnf pacman zypper apk; do
 done
 
 # --- what is missing --------------------------------------------------------
-# Check the Node *version*, not only its presence: Debian 12 ships Node 18.
-# A full version, the November 2026 security release, because a major-only
-# check accepts a 26.x with known CVEs. Must equal NODE_MIN in cloud/setup.sh
-# and `engines` in package.json.
-NODE_MIN="26.13.1"
-
-# node_version_ok <found> <minimum>: return 0 when <found> (such as "v26.13.1")
-# is the same as or newer than <minimum> (such as "26.13.1"). POSIX sh only.
-node_version_ok() {
-  IFS=. read -r f1 f2 f3 <<EOF
-${1#v}
-EOF
-  IFS=. read -r m1 m2 m3 <<EOF
-$2
-EOF
-  # Return 1 for a pre-release suffix, or for empty output from a failed `node -v`.
-  for n in "$f1" "$f2" "$f3"; do
-    case "$n" in ''|*[!0-9]*) return 1 ;; esac
-  done
-  [ "$f1" -ne "$m1" ] && { [ "$f1" -gt "$m1" ]; return; }
-  [ "$f2" -ne "$m2" ] && { [ "$f2" -gt "$m2" ]; return; }
-  [ "$f3" -ge "$m3" ]
-}
-
+# Node is checked by *version*, not presence: `engines` wants >= 26 and several
+# distributions still ship 18, so "nodejs is installed" is not the question.
 NODE_OK=0
 NODE_FOUND=""
 if have node; then
   NODE_FOUND="$(node -v 2>/dev/null || true)"
-  node_version_ok "$NODE_FOUND" "$NODE_MIN" && NODE_OK=1
+  NODE_MAJOR="$(printf '%s' "$NODE_FOUND" | sed 's/^v//; s/\..*//')"
+  case "$NODE_MAJOR" in
+    ''|*[!0-9]*) NODE_OK=0 ;;
+    *) [ "$NODE_MAJOR" -ge 26 ] && NODE_OK=1 ;;
+  esac
+fi
+
+# The newest release of the major it is on, which is where security fixes land:
+# Node patches 22, 24 and 26 alike, so a laptop on 24.14.0 needs 24.22.3 and
+# not a new major. Said, never required -- pnpm does not enforce `engines`
+# either (measured on 11.1.1) -- and nothing at all when offline.
+# node_newer <found> <other>: whether <other> (such as "24.22.3") is newer.
+node_newer() {
+  IFS=. read -r f1 f2 f3 <<EOF
+${1#v}
+EOF
+  IFS=. read -r o1 o2 o3 <<EOF
+$2
+EOF
+  for n in "$f1" "$f2" "$f3" "$o1" "$o2" "$o3"; do
+    case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  done
+  [ "$o1" -ne "$f1" ] && { [ "$o1" -gt "$f1" ]; return; }
+  [ "$o2" -ne "$f2" ] && { [ "$o2" -gt "$f2" ]; return; }
+  [ "$o3" -gt "$f3" ]
+}
+# nodejs.org lists every release newest first, so the first of a major is its newest.
+node_latest() {
+  curl -fsS --max-time 5 https://nodejs.org/dist/index.json 2>/dev/null |
+    grep -o "\"version\":\"v$1\.[0-9]*\.[0-9]*\"" | head -n 1 | sed 's/.*"v//; s/"$//'
+}
+NODE_LATEST=""
+if [ "$NODE_OK" -eq 1 ] && have curl; then
+  NODE_LATEST="$(node_latest "$NODE_MAJOR" || true)"
+  node_newer "$NODE_FOUND" "$NODE_LATEST" || NODE_LATEST=""
 fi
 
 MISSING=""
@@ -110,7 +122,7 @@ MISSING="${MISSING# }"
 
 say "Switchboard install"
 say "  platform   $PLATFORM${PM:+ (}${PM}${PM:+)}"
-say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo "   <- needs $NODE_MIN or newer")"
+say "  node       ${NODE_FOUND:-not found}$([ "$NODE_OK" -eq 1 ] && echo '' || echo '   <- needs 26 or newer')${NODE_LATEST:+   <- $NODE_LATEST is the newest of its line; update to it}"
 say "  git        $(have git && echo ok || echo missing)"
 say "  tmux       $(have tmux && echo ok || echo 'missing   <- every session lives in one')"
 say "  pnpm       $(have pnpm && echo ok || echo missing)"
@@ -154,8 +166,8 @@ if [ "$ASSUME_YES" -eq 0 ]; then
 fi
 
 # --- install what is missing ------------------------------------------------
-# pnpm comes from corepack, or from npm on Node 25 and newer, which no longer
-# bundle corepack. Never a distribution package, and only once node exists.
+# pnpm comes from corepack, which ships with node, so it is never a distribution
+# package and must be done after node exists.
 install_pkgs() {
   pkgs=""
   for want in $MISSING; do
@@ -166,13 +178,13 @@ install_pkgs() {
   [ -z "$pkgs" ] && return 0
   case "$PM" in
     brew) brew install $pkgs ;;
-    # Not apt's nodejs: Debian 12 ships 18, which is older than NODE_MIN, so installing it
+    # Not apt's nodejs: Debian 12 ships 18 and this needs 26, so installing it
     # would produce a machine that looks ready and cannot build. Say so instead.
     apt-get)
       for p in $pkgs; do
         if [ "$p" = node ]; then
           say ""
-          say "node: the package from your distribution is older than $NODE_MIN."
+          say "node: your distribution's package is too old for this (needs 26+)."
           say "  use nodesource, nvm, or fnm, then run this again:"
           say "    curl -fsSL https://fnm.vercel.app/install | bash"
           exit 1

@@ -93,18 +93,51 @@ apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
-# The November 2026 security release. A full-version check, not a major one:
-# checking only the major left every existing machine on the Node it first
-# booted with. Must equal NODE_MIN in install.sh and `engines` in package.json.
-NODE_MIN=26.13.1
-node_ok() {
-  local v="${1-$(command -v node >/dev/null && node -v || true)}" a b c x y z
-  IFS=. read -r a b c <<<"${v#v}"
-  IFS=. read -r x y z <<<"$NODE_MIN"
-  [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[0-9]+$ && "$c" =~ ^[0-9]+$ ]] || return 1
-  (( 10#$a != 10#$x ? 10#$a > 10#$x : 10#$b != 10#$y ? 10#$b > 10#$y : 10#$c >= 10#$z ))
+# Node's security fixes, as they ship, on a machine that may run for months.
+# Setting a Node up once left every machine on the release it first booted
+# with, through every security release since. Unattended-upgrades already patches Ubuntu's own packages daily; this adds
+# NodeSource's, matched by site because its Release file names its origin
+# ". nodistro" (measured with unattended-upgrade's own matcher). The repository
+# is one major's, so this moves 26.x to the newest 26.x and never further --
+# which is why the version below is a major and not a release: no number here
+# has to be raised by hand when a fix ships.
+cat > /etc/apt/apt.conf.d/52switchboard-nodesource <<'EOF'
+Unattended-Upgrade::Origins-Pattern:: "site=deb.nodesource.com";
+EOF
+
+# Replacing /usr/bin/node does not patch what is running it: a process keeps
+# the binary it started with, which /proc shows as "/usr/bin/node (deleted)"
+# (measured by replacing a running node the way dpkg does, by rename). So after
+# every dpkg run, the public unlock page is restarted if it is on the old one --
+# it holds nothing, so at any hour. The IDE is not restarted here: it has
+# people's sockets on it, and restarts itself once nobody is typing
+# (`server/src/update.ts`). Written before Node is installed below, so the
+# upgrade from 22 to 26 is followed by the same restart as a patch release.
+mkdir -p /etc/switchboard
+cat > /etc/switchboard/node-replaced.sh <<'EOF'
+#!/bin/sh
+pid=$(systemctl show -p MainPID --value switchboard-unlock.service 2>/dev/null)
+[ "${pid:-0}" != 0 ] || exit 0
+case "$(readlink "/proc/$pid/exe" 2>/dev/null)" in
+  *" (deleted)") systemctl restart switchboard-unlock.service ;;
+esac
+exit 0
+EOF
+chmod 755 /etc/switchboard/node-replaced.sh
+cat > /etc/apt/apt.conf.d/52switchboard-node-replaced <<'EOF'
+DPkg::Post-Invoke { "/etc/switchboard/node-replaced.sh || true"; };
+EOF
+
+# Node 26, the LTS line until April 2029. A machine on an older major is moved
+# to it here: a check that only installed a missing Node left every machine on
+# the major it first booted with. Patch releases within 26 are unattended-
+# upgrades' job, above.
+node_major() {
+  local v
+  v=$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')
+  case "$v" in ''|*[!0-9]*) echo 0 ;; *) echo "$v" ;; esac
 }
-if ! node_ok; then
+if [ "$(node_major)" -lt 26 ]; then
   log "installing node 26"
   # A machine that already has a Node finishes booting when this fails and tries
   # again at the next boot; one without cannot run the IDE, so it stops here.
@@ -115,8 +148,6 @@ if ! node_ok; then
     log "node upgrade failed; trying again at the next boot"
   fi
   hash -r # paths cached from the package just replaced, such as corepack's
-  # NodeSource can lag nodejs.org; this then retries on every boot.
-  node_ok || log "node $(node -v) is still older than $NODE_MIN"
 fi
 # Node 25 and newer no longer bundle corepack: a machine moved to 26 lost it, and
 # with it the pnpm that the IDE unit and `pnpm pull` run.
@@ -455,12 +486,5 @@ systemctl daemon-reload
 # half built and nothing saying so. The unit is for the next boot.
 systemctl enable switchboard-setup.service >/dev/null 2>&1 || true
 systemctl enable --now switchboard-unlock.service
-# The public unlock page starts at boot alongside this script, so it can still be
-# running a Node binary that apt has since replaced. Read from the process, not
-# remembered from the upgrade, which may have been a run that stopped early.
-UNLOCK_PID=$(systemctl show -p MainPID --value switchboard-unlock.service)
-if [ "${UNLOCK_PID:-0}" != 0 ] && [[ "$(readlink "/proc/$UNLOCK_PID/exe")" == *" (deleted)" ]]; then
-  systemctl restart switchboard-unlock.service
-fi
 
 log "done"

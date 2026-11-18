@@ -1,6 +1,6 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,48 +42,93 @@ describe('the scripts parse', () => {
     expect(() => execFileSync(shell, ['-n', join(CLOUD, file)])).not.toThrow()
   })
 
-  // A major-only check (>= 22) left every existing machine on the Node it
-  // first booted with, through the October and November 2026 security releases.
-  it('upgrades a machine whose node is older than NODE_MIN, not only a missing one', () => {
+  it('lets unattended-upgrades patch Node from NodeSource', () => {
+    // A Node that was already there was never upgraded: every machine stayed on
+    // the release it first booted with, through every security release since.
     const setup = readFileSync(join(CLOUD, 'setup.sh'), 'utf8')
-    const min = setup.match(/^NODE_MIN=(.+)$/m)?.[1] ?? ''
-    const fn = setup.match(/^node_ok\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
-    /** @param {string} version */
-    const ok = (version) => {
+    expect(setup).toContain('Unattended-Upgrade::Origins-Pattern:: "site=deb.nodesource.com";')
+    expect(setup).toContain('DPkg::Post-Invoke { "/etc/switchboard/node-replaced.sh || true"; };')
+  })
+
+  /*
+   * The hook setup.sh installs, run against a real process whose binary is
+   * replaced the way dpkg replaces one, by rename. /proc is Linux's, and so are
+   * the machines this runs on.
+   */
+  it.runIf(existsSync('/proc/self/exe'))('restarts the unlock page only once its Node was replaced', async () => {
+    const hook = readFileSync(join(CLOUD, 'setup.sh'), 'utf8').match(
+      /^cat > \/etc\/switchboard\/node-replaced\.sh <<'EOF'\n([\s\S]*?)^EOF$/m,
+    )?.[1]
+    expect(hook).toBeTruthy()
+    const dir = mkdtempSync(join(tmpdir(), 'swb-hook-'))
+    const binary = join(dir, 'sleep')
+    copyFileSync(execFileSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).trim(), binary)
+    chmodSync(binary, 0o755)
+    const unlock = spawn(binary, ['30'], { stdio: 'ignore' })
+    try {
+      await new Promise((resolve) => unlock.once('spawn', resolve))
+      const log = join(dir, 'log')
+      writeFileSync(
+        join(dir, 'systemctl'),
+        `#!/bin/sh\ncase "$1" in show) echo ${unlock.pid} ;; *) echo "$*" >> ${log} ;; esac\n`,
+      )
+      chmodSync(join(dir, 'systemctl'), 0o755)
+      writeFileSync(join(dir, 'hook.sh'), hook ?? '')
+      const run = () => {
+        execFileSync('sh', [join(dir, 'hook.sh')], { env: { PATH: `${dir}:/usr/bin:/bin` } })
+        return existsSync(log) ? readFileSync(log, 'utf8') : ''
+      }
+
+      expect(run()).toBe('')
+      copyFileSync(binary, `${binary}.new`)
+      renameSync(`${binary}.new`, binary)
+      expect(run()).toBe('restart switchboard-unlock.service\n')
+    } finally {
+      unlock.kill()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // install.sh names the newest release of the major a laptop is on: a
+  // security fix ships on 22, 24 and 26 alike, so that is the one to move to.
+  it("install.sh's node_newer compares full versions, and refuses what is not one", () => {
+    const install = readFileSync(join(CLOUD, '..', 'install.sh'), 'utf8')
+    const fn = install.match(/^node_newer\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
+    expect(fn).toBeTruthy()
+    /** @param {string} found @param {string} other */
+    const newer = (found, other) => {
       try {
-        execFileSync('bash', ['-c', `NODE_MIN=${min}\n${fn}\nnode_ok "$1"`, '_', version])
+        execFileSync('sh', ['-c', `${fn}\nnode_newer "$1" "$2"`, '_', found, other])
         return true
       } catch {
         return false
       }
     }
-
-    expect(min).toBe('26.13.1')
-    for (const bad of ['', 'garbage', 'v22.23.5', 'v24.22.3', 'v25.9.0', 'v26.12.1', 'v26.13.0', 'v26.13.1-pre']) {
-      expect(ok(bad), bad).toBe(false)
-    }
-    for (const good of ['v26.13.1', 'v26.13.10', 'v26.14.0', 'v27.0.0']) {
-      expect(ok(good), good).toBe(true)
-    }
+    expect(newer('v24.14.0', '24.22.3')).toBe(true)
+    expect(newer('v24.14.0', '24.14.1')).toBe(true)
+    expect(newer('v24.22.3', '24.22.3')).toBe(false)
+    expect(newer('v24.22.3', '24.9.9')).toBe(false)
+    expect(newer('v24.22.3', '')).toBe(false)
+    expect(newer('v24.22.3-pre', '24.22.3')).toBe(false)
   })
 
   /**
    * setup.sh's Node block, run with logging stand-ins for what it calls. Their
    * effects are the ones measured on ubuntu:24.04: installing NodeSource 26 over
    * 22 replaces node and removes corepack, and `npm install -g corepack` brings
-   * it back. Only the stand-ins and bash/sh/chmod/rm are on PATH, so a real node
+   * it back. Only the stand-ins and bash/sh/chmod/rm/sed are on PATH, so a real node
    * or corepack on this machine cannot answer for a missing one.
    * @param {{ node?: string, corepack?: boolean, failCurl?: boolean, failNpm?: boolean }} m
    */
   const runNodeBlock = (m) => {
-    const block = readFileSync(join(CLOUD, 'setup.sh'), 'utf8').match(/^NODE_MIN=[\s\S]*?^corepack enable pnpm.*$/m)?.[0]
+    const block = readFileSync(join(CLOUD, 'setup.sh'), 'utf8').match(/^# Node 26, the LTS line[\s\S]*?^corepack enable pnpm.*$/m)?.[0]
     expect(block).toBeTruthy()
     const dir = mkdtempSync(join(tmpdir(), 'swb-node-'))
     try {
       const bin = join(dir, 'bin')
       const log = join(dir, 'log')
       mkdirSync(bin)
-      for (const tool of ['bash', 'sh', 'chmod', 'rm']) {
+      for (const tool of ['bash', 'sh', 'chmod', 'rm', 'sed']) {
         symlinkSync(execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(), join(bin, tool))
       }
       /**
@@ -120,6 +165,12 @@ describe('the scripts parse', () => {
     }
   }
 
+  it('moves a machine on 24 to 26 as well', () => {
+    const { status, calls } = runNodeBlock({ node: 'v24.22.3', corepack: true })
+    expect(status).toBe(0)
+    expect(calls).toContain('apt-get install -y nodejs')
+  })
+
   it('moves a machine on Node 22 to 26 and gives it corepack back', () => {
     const { status, calls } = runNodeBlock({ node: 'v22.23.5', corepack: true })
     expect(status).toBe(0)
@@ -127,11 +178,12 @@ describe('the scripts parse', () => {
     expect(calls).toContain('apt-get install -y nodejs')
     expect(calls).toContain('npm install -g corepack')
     expect(calls).toContain('corepack enable pnpm')
-    expect(calls).not.toContain('still older')
   })
 
-  it('leaves a machine already on NODE_MIN alone', () => {
-    const { status, calls } = runNodeBlock({ node: 'v26.13.1', corepack: true })
+  // A patch release within 26 is unattended-upgrades' to install, daily; this
+  // only ever moves a major, so no release number here goes stale.
+  it('leaves a machine already on 26 alone, whatever its patch release', () => {
+    const { status, calls } = runNodeBlock({ node: 'v26.12.0', corepack: true })
     expect(status).toBe(0)
     expect(calls).not.toContain('curl')
     expect(calls).not.toContain('apt-get')
@@ -157,36 +209,6 @@ describe('the scripts parse', () => {
   })
 
   // Three places name the minimum; one left behind is a machine or a laptop
-  // that installs a Node the other two refuse.
-  it('setup.sh, install.sh and engines agree on the minimum Node', () => {
-    const root = join(CLOUD, '..')
-    const setup = readFileSync(join(CLOUD, 'setup.sh'), 'utf8').match(/^NODE_MIN=(.+)$/m)?.[1]
-    const install = readFileSync(join(root, 'install.sh'), 'utf8').match(/^NODE_MIN="(.+)"$/m)?.[1]
-    const engines = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).engines.node
-    expect(setup).toBeTruthy()
-    expect(install).toBe(setup)
-    expect(engines).toBe(`>=${setup}`)
-  })
-
-  it("install.sh compares the full Node version, so it refuses a stale 26.x", () => {
-    const install = readFileSync(join(CLOUD, '..', 'install.sh'), 'utf8')
-    const fn = install.match(/^node_version_ok\(\) \{[\s\S]*?^\}/m)?.[0] ?? ''
-    /** @param {string} found */
-    const ok = (found) => {
-      try {
-        execFileSync('sh', ['-c', `${fn}\nnode_version_ok "$1" 26.13.1`, '_', found])
-        return true
-      } catch {
-        return false
-      }
-    }
-    for (const bad of ['', 'v22.23.5', 'v26.11.1', 'v26.13.0', 'v26.13.1-pre']) {
-      expect(ok(bad), bad).toBe(false)
-    }
-    for (const good of ['v26.13.1', 'v26.14.0', 'v27.0.0']) {
-      expect(ok(good), good).toBe(true)
-    }
-  })
 
   it('cloud-config carries the placeholders provision-gcp.sh fills in', () => {
     const yaml = readFileSync(join(CLOUD, 'cloud-config.yaml'), 'utf8')
