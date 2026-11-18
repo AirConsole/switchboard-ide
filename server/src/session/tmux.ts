@@ -21,7 +21,28 @@ const socketArgs = (): string[] => ['-S', tmuxSocketPath, '-f', config.tmuxConf]
  *   these mark the child as a nested Claude session, hand it a messaging socket
  *   and session id belonging to the parent, and point `CLAUDE_CODE_SSE_PORT` at
  *   whatever IDE the parent was attached to. A `claude` we spawn must start clean.
+ *
+ * And a third, which only misleads: what `pnpm` and `npm` add to a script they
+ * run -- the server is started by `pnpm start`, `restart` or `pull`. Nineteen
+ * `npm_*` variables and the repository's `node_modules/.bin` directories reached
+ * every terminal and agent, measured on this machine: `npm_config_prefix` named
+ * the Node the tmux server was started under in September, so after nvm moved
+ * to 24.22.3, `npm install -g` in a terminal here still installed into 24.14.0,
+ * and pnpm was "not found" in the shell that had just installed it.
  */
+/** A variable npm or pnpm sets for the script it runs: `npm_config_prefix` and the rest. */
+export const isRunScriptVar = (key: string): boolean => /^npm_/i.test(key)
+
+/**
+ * PATH without what a package manager prepends for a script: `node_modules/.bin`
+ * in the package and every directory above it, and its `node-gyp-bin` shim.
+ */
+export const withoutRunScriptPath = (path: string): string =>
+  path
+    .split(':')
+    .filter((dir) => !/^\/(?:.*\/)?node_modules\/\.bin\/?$/.test(dir) && !/\/node-gyp-bin\/?$/.test(dir))
+    .join(':')
+
 export const childEnv = (extra: Record<string, string> = {}): Record<string, string> => {
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
@@ -29,7 +50,8 @@ export const childEnv = (extra: Record<string, string> = {}): Record<string, str
     if (key === 'TMUX' || key === 'TMUX_PANE') continue
     if (key.startsWith('CLAUDE_CODE_') || key === 'CLAUDECODE') continue
     if (key === 'CLAUDE_PID' || key === 'CLAUDE_EFFORT') continue
-    out[key] = value
+    if (isRunScriptVar(key)) continue
+    out[key] = key === 'PATH' ? withoutRunScriptPath(value) : value
   }
   return { ...out, ...extra }
 }
@@ -73,6 +95,7 @@ export const startServer = async (): Promise<void> => {
   for (let attempt = 0; attempt < 20; attempt++) {
     try {
       await tmux('display-message', '-p', 'ok')
+      await cleanGlobalEnvironment().catch(() => {})
       return
     } catch (err) {
       last = err
@@ -94,6 +117,32 @@ export const startServer = async (): Promise<void> => {
   throw new Error(
     `tmux server did not become ready on ${tmuxSocketPath} (config ${config.tmuxConf}): ${tmuxWhy(last)}`,
   )
+}
+
+/**
+ * Take the package manager's leftovers out of a tmux server that already has
+ * them.
+ *
+ * A new session's environment is the tmux server's global one, captured when
+ * that server started -- and it outlives every IDE restart, by design. So
+ * `childEnv` alone cleans only a server started after it: the one here had been
+ * up since September, holding the environment of the `pnpm` that started it.
+ * Sessions already running keep what they have; every one created from now on
+ * starts clean.
+ */
+const cleanGlobalEnvironment = async (): Promise<void> => {
+  const { stdout } = await tmux('show-environment', '-g')
+  for (const line of stdout.split('\n')) {
+    const eq = line.indexOf('=')
+    if (eq <= 0) continue
+    const key = line.slice(0, eq)
+    const value = line.slice(eq + 1)
+    if (isRunScriptVar(key)) {
+      await tmux('set-environment', '-gu', key)
+    } else if (key === 'PATH' && withoutRunScriptPath(value) !== value) {
+      await tmux('set-environment', '-g', 'PATH', withoutRunScriptPath(value))
+    }
+  }
 }
 
 /** What went wrong with a `tmux` invocation, in the fewest useful words. */
