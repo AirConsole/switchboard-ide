@@ -4,6 +4,7 @@ import { bindSocketToStore, useStore } from './store.js'
 import { moveIn, type DragMove } from './components/useDragOrder.js'
 import { TopBar } from './components/TopBar.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
+import { NodeBanner } from './components/NodeBanner.js'
 import { useNarrow } from './components/useNarrow.js'
 import { LoginScreen } from './components/LoginScreen.js'
 import { OpenProjectDialog } from './components/OpenProjectDialog.js'
@@ -1230,6 +1231,8 @@ export const App = (): React.ReactElement => {
       <div className="app__notices">
         {/* A newer Switchboard on origin, and the page reloaded onto it once it is running. */}
         <UpdateBanner />
+        {/* A Node security release a machine has not installed; see NodeBanner. */}
+        <NodeBanner />
 
         {/*
           * The page being out of touch, or an action that belongs to no window.

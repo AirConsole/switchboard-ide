@@ -775,6 +775,23 @@ export interface MachineUsage {
   usage: Usage
 }
 
+/**
+ * The Node a machine runs, and the release it should move to when a security
+ * release on its major is newer: the newest of that major, as `26.13.1`. Null
+ * when it is current, or when the release list could not be read.
+ */
+export interface NodeAdvice {
+  running: string
+  update: string | null
+}
+
+export interface MachineNode {
+  /** The linked machine's key, or null for the machine that served the page. */
+  key: string | null
+  name: string
+  node: NodeAdvice
+}
+
 /** A commit the running build does not have yet. */
 export interface UpdateCommit {
   sha: string

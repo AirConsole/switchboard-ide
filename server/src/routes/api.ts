@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import type { FastifyInstance } from 'fastify'
 import type { Readable } from 'node:stream'
-import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type MachineUsage, type SessionKind } from '@switchboard/shared'
+import { MACHINE_WORKTREE_ID, PROTOCOL_VERSION, type MachineNode, type MachineUsage, type SessionKind } from '@switchboard/shared'
 import { z } from 'zod'
 import type { SessionEngine } from '../session/engine.js'
 import type { StateStore } from '../state.js'
@@ -15,6 +15,7 @@ import { hostKeyFor } from '../remote/scope.js'
 import { PEER_READ_HEADER } from '../remote/peer.js'
 import { distinctUsages, usage } from '../usage.js'
 import { startUpdate, updateStatus, updateWhenQuiet } from '../update.js'
+import { nodeAdvice } from '../node-release.js'
 
 /**
  * How long a Claude started with `--continue` gets to prove it survived.
@@ -307,6 +308,31 @@ export const registerApi = (app: FastifyInstance, deps: ApiDeps): void => {
       }),
     ])
     return distinctUsages(read.filter((machine): machine is MachineUsage => machine !== null))
+  })
+
+  /*
+   * The Node each machine runs and the security release it lacks, the way
+   * `/api/usage/machines` gathers usage: this machine's own, then each linked
+   * one's from its `/api/node`. See `server/src/node-release.ts`. A machine
+   * that does not answer, or is too old to have the route, is left out.
+   */
+  app.get('/api/node', async () => nodeAdvice())
+  app.get('/api/node/machines', async (): Promise<MachineNode[]> => {
+    const peers = store.servers.filter((server) => !workspace.linkRefused(server.baseUrl))
+    const read = await Promise.all([
+      nodeAdvice().then((node): MachineNode => ({ key: null, name: config.serverName, node })),
+      ...peers.map(async (server): Promise<MachineNode | null> => {
+        const key = hostKeyFor(server.baseUrl)
+        const peer = workspace.peerFor(key)
+        if (peer === null) return null
+        try {
+          return { key, name: server.name, node: await peer.node(PEER_USAGE_TIMEOUT_MS) }
+        } catch {
+          return null
+        }
+      }),
+    ])
+    return read.filter((machine): machine is MachineNode => machine !== null)
   })
 
   /*
