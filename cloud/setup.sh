@@ -128,6 +128,22 @@ cat > /etc/apt/apt.conf.d/52switchboard-node-replaced <<'EOF'
 DPkg::Post-Invoke { "/etc/switchboard/node-replaced.sh || true"; };
 EOF
 
+# needrestart restarts every service whose binary a package replaced, and on
+# Ubuntu 24.04 it does so unattended -- the IDE included, with nobody asked and
+# whoever is typing cut off. Measured on a throwaway VM moving 22 to 26: it
+# restarted switchboard.service in the gap between NodeSource removing
+# corepack and the line below putting it back, so `/usr/bin/pnpm start` failed
+# with 203/EXEC and the IDE stayed down after setup said "done". Left alone,
+# the IDE runs on the old binary until it restarts itself once nobody is
+# typing (`watchNode` in server/src/update.ts), which is the rule for every
+# restart here. The unlock page holds nothing and may be restarted any time.
+mkdir -p /etc/needrestart/conf.d
+cat > /etc/needrestart/conf.d/switchboard.conf <<'EOF'
+$nrconf{override_rc}->{qr(^switchboard\.service$)} = 0;
+EOF
+# And should anything still stop it here, it is started again below.
+IDE_WAS_ACTIVE=$(systemctl is-active switchboard.service 2>/dev/null || true)
+
 # Node 26, the LTS line until April 2029. A machine on an older major is moved
 # to it here: a check that only installed a missing Node left every machine on
 # the major it first booted with. Patch releases within 26 are unattended-
@@ -154,6 +170,10 @@ fi
 command -v corepack >/dev/null || npm install -g corepack ||
   log "corepack install failed; pnpm is missing until the next boot"
 corepack enable pnpm >/dev/null 2>&1 || true
+if [ "$IDE_WAS_ACTIVE" = active ] && ! systemctl is-active --quiet switchboard.service; then
+  log "the IDE stopped while node was replaced; starting it again"
+  systemctl start switchboard.service || log "the IDE did not start; see journalctl -u switchboard"
+fi
 
 if ! command -v caddy >/dev/null; then
   log "installing caddy"

@@ -210,6 +210,15 @@ describe('the scripts parse', () => {
 
   // Three places name the minimum; one left behind is a machine or a laptop
 
+  // Measured on a throwaway VM: needrestart restarted the IDE while pnpm was
+  // missing mid-upgrade, and it stayed down. It is left to restart itself.
+  it('keeps needrestart off the IDE, and starts it again if the upgrade stopped it', () => {
+    const setup = readFileSync(join(CLOUD, 'setup.sh'), 'utf8')
+    expect(setup).toContain('$nrconf{override_rc}->{qr(^switchboard\\.service$)} = 0;')
+    expect(setup.indexOf('IDE_WAS_ACTIVE=')).toBeLessThan(setup.indexOf('setup_26.x'))
+    expect(setup).toMatch(/IDE_WAS_ACTIVE" = active \] && ! systemctl is-active --quiet switchboard\.service; then\n.*\n  systemctl start switchboard\.service/)
+  })
+
   it('cloud-config carries the placeholders provision-gcp.sh fills in', () => {
     const yaml = readFileSync(join(CLOUD, 'cloud-config.yaml'), 'utf8')
     expect(yaml.startsWith('#cloud-config')).toBe(true)
