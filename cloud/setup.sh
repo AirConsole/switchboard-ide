@@ -93,20 +93,14 @@ apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
-if ! command -v node >/dev/null || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
-  log "installing node 22"
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-fi
-corepack enable pnpm >/dev/null 2>&1 || true
-
 # Node's security fixes, as they ship, on a machine that may run for months.
-# The check above only ever installed a Node: one that was there was left at
-# the version it first booted with, through every security release since.
-# Unattended-upgrades already patches Ubuntu's own packages daily; this adds
+# Setting a Node up once left every machine on the release it first booted
+# with, through every security release since. Unattended-upgrades already patches Ubuntu's own packages daily; this adds
 # NodeSource's, matched by site because its Release file names its origin
 # ". nodistro" (measured with unattended-upgrade's own matcher). The repository
-# is one major's, so this moves 22.x to the newest 22.x and never to 24 or 26.
+# is one major's, so this moves 26.x to the newest 26.x and never further --
+# which is why the version below is a major and not a release: no number here
+# has to be raised by hand when a fix ships.
 cat > /etc/apt/apt.conf.d/52switchboard-nodesource <<'EOF'
 Unattended-Upgrade::Origins-Pattern:: "site=deb.nodesource.com";
 EOF
@@ -117,7 +111,8 @@ EOF
 # every dpkg run, the public unlock page is restarted if it is on the old one --
 # it holds nothing, so at any hour. The IDE is not restarted here: it has
 # people's sockets on it, and restarts itself once nobody is typing
-# (`server/src/update.ts`).
+# (`server/src/update.ts`). Written before Node is installed below, so the
+# upgrade from 22 to 26 is followed by the same restart as a patch release.
 mkdir -p /etc/switchboard
 cat > /etc/switchboard/node-replaced.sh <<'EOF'
 #!/bin/sh
@@ -132,6 +127,53 @@ chmod 755 /etc/switchboard/node-replaced.sh
 cat > /etc/apt/apt.conf.d/52switchboard-node-replaced <<'EOF'
 DPkg::Post-Invoke { "/etc/switchboard/node-replaced.sh || true"; };
 EOF
+
+# needrestart restarts every service whose binary a package replaced, and on
+# Ubuntu 24.04 it does so unattended -- the IDE included, with nobody asked and
+# whoever is typing cut off. Measured on a throwaway VM moving 22 to 26: it
+# restarted switchboard.service in the gap between NodeSource removing
+# corepack and the line below putting it back, so `/usr/bin/pnpm start` failed
+# with 203/EXEC and the IDE stayed down after setup said "done". Left alone,
+# the IDE runs on the old binary until it restarts itself once nobody is
+# typing (`watchNode` in server/src/update.ts), which is the rule for every
+# restart here. The unlock page holds nothing and may be restarted any time.
+mkdir -p /etc/needrestart/conf.d
+cat > /etc/needrestart/conf.d/switchboard.conf <<'EOF'
+$nrconf{override_rc}->{qr(^switchboard\.service$)} = 0;
+EOF
+# And should anything still stop it here, it is started again below.
+IDE_WAS_ACTIVE=$(systemctl is-active switchboard.service 2>/dev/null || true)
+
+# Node 26, the LTS line until April 2029. A machine on an older major is moved
+# to it here: a check that only installed a missing Node left every machine on
+# the major it first booted with. Patch releases within 26 are unattended-
+# upgrades' job, above.
+node_major() {
+  local v
+  v=$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')
+  case "$v" in ''|*[!0-9]*) echo 0 ;; *) echo "$v" ;; esac
+}
+if [ "$(node_major)" -lt 26 ]; then
+  log "installing node 26"
+  # A machine that already has a Node finishes booting when this fails and tries
+  # again at the next boot; one without cannot run the IDE, so it stops here.
+  if ! { curl -fsSL https://deb.nodesource.com/setup_26.x | bash - &&
+         DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs; }; then
+    hash -r
+    command -v node >/dev/null || exit 1
+    log "node upgrade failed; trying again at the next boot"
+  fi
+  hash -r # paths cached from the package just replaced, such as corepack's
+fi
+# Node 25 and newer no longer bundle corepack: a machine moved to 26 lost it, and
+# with it the pnpm that the IDE unit and `pnpm pull` run.
+command -v corepack >/dev/null || npm install -g corepack ||
+  log "corepack install failed; pnpm is missing until the next boot"
+corepack enable pnpm >/dev/null 2>&1 || true
+if [ "$IDE_WAS_ACTIVE" = active ] && ! systemctl is-active --quiet switchboard.service; then
+  log "the IDE stopped while node was replaced; starting it again"
+  systemctl start switchboard.service || log "the IDE did not start; see journalctl -u switchboard"
+fi
 
 if ! command -v caddy >/dev/null; then
   log "installing caddy"
@@ -331,6 +373,12 @@ if [ ! -f "$IDE_DIR/server/dist/index.js" ] || [ ! -f "$IDE_DIR/web/dist/index.h
   # here. Measured at 40 seconds for install and build together.
   log "building the IDE"
   as_swb bash -c "cd $IDE_DIR && pnpm install && pnpm build"
+fi
+# A new Node major can leave node-pty unloadable. Every boot rather than only the
+# one that upgraded, which may have stopped before reaching this line; it is a
+# load check that rebuilds only when the load fails.
+if [ -d "$IDE_DIR/node_modules" ]; then
+  as_swb bash -c "cd $IDE_DIR && pnpm ensure-native" || log "node-pty does not load; the IDE will not start"
 fi
 
 if ! command -v claude >/dev/null; then
