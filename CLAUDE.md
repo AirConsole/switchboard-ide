@@ -145,7 +145,13 @@ same for the unlock page at once. That is a timer, unlike the rest, because
 those machines are the ones nobody has a page of open, and a look is one
 readlink. Measured on a throwaway machine instance: its node replaced by
 rename at 11:16:19, running the new one at 11:21:24. A laptop is not patched
-for you; `install.sh` names the newest release of the major it has.
+for you -- nvm and fnm install a new Node beside the old one, so nothing
+changes until a person does it -- and two things say so: `install.sh` names
+the newest release of the major it has, and a banner names every machine,
+this one and each linked one, that is behind on a Node *security* release
+(`server/src/node-release.ts`, from nodejs.org's list, read at most hourly).
+Security releases only, because that is about six banners a year where every
+release would be one a fortnight; "Later" lasts until the next one.
 
 That is only safe because **a pull that does not come up goes back**. `swb
 pull` builds before it stops anything, so a broken build was always harmless,

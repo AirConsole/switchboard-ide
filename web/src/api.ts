@@ -12,6 +12,7 @@ import type {
   Session,
   UiState,
   UpdateStatus,
+  MachineNode,
   MachineUsage,
   Worktree,
   WorktreeChanges,
@@ -113,6 +114,7 @@ export const api = {
    * the same account. Every machine caches its own for five minutes.
    */
   usageMachines: () => request<MachineUsage[]>('/api/usage/machines'),
+  nodeMachines: () => request<MachineNode[]>('/api/node/machines'),
   /** Whether this machine's Switchboard is behind origin. Fetched at most every ten minutes. */
   updateStatus: () => request<UpdateStatus>('/api/update'),
   /** Run `pnpm pull`, which restarts this server if there is anything to pull. */

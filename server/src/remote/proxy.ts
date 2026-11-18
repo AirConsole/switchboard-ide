@@ -147,6 +147,9 @@ const ALWAYS_LOCAL: ReadonlySet<string> = new Set([
   '/api/servers/:key/update',
   /* Every machine's usage at once, gathered here; each peer's own is `/api/usage`. */
   '/api/usage/machines',
+  /* The same for each machine's Node: this one's, and every machine's at once. */
+  '/api/node',
+  '/api/node/machines',
   /*
    * The order of the tab bar, which mixes every machine's projects: this
    * machine's to keep. A body naming only remote projects would otherwise
